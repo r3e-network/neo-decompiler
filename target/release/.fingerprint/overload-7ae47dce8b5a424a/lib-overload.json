@@ -1,0 +1,1 @@
+{"rustc":12013579709055016942,"features":"[]","declared_features":"[]","target":15172315466741368323,"profile":16503403049695105087,"path":11508020778423930821,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"release/.fingerprint/overload-7ae47dce8b5a424a/dep-lib-overload","checksum":false}}],"rustflags":["-C","target-cpu=native"],"config":2069994364910194474,"compile_kind":0}

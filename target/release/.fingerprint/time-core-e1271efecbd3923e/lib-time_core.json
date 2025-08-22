@@ -1,0 +1,1 @@
+{"rustc":12013579709055016942,"features":"[]","declared_features":"[]","target":15840460145011500272,"profile":17656644624426851267,"path":6937825686002066418,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"release/.fingerprint/time-core-e1271efecbd3923e/dep-lib-time_core","checksum":false}}],"rustflags":["-C","target-cpu=native"],"config":2069994364910194474,"compile_kind":0}

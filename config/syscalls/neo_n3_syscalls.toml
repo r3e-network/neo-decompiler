@@ -1,0 +1,213 @@
+# Neo N3 Core Syscalls Configuration
+
+[[syscalls]]
+name = "System.Runtime.Platform"
+hash = 0x49de7d57
+parameters = []
+return_type = "String"
+effects = ["SystemStateRead"]
+gas_cost = 250
+description = "Gets the name of the current platform"
+
+[[syscalls]]
+name = "System.Runtime.GetTrigger"
+hash = 0x2d43a8aa
+parameters = []
+return_type = "Byte"
+effects = ["SystemStateRead"]
+gas_cost = 250
+description = "Gets the trigger type of the current execution"
+
+[[syscalls]]
+name = "System.Runtime.GetTime"
+hash = 0xf827ec8e
+parameters = []
+return_type = "UInteger"
+effects = ["SystemStateRead"]
+gas_cost = 250
+description = "Gets the timestamp of the current block"
+
+[[syscalls]]
+name = "System.Runtime.GetScriptContainer"
+hash = 0x2fcf945b
+parameters = []
+return_type = "InteropInterface"
+effects = ["SystemStateRead"]
+gas_cost = 250
+description = "Gets the script container of the current execution"
+
+[[syscalls]]
+name = "System.Runtime.GetExecutingScriptHash"
+hash = 0x5d97c1b2
+parameters = []
+return_type = "Hash160"
+effects = ["Pure"]
+gas_cost = 400
+description = "Gets the script hash of the current contract"
+
+[[syscalls]]
+name = "System.Runtime.GetCallingScriptHash"
+hash = 0x91f9b23b
+parameters = []
+return_type = "Hash160"
+effects = ["Pure"]
+gas_cost = 400
+description = "Gets the script hash of the calling contract"
+
+[[syscalls]]
+name = "System.Runtime.GetEntryScriptHash"
+hash = 0x9e29b9a8
+parameters = []
+return_type = "Hash160"
+effects = ["Pure"]
+gas_cost = 400
+description = "Gets the script hash of the entry contract"
+
+# Storage syscalls
+[[syscalls]]
+name = "System.Storage.GetContext"
+hash = 0x9c7c9598
+parameters = []
+return_type = "StorageContext"
+effects = ["Pure"]
+gas_cost = 400
+description = "Gets the storage context of the current contract"
+
+[[syscalls]]
+name = "System.Storage.GetReadOnlyContext"
+hash = 0xe1c83c39
+parameters = []
+return_type = "StorageContext"
+effects = ["Pure"]
+gas_cost = 400
+description = "Gets the read-only storage context of the current contract"
+
+[[syscalls]]
+name = "System.Storage.Get"
+hash = 0x925de831
+parameters = ["StorageContext", "ByteArray"]
+return_type = "ByteArray"
+effects = ["StorageRead"]
+gas_cost = 1000000
+description = "Gets a value from storage"
+
+[[syscalls]]
+name = "System.Storage.Put"
+hash = 0xe63f1884
+parameters = ["StorageContext", "ByteArray", "ByteArray"]
+return_type = "Void"
+effects = ["StorageWrite"]
+gas_cost = 0  # Dynamic cost based on storage size
+description = "Puts a value into storage"
+
+[[syscalls]]
+name = "System.Storage.Delete"
+hash = 0x7ce2e494
+parameters = ["StorageContext", "ByteArray"]
+return_type = "Void"
+effects = ["StorageWrite"]
+gas_cost = 1000000
+description = "Deletes a value from storage"
+
+[[syscalls]]
+name = "System.Storage.Find"
+hash = 0xa09b1eef
+parameters = ["StorageContext", "ByteArray", "Byte"]
+return_type = "Iterator"
+effects = ["StorageRead"]
+gas_cost = 1000000
+description = "Finds storage entries with the given prefix"
+
+# Contract syscalls
+[[syscalls]]
+name = "System.Contract.Call"
+hash = 0x627d5b52
+parameters = ["Hash160", "String", "Array", "CallFlags"]
+return_type = "Any"
+effects = ["ContractCall"]
+gas_cost = 0  # Dynamic cost
+description = "Calls another contract"
+
+[[syscalls]]
+name = "System.Contract.CallEx"
+hash = 0x14e12327
+parameters = ["Hash160", "String", "Array", "CallFlags"]
+return_type = "Any"
+effects = ["ContractCall"]
+gas_cost = 0  # Dynamic cost
+description = "Calls another contract with extended functionality"
+
+[[syscalls]]
+name = "System.Contract.IsStandard"
+hash = 0x0c6b63c7
+parameters = ["Hash160"]
+return_type = "Boolean"
+effects = ["ContractCall"]
+gas_cost = 30000
+description = "Checks if a contract is a standard contract"
+
+[[syscalls]]
+name = "System.Contract.GetCallFlags"
+hash = 0x7167ddac
+parameters = []
+return_type = "CallFlags"
+effects = ["Pure"]
+gas_cost = 30000
+description = "Gets the call flags of the current execution"
+
+# Crypto syscalls
+[[syscalls]]
+name = "System.Crypto.CheckSig"
+hash = 0x82958f5a
+parameters = ["ByteArray", "ECPoint"]
+return_type = "Boolean"
+effects = ["Pure"]
+gas_cost = 1000000
+description = "Verifies a signature"
+
+[[syscalls]]
+name = "System.Crypto.CheckMultisig"
+hash = 0xf60652e8
+parameters = ["Array", "Array"]
+return_type = "Boolean"
+effects = ["Pure"]
+gas_cost = 0  # Dynamic cost based on signature count
+description = "Verifies multiple signatures"
+
+# Iterator syscalls
+[[syscalls]]
+name = "System.Iterator.Next"
+hash = 0x7e6a2bb7
+parameters = ["Iterator"]
+return_type = "Boolean"
+effects = ["Pure"]
+gas_cost = 1000000
+description = "Moves to the next item in an iterator"
+
+[[syscalls]]
+name = "System.Iterator.Value"
+hash = 0x63b6c5ee
+parameters = ["Iterator"]
+return_type = "Array"
+effects = ["Pure"]
+gas_cost = 400
+description = "Gets the current value from an iterator"
+
+# JSON syscalls
+[[syscalls]]
+name = "System.Json.Serialize"
+hash = 0xa0ab5461
+parameters = ["Any"]
+return_type = "ByteArray"
+effects = ["Pure"]
+gas_cost = 100000
+description = "Serializes an object to JSON"
+
+[[syscalls]]
+name = "System.Json.Deserialize"
+hash = 0x7d4b2a25
+parameters = ["ByteArray"]
+return_type = "Any"
+effects = ["Pure"]
+gas_cost = 500000
+description = "Deserializes JSON to an object"
