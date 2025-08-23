@@ -1,5 +1,5 @@
 Return code: 1
-Stdout: [2m2025-08-23T01:09:44.449540Z[0m [31mERROR[0m Command failed: Disassembly error: Invalid operand for opcode ABORTMSG at offset 2
-[2m2025-08-23T01:09:44.449551Z[0m [31mERROR[0m   Caused by: Invalid operand for opcode ABORTMSG at offset 2
+Stdout: [2m2025-08-23T01:27:48.103210Z[0m [31mERROR[0m Command failed: Disassembly error: Invalid operand for opcode ABORTMSG at offset 2
+[2m2025-08-23T01:27:48.103220Z[0m [31mERROR[0m   Caused by: Invalid operand for opcode ABORTMSG at offset 2
 
 Stderr: 

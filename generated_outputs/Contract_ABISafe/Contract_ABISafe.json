@@ -29,5 +29,5 @@
       "safe": false
     }
   ],
-  "pseudocode": "void main() {\n    // Unhandled opcode: RET at offset 1;\n    return 1\n}\n"
+  "pseudocode": "void main() {\n    return 1\n}\n"
 }

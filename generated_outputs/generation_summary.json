@@ -7,37 +7,37 @@
       "pseudocode": {
         "success": true,
         "return_code": 0,
-        "file_size": 224
+        "file_size": 181
       },
       "c": {
         "success": true,
         "return_code": 0,
-        "file_size": 276
+        "file_size": 233
       },
       "python": {
         "success": true,
         "return_code": 0,
-        "file_size": 231
+        "file_size": 188
       },
       "rust": {
         "success": true,
         "return_code": 0,
-        "file_size": 271
+        "file_size": 228
       },
       "typescript": {
         "success": true,
         "return_code": 0,
-        "file_size": 286
+        "file_size": 243
       },
       "json": {
         "success": true,
         "return_code": 0,
-        "file_size": 1757
+        "file_size": 1713
       },
       "html": {
         "success": true,
         "return_code": 0,
-        "file_size": 814
+        "file_size": 771
       },
       "disasm": {
         "success": true
@@ -50,37 +50,37 @@
       "pseudocode": {
         "success": true,
         "return_code": 0,
-        "file_size": 71
+        "file_size": 29
       },
       "c": {
         "success": true,
         "return_code": 0,
-        "file_size": 123
+        "file_size": 81
       },
       "python": {
         "success": true,
         "return_code": 0,
-        "file_size": 78
+        "file_size": 36
       },
       "rust": {
         "success": true,
         "return_code": 0,
-        "file_size": 118
+        "file_size": 76
       },
       "typescript": {
         "success": true,
         "return_code": 0,
-        "file_size": 133
+        "file_size": 91
       },
       "json": {
         "success": true,
         "return_code": 0,
-        "file_size": 427
+        "file_size": 384
       },
       "html": {
         "success": true,
         "return_code": 0,
-        "file_size": 649
+        "file_size": 607
       },
       "disasm": {
         "success": true
@@ -93,37 +93,37 @@
       "pseudocode": {
         "success": true,
         "return_code": 0,
-        "file_size": 71
+        "file_size": 29
       },
       "c": {
         "success": true,
         "return_code": 0,
-        "file_size": 123
+        "file_size": 81
       },
       "python": {
         "success": true,
         "return_code": 0,
-        "file_size": 78
+        "file_size": 36
       },
       "rust": {
         "success": true,
         "return_code": 0,
-        "file_size": 118
+        "file_size": 76
       },
       "typescript": {
         "success": true,
         "return_code": 0,
-        "file_size": 133
+        "file_size": 91
       },
       "json": {
         "success": true,
         "return_code": 0,
-        "file_size": 704
+        "file_size": 661
       },
       "html": {
         "success": true,
         "return_code": 0,
-        "file_size": 649
+        "file_size": 607
       },
       "disasm": {
         "success": true
@@ -566,37 +566,37 @@
       "pseudocode": {
         "success": true,
         "return_code": 0,
-        "file_size": 3513
+        "file_size": 2473
       },
       "c": {
         "success": true,
         "return_code": 0,
-        "file_size": 3565
+        "file_size": 2525
       },
       "python": {
         "success": true,
         "return_code": 0,
-        "file_size": 3727
+        "file_size": 2687
       },
       "rust": {
         "success": true,
         "return_code": 0,
-        "file_size": 3560
+        "file_size": 2520
       },
       "typescript": {
         "success": true,
         "return_code": 0,
-        "file_size": 3575
+        "file_size": 2535
       },
       "json": {
         "success": true,
         "return_code": 0,
-        "file_size": 4026
+        "file_size": 2963
       },
       "html": {
         "success": true,
         "return_code": 0,
-        "file_size": 4227
+        "file_size": 3187
       },
       "disasm": {
         "success": true

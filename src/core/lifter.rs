@@ -426,6 +426,21 @@ impl IRLifter {
         
         let mut operations = Vec::new();
         
+        // Skip terminator instructions - they are handled separately in build_terminator
+        match instruction.opcode {
+            OpCode::RET | OpCode::ABORT | OpCode::ABORTMSG | OpCode::THROW |
+            OpCode::JMP | OpCode::JMP_L | OpCode::JMPIF | OpCode::JMPIF_L |
+            OpCode::JMPIFNOT | OpCode::JMPIFNOT_L | OpCode::JMPEQ | OpCode::JMPEQ_L |
+            OpCode::JMPNE | OpCode::JMPNE_L | OpCode::JMPGT | OpCode::JMPGT_L |
+            OpCode::JMPGE | OpCode::JMPGE_L | OpCode::JMPLT | OpCode::JMPLT_L |
+            OpCode::JMPLE | OpCode::JMPLE_L | OpCode::CALL | OpCode::CALL_L |
+            OpCode::CALLA | OpCode::CALLT => {
+                // These are terminators, handled separately
+                return Ok(operations);
+            }
+            _ => {} // Continue with regular instruction processing
+        }
+        
         match instruction.opcode {
             // Constants - Push operations
             OpCode::PUSHINT8 | OpCode::PUSHINT16 | OpCode::PUSHINT32 | 

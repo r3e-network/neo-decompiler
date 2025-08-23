@@ -6,9 +6,7 @@ void main() {
     // Unhandled opcode: STARG5 at offset 5;
     arg_16 = arg_202;
     // Unhandled opcode: STARG0 at offset 11;
-    // Unhandled opcode: JMP at offset 12;
     while ((arg_1 < arg_0))
-        // Unhandled opcode: JMPLT at offset 73;
         if ((arg_1 < arg_0))
          {
 
@@ -23,7 +21,6 @@ void main() {
     arg_6.Clear();
     // Unhandled opcode: STARG1 at offset 17;
     temp2 = (0 + local4);
-    // Unhandled opcode: JMPGE at offset 27;
     if ((temp2 >= -2147483648))
      {
 
@@ -33,8 +30,6 @@ void main() {
         // false branch -> block_2
     }
 
-    // Unhandled opcode: CALL at offset 78;
-    // Unhandled opcode: JMPLE at offset 37;
     if ((temp2 <= 2147483647))
      {
 
@@ -44,12 +39,9 @@ void main() {
         // false branch -> block_4
     }
 
-    // Unhandled opcode: JMP at offset 29;
-    // Unhandled opcode: CALL at offset 83;
     temp3 = (arg_1 + 1);
     // Unhandled opcode: STARG0 at offset 70;
     temp4 = (temp2 & 4294967295);
-    // Unhandled opcode: JMPLE at offset 55;
     if ((temp4 <= 2147483647))
      {
 
@@ -60,7 +52,6 @@ void main() {
     }
 
     temp5 = (1 + 1);
-    // Unhandled opcode: JMPGE at offset 92;
     if ((temp5 >= -2147483648))
      {
 
@@ -71,7 +62,6 @@ void main() {
     }
 
     temp6 = (temp4 - 4294967296);
-    // Unhandled opcode: JMPLE at offset 102;
     if ((temp5 <= 2147483647))
      {
 
@@ -81,10 +71,7 @@ void main() {
         // false branch -> block_13
     }
 
-    // Unhandled opcode: JMP at offset 94;
-    // Unhandled opcode: CALL_L at offset 136;
     temp7 = (temp5 & 4294967295);
-    // Unhandled opcode: JMPLE at offset 120;
     if ((temp7 <= 2147483647))
      {
 
@@ -95,7 +82,6 @@ void main() {
     }
 
     temp8 = (2 + 2);
-    // Unhandled opcode: JMPGE at offset 148;
     if ((temp8 >= -2147483648))
      {
 
@@ -106,7 +92,6 @@ void main() {
     }
 
     temp9 = (temp7 - 4294967296);
-    // Unhandled opcode: JMPLE at offset 158;
     if ((temp8 <= 2147483647))
      {
 
@@ -116,10 +101,7 @@ void main() {
         // false branch -> block_19
     }
 
-    // Unhandled opcode: JMP at offset 150;
-    // Unhandled opcode: CALL_L at offset 192;
     temp10 = (temp8 & 4294967295);
-    // Unhandled opcode: JMPLE at offset 176;
     if ((temp10 <= 2147483647))
      {
 
@@ -130,7 +112,6 @@ void main() {
     }
 
     temp11 = (4 + 2);
-    // Unhandled opcode: JMPGE at offset 204;
     if ((temp11 >= -2147483648))
      {
 
@@ -141,7 +122,6 @@ void main() {
     }
 
     temp12 = (temp10 - 4294967296);
-    // Unhandled opcode: JMPLE at offset 214;
     if ((temp11 <= 2147483647))
      {
 
@@ -151,11 +131,8 @@ void main() {
         // false branch -> block_25
     }
 
-    // Unhandled opcode: JMP at offset 206;
-    // Unhandled opcode: RET at offset 244;
     return temp13
     temp14 = (temp11 & 4294967295);
-    // Unhandled opcode: JMPLE at offset 232;
     if ((temp14 <= 2147483647))
      {
 

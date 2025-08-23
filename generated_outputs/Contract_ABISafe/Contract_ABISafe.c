@@ -2,6 +2,5 @@
 #include <neo.h>
 
 void main() {
-    // Unhandled opcode: RET at offset 1;
     return 1
 }

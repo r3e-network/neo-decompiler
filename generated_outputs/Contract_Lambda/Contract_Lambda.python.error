@@ -1,5 +1,5 @@
 Return code: 1
-Stdout: [2m2025-08-23T01:09:44.356568Z[0m [31mERROR[0m Command failed: Disassembly error: Unknown opcode: 0xec at offset 44
-[2m2025-08-23T01:09:44.356576Z[0m [31mERROR[0m   Caused by: Unknown opcode: 0xec at offset 44
+Stdout: [2m2025-08-23T01:27:48.005767Z[0m [31mERROR[0m Command failed: Disassembly error: Unknown opcode: 0xec at offset 44
+[2m2025-08-23T01:27:48.005778Z[0m [31mERROR[0m   Caused by: Unknown opcode: 0xec at offset 44
 
 Stderr: 
