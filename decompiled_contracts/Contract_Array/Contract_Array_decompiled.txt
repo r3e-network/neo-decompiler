@@ -1,7 +1,7 @@
 void main() {
     // Initialize 4 local slots, 0 static slots;
-    arg_15 = 4;
+    arg7 = 4;
     // Unhandled opcode: STARG0 at offset 30;
-    local10 = arg_0;
+    local10 = arg9;
     return 4
 }

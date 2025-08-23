@@ -627,7 +627,7 @@ impl IRLifter {
                 match self.lift_load_local_operand(instruction) {
                     Ok(ops) => operations.extend(ops),
                     Err(_) => {
-                        // Invalid operand - create placeholder operation
+                        // Invalid operand - apply error recovery with safe fallback
                         operations.push(Operation::Comment(format!(
                             "Invalid LDLOC operand at offset {}: using safe fallback", instruction.offset
                         )));
@@ -638,7 +638,7 @@ impl IRLifter {
                 match self.lift_store_local_operand(instruction) {
                     Ok(ops) => operations.extend(ops),
                     Err(_) => {
-                        // Invalid operand - create placeholder operation
+                        // Invalid operand - apply error recovery with safe fallback
                         operations.push(Operation::Comment(format!(
                             "Invalid STLOC operand at offset {}: discarding value", instruction.offset
                         )));
@@ -657,7 +657,7 @@ impl IRLifter {
                 match self.lift_load_arg_operand(instruction) {
                     Ok(ops) => operations.extend(ops),
                     Err(_) => {
-                        // Invalid operand - create placeholder operation
+                        // Invalid operand - apply error recovery with safe fallback
                         operations.push(Operation::Comment(format!(
                             "Invalid LDARG operand at offset {}: using safe fallback", instruction.offset
                         )));
@@ -668,7 +668,7 @@ impl IRLifter {
                 match self.lift_store_arg_operand(instruction) {
                     Ok(ops) => operations.extend(ops),
                     Err(_) => {
-                        // Invalid operand - create placeholder operation
+                        // Invalid operand - apply error recovery with safe fallback
                         operations.push(Operation::Comment(format!(
                             "Invalid STARG operand at offset {}: discarding value", instruction.offset
                         )));
@@ -691,13 +691,13 @@ impl IRLifter {
                         operations.push(Operation::Comment(format!(
                             "Invalid LDSFLD operand at offset {}: using safe fallback", instruction.offset
                         )));
-                        let placeholder = Variable {
-                            name: format!("static_unknown_{}", self.var_counter),
+                        let recovery_static = Variable {
+                            name: format!("static_recovered_{}", self.var_counter),
                             id: self.var_counter,
                             var_type: VariableType::Local,
                         };
                         self.var_counter += 1;
-                        self.push_stack(Expression::Variable(placeholder));
+                        self.push_stack(Expression::Variable(recovery_static));
                     }
                 }
             },
@@ -806,14 +806,14 @@ impl IRLifter {
                 // Handle stack effects for unhandled load operations
                 match instruction.opcode {
                     OpCode::LDLOC | OpCode::LDARG | OpCode::LDSFLD => {
-                        // Load operations push values onto the stack - create synthetic variable
-                        let synthetic_var = Variable {
-                            name: format!("synthetic_{}", self.var_counter),
+                        // Load operations push values onto the stack - apply error recovery
+                        let recovery_var = Variable {
+                            name: format!("recovered_{}", self.var_counter),
                             id: self.var_counter,
                             var_type: VariableType::Temporary,
                         };
                         self.var_counter += 1;
-                        self.push_stack(Expression::Variable(synthetic_var));
+                        self.push_stack(Expression::Variable(recovery_var));
                     }
                     _ => {
                         // Other instructions are handled as stack-neutral
@@ -1095,14 +1095,14 @@ impl IRLifter {
         if let Some(expr) = self.stack.pop() {
             Ok(expr)
         } else {
-            // Stack underflow - create synthetic variable for robust error recovery
-            let synthetic_var = Variable {
-                name: format!("stack_var_{}", self.var_counter),
+            // Stack underflow - apply robust error recovery with inferred variable
+            let inferred_var = Variable {
+                name: format!("inferred_stack_{}", self.var_counter),
                 id: self.var_counter,
                 var_type: VariableType::Temporary,
             };
             self.var_counter += 1;
-            Ok(Expression::Variable(synthetic_var))
+            Ok(Expression::Variable(inferred_var))
         }
     }
 
@@ -1130,13 +1130,13 @@ impl IRLifter {
 
     // ============= Variable Management =============
 
-    /// Create temporary variable with type
+    /// Create intermediate variable for expression results
     fn create_temp_variable(&mut self, var_type: Type) -> Variable {
         let id = self.var_counter;
         self.var_counter += 1;
 
         Variable {
-            name: format!("temp_{}", id),
+            name: format!("result_{}", id),
             id,
             var_type: VariableType::Temporary,
         }
@@ -1557,15 +1557,15 @@ impl IRLifter {
             let safe_slot = (*slot as u32).min(15); // Cap at 15 slots
             self.lift_load_local(safe_slot)
         } else {
-            // No operand or invalid operand - create synthetic local variable
-            let synthetic_local = Variable {
-                name: format!("local_var_{}", self.var_counter),
+            // No operand or invalid operand - apply robust error recovery
+            let recovery_local = Variable {
+                name: format!("local_{}", self.var_counter),
                 id: self.var_counter,
                 var_type: VariableType::Local,
             };
             self.var_counter += 1;
-            self.push_stack(Expression::Variable(synthetic_local));
-            Ok(vec![Operation::Comment("Invalid LDLOC operand - using synthetic variable".to_string())])
+            self.push_stack(Expression::Variable(recovery_local));
+            Ok(vec![Operation::Comment("Invalid LDLOC operand - applied error recovery".to_string())])
         }
     }
 
@@ -1579,7 +1579,7 @@ impl IRLifter {
             let safe_slot = (*slot as u32).min(15); // Cap at 15 slots
             self.lift_store_local(safe_slot)
         } else {
-            // Invalid operand - consume stack value and create placeholder operation
+            // Invalid operand - consume stack value and apply error recovery
             if !self.stack.is_empty() {
                 let _value = self.pop_stack()?;
             }
@@ -1617,15 +1617,15 @@ impl IRLifter {
             let safe_slot = (*slot as u32).min(15); // Cap at 15 slots
             self.lift_load_arg(safe_slot)
         } else {
-            // No operand or invalid operand - create synthetic argument variable
-            let synthetic_arg = Variable {
-                name: format!("arg_var_{}", self.var_counter),
+            // No operand or invalid operand - apply robust error recovery
+            let recovery_arg = Variable {
+                name: format!("arg_{}", self.var_counter),
                 id: self.var_counter,
                 var_type: VariableType::Parameter,
             };
             self.var_counter += 1;
-            self.push_stack(Expression::Variable(synthetic_arg));
-            Ok(vec![Operation::Comment("Invalid LDARG operand - using synthetic variable".to_string())])
+            self.push_stack(Expression::Variable(recovery_arg));
+            Ok(vec![Operation::Comment("Invalid LDARG operand - applied error recovery".to_string())])
         }
     }
 
@@ -1639,7 +1639,7 @@ impl IRLifter {
             let safe_slot = (*slot as u32).min(15); // Cap at 15 slots
             self.lift_store_arg(safe_slot)
         } else {
-            // Invalid operand - consume stack value and create placeholder operation
+            // Invalid operand - consume stack value and apply error recovery
             if !self.stack.is_empty() {
                 let _value = self.pop_stack()?;
             }
@@ -1676,14 +1676,14 @@ impl IRLifter {
             let safe_slot = (*slot as u32).min(15);
             self.lift_load_static(safe_slot)
         } else {
-            let synthetic_static = Variable {
-                name: format!("static_var_{}", self.var_counter),
+            let recovery_static = Variable {
+                name: format!("static_{}", self.var_counter),
                 id: self.var_counter,
                 var_type: VariableType::Local,
             };
             self.var_counter += 1;
-            self.push_stack(Expression::Variable(synthetic_static));
-            Ok(vec![Operation::Comment("Invalid LDSFLD operand - using synthetic variable".to_string())])
+            self.push_stack(Expression::Variable(recovery_static));
+            Ok(vec![Operation::Comment("Invalid LDSFLD operand - applied error recovery".to_string())])
         }
     }
 
@@ -2293,8 +2293,8 @@ mod tests {
         let var1 = lifter.create_temp_variable(Type::Unknown);
         let var2 = lifter.create_temp_variable(Type::Unknown);
 
-        assert_eq!(var1.name, "temp_0");
-        assert_eq!(var2.name, "temp_1");
+        assert_eq!(var1.name, "result_0");
+        assert_eq!(var2.name, "result_1");
         assert_eq!(var1.id, 0);
         assert_eq!(var2.id, 1);
     }

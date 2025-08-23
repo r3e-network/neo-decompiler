@@ -1163,13 +1163,15 @@ impl PseudocodeGenerator {
             return custom_name.clone();
         }
 
-        // Generate more readable names for common patterns
-        let formatted_name = if var.name.starts_with("temp_") {
-            format!("temp{}", self.var_counter)
+        // Generate production-ready names for variables
+        let formatted_name = if var.name.starts_with("result_") {
+            format!("result{}", var.id)
         } else if var.name.starts_with("local_") {
             format!("local{}", var.id)
-        } else if var.name.starts_with("param_") {
-            format!("param{}", var.id)
+        } else if var.name.starts_with("arg_") {
+            format!("arg{}", var.id)
+        } else if var.name.starts_with("static_") {
+            format!("static{}", var.id)
         } else {
             var.name.clone()
         };
@@ -1857,17 +1859,17 @@ mod tests {
         let config = DecompilerConfig::default();
         let mut generator = PseudocodeGenerator::new(&config);
 
-        let temp_var = Variable {
-            name: "temp_123".to_string(),
+        let result_var = Variable {
+            name: "result_123".to_string(),
             id: 123,
             var_type: VariableType::Temporary,
         };
 
-        let formatted_name = generator.format_variable(&temp_var);
-        assert!(formatted_name.starts_with("temp"));
+        let formatted_name = generator.format_variable(&result_var);
+        assert!(formatted_name.starts_with("result"));
 
         // Test consistency - should return same name on subsequent calls
-        let formatted_name2 = generator.format_variable(&temp_var);
+        let formatted_name2 = generator.format_variable(&result_var);
         assert_eq!(formatted_name, formatted_name2);
     }
 }

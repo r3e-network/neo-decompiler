@@ -101,8 +101,8 @@ void main() {
     }
 
     return 10
-    temp1 = (local6 == 0x3131);
-    if (temp1)
+    result7 = (local6 == 0x3131);
+    if (result7)
      {
 
         // true branch -> block_29
@@ -112,8 +112,8 @@ void main() {
     }
 
     return 12
-    temp2 = (613888817 == 0x3134);
-    if (temp2)
+    result9 = (613888817 == 0x3134);
+    if (result9)
      {
 
         // true branch -> block_32

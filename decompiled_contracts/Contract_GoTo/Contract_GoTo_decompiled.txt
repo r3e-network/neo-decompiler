@@ -1,7 +1,7 @@
 void main() {
     // Initialize 1 local slots, 0 static slots;
-    temp1 = (local7 + 1);
-    if ((temp1 >= -2147483648))
+    result8 = (local7 + 1);
+    if ((result8 >= -2147483648))
      {
 
         // true branch -> block_6
@@ -10,7 +10,7 @@ void main() {
         // false branch -> block_5
     }
 
-    if ((temp1 <= 2147483647))
+    if ((result8 <= 2147483647))
      {
 
         // true branch -> block_13
@@ -19,10 +19,10 @@ void main() {
         // false branch -> block_8
     }
 
-    temp3 = (temp2 == local7);
-    temp4 = (temp1 & 4294967295);
+    result11 = (result10 == local7);
+    result9 = (result8 & 4294967295);
     // Initialize 2 local slots, 0 static slots;
-    if ((temp4 <= 2147483647))
+    if ((result9 <= 2147483647))
      {
 
         // true branch -> block_13
@@ -40,5 +40,5 @@ void main() {
         // catch block -> block_14
     }
 
-    temp2 = (temp4 - 4294967296);
+    result10 = (result9 - 4294967296);
 }

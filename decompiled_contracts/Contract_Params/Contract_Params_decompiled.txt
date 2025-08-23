@@ -1,10 +1,10 @@
 void main() {
     // Initialize 5 local slots, 1 static slots;
     // Unhandled opcode: STARG5 at offset 5;
-    arg_15 = arg_15;
+    arg5 = arg5;
     // Unhandled opcode: STARG0 at offset 11;
-    while ((arg_1 < arg_0))
-        if ((arg_1 < arg_0))
+    while ((arg10 < arg12))
+        if ((arg10 < arg12))
          {
 
             // true branch -> block_1
@@ -14,11 +14,11 @@ void main() {
         }
 
     }
-    local6 = arg_6;
-    arg_6.Clear();
+    local6 = arg4;
+    arg4.Clear();
     // Unhandled opcode: STARG1 at offset 17;
-    temp1 = (0 + local6);
-    if ((temp1 >= -2147483648))
+    result7 = (0 + local6);
+    if ((result7 >= -2147483648))
      {
 
         // true branch -> block_3
@@ -27,7 +27,7 @@ void main() {
         // false branch -> block_2
     }
 
-    if ((temp1 <= 2147483647))
+    if ((result7 <= 2147483647))
      {
 
         // true branch -> block_6
@@ -36,10 +36,10 @@ void main() {
         // false branch -> block_4
     }
 
-    temp2 = (arg_1 + 1);
+    result11 = (arg10 + 1);
     // Unhandled opcode: STARG0 at offset 70;
-    temp3 = (temp1 & 4294967295);
-    if ((temp3 <= 2147483647))
+    result8 = (result7 & 4294967295);
+    if ((result8 <= 2147483647))
      {
 
         // true branch -> block_6
@@ -48,8 +48,8 @@ void main() {
         // false branch -> block_5
     }
 
-    temp4 = (1 + 1);
-    if ((temp4 >= -2147483648))
+    result13 = (1 + 1);
+    if ((result13 >= -2147483648))
      {
 
         // true branch -> block_12
@@ -58,8 +58,8 @@ void main() {
         // false branch -> block_11
     }
 
-    temp5 = (temp3 - 4294967296);
-    if ((temp4 <= 2147483647))
+    result9 = (result8 - 4294967296);
+    if ((result13 <= 2147483647))
      {
 
         // true branch -> block_15
@@ -68,8 +68,8 @@ void main() {
         // false branch -> block_13
     }
 
-    temp6 = (temp4 & 4294967295);
-    if ((temp6 <= 2147483647))
+    result14 = (result13 & 4294967295);
+    if ((result14 <= 2147483647))
      {
 
         // true branch -> block_15
@@ -78,8 +78,8 @@ void main() {
         // false branch -> block_14
     }
 
-    temp7 = (2 + 2);
-    if ((temp7 >= -2147483648))
+    result16 = (2 + 2);
+    if ((result16 >= -2147483648))
      {
 
         // true branch -> block_18
@@ -88,8 +88,8 @@ void main() {
         // false branch -> block_17
     }
 
-    temp8 = (temp6 - 4294967296);
-    if ((temp7 <= 2147483647))
+    result15 = (result14 - 4294967296);
+    if ((result16 <= 2147483647))
      {
 
         // true branch -> block_21
@@ -98,8 +98,8 @@ void main() {
         // false branch -> block_19
     }
 
-    temp9 = (temp7 & 4294967295);
-    if ((temp9 <= 2147483647))
+    result17 = (result16 & 4294967295);
+    if ((result17 <= 2147483647))
      {
 
         // true branch -> block_21
@@ -108,8 +108,8 @@ void main() {
         // false branch -> block_20
     }
 
-    temp10 = (4 + 2);
-    if ((temp10 >= -2147483648))
+    result19 = (4 + 2);
+    if ((result19 >= -2147483648))
      {
 
         // true branch -> block_24
@@ -118,8 +118,8 @@ void main() {
         // false branch -> block_23
     }
 
-    temp11 = (temp9 - 4294967296);
-    if ((temp10 <= 2147483647))
+    result18 = (result17 - 4294967296);
+    if ((result19 <= 2147483647))
      {
 
         // true branch -> block_27
@@ -128,9 +128,9 @@ void main() {
         // false branch -> block_25
     }
 
-    return temp12
-    temp13 = (temp10 & 4294967295);
-    if ((temp13 <= 2147483647))
+    return result21
+    result20 = (result19 & 4294967295);
+    if ((result20 <= 2147483647))
      {
 
         // true branch -> block_27
@@ -139,5 +139,5 @@ void main() {
         // false branch -> block_26
     }
 
-    temp12 = (temp13 - 4294967296);
+    result21 = (result20 - 4294967296);
 }
