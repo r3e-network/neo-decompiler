@@ -1,0 +1,169 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_Array",
+  "events": [],
+  "instructions_count": 327,
+  "methods": [
+    {
+      "name": "getTreeByteLengthPrefix",
+      "offset": 0,
+      "parameters": [],
+      "return_type": "ByteArray",
+      "safe": false
+    },
+    {
+      "name": "getTreeByteLengthPrefix2",
+      "offset": 2,
+      "parameters": [],
+      "return_type": "ByteArray",
+      "safe": false
+    },
+    {
+      "name": "testJaggedArray",
+      "offset": 4,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testJaggedByteArray",
+      "offset": 42,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testIntArray",
+      "offset": 88,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testDefaultArray",
+      "offset": 118,
+      "parameters": [],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "testIntArrayInit",
+      "offset": 136,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testIntArrayInit2",
+      "offset": 161,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testIntArrayInit3",
+      "offset": 186,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testDynamicArrayInit",
+      "offset": 211,
+      "parameters": [
+        {
+          "name": "length",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testDynamicArrayStringInit",
+      "offset": 287,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "ByteArray",
+      "safe": false
+    },
+    {
+      "name": "testStructArray",
+      "offset": 294,
+      "parameters": [],
+      "return_type": "Any",
+      "safe": false
+    },
+    {
+      "name": "testDefaultState",
+      "offset": 318,
+      "parameters": [],
+      "return_type": "Any",
+      "safe": false
+    },
+    {
+      "name": "testEmptyArray",
+      "offset": 329,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testStructArrayInit",
+      "offset": 336,
+      "parameters": [],
+      "return_type": "Any",
+      "safe": false
+    },
+    {
+      "name": "testByteArrayOwner",
+      "offset": 385,
+      "parameters": [],
+      "return_type": "ByteArray",
+      "safe": false
+    },
+    {
+      "name": "testByteArrayOwnerCall",
+      "offset": 387,
+      "parameters": [],
+      "return_type": "ByteArray",
+      "safe": false
+    },
+    {
+      "name": "testSupportedStandards",
+      "offset": 390,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testElementBinding",
+      "offset": 392,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "testCollectionexpressions",
+      "offset": 428,
+      "parameters": [],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "_initialize",
+      "offset": 511,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 4 local slots, 0 static slots;\n    arg_18 = 4;\n    // Unhandled opcode: STARG0 at offset 30;\n    local9 = arg_0;\n    return 4\n}\n"
+}

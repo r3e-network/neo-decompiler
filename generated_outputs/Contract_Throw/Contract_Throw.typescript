@@ -2,17 +2,20 @@
 import { Neo } from 'neo';
 
 void main() {
-    // TODO: Implement opcode UNKNOWN_B8 at offset 7;
+    // Initialize 1 local slots, 1 static slots;
+    // Unhandled opcode: STARG5 at offset 3;
+    arg_2.append(arg_3);
+    // TODO: Implement opcode UNKNOWN_B8 at offset 6;
     if (1)
      {
 
-        // true branch -> block_2
+        // true branch -> block_1
     }
  else  {
-        // false branch -> block_3
+        // false branch -> block_2
     }
 
-    // Unhandled opcode: STARG5 at offset 10;
+    // Unhandled opcode: STARG5 at offset 9;
     0.Clear();
     // Effects: [SystemStateRead];
     abort(0x506c6561736520737570706c79206174206c65617374206f6e6520617267756d656e742e);

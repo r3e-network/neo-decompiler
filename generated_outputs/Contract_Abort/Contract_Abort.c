@@ -2,8 +2,7 @@
 #include <neo.h>
 
 void main() {
-    // Unhandled opcode: STARG3 at offset 0;
-    // Initialize 1 local slots;
+    // Initialize 1 local slots, 0 static slots;
     // Effects: [Pure, SystemStateRead];
     abort();
 }

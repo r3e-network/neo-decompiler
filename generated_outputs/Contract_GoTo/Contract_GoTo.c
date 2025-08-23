@@ -1,0 +1,47 @@
+// Generated from Neo N3 bytecode
+#include <neo.h>
+
+void main() {
+    // Initialize 1 local slots, 0 static slots;
+    temp1 = (local5 + 1);
+    if ((temp1 >= -2147483648))
+     {
+
+        // true branch -> block_6
+    }
+ else  {
+        // false branch -> block_5
+    }
+
+    if ((temp1 <= 2147483647))
+     {
+
+        // true branch -> block_13
+    }
+ else  {
+        // false branch -> block_8
+    }
+
+    temp4 = (temp2 == local9);
+    temp5 = (temp1 & 4294967295);
+    // Initialize 2 local slots, 0 static slots;
+    if ((temp5 <= 2147483647))
+     {
+
+        // true branch -> block_13
+    }
+ else  {
+        // false branch -> block_12
+    }
+
+    // Unhandled opcode: TRY at offset 68;
+    try  {
+
+        // try block -> block_16
+    }
+ catch  {
+        // catch block -> block_14
+    }
+
+    temp2 = (temp5 - 4294967296);
+}

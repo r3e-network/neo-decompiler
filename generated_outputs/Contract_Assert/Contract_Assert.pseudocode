@@ -1,16 +1,16 @@
 void main() {
-    // Initialize 1 local slots;
+    // Initialize 1 local slots, 0 static slots;
     assert(true);
     assert(false);
-    // Initialize 1 local slots;
-    // Initialize 2 local slots;
-    // Unhandled opcode: TRY at offset 34;
+    // Initialize 1 local slots, 0 static slots;
+    // Initialize 2 local slots, 0 static slots;
+    // Unhandled opcode: TRY at offset 33;
     try  {
 
-        // try block -> block_9
+        // try block -> block_7
     }
  catch  {
-        // catch block -> block_3
+        // catch block -> block_2
     }
  finally  {
         // finally block -> block_4

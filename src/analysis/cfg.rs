@@ -8,8 +8,8 @@
 //! - Control flow complexity metrics
 //! - CFG validation and transformations
 
-use crate::core::ir::{IRFunction, IRBlock, Terminator};
 use crate::common::types::BlockId;
+use crate::core::ir::{IRBlock, IRFunction, Terminator};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
@@ -312,7 +312,7 @@ impl CFGBuilder {
     /// Build comprehensive CFG from IR function
     pub fn build_cfg(&self, function: &IRFunction) -> Result<ControlFlowGraph, CFGError> {
         let mut cfg = self.build_basic_cfg(function)?;
-        
+
         // Perform advanced analysis if enabled
         if self.enable_advanced_analysis {
             self.compute_reachability(&mut cfg);
@@ -320,22 +320,22 @@ impl CFGBuilder {
             self.compute_post_dominator_tree(&mut cfg)?;
             self.detect_strongly_connected_components(&mut cfg)?;
         }
-        
+
         if self.enable_loop_detection {
             self.detect_loops(&mut cfg)?;
         }
-        
+
         if self.enable_exception_analysis {
             self.analyze_exception_flow(&mut cfg, function)?;
         }
-        
+
         self.compute_complexity_metrics(&mut cfg);
         self.identify_critical_edges(&mut cfg);
         self.validate_cfg(&cfg)?;
-        
+
         Ok(cfg)
     }
-    
+
     /// Build basic CFG structure (nodes and edges)
     fn build_basic_cfg(&self, function: &IRFunction) -> Result<ControlFlowGraph, CFGError> {
         let mut cfg = ControlFlowGraph {
@@ -352,7 +352,7 @@ impl CFGBuilder {
             complexity: CFGComplexity::default(),
             unreachable_blocks: HashSet::new(),
         };
-        
+
         // Create nodes for all blocks
         for (block_id, ir_block) in &function.blocks {
             let node = CFGNode {
@@ -371,20 +371,25 @@ impl CFGBuilder {
             };
             cfg.nodes.insert(*block_id, node);
         }
-        
+
         // Create edges based on terminators
         for (block_id, ir_block) in &function.blocks {
             self.create_edges_for_block(&mut cfg, *block_id, ir_block)?;
         }
-        
+
         // Validate basic structure
         self.validate_basic_structure(&cfg)?;
-        
+
         Ok(cfg)
     }
-    
+
     /// Create CFG edges for a single block based on its terminator
-    fn create_edges_for_block(&self, cfg: &mut ControlFlowGraph, block_id: BlockId, ir_block: &IRBlock) -> Result<(), CFGError> {
+    fn create_edges_for_block(
+        &self,
+        cfg: &mut ControlFlowGraph,
+        block_id: BlockId,
+        ir_block: &IRBlock,
+    ) -> Result<(), CFGError> {
         match &ir_block.terminator {
             Terminator::Jump(target) => {
                 let edge = CFGEdge {
@@ -397,8 +402,12 @@ impl CFGBuilder {
                 };
                 cfg.edges.push(edge);
             }
-            
-            Terminator::Branch { condition: _, true_target, false_target } => {
+
+            Terminator::Branch {
+                condition: _,
+                true_target,
+                false_target,
+            } => {
                 let true_edge = CFGEdge {
                     from: block_id,
                     to: *true_target,
@@ -418,8 +427,12 @@ impl CFGBuilder {
                 cfg.edges.push(true_edge);
                 cfg.edges.push(false_edge);
             }
-            
-            Terminator::Switch { discriminant: _, targets, default_target } => {
+
+            Terminator::Switch {
+                discriminant: _,
+                targets,
+                default_target,
+            } => {
                 // Create edges for each case
                 for (literal, target) in targets {
                     let case_value = match literal {
@@ -436,7 +449,7 @@ impl CFGBuilder {
                     };
                     cfg.edges.push(edge);
                 }
-                
+
                 // Create default edge if present
                 if let Some(default) = default_target {
                     let edge = CFGEdge {
@@ -450,8 +463,12 @@ impl CFGBuilder {
                     cfg.edges.push(edge);
                 }
             }
-            
-            Terminator::TryBlock { try_block, catch_block, finally_block } => {
+
+            Terminator::TryBlock {
+                try_block,
+                catch_block,
+                finally_block,
+            } => {
                 // Try block entry
                 let try_edge = CFGEdge {
                     from: block_id,
@@ -462,7 +479,7 @@ impl CFGBuilder {
                     is_critical: false,
                 };
                 cfg.edges.push(try_edge);
-                
+
                 // Catch block (if present)
                 if let Some(catch) = catch_block {
                     let catch_edge = CFGEdge {
@@ -475,7 +492,7 @@ impl CFGBuilder {
                     };
                     cfg.edges.push(catch_edge);
                 }
-                
+
                 // Finally block (if present)
                 if let Some(finally) = finally_block {
                     let finally_edge = CFGEdge {
@@ -489,29 +506,29 @@ impl CFGBuilder {
                     cfg.edges.push(finally_edge);
                 }
             }
-            
+
             Terminator::Return(_) | Terminator::Abort(_) => {
                 // No outgoing edges for terminal blocks
                 // These blocks are automatically added to exit_blocks during IR construction
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Compute reachability from entry block
     fn compute_reachability(&self, cfg: &mut ControlFlowGraph) {
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
-        
+
         // Start from entry block
         queue.push_back(cfg.entry_block);
         visited.insert(cfg.entry_block);
-        
+
         while let Some(block_id) = queue.pop_front() {
             if let Some(node) = cfg.nodes.get_mut(&block_id) {
                 node.reachable = true;
-                
+
                 // Add successors to queue
                 for successor in &node.successors.clone() {
                     if !visited.contains(successor) {
@@ -521,7 +538,7 @@ impl CFGBuilder {
                 }
             }
         }
-        
+
         // Mark unreachable blocks
         for (block_id, node) in &cfg.nodes {
             if !node.reachable {
@@ -529,7 +546,7 @@ impl CFGBuilder {
             }
         }
     }
-    
+
     /// Compute dominator tree using iterative algorithm
     fn compute_dominator_tree(&self, cfg: &mut ControlFlowGraph) -> Result<(), CFGError> {
         let mut dom_tree = DominatorTree {
@@ -538,13 +555,13 @@ impl CFGBuilder {
             children: HashMap::new(),
             root: cfg.entry_block,
         };
-        
+
         // Initialize dominators - all blocks are dominated by entry initially
         let mut dominators: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
-        
+
         // Entry block dominates only itself
         dominators.insert(cfg.entry_block, [cfg.entry_block].iter().cloned().collect());
-        
+
         // All other blocks start with all blocks as potential dominators
         let all_blocks: HashSet<BlockId> = cfg.nodes.keys().cloned().collect();
         for &block_id in &all_blocks {
@@ -552,30 +569,31 @@ impl CFGBuilder {
                 dominators.insert(block_id, all_blocks.clone());
             }
         }
-        
+
         // Iteratively compute dominators
         let mut changed = true;
         while changed {
             changed = false;
-            
+
             for &block_id in &all_blocks {
                 if block_id == cfg.entry_block {
                     continue;
                 }
-                
+
                 if let Some(node) = cfg.nodes.get(&block_id) {
                     let mut new_dominators = all_blocks.clone();
-                    
+
                     // Intersection of dominators of all predecessors
                     for &pred in &node.predecessors {
                         if let Some(pred_doms) = dominators.get(&pred) {
-                            new_dominators = new_dominators.intersection(pred_doms).cloned().collect();
+                            new_dominators =
+                                new_dominators.intersection(pred_doms).cloned().collect();
                         }
                     }
-                    
+
                     // Add self
                     new_dominators.insert(block_id);
-                    
+
                     if dominators.get(&block_id) != Some(&new_dominators) {
                         dominators.insert(block_id, new_dominators);
                         changed = true;
@@ -583,13 +601,13 @@ impl CFGBuilder {
                 }
             }
         }
-        
+
         // Compute immediate dominators
         for (&block_id, doms) in &dominators {
             if block_id == cfg.entry_block {
                 continue;
             }
-            
+
             // Find immediate dominator (dominator that is dominated by no other dominator of this block)
             for &dom in doms {
                 if dom != block_id {
@@ -611,28 +629,32 @@ impl CFGBuilder {
                 }
             }
         }
-        
+
         // Build dominator tree structure
         for (&child, &parent) in &dom_tree.immediate_dominators {
-            dom_tree.children.entry(parent).or_insert_with(Vec::new).push(child);
+            dom_tree
+                .children
+                .entry(parent)
+                .or_insert_with(Vec::new)
+                .push(child);
         }
-        
+
         // Compute dominance frontiers
         self.compute_dominance_frontiers(cfg, &mut dom_tree);
-        
+
         // Update CFG nodes with dominator information
         self.update_dominator_info(cfg, &dom_tree, &dominators);
-        
+
         cfg.dominator_tree = Some(dom_tree);
         Ok(())
     }
-    
+
     /// Compute dominance frontiers
     fn compute_dominance_frontiers(&self, cfg: &ControlFlowGraph, dom_tree: &mut DominatorTree) {
         for edge in &cfg.edges {
             let x = edge.from;
             let y = edge.to;
-            
+
             // Check if y is in dominance frontier of x or any of x's dominators
             if let Some(&y_idom) = dom_tree.immediate_dominators.get(&y) {
                 let mut current = Some(x);
@@ -640,31 +662,36 @@ impl CFGBuilder {
                     if node == y_idom {
                         break;
                     }
-                    
-                    dom_tree.dominance_frontiers
+
+                    dom_tree
+                        .dominance_frontiers
                         .entry(node)
                         .or_insert_with(HashSet::new)
                         .insert(y);
-                    
+
                     current = dom_tree.immediate_dominators.get(&node).copied();
                 }
             }
         }
     }
-    
+
     /// Update CFG nodes with dominator information
-    fn update_dominator_info(&self, cfg: &mut ControlFlowGraph, dom_tree: &DominatorTree, 
-                           dominators: &HashMap<BlockId, HashSet<BlockId>>) {
+    fn update_dominator_info(
+        &self,
+        cfg: &mut ControlFlowGraph,
+        dom_tree: &DominatorTree,
+        dominators: &HashMap<BlockId, HashSet<BlockId>>,
+    ) {
         for (block_id, node) in cfg.nodes.iter_mut() {
             node.immediate_dominator = dom_tree.immediate_dominators.get(block_id).copied();
-            
+
             // Set dominated blocks
             if let Some(doms) = dominators.get(block_id) {
                 node.dominated = doms.clone();
             }
         }
     }
-    
+
     /// Compute post-dominator tree using reverse graph analysis
     fn compute_post_dominator_tree(&self, cfg: &mut ControlFlowGraph) -> Result<(), CFGError> {
         let post_dom_tree = PostDominatorTree {
@@ -673,58 +700,85 @@ impl CFGBuilder {
             children: HashMap::new(),
             root: BlockId::MAX, // Virtual exit node
         };
-        
+
         cfg.post_dominator_tree = Some(post_dom_tree);
         Ok(())
     }
-    
+
     /// Detect strongly connected components using Tarjan's algorithm
-    fn detect_strongly_connected_components(&self, cfg: &mut ControlFlowGraph) -> Result<(), CFGError> {
+    fn detect_strongly_connected_components(
+        &self,
+        cfg: &mut ControlFlowGraph,
+    ) -> Result<(), CFGError> {
         let mut index_counter = 0;
         let mut stack = Vec::new();
         let mut indices = HashMap::new();
         let mut lowlinks = HashMap::new();
         let mut on_stack = HashSet::new();
         let mut sccs = Vec::new();
-        
+
         // Reset visit states
         for node in cfg.nodes.values_mut() {
             node.visit_state = VisitState::Unvisited;
         }
-        
+
         for &block_id in cfg.nodes.keys() {
             if !indices.contains_key(&block_id) {
-                self.tarjan_scc(cfg, block_id, &mut index_counter, &mut stack, &mut indices, 
-                              &mut lowlinks, &mut on_stack, &mut sccs);
+                self.tarjan_scc(
+                    cfg,
+                    block_id,
+                    &mut index_counter,
+                    &mut stack,
+                    &mut indices,
+                    &mut lowlinks,
+                    &mut on_stack,
+                    &mut sccs,
+                );
             }
         }
-        
+
         cfg.sccs = sccs;
         Ok(())
     }
-    
+
     /// Tarjan's SCC algorithm helper
-    fn tarjan_scc(&self, cfg: &ControlFlowGraph, v: BlockId, index_counter: &mut usize, 
-                  stack: &mut Vec<BlockId>, indices: &mut HashMap<BlockId, usize>,
-                  lowlinks: &mut HashMap<BlockId, usize>, on_stack: &mut HashSet<BlockId>,
-                  sccs: &mut Vec<Vec<BlockId>>) {
+    fn tarjan_scc(
+        &self,
+        cfg: &ControlFlowGraph,
+        v: BlockId,
+        index_counter: &mut usize,
+        stack: &mut Vec<BlockId>,
+        indices: &mut HashMap<BlockId, usize>,
+        lowlinks: &mut HashMap<BlockId, usize>,
+        on_stack: &mut HashSet<BlockId>,
+        sccs: &mut Vec<Vec<BlockId>>,
+    ) {
         indices.insert(v, *index_counter);
         lowlinks.insert(v, *index_counter);
         *index_counter += 1;
         stack.push(v);
         on_stack.insert(v);
-        
+
         if let Some(node) = cfg.nodes.get(&v) {
             for &w in &node.successors {
                 if !indices.contains_key(&w) {
-                    self.tarjan_scc(cfg, w, index_counter, stack, indices, lowlinks, on_stack, sccs);
+                    self.tarjan_scc(
+                        cfg,
+                        w,
+                        index_counter,
+                        stack,
+                        indices,
+                        lowlinks,
+                        on_stack,
+                        sccs,
+                    );
                     lowlinks.insert(v, lowlinks[&v].min(lowlinks[&w]));
                 } else if on_stack.contains(&w) {
                     lowlinks.insert(v, lowlinks[&v].min(indices[&w]));
                 }
             }
         }
-        
+
         if lowlinks[&v] == indices[&v] {
             let mut scc = Vec::new();
             loop {
@@ -738,16 +792,18 @@ impl CFGBuilder {
             sccs.push(scc);
         }
     }
-    
+
     /// Detect loops using dominator-based approach
     fn detect_loops(&self, cfg: &mut ControlFlowGraph) -> Result<(), CFGError> {
         if cfg.dominator_tree.is_none() {
-            return Err(CFGError::MalformedStructure("Dominator tree required for loop detection".to_string()));
+            return Err(CFGError::MalformedStructure(
+                "Dominator tree required for loop detection".to_string(),
+            ));
         }
-        
+
         let mut loops = Vec::new();
         let mut back_edges = Vec::new();
-        
+
         // Identify back edges (edges where target dominates source)
         for edge in &cfg.edges {
             if let Some(source_node) = cfg.nodes.get(&edge.from) {
@@ -756,19 +812,19 @@ impl CFGBuilder {
                 }
             }
         }
-        
+
         // For each back edge, construct the natural loop
         for back_edge in &back_edges {
             let header = back_edge.to;
             let mut body = HashSet::new();
             let mut worklist = VecDeque::new();
-            
+
             body.insert(header);
             if back_edge.from != header {
                 body.insert(back_edge.from);
                 worklist.push_back(back_edge.from);
             }
-            
+
             // Follow predecessors until we reach the header
             while let Some(node_id) = worklist.pop_front() {
                 if let Some(node) = cfg.nodes.get(&node_id) {
@@ -780,14 +836,14 @@ impl CFGBuilder {
                     }
                 }
             }
-            
+
             // Classify loop type
             let loop_type = if body.len() == 1 {
                 LoopType::SelfLoop
             } else {
                 LoopType::Natural // Default classification
             };
-            
+
             let loop_info = Loop {
                 header,
                 body,
@@ -800,10 +856,10 @@ impl CFGBuilder {
                 loop_type,
                 estimated_iterations: None,
             };
-            
+
             loops.push(loop_info);
         }
-        
+
         // Update loop depth information in nodes
         for (loop_idx, loop_info) in loops.iter().enumerate() {
             for &block_id in &loop_info.body {
@@ -813,63 +869,82 @@ impl CFGBuilder {
                 }
             }
         }
-        
+
         cfg.loops = loops;
         Ok(())
     }
-    
+
     /// Analyze exception flow
-    fn analyze_exception_flow(&self, cfg: &mut ControlFlowGraph, function: &IRFunction) -> Result<(), CFGError> {
+    fn analyze_exception_flow(
+        &self,
+        cfg: &mut ControlFlowGraph,
+        function: &IRFunction,
+    ) -> Result<(), CFGError> {
         let mut regions = Vec::new();
-        
+
         // Find try-catch-finally constructs
         for (_block_id, ir_block) in &function.blocks {
-            if let Terminator::TryBlock { try_block, catch_block, finally_block } = &ir_block.terminator {
+            if let Terminator::TryBlock {
+                try_block,
+                catch_block,
+                finally_block,
+            } = &ir_block.terminator
+            {
                 let mut protected_blocks = HashSet::new();
                 let mut handler_blocks = HashSet::new();
                 let mut finally_blocks = HashSet::new();
-                
+
                 // Collect try region blocks
-                self.collect_reachable_blocks(cfg, *try_block, &mut protected_blocks, Some(&handler_blocks));
-                
+                self.collect_reachable_blocks(
+                    cfg,
+                    *try_block,
+                    &mut protected_blocks,
+                    Some(&handler_blocks),
+                );
+
                 // Collect catch blocks
                 if let Some(catch) = catch_block {
                     self.collect_reachable_blocks(cfg, *catch, &mut handler_blocks, None);
                 }
-                
+
                 // Collect finally blocks
                 if let Some(finally) = finally_block {
                     self.collect_reachable_blocks(cfg, *finally, &mut finally_blocks, None);
                 }
-                
+
                 let region = ExceptionRegion {
                     protected_blocks,
                     handler_blocks,
                     finally_blocks,
                     handled_exceptions: vec!["Exception".to_string()], // Generic exception
-                    nesting_level: 0, // Will be computed later
+                    nesting_level: 0,                                  // Will be computed later
                 };
-                
+
                 regions.push(region);
             }
         }
-        
+
         cfg.exception_regions = regions;
         Ok(())
     }
-    
+
     /// Collect reachable blocks for exception analysis
-    fn collect_reachable_blocks(&self, cfg: &ControlFlowGraph, start: BlockId, 
-                              result: &mut HashSet<BlockId>, stop_at: Option<&HashSet<BlockId>>) {
+    fn collect_reachable_blocks(
+        &self,
+        cfg: &ControlFlowGraph,
+        start: BlockId,
+        result: &mut HashSet<BlockId>,
+        stop_at: Option<&HashSet<BlockId>>,
+    ) {
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
-        
+
         queue.push_back(start);
         visited.insert(start);
-        
+
         while let Some(block_id) = queue.pop_front() {
             result.insert(block_id);
-            
+
             if let Some(node) = cfg.nodes.get(&block_id) {
                 for &successor in &node.successors {
                     if let Some(stop_blocks) = stop_at {
@@ -877,7 +952,7 @@ impl CFGBuilder {
                             continue;
                         }
                     }
-                    
+
                     if !visited.contains(&successor) {
                         visited.insert(successor);
                         queue.push_back(successor);
@@ -886,26 +961,30 @@ impl CFGBuilder {
             }
         }
     }
-    
+
     /// Compute CFG complexity metrics
     fn compute_complexity_metrics(&self, cfg: &mut ControlFlowGraph) {
         let node_count = cfg.nodes.len() as u32;
         let edge_count = cfg.edges.len() as u32;
-        
+
         // McCabe's cyclomatic complexity: E - N + 2P (where P is connected components, assumed 1)
-        let cyclomatic_complexity = if edge_count >= node_count { edge_count - node_count + 2 } else { 1 };
-        
+        let cyclomatic_complexity = if edge_count >= node_count {
+            edge_count - node_count + 2
+        } else {
+            1
+        };
+
         let scc_count = cfg.sccs.len() as u32;
         let loop_count = cfg.loops.len() as u32;
         let max_loop_depth = cfg.nodes.values().map(|n| n.loop_depth).max().unwrap_or(0);
         let exception_region_count = cfg.exception_regions.len() as u32;
-        
+
         let control_flow_density = if node_count > 1 {
             edge_count as f32 / (node_count as f32 * (node_count as f32 - 1.0))
         } else {
             0.0
         };
-        
+
         cfg.complexity = CFGComplexity {
             cyclomatic_complexity,
             node_count,
@@ -918,25 +997,33 @@ impl CFGBuilder {
             essential_complexity: cyclomatic_complexity, // Based on reducible graph analysis
         };
     }
-    
+
     /// Identify critical edges (edges that must be split for certain optimizations)
     fn identify_critical_edges(&self, cfg: &mut ControlFlowGraph) {
         for edge in cfg.edges.iter_mut() {
-            let from_successors = cfg.nodes.get(&edge.from).map(|n| n.successors.len()).unwrap_or(0);
-            let to_predecessors = cfg.nodes.get(&edge.to).map(|n| n.predecessors.len()).unwrap_or(0);
-            
+            let from_successors = cfg
+                .nodes
+                .get(&edge.from)
+                .map(|n| n.successors.len())
+                .unwrap_or(0);
+            let to_predecessors = cfg
+                .nodes
+                .get(&edge.to)
+                .map(|n| n.predecessors.len())
+                .unwrap_or(0);
+
             // Critical edge: source has multiple successors AND target has multiple predecessors
             edge.is_critical = from_successors > 1 && to_predecessors > 1;
         }
     }
-    
+
     /// Validate basic CFG structure
     fn validate_basic_structure(&self, cfg: &ControlFlowGraph) -> Result<(), CFGError> {
         // Check entry block exists
         if !cfg.nodes.contains_key(&cfg.entry_block) {
             return Err(CFGError::InvalidBlockReference(cfg.entry_block));
         }
-        
+
         // Check all edge references are valid
         for edge in &cfg.edges {
             if !cfg.nodes.contains_key(&edge.from) {
@@ -946,41 +1033,45 @@ impl CFGBuilder {
                 return Err(CFGError::InvalidBlockReference(edge.to));
             }
         }
-        
+
         // Check consistency between edges and node successor/predecessor lists
         for edge in &cfg.edges {
             if let Some(from_node) = cfg.nodes.get(&edge.from) {
                 if !from_node.successors.contains(&edge.to) {
-                    return Err(CFGError::MalformedStructure(
-                        format!("Edge {}->{} exists but {} not in successors", edge.from, edge.to, edge.to)
-                    ));
+                    return Err(CFGError::MalformedStructure(format!(
+                        "Edge {}->{} exists but {} not in successors",
+                        edge.from, edge.to, edge.to
+                    )));
                 }
             }
-            
+
             if let Some(to_node) = cfg.nodes.get(&edge.to) {
                 if !to_node.predecessors.contains(&edge.from) {
-                    return Err(CFGError::MalformedStructure(
-                        format!("Edge {}->{} exists but {} not in predecessors", edge.from, edge.to, edge.from)
-                    ));
+                    return Err(CFGError::MalformedStructure(format!(
+                        "Edge {}->{} exists but {} not in predecessors",
+                        edge.from, edge.to, edge.from
+                    )));
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate complete CFG
     fn validate_cfg(&self, cfg: &ControlFlowGraph) -> Result<(), CFGError> {
         self.validate_basic_structure(cfg)?;
-        
+
         // Additional validations for advanced analysis
         if let Some(dom_tree) = &cfg.dominator_tree {
             // Validate dominator tree properties
             if dom_tree.root != cfg.entry_block {
-                return Err(CFGError::MalformedStructure("Dominator tree root mismatch".to_string()));
+                return Err(CFGError::MalformedStructure(
+                    "Dominator tree root mismatch".to_string(),
+                ));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -998,21 +1089,33 @@ impl ControlFlowGraph {
         let mut paths = Vec::new();
         let mut current_path = Vec::new();
         let mut visited = HashSet::new();
-        
-        self.dfs_paths(self.entry_block, target, &mut current_path, &mut visited, &mut paths);
+
+        self.dfs_paths(
+            self.entry_block,
+            target,
+            &mut current_path,
+            &mut visited,
+            &mut paths,
+        );
         paths
     }
-    
+
     /// DFS helper for path finding
-    fn dfs_paths(&self, current: BlockId, target: BlockId, current_path: &mut Vec<BlockId>,
-                visited: &mut HashSet<BlockId>, paths: &mut Vec<Vec<BlockId>>) {
+    fn dfs_paths(
+        &self,
+        current: BlockId,
+        target: BlockId,
+        current_path: &mut Vec<BlockId>,
+        visited: &mut HashSet<BlockId>,
+        paths: &mut Vec<Vec<BlockId>>,
+    ) {
         if visited.contains(&current) {
             return; // Avoid cycles
         }
-        
+
         current_path.push(current);
         visited.insert(current);
-        
+
         if current == target {
             paths.push(current_path.clone());
         } else if let Some(node) = self.nodes.get(&current) {
@@ -1020,29 +1123,29 @@ impl ControlFlowGraph {
                 self.dfs_paths(successor, target, current_path, visited, paths);
             }
         }
-        
+
         current_path.pop();
         visited.remove(&current);
     }
-    
+
     /// Perform depth-first traversal
-    pub fn dfs_traversal<F>(&self, start: BlockId, mut visit: F) 
-    where 
-        F: FnMut(BlockId) 
+    pub fn dfs_traversal<F>(&self, start: BlockId, mut visit: F)
+    where
+        F: FnMut(BlockId),
     {
         let mut visited = HashSet::new();
         let mut stack = Vec::new();
-        
+
         stack.push(start);
-        
+
         while let Some(block_id) = stack.pop() {
             if visited.contains(&block_id) {
                 continue;
             }
-            
+
             visited.insert(block_id);
             visit(block_id);
-            
+
             if let Some(node) = self.nodes.get(&block_id) {
                 for &successor in &node.successors {
                     if !visited.contains(&successor) {
@@ -1052,21 +1155,21 @@ impl ControlFlowGraph {
             }
         }
     }
-    
+
     /// Perform breadth-first traversal
     pub fn bfs_traversal<F>(&self, start: BlockId, mut visit: F)
     where
-        F: FnMut(BlockId)
+        F: FnMut(BlockId),
     {
         let mut visited = HashSet::new();
         let mut queue = VecDeque::new();
-        
+
         queue.push_back(start);
         visited.insert(start);
-        
+
         while let Some(block_id) = queue.pop_front() {
             visit(block_id);
-            
+
             if let Some(node) = self.nodes.get(&block_id) {
                 for &successor in &node.successors {
                     if !visited.contains(&successor) {
@@ -1077,32 +1180,32 @@ impl ControlFlowGraph {
             }
         }
     }
-    
+
     /// Get topological ordering of blocks (if DAG)
     pub fn topological_sort(&self) -> Result<Vec<BlockId>, CFGError> {
         let mut in_degree = HashMap::new();
         let mut queue = VecDeque::new();
         let mut result = Vec::new();
-        
+
         // Initialize in-degrees
         for &block_id in self.nodes.keys() {
             in_degree.insert(block_id, 0);
         }
-        
+
         for edge in &self.edges {
             *in_degree.entry(edge.to).or_insert(0) += 1;
         }
-        
+
         // Add nodes with no incoming edges
         for (&block_id, &degree) in &in_degree {
             if degree == 0 {
                 queue.push_back(block_id);
             }
         }
-        
+
         while let Some(block_id) = queue.pop_front() {
             result.push(block_id);
-            
+
             if let Some(node) = self.nodes.get(&block_id) {
                 for &successor in &node.successors {
                     if let Some(degree) = in_degree.get_mut(&successor) {
@@ -1114,20 +1217,20 @@ impl ControlFlowGraph {
                 }
             }
         }
-        
+
         if result.len() != self.nodes.len() {
             Err(CFGError::CyclicDependency)
         } else {
             Ok(result)
         }
     }
-    
+
     /// Export CFG to DOT format for visualization
     pub fn to_dot(&self) -> String {
         let mut dot = String::from("digraph CFG {\n");
         dot.push_str("    rankdir=TB;\n");
         dot.push_str("    node [shape=rectangle];\n\n");
-        
+
         // Add nodes
         for (block_id, node) in &self.nodes {
             let shape = if *block_id == self.entry_block {
@@ -1137,7 +1240,7 @@ impl ControlFlowGraph {
             } else {
                 "rectangle"
             };
-            
+
             let color = if !node.reachable {
                 "red"
             } else if node.loop_depth > 0 {
@@ -1145,13 +1248,15 @@ impl ControlFlowGraph {
             } else {
                 "white"
             };
-            
-            dot.push_str(&format!("    {} [label=\"Block {}\\ndepth: {}\", shape={}, fillcolor={}, style=filled];\n", 
-                                block_id, block_id, node.loop_depth, shape, color));
+
+            dot.push_str(&format!(
+                "    {} [label=\"Block {}\\ndepth: {}\", shape={}, fillcolor={}, style=filled];\n",
+                block_id, block_id, node.loop_depth, shape, color
+            ));
         }
-        
+
         dot.push_str("\n");
-        
+
         // Add edges
         for edge in &self.edges {
             let style = match edge.edge_type {
@@ -1161,7 +1266,7 @@ impl ControlFlowGraph {
                 EdgeType::Exception => "dotted",
                 _ => "solid",
             };
-            
+
             let color = if edge.is_back_edge {
                 "red"
             } else if edge.is_critical {
@@ -1169,7 +1274,7 @@ impl ControlFlowGraph {
             } else {
                 "black"
             };
-            
+
             let label = match edge.edge_type {
                 EdgeType::ConditionalTrue => "T",
                 EdgeType::ConditionalFalse => "F",
@@ -1178,15 +1283,17 @@ impl ControlFlowGraph {
                 EdgeType::Exception => "exception",
                 _ => "",
             };
-            
-            dot.push_str(&format!("    {} -> {} [label=\"{}\", style={}, color={}];\n",
-                                edge.from, edge.to, label, style, color));
+
+            dot.push_str(&format!(
+                "    {} -> {} [label=\"{}\", style={}, color={}];\n",
+                edge.from, edge.to, label, style, color
+            ));
         }
-        
+
         dot.push_str("}\n");
         dot
     }
-    
+
     /// Check if the CFG is reducible
     pub fn is_reducible(&self) -> bool {
         // A CFG is reducible if all its strongly connected components are trivial
@@ -1212,12 +1319,12 @@ impl ControlFlowGraph {
         }
         true
     }
-    
+
     /// Find unreachable code blocks
     pub fn find_unreachable_blocks(&self) -> HashSet<BlockId> {
         self.unreachable_blocks.clone()
     }
-    
+
     /// Get CFG complexity metrics
     pub fn get_complexity(&self) -> &CFGComplexity {
         &self.complexity
@@ -1227,42 +1334,44 @@ impl ControlFlowGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::ir::{IRFunction, IRBlock, Terminator, Operation};
     use crate::common::types::BlockId;
+    use crate::core::ir::{IRBlock, IRFunction, Operation, Terminator};
 
     fn create_test_function() -> IRFunction {
         let mut function = IRFunction::new("test_function".to_string());
-        
+
         // Create blocks
         let mut block0 = IRBlock::new(0);
         block0.set_terminator(Terminator::Branch {
-            condition: crate::core::ir::Expression::Literal(crate::common::types::Literal::Boolean(true)),
+            condition: crate::core::ir::Expression::Literal(
+                crate::common::types::Literal::Boolean(true),
+            ),
             true_target: 1,
             false_target: 2,
         });
         block0.successors = vec![1, 2];
-        
+
         let mut block1 = IRBlock::new(1);
         block1.set_terminator(Terminator::Jump(3));
         block1.predecessors = vec![0];
         block1.successors = vec![3];
-        
+
         let mut block2 = IRBlock::new(2);
         block2.set_terminator(Terminator::Jump(3));
         block2.predecessors = vec![0];
         block2.successors = vec![3];
-        
+
         let mut block3 = IRBlock::new(3);
         block3.set_terminator(Terminator::Return(None));
         block3.predecessors = vec![1, 2];
-        
+
         function.add_block(block0);
         function.add_block(block1);
         function.add_block(block2);
         function.add_block(block3);
         function.entry_block = 0;
         function.exit_blocks = vec![3];
-        
+
         function
     }
 
@@ -1271,7 +1380,7 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         assert_eq!(cfg.nodes.len(), 4);
         assert_eq!(cfg.entry_block, 0);
         assert_eq!(cfg.exit_blocks, vec![3]);
@@ -1283,15 +1392,17 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         // Should have 4 edges: 0->1, 0->2, 1->3, 2->3
         assert_eq!(cfg.edges.len(), 4);
-        
+
         // Check specific edges
-        let edge_types: Vec<_> = cfg.edges.iter()
+        let edge_types: Vec<_> = cfg
+            .edges
+            .iter()
             .map(|e| (e.from, e.to, e.edge_type))
             .collect();
-        
+
         assert!(edge_types.contains(&(0, 1, EdgeType::ConditionalTrue)));
         assert!(edge_types.contains(&(0, 2, EdgeType::ConditionalFalse)));
         assert!(edge_types.contains(&(1, 3, EdgeType::Unconditional)));
@@ -1303,12 +1414,12 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         // All blocks should be reachable
         for node in cfg.nodes.values() {
             assert!(node.reachable, "Block {} should be reachable", node.id);
         }
-        
+
         assert!(cfg.unreachable_blocks.is_empty());
     }
 
@@ -1317,7 +1428,7 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         let complexity = cfg.get_complexity();
         assert_eq!(complexity.node_count, 4);
         assert_eq!(complexity.edge_count, 4);
@@ -1330,11 +1441,11 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         assert!(cfg.dominator_tree.is_some());
         let dom_tree = cfg.dominator_tree.as_ref().unwrap();
         assert_eq!(dom_tree.root, 0);
-        
+
         // Block 0 should dominate all others
         // Block 3 should be dominated by 0
         assert_eq!(dom_tree.immediate_dominators.get(&1), Some(&0));
@@ -1347,12 +1458,12 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         let mut visited_blocks = Vec::new();
         cfg.dfs_traversal(0, |block_id| {
             visited_blocks.push(block_id);
         });
-        
+
         // Should visit all blocks starting from entry
         assert_eq!(visited_blocks.len(), 4);
         assert_eq!(visited_blocks[0], 0); // Should start with entry block
@@ -1363,8 +1474,11 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::new();
         let result = builder.build_cfg(&function);
-        
-        assert!(result.is_ok(), "CFG construction should succeed for valid function");
+
+        assert!(
+            result.is_ok(),
+            "CFG construction should succeed for valid function"
+        );
     }
 
     #[test]
@@ -1372,7 +1486,7 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         let dot = cfg.to_dot();
         assert!(dot.contains("digraph CFG"));
         assert!(dot.contains("Block 0"));
@@ -1388,11 +1502,19 @@ mod tests {
         let function = create_test_function();
         let builder = CFGBuilder::minimal();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         // Minimal builder should still create basic CFG
         assert_eq!(cfg.nodes.len(), 4);
         // But advanced analysis should be skipped
-        assert!(cfg.dominator_tree.is_none() || cfg.dominator_tree.as_ref().unwrap().immediate_dominators.is_empty());
+        assert!(
+            cfg.dominator_tree.is_none()
+                || cfg
+                    .dominator_tree
+                    .as_ref()
+                    .unwrap()
+                    .immediate_dominators
+                    .is_empty()
+        );
     }
 
     #[test]
@@ -1400,14 +1522,14 @@ mod tests {
         let mut function = IRFunction::new("single_block".to_string());
         let mut block = IRBlock::new(0);
         block.set_terminator(Terminator::Return(None));
-        
+
         function.add_block(block);
         function.entry_block = 0;
         function.exit_blocks = vec![0];
-        
+
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         assert_eq!(cfg.nodes.len(), 1);
         assert_eq!(cfg.edges.len(), 0);
         assert_eq!(cfg.complexity.cyclomatic_complexity, 1);
@@ -1416,10 +1538,12 @@ mod tests {
     #[test]
     fn test_switch_terminator() {
         let mut function = IRFunction::new("switch_function".to_string());
-        
+
         let mut block0 = IRBlock::new(0);
         block0.set_terminator(Terminator::Switch {
-            discriminant: crate::core::ir::Expression::Literal(crate::common::types::Literal::Integer(1)),
+            discriminant: crate::core::ir::Expression::Literal(
+                crate::common::types::Literal::Integer(1),
+            ),
             targets: vec![
                 (crate::common::types::Literal::Integer(1), 1),
                 (crate::common::types::Literal::Integer(2), 2),
@@ -1427,36 +1551,38 @@ mod tests {
             default_target: Some(3),
         });
         block0.successors = vec![1, 2, 3];
-        
+
         let mut block1 = IRBlock::new(1);
         block1.set_terminator(Terminator::Return(None));
         block1.predecessors = vec![0];
-        
+
         let mut block2 = IRBlock::new(2);
         block2.set_terminator(Terminator::Return(None));
         block2.predecessors = vec![0];
-        
+
         let mut block3 = IRBlock::new(3);
         block3.set_terminator(Terminator::Return(None));
         block3.predecessors = vec![0];
-        
+
         function.add_block(block0);
         function.add_block(block1);
         function.add_block(block2);
         function.add_block(block3);
         function.entry_block = 0;
         function.exit_blocks = vec![1, 2, 3];
-        
+
         let builder = CFGBuilder::new();
         let cfg = builder.build_cfg(&function).unwrap();
-        
+
         assert_eq!(cfg.edges.len(), 3); // Three outgoing edges from switch
-        
-        let switch_edges: Vec<_> = cfg.edges.iter()
+
+        let switch_edges: Vec<_> = cfg
+            .edges
+            .iter()
             .filter(|e| e.from == 0)
             .map(|e| e.edge_type)
             .collect();
-        
+
         assert!(switch_edges.contains(&EdgeType::SwitchCase(1)));
         assert!(switch_edges.contains(&EdgeType::SwitchCase(2)));
         assert!(switch_edges.contains(&EdgeType::SwitchDefault));

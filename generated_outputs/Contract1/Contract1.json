@@ -78,5 +78,5 @@
       "safe": false
     }
   ],
-  "pseudocode": "void main() {\n    // Initialize 1 local slots;\n    temp0 = convert<Buffer>(0x01020304);\n    // Initialize 1 local slots;\n    temp1 = convert<Buffer>(0x01020304);\n    return arg_6\n}\n"
+  "pseudocode": "void main() {\n    // Initialize 1 local slots, 0 static slots;\n    temp0 = convert<Buffer>(0x01020304);\n    // Initialize 1 local slots, 0 static slots;\n    temp1 = convert<Buffer>(0x01020304);\n    return arg_6\n}\n"
 }

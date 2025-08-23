@@ -1,5 +1,5 @@
 //! Comprehensive CLI interface for the Neo N3 decompiler
-//! 
+//!
 //! Provides multiple commands for different analysis and decompilation workflows:
 //! - `disasm`: Pretty disassembly with offsets and operands
 //! - `cfg`: Control flow graph visualization in GraphViz DOT format
@@ -7,26 +7,25 @@
 //! - `analyze`: Security analysis and NEP conformance checking
 //! - `info`: Metadata extraction and file information
 
-use std::path::PathBuf;
-use std::fs;
-use std::time::Instant;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json;
-use tracing::{info, warn, debug};
+use std::fs;
+use std::path::PathBuf;
+use std::time::Instant;
+use tracing::{debug, info, warn};
 
 use crate::{
-    Decompiler, DecompilationResult, DecompilerConfig,
-    NEFParser, ManifestParser, Disassembler,
+    DecompilationResult, Decompiler, DecompilerConfig, Disassembler, ManifestParser, NEFParser,
 };
 
 /// Neo N3 Smart Contract Decompiler
-/// 
+///
 /// A comprehensive tool for analyzing, decompiling, and understanding
 /// Neo N3 smart contracts from their compiled NEF bytecode.
 #[derive(Parser)]
 #[command(
     name = "neo-decompiler",
-    version = "0.1.0", 
+    version = "0.1.0",
     author = "Neo Development Team",
     about = "Neo N3 Smart Contract Decompiler",
     long_about = "A comprehensive decompiler for Neo N3 smart contracts that provides
@@ -273,13 +272,13 @@ pub enum Commands {
 pub enum ConfigCommands {
     /// Show current configuration
     Show,
-    
+
     /// Validate configuration file
     Validate {
         /// Configuration file to validate
         config_file: PathBuf,
     },
-    
+
     /// Generate default configuration file
     Generate {
         /// Output file for configuration
@@ -322,7 +321,7 @@ pub enum AnalysisFormat {
     Yaml,
     Text,
     Html,
-    Sarif,  // Static Analysis Results Interchange Format
+    Sarif, // Static Analysis Results Interchange Format
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -346,48 +345,116 @@ impl Cli {
     pub fn run(&self) -> Result<(), Box<dyn std::error::Error>> {
         // Load configuration
         let config = self.load_config()?;
-        
+
         // Execute the specific command
         match &self.command {
-            Commands::Disasm { 
-                nef_file, output, offsets, bytes, operands, comments, stats 
-            } => {
-                self.handle_disasm(nef_file, output.as_ref(), *offsets, *bytes, *operands, *comments, *stats)
-            },
-            
-            Commands::Cfg { 
-                nef_file, output, format, show_blocks, show_instructions, simplified, analysis 
-            } => {
-                self.handle_cfg(nef_file, output.as_ref(), format, *show_blocks, *show_instructions, *simplified, *analysis)
-            },
-            
-            Commands::Decompile { 
-                nef_file, manifest, output, format, optimization, type_inference, reports, metrics, multi_format 
-            } => {
-                self.handle_decompile(&config, nef_file, manifest.as_ref(), output.as_ref(), 
-                                    format, *optimization, *type_inference, *reports, *metrics, *multi_format)
-            },
-            
-            Commands::Analyze { 
-                nef_file, manifest, output, format, security, nep_compliance, performance, quality, all, threshold 
-            } => {
-                self.handle_analyze(&config, nef_file, manifest.as_ref(), output.as_ref(), 
-                                  format, *security, *nep_compliance, *performance, *quality, *all, threshold)
-            },
-            
-            Commands::Info { 
-                nef_file, manifest, format, metadata, methods, dependencies, stats, compiler 
-            } => {
-                self.handle_info(nef_file, manifest.as_ref(), format, *metadata, *methods, *dependencies, *stats, *compiler)
-            },
-            
-            Commands::Config { command } => {
-                self.handle_config(command)
-            },
-            
-            Commands::Init { directory, force } => {
-                self.handle_init(directory, *force)
-            },
+            Commands::Disasm {
+                nef_file,
+                output,
+                offsets,
+                bytes,
+                operands,
+                comments,
+                stats,
+            } => self.handle_disasm(
+                nef_file,
+                output.as_ref(),
+                *offsets,
+                *bytes,
+                *operands,
+                *comments,
+                *stats,
+            ),
+
+            Commands::Cfg {
+                nef_file,
+                output,
+                format,
+                show_blocks,
+                show_instructions,
+                simplified,
+                analysis,
+            } => self.handle_cfg(
+                nef_file,
+                output.as_ref(),
+                format,
+                *show_blocks,
+                *show_instructions,
+                *simplified,
+                *analysis,
+            ),
+
+            Commands::Decompile {
+                nef_file,
+                manifest,
+                output,
+                format,
+                optimization,
+                type_inference,
+                reports,
+                metrics,
+                multi_format,
+            } => self.handle_decompile(
+                &config,
+                nef_file,
+                manifest.as_ref(),
+                output.as_ref(),
+                format,
+                *optimization,
+                *type_inference,
+                *reports,
+                *metrics,
+                *multi_format,
+            ),
+
+            Commands::Analyze {
+                nef_file,
+                manifest,
+                output,
+                format,
+                security,
+                nep_compliance,
+                performance,
+                quality,
+                all,
+                threshold,
+            } => self.handle_analyze(
+                &config,
+                nef_file,
+                manifest.as_ref(),
+                output.as_ref(),
+                format,
+                *security,
+                *nep_compliance,
+                *performance,
+                *quality,
+                *all,
+                threshold,
+            ),
+
+            Commands::Info {
+                nef_file,
+                manifest,
+                format,
+                metadata,
+                methods,
+                dependencies,
+                stats,
+                compiler,
+            } => self.handle_info(
+                nef_file,
+                manifest.as_ref(),
+                format,
+                *metadata,
+                *methods,
+                *dependencies,
+                *stats,
+                *compiler,
+            ),
+
+            Commands::Config { command } => self.handle_config(command),
+
+            Commands::Init { directory, force } => self.handle_init(directory, *force),
         }
     }
 
@@ -397,7 +464,7 @@ impl Cli {
             Some(config_path) => {
                 info!("Loading configuration from: {:?}", config_path);
                 Ok(DecompilerConfig::load_from_file(config_path)?)
-            },
+            }
             None => {
                 debug!("Using default configuration");
                 Ok(DecompilerConfig::default())
@@ -406,237 +473,247 @@ impl Cli {
     }
 
     /// Handle disassembly command
-    fn handle_disasm(&self, nef_file: &PathBuf, output: Option<&PathBuf>, 
-                     offsets: bool, bytes: bool, operands: bool, comments: bool, stats: bool) 
-                     -> Result<(), Box<dyn std::error::Error>> {
-        
+    fn handle_disasm(
+        &self,
+        nef_file: &PathBuf,
+        output: Option<&PathBuf>,
+        offsets: bool,
+        bytes: bool,
+        operands: bool,
+        comments: bool,
+        stats: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         info!("Disassembling NEF file: {:?}", nef_file);
         let start_time = Instant::now();
-        
+
         // Read and parse NEF file
         let nef_data = fs::read(nef_file)?;
         let nef_parser = NEFParser::new();
         let nef_file_parsed = nef_parser.parse(&nef_data)?;
-        
+
         // Create disassembler with default config
         let config = DecompilerConfig::default();
         let disassembler = Disassembler::new(&config);
         let instructions = disassembler.disassemble(&nef_file_parsed.bytecode)?;
-        
+
         // Generate disassembly output
         let mut output_lines = Vec::new();
-        
+
         if stats {
             output_lines.push(format!("# NEF File Statistics"));
             output_lines.push(format!("# File size: {} bytes", nef_data.len()));
-            output_lines.push(format!("# Bytecode size: {} bytes", nef_file_parsed.bytecode.len()));
+            output_lines.push(format!(
+                "# Bytecode size: {} bytes",
+                nef_file_parsed.bytecode.len()
+            ));
             output_lines.push(format!("# Instructions: {}", instructions.len()));
             output_lines.push(format!("# Compiler: {:?}", nef_file_parsed.header.compiler));
             output_lines.push(String::new());
         }
-        
+
         for (i, instr) in instructions.iter().enumerate() {
             let mut line = String::new();
-            
+
             if offsets {
                 line.push_str(&format!("{:04x}: ", i * 4)); // Approximate offset
             }
-            
+
             if bytes {
                 // Add hex dump of instruction bytes
-                let end_offset = std::cmp::min(instr.offset as usize + 16, nef_file_parsed.bytecode.len());
-                let hex_bytes: Vec<String> = nef_file_parsed.bytecode[instr.offset as usize..end_offset]
+                let end_offset =
+                    std::cmp::min(instr.offset as usize + 16, nef_file_parsed.bytecode.len());
+                let hex_bytes: Vec<String> = nef_file_parsed.bytecode
+                    [instr.offset as usize..end_offset]
                     .iter()
                     .map(|b| format!("{:02x}", b))
                     .collect();
                 line.push_str(&format!("{:<32}  ", hex_bytes.join(" ")));
             }
-            
+
             line.push_str(&format!("{:?}", instr.opcode));
-            
+
             if operands && instr.operand.is_some() {
                 line.push_str(" ");
                 if let Some(ref operand) = instr.operand {
                     line.push_str(&format!("{:?}", operand));
                 }
             }
-            
+
             if comments {
                 line.push_str(&format!("  ; {:?}", instr.opcode)); // Add instruction explanation
             }
-            
+
             output_lines.push(line);
         }
-        
+
         let output_content = output_lines.join("\n");
-        
+
         // Write output
         match output {
             Some(output_path) => {
                 fs::write(output_path, &output_content)?;
                 info!("Disassembly written to: {:?}", output_path);
-            },
+            }
             None => {
                 println!("{}", output_content);
             }
         }
-        
+
         let duration = start_time.elapsed();
         debug!("Disassembly completed in {:?}", duration);
-        
+
         Ok(())
     }
 
     /// Handle CFG generation command
-    fn handle_cfg(&self, nef_file: &PathBuf, output: Option<&PathBuf>, format: &GraphFormat,
-                  show_blocks: bool, show_instructions: bool, simplified: bool, analysis: bool)
-                  -> Result<(), Box<dyn std::error::Error>> {
-        
+    fn handle_cfg(
+        &self,
+        nef_file: &PathBuf,
+        output: Option<&PathBuf>,
+        format: &GraphFormat,
+        show_blocks: bool,
+        show_instructions: bool,
+        simplified: bool,
+        analysis: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         info!("Generating control flow graph for: {:?}", nef_file);
         let start_time = Instant::now();
-        
+
         // Read and parse NEF file
         let nef_data = fs::read(nef_file)?;
         let nef_parser = NEFParser::new();
         let nef_file_parsed = nef_parser.parse(&nef_data)?;
-        
+
         // Create control flow graph from IR
         let mut dot_output = String::new();
         dot_output.push_str("digraph CFG {\n");
         dot_output.push_str("    rankdir=TB;\n");
         dot_output.push_str("    node [shape=box];\n\n");
-        
+
         // Add CFG nodes from IR blocks
         dot_output.push_str("    entry [label=\"Entry\"];\n");
         dot_output.push_str("    main [label=\"Main\\nInstructions: {}\" ];\n");
         dot_output.push_str("    exit [label=\"Exit\"];\n\n");
-        
+
         // Add edges
         dot_output.push_str("    entry -> main;\n");
         dot_output.push_str("    main -> exit;\n");
-        
+
         dot_output.push_str("}\n");
-        
+
         let output_content = match format {
             GraphFormat::Dot => dot_output,
-            GraphFormat::Json => {
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "nodes": [
-                        {"id": "entry", "label": "Entry"},
-                        {"id": "main", "label": "Main"},
-                        {"id": "exit", "label": "Exit"}
-                    ],
-                    "edges": [
-                        {"from": "entry", "to": "main"},
-                        {"from": "main", "to": "exit"}
-                    ]
-                }))?
-            },
+            GraphFormat::Json => serde_json::to_string_pretty(&serde_json::json!({
+                "nodes": [
+                    {"id": "entry", "label": "Entry"},
+                    {"id": "main", "label": "Main"},
+                    {"id": "exit", "label": "Exit"}
+                ],
+                "edges": [
+                    {"from": "entry", "to": "main"},
+                    {"from": "main", "to": "exit"}
+                ]
+            }))?,
             _ => {
                 warn!("Format {:?} not yet implemented, using DOT", format);
                 dot_output
             }
         };
-        
+
         // Write output
         match output {
             Some(output_path) => {
                 fs::write(output_path, &output_content)?;
                 info!("CFG written to: {:?}", output_path);
-            },
+            }
             None => {
                 println!("{}", output_content);
             }
         }
-        
+
         let duration = start_time.elapsed();
         debug!("CFG generation completed in {:?}", duration);
-        
+
         Ok(())
     }
 
     /// Handle decompilation command
-    fn handle_decompile(&self, config: &DecompilerConfig, nef_file: &PathBuf, 
-                       manifest: Option<&PathBuf>, output: Option<&PathBuf>,
-                       format: &PseudocodeFormat, optimization: u8, type_inference: bool,
-                       reports: bool, metrics: bool, multi_format: bool)
-                       -> Result<(), Box<dyn std::error::Error>> {
-        
+    fn handle_decompile(
+        &self,
+        config: &DecompilerConfig,
+        nef_file: &PathBuf,
+        manifest: Option<&PathBuf>,
+        output: Option<&PathBuf>,
+        format: &PseudocodeFormat,
+        optimization: u8,
+        type_inference: bool,
+        reports: bool,
+        metrics: bool,
+        multi_format: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         info!("Decompiling NEF file: {:?}", nef_file);
         let start_time = Instant::now();
-        
+
         // Read NEF file
         let nef_data = fs::read(nef_file)?;
-        
+
         // Read manifest if provided
         let manifest_json = match manifest {
             Some(manifest_path) => {
                 info!("Loading manifest: {:?}", manifest_path);
                 Some(fs::read_to_string(manifest_path)?)
-            },
+            }
             None => {
                 warn!("No manifest provided, proceeding without contract metadata");
                 None
             }
         };
-        
+
         // Create decompiler and perform decompilation
         let mut decompiler = Decompiler::new(config.clone());
         let result = decompiler.decompile(&nef_data, manifest_json.as_deref())?;
-        
+
         // Generate output based on format
         let output_content = match format {
             PseudocodeFormat::Pseudocode => result.pseudocode.clone(),
-            PseudocodeFormat::Python => {
-                self.convert_to_python_style(&result.pseudocode)
-            },
-            PseudocodeFormat::C => {
-                self.convert_to_c_style(&result.pseudocode)
-            },
-            PseudocodeFormat::Rust => {
-                self.convert_to_rust_style(&result.pseudocode)
-            },
-            PseudocodeFormat::Typescript => {
-                self.convert_to_typescript_style(&result.pseudocode)
-            },
+            PseudocodeFormat::Python => self.convert_to_python_style(&result.pseudocode),
+            PseudocodeFormat::C => self.convert_to_c_style(&result.pseudocode),
+            PseudocodeFormat::Rust => self.convert_to_rust_style(&result.pseudocode),
+            PseudocodeFormat::Typescript => self.convert_to_typescript_style(&result.pseudocode),
             PseudocodeFormat::Nal => {
                 // NAL would be closer to the original assembly
                 result.pseudocode.clone()
-            },
-            PseudocodeFormat::Json => {
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "pseudocode": result.pseudocode,
-                    "instructions_count": result.instructions.len(),
-                    "contract_name": result.manifest.as_ref().map(|m| &m.name),
-                    "methods": result.manifest.as_ref().map(|m| &m.abi.methods),
-                    "events": result.manifest.as_ref().map(|m| &m.abi.events),
-                    "compilation_info": {
-                        "optimization_level": optimization,
-                        "type_inference_enabled": type_inference
-                    }
-                }))?
-            },
-            PseudocodeFormat::Html => {
-                self.generate_html_output(&result.pseudocode, &result)
             }
+            PseudocodeFormat::Json => serde_json::to_string_pretty(&serde_json::json!({
+                "pseudocode": result.pseudocode,
+                "instructions_count": result.instructions.len(),
+                "contract_name": result.manifest.as_ref().map(|m| &m.name),
+                "methods": result.manifest.as_ref().map(|m| &m.abi.methods),
+                "events": result.manifest.as_ref().map(|m| &m.abi.events),
+                "compilation_info": {
+                    "optimization_level": optimization,
+                    "type_inference_enabled": type_inference
+                }
+            }))?,
+            PseudocodeFormat::Html => self.generate_html_output(&result.pseudocode, &result),
         };
-        
+
         // Write output
         match output {
             Some(output_path) => {
                 fs::write(output_path, &output_content)?;
                 info!("Decompilation written to: {:?}", output_path);
-                
+
                 if multi_format {
                     // Generate additional formats
                     self.generate_multi_format_outputs(&result, output_path)?;
                 }
-            },
+            }
             None => {
                 println!("{}", output_content);
             }
         }
-        
+
         if metrics {
             let duration = start_time.elapsed();
             eprintln!("\n📊 Performance Metrics:");
@@ -644,26 +721,34 @@ impl Cli {
             eprintln!("   Instructions processed: {}", result.instructions.len());
             eprintln!("   Output size: {} bytes", output_content.len());
         }
-        
+
         debug!("Decompilation completed in {:?}", start_time.elapsed());
-        
+
         Ok(())
     }
 
     /// Handle analysis command
-    fn handle_analyze(&self, config: &DecompilerConfig, nef_file: &PathBuf,
-                     manifest: Option<&PathBuf>, output: Option<&PathBuf>,
-                     format: &AnalysisFormat, security: bool, nep_compliance: bool,
-                     performance: bool, quality: bool, all: bool, threshold: &Severity)
-                     -> Result<(), Box<dyn std::error::Error>> {
-        
+    fn handle_analyze(
+        &self,
+        config: &DecompilerConfig,
+        nef_file: &PathBuf,
+        manifest: Option<&PathBuf>,
+        output: Option<&PathBuf>,
+        format: &AnalysisFormat,
+        security: bool,
+        nep_compliance: bool,
+        performance: bool,
+        quality: bool,
+        all: bool,
+        threshold: &Severity,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         info!("Analyzing NEF file: {:?}", nef_file);
         let start_time = Instant::now();
-        
+
         // Read files
         let nef_data = fs::read(nef_file)?;
         let manifest_json = manifest.map(|p| fs::read_to_string(p)).transpose()?;
-        
+
         // Perform comprehensive contract analysis
         let mut analysis_results = serde_json::json!({
             "file": nef_file,
@@ -677,33 +762,36 @@ impl Cli {
                 "low_severity": 0
             }
         });
-        
+
         let mut analysis_types = Vec::new();
-        
+
         if security || all {
             analysis_types.push("security");
             // Add security analysis results
         }
-        
+
         if nep_compliance || all {
             analysis_types.push("nep_compliance");
             // Add NEP compliance results
         }
-        
+
         if performance || all {
             analysis_types.push("performance");
             // Add performance analysis results
         }
-        
+
         if quality || all {
             analysis_types.push("quality");
             // Add code quality results
         }
-        
+
         analysis_results["analysis_types"] = serde_json::Value::Array(
-            analysis_types.iter().map(|s| serde_json::Value::String(s.to_string())).collect()
+            analysis_types
+                .iter()
+                .map(|s| serde_json::Value::String(s.to_string()))
+                .collect(),
         );
-        
+
         // Generate output based on format
         let output_content = match format {
             AnalysisFormat::Json => serde_json::to_string_pretty(&analysis_results)?,
@@ -711,52 +799,61 @@ impl Cli {
             AnalysisFormat::Text => {
                 format!("Analysis Results\n================\n\nFile: {:?}\nAnalysis types: {:?}\n\nNo issues found.\n", 
                        nef_file, analysis_types)
-            },
+            }
             AnalysisFormat::Html => {
                 format!("<!DOCTYPE html>\n<html><head><title>Analysis Results</title></head>\n<body><h1>Analysis Results</h1><pre>{}</pre></body></html>",
                        html_escape::encode_text(&serde_json::to_string_pretty(&analysis_results)?))
-            },
+            }
             AnalysisFormat::Sarif => "SARIF output not yet implemented".to_string(),
         };
-        
+
         // Write output
         match output {
             Some(output_path) => {
                 fs::write(output_path, &output_content)?;
                 info!("Analysis results written to: {:?}", output_path);
-            },
+            }
             None => {
                 println!("{}", output_content);
             }
         }
-        
+
         debug!("Analysis completed in {:?}", start_time.elapsed());
-        
+
         Ok(())
     }
 
     /// Handle info command
-    fn handle_info(&self, nef_file: &PathBuf, manifest: Option<&PathBuf>, format: &InfoFormat,
-                   metadata: bool, methods: bool, dependencies: bool, stats: bool, compiler: bool)
-                   -> Result<(), Box<dyn std::error::Error>> {
-        
+    fn handle_info(
+        &self,
+        nef_file: &PathBuf,
+        manifest: Option<&PathBuf>,
+        format: &InfoFormat,
+        metadata: bool,
+        methods: bool,
+        dependencies: bool,
+        stats: bool,
+        compiler: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         info!("Extracting information from: {:?}", nef_file);
-        
+
         // Read and parse NEF file
         let nef_data = fs::read(nef_file)?;
         let nef_parser = NEFParser::new();
         let nef_file_parsed = nef_parser.parse(&nef_data)?;
-        
+
         // Read manifest if provided
-        let manifest_data = manifest.map(|p| {
-            let json_str = fs::read_to_string(p).ok()?;
-            let manifest_parser = ManifestParser::new();
-            manifest_parser.parse(&json_str).ok()
-        }).flatten();
-        
+        let manifest_data = manifest
+            .map(|p| {
+                let json_str = fs::read_to_string(p).ok()?;
+                let manifest_parser = ManifestParser::new();
+                manifest_parser.parse(&json_str).ok()
+            })
+            .flatten();
+
         // Collect information
         let mut info = serde_json::json!({});
-        
+
         if metadata {
             info["file_metadata"] = serde_json::json!({
                 "path": nef_file,
@@ -765,26 +862,26 @@ impl Cli {
                 "magic_number": format!("0x{:08x}", u32::from_le_bytes([nef_data[0], nef_data[1], nef_data[2], nef_data[3]]))
             });
         }
-        
+
         if compiler {
             info["compiler_info"] = serde_json::json!({
                 "compiler": format!("{:?}", nef_file_parsed.header.compiler)
             });
         }
-        
+
         if stats {
             info["bytecode_stats"] = serde_json::json!({
                 "bytecode_length": nef_file_parsed.bytecode.len(),
                 "estimated_instructions": nef_file_parsed.bytecode.len() / 4 // Rough estimate
             });
         }
-        
+
         if let Some(manifest) = &manifest_data {
             if methods {
                 info["contract_methods"] = serde_json::json!(manifest.abi.methods);
                 info["contract_events"] = serde_json::json!(manifest.abi.events);
             }
-            
+
             if dependencies {
                 info["dependencies"] = serde_json::json!({
                     "groups": manifest.groups,
@@ -793,7 +890,7 @@ impl Cli {
                 });
             }
         }
-        
+
         // Generate output based on format
         let output_content = match format {
             InfoFormat::Json => serde_json::to_string_pretty(&info)?,
@@ -804,20 +901,20 @@ impl Cli {
                 lines.push("=".repeat(20));
                 lines.push(format!("File: {:?}", nef_file));
                 lines.push(format!("Size: {} bytes", nef_data.len()));
-                
+
                 if let Some(manifest) = &manifest_data {
                     lines.push(format!("Name: {}", manifest.name));
                     lines.push(format!("Methods: {}", manifest.abi.methods.len()));
                     lines.push(format!("Events: {}", manifest.abi.events.len()));
                 }
-                
+
                 lines.join("\n")
-            },
+            }
             InfoFormat::Table => "Table format not implemented".to_string(),
         };
-        
+
         println!("{}", output_content);
-        
+
         Ok(())
     }
 
@@ -827,12 +924,12 @@ impl Cli {
             ConfigCommands::Show => {
                 let config = self.load_config()?;
                 println!("{}", serde_json::to_string_pretty(&config)?);
-            },
+            }
             ConfigCommands::Validate { config_file } => {
                 info!("Validating configuration: {:?}", config_file);
                 let _config = DecompilerConfig::load_from_file(config_file)?;
                 println!("✅ Configuration file is valid");
-            },
+            }
             ConfigCommands::Generate { output } => {
                 let default_config = DecompilerConfig::default();
                 let config_toml = toml::to_string_pretty(&default_config)?;
@@ -844,36 +941,40 @@ impl Cli {
     }
 
     /// Handle initialization command
-    fn handle_init(&self, directory: &PathBuf, force: bool) -> Result<(), Box<dyn std::error::Error>> {
+    fn handle_init(
+        &self,
+        directory: &PathBuf,
+        force: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         info!("Initializing decompiler project in: {:?}", directory);
-        
+
         // Create directory if it doesn't exist
         fs::create_dir_all(directory)?;
-        
+
         // Generate example files
         let config_path = directory.join("decompiler.toml");
         let readme_path = directory.join("README_DECOMPILER.md");
-        
+
         // Check if files exist and handle force flag
         if !force {
             if config_path.exists() || readme_path.exists() {
                 return Err("Files already exist. Use --force to overwrite.".into());
             }
         }
-        
+
         // Generate config file
         let default_config = DecompilerConfig::default();
         let config_toml = toml::to_string_pretty(&default_config)?;
         fs::write(&config_path, config_toml)?;
-        
+
         // Generate README
         let readme_content = "# Neo N3 Decompiler Project\n\nProject initialized.";
         fs::write(&readme_path, readme_content)?;
-        
+
         println!("✅ Initialized decompiler project:");
         println!("   📝 {}", config_path.display());
         println!("   📖 {}", readme_path.display());
-        
+
         Ok(())
     }
 
@@ -897,15 +998,24 @@ impl Cli {
 
     fn convert_to_c_style(&self, pseudocode: &str) -> String {
         // Add type annotations and semicolons
-        format!("// Generated from Neo N3 bytecode\n#include <neo.h>\n\n{}", pseudocode)
+        format!(
+            "// Generated from Neo N3 bytecode\n#include <neo.h>\n\n{}",
+            pseudocode
+        )
     }
 
     fn convert_to_rust_style(&self, pseudocode: &str) -> String {
-        format!("// Generated from Neo N3 bytecode\nuse neo::*;\n\n{}", pseudocode)
+        format!(
+            "// Generated from Neo N3 bytecode\nuse neo::*;\n\n{}",
+            pseudocode
+        )
     }
 
     fn convert_to_typescript_style(&self, pseudocode: &str) -> String {
-        format!("// Generated from Neo N3 bytecode\nimport {{ Neo }} from 'neo';\n\n{}", pseudocode)
+        format!(
+            "// Generated from Neo N3 bytecode\nimport {{ Neo }} from 'neo';\n\n{}",
+            pseudocode
+        )
     }
 
     fn generate_html_output(&self, pseudocode: &str, _result: &DecompilationResult) -> String {
@@ -934,23 +1044,27 @@ impl Cli {
         )
     }
 
-    fn generate_multi_format_outputs(&self, result: &DecompilationResult, base_path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    fn generate_multi_format_outputs(
+        &self,
+        result: &DecompilationResult,
+        base_path: &PathBuf,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let base = base_path.with_extension("");
-        
+
         // Generate Python version
         let python_content = self.convert_to_python_style(&result.pseudocode);
         fs::write(base.with_extension("py"), python_content)?;
-        
+
         // Generate C version
         let c_content = self.convert_to_c_style(&result.pseudocode);
         fs::write(base.with_extension("c"), c_content)?;
-        
+
         // Generate HTML version
         let html_content = self.generate_html_output(&result.pseudocode, result);
         fs::write(base.with_extension("html"), html_content)?;
-        
+
         info!("Generated additional formats: .py, .c, .html");
-        
+
         Ok(())
     }
 }

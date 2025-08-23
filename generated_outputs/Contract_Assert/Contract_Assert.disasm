@@ -1,65 +1,64 @@
-0000: LDARG1  ; LDARG1
-0004: INITSLOT SlotInit { static_slots: 0, local_slots: 1 }  ; INITSLOT
-0008: PUSH0  ; PUSH0
-000c: LDARG6  ; LDARG6
-0010: PUSHT  ; PUSHT
-0014: ASSERT  ; ASSERT
-0018: PUSH1  ; PUSH1
-001c: LDARG6  ; LDARG6
-0020: PUSHF  ; PUSHF
-0024: ASSERT  ; ASSERT
-0028: PUSHINT8 Integer(100)  ; PUSHINT8
-002c: LDARG6  ; LDARG6
-0030: LDLOC SlotIndex(64)  ; LDLOC
-0034: INITSLOT SlotInit { static_slots: 0, local_slots: 1 }  ; INITSLOT
-0038: PUSH0  ; PUSH0
-003c: LDARG6  ; LDARG6
-0040: CALL JumpTarget8(-21)  ; CALL
-0044: LDARG6  ; LDARG6
-0048: PUSH1  ; PUSH1
-004c: LDARG6  ; LDARG6
-0050: LDLOC SlotIndex(64)  ; LDLOC
-0054: INITSLOT SlotInit { static_slots: 0, local_slots: 2 }  ; INITSLOT
-0058: PUSH0  ; PUSH0
-005c: LDARG6  ; LDARG6
-0060: TRY TryBlock { catch_offset: 8, finally_offset: Some(13) }  ; TRY
-0064: CALL JumpTarget8(-36)  ; CALL
-0068: LDARG6  ; LDARG6
-006c: ENDTRY JumpTarget8(10)  ; ENDTRY
-0070: LDARG SlotIndex(17)  ; LDARG
-0074: LDARG6  ; LDARG6
-0078: ENDTRY JumpTarget8(5)  ; ENDTRY
-007c: PUSH2  ; PUSH2
-0080: LDARG6  ; LDARG6
-0084: ENDFINALLY  ; ENDFINALLY
-0088: LDLOC SlotIndex(64)  ; LDLOC
-008c: INITSLOT SlotInit { static_slots: 0, local_slots: 2 }  ; INITSLOT
-0090: PUSH0  ; PUSH0
-0094: LDARG6  ; LDARG6
-0098: TRY TryBlock { catch_offset: 17, finally_offset: Some(23) }  ; TRY
-009c: PUSH1  ; PUSH1
-00a0: LDARG6  ; LDARG6
-00a4: PUSHDATA1 Bytes([101, 120, 99, 101, 112, 116, 105, 111, 110])  ; PUSHDATA1
-00a8: THROW  ; THROW
-00ac: LDARG SlotIndex(52)  ; LDARG
-00b0: UNKNOWN_B6  ; UNKNOWN_B6
-00b4: LDARG6  ; LDARG6
-00b8: ENDTRY JumpTarget8(5)  ; ENDTRY
-00bc: PUSH2  ; PUSH2
-00c0: LDARG6  ; LDARG6
-00c4: ENDFINALLY  ; ENDFINALLY
-00c8: LDLOC SlotIndex(64)  ; LDLOC
-00cc: INITSLOT SlotInit { static_slots: 0, local_slots: 2 }  ; INITSLOT
-00d0: PUSH0  ; PUSH0
-00d4: LDARG6  ; LDARG6
-00d8: TRY TryBlock { catch_offset: 7, finally_offset: Some(12) }  ; TRY
-00dc: PUSH1  ; PUSH1
-00e0: LDARG6  ; LDARG6
-00e4: ENDTRY JumpTarget8(11)  ; ENDTRY
-00e8: LDARG SlotIndex(18)  ; LDARG
-00ec: LDARG6  ; LDARG6
-00f0: ENDTRY JumpTarget8(6)  ; ENDTRY
-00f4: CALL JumpTarget8(-101)  ; CALL
-00f8: LDARG6  ; LDARG6
-00fc: ENDFINALLY  ; ENDFINALLY
-0100: LDLOC SlotIndex(64)  ; LDLOC
+0000: INITSLOT SlotInit { static_slots: 0, local_slots: 1 }  ; INITSLOT
+0004: PUSH0  ; PUSH0
+0008: LDARG6  ; LDARG6
+000c: PUSHT  ; PUSHT
+0010: ASSERT  ; ASSERT
+0014: PUSH1  ; PUSH1
+0018: LDARG6  ; LDARG6
+001c: PUSHF  ; PUSHF
+0020: ASSERT  ; ASSERT
+0024: PUSHINT8 Integer(100)  ; PUSHINT8
+0028: LDARG6  ; LDARG6
+002c: LDLOC SlotIndex(64)  ; LDLOC
+0030: INITSLOT SlotInit { static_slots: 0, local_slots: 1 }  ; INITSLOT
+0034: PUSH0  ; PUSH0
+0038: LDARG6  ; LDARG6
+003c: CALL JumpTarget8(-21)  ; CALL
+0040: LDARG6  ; LDARG6
+0044: PUSH1  ; PUSH1
+0048: LDARG6  ; LDARG6
+004c: LDLOC SlotIndex(64)  ; LDLOC
+0050: INITSLOT SlotInit { static_slots: 0, local_slots: 2 }  ; INITSLOT
+0054: PUSH0  ; PUSH0
+0058: LDARG6  ; LDARG6
+005c: TRY TryBlock { catch_offset: 8, finally_offset: Some(13) }  ; TRY
+0060: CALL JumpTarget8(-36)  ; CALL
+0064: LDARG6  ; LDARG6
+0068: ENDTRY JumpTarget8(10)  ; ENDTRY
+006c: LDARG SlotIndex(17)  ; LDARG
+0070: LDARG6  ; LDARG6
+0074: ENDTRY JumpTarget8(5)  ; ENDTRY
+0078: PUSH2  ; PUSH2
+007c: LDARG6  ; LDARG6
+0080: ENDFINALLY  ; ENDFINALLY
+0084: LDLOC SlotIndex(64)  ; LDLOC
+0088: INITSLOT SlotInit { static_slots: 0, local_slots: 2 }  ; INITSLOT
+008c: PUSH0  ; PUSH0
+0090: LDARG6  ; LDARG6
+0094: TRY TryBlock { catch_offset: 17, finally_offset: Some(23) }  ; TRY
+0098: PUSH1  ; PUSH1
+009c: LDARG6  ; LDARG6
+00a0: PUSHDATA1 Bytes([101, 120, 99, 101, 112, 116, 105, 111, 110])  ; PUSHDATA1
+00a4: THROW  ; THROW
+00a8: LDARG SlotIndex(52)  ; LDARG
+00ac: UNKNOWN_B6  ; UNKNOWN_B6
+00b0: LDARG6  ; LDARG6
+00b4: ENDTRY JumpTarget8(5)  ; ENDTRY
+00b8: PUSH2  ; PUSH2
+00bc: LDARG6  ; LDARG6
+00c0: ENDFINALLY  ; ENDFINALLY
+00c4: LDLOC SlotIndex(64)  ; LDLOC
+00c8: INITSLOT SlotInit { static_slots: 0, local_slots: 2 }  ; INITSLOT
+00cc: PUSH0  ; PUSH0
+00d0: LDARG6  ; LDARG6
+00d4: TRY TryBlock { catch_offset: 7, finally_offset: Some(12) }  ; TRY
+00d8: PUSH1  ; PUSH1
+00dc: LDARG6  ; LDARG6
+00e0: ENDTRY JumpTarget8(11)  ; ENDTRY
+00e4: LDARG SlotIndex(18)  ; LDARG
+00e8: LDARG6  ; LDARG6
+00ec: ENDTRY JumpTarget8(6)  ; ENDTRY
+00f0: CALL JumpTarget8(-101)  ; CALL
+00f4: LDARG6  ; LDARG6
+00f8: ENDFINALLY  ; ENDFINALLY
+00fc: LDLOC SlotIndex(64)  ; LDLOC

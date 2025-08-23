@@ -1,0 +1,362 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_BigInteger",
+  "events": [],
+  "instructions_count": 249,
+  "methods": [
+    {
+      "name": "testPow",
+      "offset": 0,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testSqrt",
+      "offset": 7,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testsbyte",
+      "offset": 13,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testbyte",
+      "offset": 48,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testshort",
+      "offset": 82,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testushort",
+      "offset": 120,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testint",
+      "offset": 156,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testuint",
+      "offset": 200,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testlong",
+      "offset": 240,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testulong",
+      "offset": 296,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testchar",
+      "offset": 344,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testchartostring",
+      "offset": 380,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testIsEven",
+      "offset": 400,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "testIsZero",
+      "offset": 408,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "testIsOne",
+      "offset": 415,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "testSign",
+      "offset": 422,
+      "parameters": [
+        {
+          "name": "input",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testAdd",
+      "offset": 428,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testSubtract",
+      "offset": 435,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testNegate",
+      "offset": 442,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testMultiply",
+      "offset": 448,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testDivide",
+      "offset": 455,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testRemainder",
+      "offset": 462,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testCompare",
+      "offset": 469,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testGreatestCommonDivisor",
+      "offset": 477,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testEquals",
+      "offset": 493,
+      "parameters": [
+        {
+          "name": "x",
+          "param_type": "Integer"
+        },
+        {
+          "name": "y",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "parseConstant",
+      "offset": 500,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testModPow",
+      "offset": 518,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 0 local slots, 2 static slots;\n    // Unhandled opcode: STARG5 at offset 3;\n    // Unhandled opcode: STARG6 at offset 4;\n    temp0 = (arg_2 ** arg_3);\n    return temp0\n}\n"
+}

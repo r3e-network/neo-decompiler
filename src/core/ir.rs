@@ -1,7 +1,7 @@
 //! Intermediate Representation (IR) definitions for Neo N3 decompiler
 
+use crate::analysis::{effects::KeyPattern, types::Type};
 use crate::common::types::*;
-use crate::analysis::{types::Type, effects::KeyPattern};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -144,18 +144,14 @@ pub enum Operation {
         target: Variable,
     },
     /// Throw exception
-    Throw {
-        exception: Expression,
-    },
+    Throw { exception: Expression },
     /// Assert condition
     Assert {
         condition: Expression,
         message: Option<Expression>,
     },
     /// Abort execution
-    Abort {
-        message: Option<Expression>,
-    },
+    Abort { message: Option<Expression> },
     /// Effect annotation
     Effect {
         effect_type: EffectType,
@@ -237,18 +233,14 @@ pub enum Expression {
     /// Map construction
     Map(Vec<(Expression, Expression)>),
     /// Struct construction
-    Struct {
-        fields: Vec<(String, Expression)>,
-    },
+    Struct { fields: Vec<(String, Expression)> },
     /// Array creation expression
     ArrayCreate {
         element_type: Box<Type>,
         size: Box<Expression>,
     },
     /// Struct creation expression
-    StructCreate {
-        fields: Vec<(String, Expression)>,
-    },
+    StructCreate { fields: Vec<(String, Expression)> },
     /// Map creation expression
     MapCreate {
         entries: Vec<(Expression, Expression)>,
@@ -258,7 +250,16 @@ pub enum Expression {
 /// Stack operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StackOp {
-    Push, Pop, Dup, Swap, Drop, Pick, Roll, Reverse, Size, Clear,
+    Push,
+    Pop,
+    Dup,
+    Swap,
+    Drop,
+    Pick,
+    Roll,
+    Reverse,
+    Size,
+    Clear,
 }
 
 /// Effect types for analysis
@@ -487,15 +488,23 @@ impl IRFunction {
     /// Calculate complexity metrics
     pub fn calculate_complexity(&mut self) {
         let blocks = self.blocks.len() as u32;
-        let operations = self.blocks.values()
+        let operations = self
+            .blocks
+            .values()
             .map(|block| block.operations.len() as u32)
             .sum();
-        
+
         // McCabe's cyclomatic complexity: edges - nodes + 2
-        let edges = self.blocks.values()
+        let edges = self
+            .blocks
+            .values()
             .map(|block| block.successors.len() as u32)
             .sum::<u32>();
-        let cyclomatic = if edges >= blocks { edges - blocks + 2 } else { 1 };
+        let cyclomatic = if edges >= blocks {
+            edges - blocks + 2
+        } else {
+            1
+        };
 
         self.metadata.complexity = ComplexityMetrics {
             cyclomatic,
@@ -562,7 +571,7 @@ impl std::fmt::Display for Severity {
         match self {
             Severity::Info => write!(f, "INFO"),
             Severity::Low => write!(f, "LOW"),
-            Severity::Medium => write!(f, "MEDIUM"), 
+            Severity::Medium => write!(f, "MEDIUM"),
             Severity::High => write!(f, "HIGH"),
             Severity::Critical => write!(f, "CRITICAL"),
         }
@@ -593,7 +602,7 @@ mod tests {
     fn test_add_block_to_function() {
         let mut function = IRFunction::new("test".to_string());
         let block = IRBlock::new(0);
-        
+
         function.add_block(block);
         assert_eq!(function.blocks.len(), 1);
         assert!(function.get_block(0).is_some());
@@ -602,20 +611,20 @@ mod tests {
     #[test]
     fn test_complexity_calculation() {
         let mut function = IRFunction::new("test".to_string());
-        
+
         // Add two blocks with operations
         let mut block1 = IRBlock::new(0);
         block1.add_operation(Operation::Comment("test1".to_string()));
         block1.successors.push(1);
-        
+
         let mut block2 = IRBlock::new(1);
         block2.add_operation(Operation::Comment("test2".to_string()));
         block2.add_operation(Operation::Comment("test3".to_string()));
-        
+
         function.add_block(block1);
         function.add_block(block2);
         function.calculate_complexity();
-        
+
         assert_eq!(function.metadata.complexity.blocks, 2);
         assert_eq!(function.metadata.complexity.operations, 3);
         assert_eq!(function.metadata.complexity.cyclomatic, 1); // 1 edge - 2 blocks + 2 = 1

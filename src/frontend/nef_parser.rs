@@ -2,7 +2,7 @@
 
 use crate::common::{errors::NEFParseError, types::*};
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 /// NEF file parser
 pub struct NEFParser {
@@ -14,7 +14,7 @@ impl NEFParser {
     /// Create new NEF parser
     pub fn new() -> Self {
         Self {
-            strict_validation: false,  // Temporarily disabled for testing
+            strict_validation: false, // Temporarily disabled for testing
         }
     }
 
@@ -46,14 +46,14 @@ impl NEFParser {
 
         // Parse bytecode
         let bytecode_len = header.script_length as usize;
-        
+
         // Handle case where script_length might be 0 or incorrect (common in test files)
         let (actual_bytecode, actual_bytecode_len) = if bytecode_len == 0 {
             // Try to detect actual bytecode by finding patterns
             let remaining_data = &data[offset..];
             let actual_start = self.find_bytecode_start(remaining_data);
             let bytecode_start = offset + actual_start;
-            
+
             // Bytecode goes until 4 bytes before end (checksum)
             if data.len() < bytecode_start + 4 {
                 return Err(NEFParseError::TruncatedFile {
@@ -61,7 +61,7 @@ impl NEFParser {
                     actual: data.len(),
                 });
             }
-            
+
             let actual_length = data.len() - bytecode_start - 4; // -4 for checksum
             let bytecode = data[bytecode_start..bytecode_start + actual_length].to_vec();
             (bytecode, actual_length)
@@ -73,11 +73,11 @@ impl NEFParser {
                     actual: data.len(),
                 });
             }
-            
+
             let bytecode = data[offset..offset + bytecode_len].to_vec();
             (bytecode, bytecode_len)
         };
-        
+
         let bytecode = actual_bytecode;
         offset += actual_bytecode_len;
 
@@ -137,10 +137,10 @@ impl NEFParser {
         // Parse compiler field (32 bytes, null-terminated)
         let compiler_bytes = &data[4..36];
         let compiler = self.parse_null_terminated_string(compiler_bytes)?;
-        
+
         // Parse version (4 bytes, little-endian)
         let version = u32::from_le_bytes([data[36], data[37], data[38], data[39]]);
-        
+
         // Parse script length (4 bytes, little-endian)
         let script_length = u32::from_le_bytes([data[40], data[41], data[42], data[43]]);
 
@@ -150,14 +150,15 @@ impl NEFParser {
             if version > 0x33 {
                 return Err(NEFParseError::UnsupportedVersion { version });
             }
-            
+
             // Validate compiler field is not empty
             if compiler.is_empty() {
                 return Err(NEFParseError::InvalidBytecode);
             }
-            
+
             // Validate script length is reasonable (not larger than theoretical max)
-            if script_length > 1024 * 1024 { // 1MB max script size
+            if script_length > 1024 * 1024 {
+                // 1MB max script size
                 return Err(NEFParseError::InvalidBytecode);
             }
         }
@@ -175,14 +176,17 @@ impl NEFParser {
         // Find null terminator or use entire slice if no null found
         let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
         let string_bytes = &bytes[0..end];
-        
+
         // Convert to UTF-8 string with error handling
-        String::from_utf8(string_bytes.to_vec())
-            .map_err(|_| NEFParseError::InvalidBytecode)
+        String::from_utf8(string_bytes.to_vec()).map_err(|_| NEFParseError::InvalidBytecode)
     }
 
     /// Parse method tokens
-    fn parse_method_tokens(&self, data: &[u8], _header: &NEFHeader) -> Result<Vec<MethodToken>, NEFParseError> {
+    fn parse_method_tokens(
+        &self,
+        data: &[u8],
+        _header: &NEFHeader,
+    ) -> Result<Vec<MethodToken>, NEFParseError> {
         let mut tokens = Vec::new();
         let mut offset = 0;
 
@@ -200,7 +204,8 @@ impl NEFParser {
                 return Err(NEFParseError::InvalidMethodToken { offset });
             }
 
-            let token = self.parse_single_method_token(data, &mut offset)
+            let token = self
+                .parse_single_method_token(data, &mut offset)
                 .map_err(|_| NEFParseError::InvalidMethodToken { offset })?;
             tokens.push(token);
         }
@@ -215,7 +220,7 @@ impl NEFParser {
         }
 
         let mut size = self.varint_size(tokens.len() as u32);
-        
+
         for token in tokens {
             size += 20; // Contract hash (20 bytes)
             size += self.varint_size(token.method.len() as u32); // Method name length
@@ -224,7 +229,7 @@ impl NEFParser {
             size += 1; // Return type
             size += 1; // Call flags
         }
-        
+
         size
     }
 
@@ -234,7 +239,7 @@ impl NEFParser {
         let mut hasher = Sha256::new();
         hasher.update(data);
         let hash = hasher.finalize();
-        
+
         // Take first 4 bytes as little-endian u32
         u32::from_le_bytes([hash[0], hash[1], hash[2], hash[3]])
     }
@@ -243,41 +248,44 @@ impl NEFParser {
     fn find_bytecode_start(&self, data: &[u8]) -> usize {
         // Look for INITSLOT instruction pattern which commonly starts Neo N3 methods
         for (i, window) in data.windows(3).enumerate() {
-            if window[0] == 0x57 {  // INITSLOT opcode
+            if window[0] == 0x57 {
+                // INITSLOT opcode
                 // Validate that this looks like a real INITSLOT instruction
                 let local_count = window[1];
                 let arg_count = window[2];
-                
+
                 // Reasonable limits for slot counts (0-255 each, but usually much smaller)
                 if local_count <= 16 && arg_count <= 16 {
                     return i;
                 }
             }
         }
-        
+
         // Fallback: Look for common starting opcodes
         for (i, &byte) in data.iter().enumerate() {
             if byte != 0x00 {
                 // Common Neo N3 opcodes that indicate start of bytecode
-                if matches!(byte, 
+                if matches!(
+                    byte,
                     0x0C | 0x0D | 0x0E |    // PUSHDATA1/2/4
-                    0x10..=0x20 |          // PUSH0-PUSH16  
+                    0x10
+                        ..=0x20 |          // PUSH0-PUSH16  
                     0x57 |                 // INITSLOT
                     0x21 |                 // NOP
-                    0x40                   // RET (end of previous method)
+                    0x40 // RET (end of previous method)
                 ) {
                     return i;
                 }
             }
         }
-        
+
         // If no recognizable opcodes found, assume it starts at first non-zero byte
         for (i, &byte) in data.iter().enumerate() {
             if byte != 0x00 {
                 return i;
             }
         }
-        
+
         // Default to start of data if all zeros
         0
     }
@@ -294,21 +302,21 @@ impl NEFParser {
     /// Read variable-length integer from data
     fn read_varint(&self, data: &[u8], offset: usize) -> Result<(u32, usize), NEFParseError> {
         if offset >= data.len() {
-            return Err(NEFParseError::TruncatedFile { 
-                expected: offset + 1, 
-                actual: data.len() 
+            return Err(NEFParseError::TruncatedFile {
+                expected: offset + 1,
+                actual: data.len(),
             });
         }
 
         let first_byte = data[offset];
-        
+
         match first_byte {
             0x00..=0xFC => Ok((first_byte as u32, 1)),
             0xFD => {
                 if offset + 3 > data.len() {
-                    return Err(NEFParseError::TruncatedFile { 
-                        expected: offset + 3, 
-                        actual: data.len() 
+                    return Err(NEFParseError::TruncatedFile {
+                        expected: offset + 3,
+                        actual: data.len(),
                     });
                 }
                 let value = u16::from_le_bytes([data[offset + 1], data[offset + 2]]) as u32;
@@ -316,28 +324,32 @@ impl NEFParser {
             }
             0xFE => {
                 if offset + 5 > data.len() {
-                    return Err(NEFParseError::TruncatedFile { 
-                        expected: offset + 5, 
-                        actual: data.len() 
+                    return Err(NEFParseError::TruncatedFile {
+                        expected: offset + 5,
+                        actual: data.len(),
                     });
                 }
                 let value = u32::from_le_bytes([
-                    data[offset + 1], data[offset + 2], 
-                    data[offset + 3], data[offset + 4]
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                    data[offset + 4],
                 ]);
                 Ok((value, 5))
             }
             0xFF => {
                 if offset + 9 > data.len() {
-                    return Err(NEFParseError::TruncatedFile { 
-                        expected: offset + 9, 
-                        actual: data.len() 
+                    return Err(NEFParseError::TruncatedFile {
+                        expected: offset + 9,
+                        actual: data.len(),
                     });
                 }
                 // For NEF, we limit to u32 range, so take first 4 bytes only
                 let value = u32::from_le_bytes([
-                    data[offset + 1], data[offset + 2], 
-                    data[offset + 3], data[offset + 4]
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                    data[offset + 4],
                 ]);
                 Ok((value, 9))
             }
@@ -354,15 +366,19 @@ impl NEFParser {
     }
 
     /// Parse a single method token
-    fn parse_single_method_token(&self, data: &[u8], offset: &mut usize) -> Result<MethodToken, NEFParseError> {
+    fn parse_single_method_token(
+        &self,
+        data: &[u8],
+        offset: &mut usize,
+    ) -> Result<MethodToken, NEFParseError> {
         // Parse contract hash (20 bytes)
         if *offset + 20 > data.len() {
-            return Err(NEFParseError::TruncatedFile { 
-                expected: *offset + 20, 
-                actual: data.len() 
+            return Err(NEFParseError::TruncatedFile {
+                expected: *offset + 20,
+                actual: data.len(),
             });
         }
-        
+
         let mut hash = [0u8; 20];
         hash.copy_from_slice(&data[*offset..*offset + 20]);
         *offset += 20;
@@ -370,14 +386,14 @@ impl NEFParser {
         // Parse method name (var-length string)
         let (method_len, varint_size) = self.read_varint(data, *offset)?;
         *offset += varint_size;
-        
+
         if *offset + method_len as usize > data.len() {
-            return Err(NEFParseError::TruncatedFile { 
-                expected: *offset + method_len as usize, 
-                actual: data.len() 
+            return Err(NEFParseError::TruncatedFile {
+                expected: *offset + method_len as usize,
+                actual: data.len(),
             });
         }
-        
+
         let method_bytes = &data[*offset..*offset + method_len as usize];
         let method = String::from_utf8(method_bytes.to_vec())
             .map_err(|_| NEFParseError::InvalidMethodToken { offset: *offset })?;
@@ -385,9 +401,9 @@ impl NEFParser {
 
         // Parse parameters count (1 byte)
         if *offset >= data.len() {
-            return Err(NEFParseError::TruncatedFile { 
-                expected: *offset + 1, 
-                actual: data.len() 
+            return Err(NEFParseError::TruncatedFile {
+                expected: *offset + 1,
+                actual: data.len(),
             });
         }
         let params_count = data[*offset];
@@ -395,9 +411,9 @@ impl NEFParser {
 
         // Parse return type (1 byte)
         if *offset >= data.len() {
-            return Err(NEFParseError::TruncatedFile { 
-                expected: *offset + 1, 
-                actual: data.len() 
+            return Err(NEFParseError::TruncatedFile {
+                expected: *offset + 1,
+                actual: data.len(),
             });
         }
         let return_type = self.parse_stack_item_type(data[*offset])?;
@@ -405,9 +421,9 @@ impl NEFParser {
 
         // Parse call flags (1 byte)
         if *offset >= data.len() {
-            return Err(NEFParseError::TruncatedFile { 
-                expected: *offset + 1, 
-                actual: data.len() 
+            return Err(NEFParseError::TruncatedFile {
+                expected: *offset + 1,
+                actual: data.len(),
             });
         }
         let call_flags = data[*offset];
@@ -497,7 +513,9 @@ impl NEFFile {
 
     /// Find method token by method name
     pub fn find_method_token(&self, method_name: &str) -> Option<&MethodToken> {
-        self.method_tokens.iter().find(|token| token.method == method_name)
+        self.method_tokens
+            .iter()
+            .find(|token| token.method == method_name)
     }
 
     /// Get bytecode with validation
@@ -529,18 +547,18 @@ impl NEFFile {
         let header_size = self.header.size();
         let tokens_size = parser.calculate_method_tokens_size(&self.method_tokens);
         let expected_data_size = header_size + tokens_size + self.bytecode.len();
-        
+
         // Verify file integrity using checksum
         // Reconstruct the data for checksum verification
         let mut data_for_checksum = Vec::new();
-        
+
         // Add header data
         data_for_checksum.extend_from_slice(b"NEF\x33");
         data_for_checksum.extend_from_slice(self.header.compiler.as_bytes());
         data_for_checksum.resize(data_for_checksum.len().max(36), 0); // Pad to 32 bytes for compiler
         data_for_checksum.extend_from_slice(&self.header.version.to_le_bytes());
         data_for_checksum.extend_from_slice(&self.header.script_length.to_le_bytes());
-        
+
         // Add method tokens with proper encoding
         data_for_checksum.push(self.method_tokens.len() as u8);
         for token in &self.method_tokens {
@@ -550,28 +568,28 @@ impl NEFFile {
             data_for_checksum.push(token.params_count);
             data_for_checksum.push(token.call_flags);
         }
-        
+
         // Add bytecode
         data_for_checksum.extend_from_slice(&self.bytecode);
-        
+
         // Verify checksum
         let calculated = parser.calculate_checksum(&data_for_checksum);
         if calculated != self.checksum {
-            return Err(NEFParseError::InvalidChecksum { 
-                expected: self.checksum, 
-                actual: calculated 
+            return Err(NEFParseError::InvalidChecksum {
+                expected: self.checksum,
+                actual: calculated,
             });
         }
-        
+
         Ok(())
     }
 
     /// Get total file size
     pub fn total_file_size(&self) -> usize {
-        self.header.size() + 
-        self.method_tokens.iter().map(|t| 20 + 1 + t.method.len() + 1 + 1 + 1).sum::<usize>() + 
+        self.header.size() +
+        self.method_tokens.iter().map(|t| 20 + 1 + t.method.len() + 1 + 1 + 1).sum::<usize>() +
         1 + // varint for method token count
-        self.bytecode.len() + 
+        self.bytecode.len() +
         4 // checksum
     }
 }
@@ -585,11 +603,21 @@ impl MethodToken {
     /// Get readable call flags description
     pub fn call_flags_description(&self) -> Vec<&'static str> {
         let mut flags = Vec::new();
-        if self.has_call_flag(0x01) { flags.push("ReadStates"); }
-        if self.has_call_flag(0x02) { flags.push("WriteStates"); }
-        if self.has_call_flag(0x04) { flags.push("AllowCall"); }
-        if self.has_call_flag(0x08) { flags.push("AllowNotify"); }
-        if self.has_call_flag(0x0F) { flags.push("All"); }
+        if self.has_call_flag(0x01) {
+            flags.push("ReadStates");
+        }
+        if self.has_call_flag(0x02) {
+            flags.push("WriteStates");
+        }
+        if self.has_call_flag(0x04) {
+            flags.push("AllowCall");
+        }
+        if self.has_call_flag(0x08) {
+            flags.push("AllowNotify");
+        }
+        if self.has_call_flag(0x0F) {
+            flags.push("All");
+        }
         flags
     }
 
@@ -599,8 +627,14 @@ impl MethodToken {
         // Check against known system contract hashes
         // Known Neo N3 system contract hashes (MainNet)
         const SYSTEM_CONTRACTS: &[[u8; 20]] = &[
-            [0xef, 0x40, 0x73, 0xa0, 0xf2, 0xb3, 0x05, 0xa3, 0x8e, 0xc4, 0x05, 0x0e, 0x4d, 0x3d, 0x28, 0xbc, 0x40, 0xea, 0x63, 0xf5], // NEO
-            [0xd2, 0xa4, 0xcf, 0xf3, 0x19, 0x13, 0x01, 0x61, 0x55, 0xe3, 0x8e, 0x47, 0x4a, 0x2c, 0x06, 0xd0, 0x8b, 0xe2, 0x76, 0xcf], // GAS
+            [
+                0xef, 0x40, 0x73, 0xa0, 0xf2, 0xb3, 0x05, 0xa3, 0x8e, 0xc4, 0x05, 0x0e, 0x4d, 0x3d,
+                0x28, 0xbc, 0x40, 0xea, 0x63, 0xf5,
+            ], // NEO
+            [
+                0xd2, 0xa4, 0xcf, 0xf3, 0x19, 0x13, 0x01, 0x61, 0x55, 0xe3, 0x8e, 0x47, 0x4a, 0x2c,
+                0x06, 0xd0, 0x8b, 0xe2, 0x76, 0xcf,
+            ], // GAS
         ];
         SYSTEM_CONTRACTS.contains(&self.hash)
     }
@@ -610,7 +644,8 @@ impl MethodToken {
 impl NEFParser {
     /// Validate NEF file structure without full parsing
     pub fn quick_validate(&self, data: &[u8]) -> Result<bool, NEFParseError> {
-        if data.len() < 48 { // Minimum size: header + checksum
+        if data.len() < 48 {
+            // Minimum size: header + checksum
             return Ok(false);
         }
 
@@ -621,7 +656,8 @@ impl NEFParser {
 
         // Basic structure validation
         let script_length = u32::from_le_bytes([data[40], data[41], data[42], data[43]]);
-        if script_length as usize > data.len() - 48 { // Allow for header and checksum
+        if script_length as usize > data.len() - 48 {
+            // Allow for header and checksum
             return Ok(false);
         }
 
@@ -631,9 +667,9 @@ impl NEFParser {
     /// Extract file information without full parsing
     pub fn get_file_info(&self, data: &[u8]) -> Result<NEFFileInfo, NEFParseError> {
         if data.len() < 44 {
-            return Err(NEFParseError::TruncatedFile { 
-                expected: 44, 
-                actual: data.len() 
+            return Err(NEFParseError::TruncatedFile {
+                expected: 44,
+                actual: data.len(),
             });
         }
 
@@ -727,19 +763,19 @@ mod tests {
     #[test]
     fn test_varint_parsing() {
         let parser = NEFParser::new();
-        
+
         // Test single byte varint
         let data = [0x42];
         let (value, size) = parser.read_varint(&data, 0).unwrap();
         assert_eq!(value, 0x42);
         assert_eq!(size, 1);
-        
+
         // Test 3-byte varint
         let data = [0xFD, 0x34, 0x12];
         let (value, size) = parser.read_varint(&data, 0).unwrap();
         assert_eq!(value, 0x1234);
         assert_eq!(size, 3);
-        
+
         // Test 5-byte varint
         let data = [0xFE, 0x78, 0x56, 0x34, 0x12];
         let (value, size) = parser.read_varint(&data, 0).unwrap();
@@ -750,7 +786,7 @@ mod tests {
     #[test]
     fn test_varint_size_calculation() {
         let parser = NEFParser::new();
-        
+
         assert_eq!(parser.varint_size(0x42), 1);
         assert_eq!(parser.varint_size(0x1234), 3);
         assert_eq!(parser.varint_size(0x12345678), 5);
@@ -759,30 +795,45 @@ mod tests {
     #[test]
     fn test_stack_item_type_parsing() {
         let parser = NEFParser::new();
-        
-        assert_eq!(parser.parse_stack_item_type(0x00).unwrap(), StackItemType::Any);
-        assert_eq!(parser.parse_stack_item_type(0x20).unwrap(), StackItemType::Boolean);
-        assert_eq!(parser.parse_stack_item_type(0x21).unwrap(), StackItemType::Integer);
-        assert_eq!(parser.parse_stack_item_type(0x40).unwrap(), StackItemType::Array);
-        
+
+        assert_eq!(
+            parser.parse_stack_item_type(0x00).unwrap(),
+            StackItemType::Any
+        );
+        assert_eq!(
+            parser.parse_stack_item_type(0x20).unwrap(),
+            StackItemType::Boolean
+        );
+        assert_eq!(
+            parser.parse_stack_item_type(0x21).unwrap(),
+            StackItemType::Integer
+        );
+        assert_eq!(
+            parser.parse_stack_item_type(0x40).unwrap(),
+            StackItemType::Array
+        );
+
         // Unknown type should default to Any
-        assert_eq!(parser.parse_stack_item_type(0xFF).unwrap(), StackItemType::Any);
+        assert_eq!(
+            parser.parse_stack_item_type(0xFF).unwrap(),
+            StackItemType::Any
+        );
     }
 
     #[test]
     fn test_null_terminated_string_parsing() {
         let parser = NEFParser::new();
-        
+
         // Normal null-terminated string
         let data = b"hello\0world";
         let result = parser.parse_null_terminated_string(data).unwrap();
         assert_eq!(result, "hello");
-        
+
         // String without null terminator
         let data = b"hello";
         let result = parser.parse_null_terminated_string(data).unwrap();
         assert_eq!(result, "hello");
-        
+
         // Empty string
         let data = b"\0";
         let result = parser.parse_null_terminated_string(data).unwrap();
@@ -798,7 +849,7 @@ mod tests {
             version: 0x33,
             script_length: 0,
         };
-        
+
         // Empty method tokens section (just count = 0)
         let data = [0x00]; // varint 0
         let tokens = parser.parse_method_tokens(&data, &header).unwrap();
@@ -814,12 +865,12 @@ mod tests {
             return_type: StackItemType::Boolean,
             call_flags: 0x0F, // All flags
         };
-        
+
         assert!(token.has_call_flag(0x01));
         assert!(token.has_call_flag(0x02));
         assert!(token.has_call_flag(0x04));
         assert!(token.has_call_flag(0x08));
-        
+
         let flags = token.call_flags_description();
         assert!(flags.contains(&"All"));
     }
@@ -827,18 +878,18 @@ mod tests {
     #[test]
     fn test_quick_validate() {
         let parser = NEFParser::new();
-        
+
         // Valid structure
         let mut data = vec![0; 48];
         data[0..4].copy_from_slice(b"NEF\x33");
         data[40..44].copy_from_slice(&0u32.to_le_bytes());
         assert!(parser.quick_validate(&data).unwrap());
-        
+
         // Invalid magic
         let mut data = vec![0; 48];
         data[0..4].copy_from_slice(b"FAKE");
         assert!(!parser.quick_validate(&data).unwrap());
-        
+
         // Too short
         let data = vec![0; 20];
         assert!(!parser.quick_validate(&data).unwrap());
@@ -852,7 +903,7 @@ mod tests {
         data[4..20].copy_from_slice(b"test-compiler\0\0\0");
         data[36..40].copy_from_slice(&0x33u32.to_le_bytes());
         data[40..44].copy_from_slice(&100u32.to_le_bytes());
-        
+
         let info = parser.get_file_info(&data).unwrap();
         assert_eq!(info.compiler, "test-compiler");
         assert_eq!(info.version, 0x33);
@@ -869,30 +920,28 @@ mod tests {
                 version: 0x33,
                 script_length: 4,
             },
-            method_tokens: vec![
-                MethodToken {
-                    hash: [1; 20],
-                    method: "test_method".to_string(),
-                    params_count: 1,
-                    return_type: StackItemType::Boolean,
-                    call_flags: 0x01,
-                }
-            ],
+            method_tokens: vec![MethodToken {
+                hash: [1; 20],
+                method: "test_method".to_string(),
+                params_count: 1,
+                return_type: StackItemType::Boolean,
+                call_flags: 0x01,
+            }],
             bytecode: vec![0x01, 0x02, 0x03, 0x04],
             checksum: 0x12345678,
         };
-        
+
         // Test method token lookup
         assert!(nef.get_method_token(0).is_some());
         assert!(nef.get_method_token(1).is_none());
-        
+
         // Test method token by name
         assert!(nef.find_method_token("test_method").is_some());
         assert!(nef.find_method_token("nonexistent").is_none());
-        
+
         // Test validated bytecode
         assert!(nef.get_validated_bytecode().is_ok());
-        
+
         // Test total file size calculation
         let size = nef.total_file_size();
         assert!(size > 0);
@@ -901,34 +950,37 @@ mod tests {
     #[test]
     fn test_strict_validation() {
         let parser = NEFParser::with_validation(true);
-        
+
         // Test version validation
         let mut data = vec![0; 48];
         data[0..4].copy_from_slice(b"NEF\x33");
         data[4..9].copy_from_slice(b"test\0");
         data[36..40].copy_from_slice(&0x99u32.to_le_bytes()); // Invalid version
         data[40..44].copy_from_slice(&0u32.to_le_bytes());
-        
+
         let result = parser.parse_header(&data);
-        assert!(matches!(result, Err(NEFParseError::UnsupportedVersion { .. })));
-        
+        assert!(matches!(
+            result,
+            Err(NEFParseError::UnsupportedVersion { .. })
+        ));
+
         // Test empty compiler validation
         let mut data = vec![0; 48];
         data[0..4].copy_from_slice(b"NEF\x33");
         // Leave compiler field empty (all zeros)
         data[36..40].copy_from_slice(&0x33u32.to_le_bytes());
         data[40..44].copy_from_slice(&0u32.to_le_bytes());
-        
+
         let result = parser.parse_header(&data);
         assert!(matches!(result, Err(NEFParseError::InvalidBytecode)));
-        
+
         // Test script length validation
         let mut data = vec![0; 48];
         data[0..4].copy_from_slice(b"NEF\x33");
         data[4..10].copy_from_slice(b"test\0\0");
         data[36..40].copy_from_slice(&0x33u32.to_le_bytes());
-        data[40..44].copy_from_slice(&(2_u32*1024*1024).to_le_bytes()); // Too large
-        
+        data[40..44].copy_from_slice(&(2_u32 * 1024 * 1024).to_le_bytes()); // Too large
+
         let result = parser.parse_header(&data);
         assert!(matches!(result, Err(NEFParseError::InvalidBytecode)));
     }

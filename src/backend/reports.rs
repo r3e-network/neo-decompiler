@@ -50,7 +50,7 @@ mod tests {
     fn test_report_generator() {
         let generator = ReportGenerator;
         let function = IRFunction::new("test".to_string());
-        
+
         let report = generator.generate_report(&function);
         assert_eq!(report.function_name, "test");
         assert!(report.summary.contains("test"));

@@ -2,8 +2,8 @@
 use std::collections::HashMap;
 
 use crate::{
+    analysis::types::{SideEffect, SyscallSignature, Type},
     common::{config::SyscallDefinition, errors::ConfigError},
-    analysis::types::{Type, SyscallSignature, SideEffect},
 };
 
 /// Comprehensive Neo N3 syscall database
@@ -22,10 +22,10 @@ impl SyscallDatabase {
     pub fn new() -> Self {
         let mut database = Self {
             syscalls_by_hash: HashMap::new(),
-            syscalls_by_name: HashMap::new(), 
+            syscalls_by_name: HashMap::new(),
             type_signatures: HashMap::new(),
         };
-        
+
         // Load built-in Neo N3 syscalls
         database.load_builtin_syscalls();
         database
@@ -34,11 +34,11 @@ impl SyscallDatabase {
     /// Load syscalls from configuration definitions
     pub fn from_definitions(definitions: Vec<SyscallDefinition>) -> Result<Self, ConfigError> {
         let mut database = Self::new();
-        
+
         for def in definitions {
             database.add_syscall_definition(def)?;
         }
-        
+
         Ok(database)
     }
 
@@ -90,7 +90,8 @@ impl SyscallDatabase {
 
     /// Get syscall definition by name
     pub fn get_by_name(&self, name: &str) -> Option<&SyscallDefinition> {
-        self.syscalls_by_name.get(name)
+        self.syscalls_by_name
+            .get(name)
             .and_then(|hash| self.syscalls_by_hash.get(hash))
     }
 
@@ -194,7 +195,6 @@ impl SyscallDatabase {
                 gas_cost: Some(400),
                 description: Some("Gets the script hash of the entry contract".to_string()),
             },
-
             // Storage syscalls
             SyscallDefinition {
                 name: "System.Storage.GetContext".to_string(),
@@ -212,7 +212,9 @@ impl SyscallDatabase {
                 return_type: Some("StorageContext".to_string()),
                 effects: vec!["Pure".to_string()],
                 gas_cost: Some(400),
-                description: Some("Gets the read-only storage context of the current contract".to_string()),
+                description: Some(
+                    "Gets the read-only storage context of the current contract".to_string(),
+                ),
             },
             SyscallDefinition {
                 name: "System.Storage.Get".to_string(),
@@ -226,7 +228,11 @@ impl SyscallDatabase {
             SyscallDefinition {
                 name: "System.Storage.Put".to_string(),
                 hash: 0xe63f1884,
-                parameters: vec!["StorageContext".to_string(), "ByteArray".to_string(), "ByteArray".to_string()],
+                parameters: vec![
+                    "StorageContext".to_string(),
+                    "ByteArray".to_string(),
+                    "ByteArray".to_string(),
+                ],
                 return_type: Some("Void".to_string()),
                 effects: vec!["StorageWrite".to_string()],
                 gas_cost: Some(0),
@@ -244,18 +250,26 @@ impl SyscallDatabase {
             SyscallDefinition {
                 name: "System.Storage.Find".to_string(),
                 hash: 0xa09b1eef,
-                parameters: vec!["StorageContext".to_string(), "ByteArray".to_string(), "Byte".to_string()],
+                parameters: vec![
+                    "StorageContext".to_string(),
+                    "ByteArray".to_string(),
+                    "Byte".to_string(),
+                ],
                 return_type: Some("Iterator".to_string()),
                 effects: vec!["StorageRead".to_string()],
                 gas_cost: Some(1000000),
                 description: Some("Finds storage entries with the given prefix".to_string()),
             },
-
             // Contract syscalls
             SyscallDefinition {
                 name: "System.Contract.Call".to_string(),
                 hash: 0x627d5b52,
-                parameters: vec!["Hash160".to_string(), "String".to_string(), "Array".to_string(), "CallFlags".to_string()],
+                parameters: vec![
+                    "Hash160".to_string(),
+                    "String".to_string(),
+                    "Array".to_string(),
+                    "CallFlags".to_string(),
+                ],
                 return_type: Some("Any".to_string()),
                 effects: vec!["ContractCall".to_string()],
                 gas_cost: Some(0),
@@ -264,13 +278,17 @@ impl SyscallDatabase {
             SyscallDefinition {
                 name: "System.Contract.CallEx".to_string(),
                 hash: 0x14e12327,
-                parameters: vec!["Hash160".to_string(), "String".to_string(), "Array".to_string(), "CallFlags".to_string()],
+                parameters: vec![
+                    "Hash160".to_string(),
+                    "String".to_string(),
+                    "Array".to_string(),
+                    "CallFlags".to_string(),
+                ],
                 return_type: Some("Any".to_string()),
                 effects: vec!["ContractCall".to_string()],
                 gas_cost: Some(0),
                 description: Some("Calls another contract with extended functionality".to_string()),
             },
-
             // Crypto syscalls
             SyscallDefinition {
                 name: "System.Crypto.CheckSig".to_string(),
@@ -290,7 +308,6 @@ impl SyscallDatabase {
                 gas_cost: Some(0),
                 description: Some("Verifies multiple signatures".to_string()),
             },
-
             // Iterator syscalls
             SyscallDefinition {
                 name: "System.Iterator.Next".to_string(),
@@ -310,7 +327,6 @@ impl SyscallDatabase {
                 gas_cost: Some(400),
                 description: Some("Gets the current value from an iterator".to_string()),
             },
-
             // JSON syscalls
             SyscallDefinition {
                 name: "System.Json.Serialize".to_string(),
@@ -340,7 +356,7 @@ impl SyscallDatabase {
 
     /// Parse type string to Type enum
     fn parse_type_string(&self, type_str: &str) -> Result<Type, ConfigError> {
-        use crate::analysis::types::{PrimitiveType};
+        use crate::analysis::types::PrimitiveType;
 
         match type_str {
             "Void" => Ok(Type::Void),
@@ -356,7 +372,7 @@ impl SyscallDatabase {
             "Array" => Ok(Type::Array(Box::new(Type::Unknown))),
             "Any" => Ok(Type::Unknown),
             "StorageContext" => Ok(Type::Unknown), // Opaque type
-            "Iterator" => Ok(Type::Unknown), // Opaque type
+            "Iterator" => Ok(Type::Unknown),       // Opaque type
             "InteropInterface" => Ok(Type::Unknown), // Opaque type
             "CallFlags" => Ok(Type::Primitive(PrimitiveType::Integer)),
             _ => {
@@ -396,24 +412,24 @@ mod tests {
     #[test]
     fn test_syscall_database_basic() {
         let db = SyscallDatabase::new();
-        
+
         // Test that we can resolve known syscalls
         assert_eq!(db.resolve_name(0x925de831), "System.Storage.Get");
         assert_eq!(db.resolve_name(0xe63f1884), "System.Storage.Put");
-        
+
         // Test argument counting
         assert_eq!(db.get_arg_count(0x925de831), 2); // Storage.Get takes context + key
         assert_eq!(db.get_arg_count(0xe63f1884), 3); // Storage.Put takes context + key + value
-        
+
         // Test return value detection
-        assert_eq!(db.returns_value(0x925de831), true);  // Storage.Get returns value
+        assert_eq!(db.returns_value(0x925de831), true); // Storage.Get returns value
         assert_eq!(db.returns_value(0xe63f1884), false); // Storage.Put returns void
     }
 
     #[test]
     fn test_syscall_type_signatures() {
         let db = SyscallDatabase::new();
-        
+
         // Test type signature retrieval
         let sig = db.get_signature(0x925de831).unwrap(); // System.Storage.Get
         assert_eq!(sig.name, "System.Storage.Get");
@@ -422,10 +438,10 @@ mod tests {
         assert!(sig.effects.contains(&SideEffect::StorageRead));
     }
 
-    #[test] 
+    #[test]
     fn test_unknown_syscalls() {
         let db = SyscallDatabase::new();
-        
+
         // Test handling of unknown syscalls
         assert_eq!(db.resolve_name(0xdeadbeef), "syscall_deadbeef");
         assert_eq!(db.get_arg_count(0xdeadbeef), 0);

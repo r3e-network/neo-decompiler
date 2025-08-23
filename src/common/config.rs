@@ -1,22 +1,22 @@
 //! Configuration system for the Neo N3 decompiler
 
+use crate::common::errors::ConfigError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::common::errors::ConfigError;
 
 /// Main decompiler configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecompilerConfig {
     /// Analysis configuration
     pub analysis: AnalysisConfig,
-    
+
     /// Output configuration
     pub output: OutputConfig,
-    
+
     /// Plugin configuration
     pub plugins: PluginConfig,
-    
+
     /// Performance tuning
     pub performance: PerformanceConfig,
 
@@ -48,7 +48,7 @@ impl Default for DecompilerConfig {
 pub struct AnalysisConfig {
     /// Enable type inference
     pub enable_type_inference: bool,
-    
+
     /// Enable effect analysis
     pub enable_effect_analysis: bool,
 
@@ -60,10 +60,10 @@ pub struct AnalysisConfig {
 
     /// Enable dead code elimination
     pub enable_dead_code_elimination: bool,
-    
+
     /// Maximum analysis depth
     pub max_analysis_depth: u32,
-    
+
     /// Timeout for analysis passes (seconds)
     pub analysis_timeout: u64,
 
@@ -128,10 +128,10 @@ impl Default for OutputConfig {
 /// Supported pseudocode syntax styles
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum SyntaxStyle {
-    CStyle,      // C/Java-like syntax
-    Python,      // Python-like syntax  
-    Rust,        // Rust-like syntax
-    TypeScript,  // TypeScript-like syntax
+    CStyle,     // C/Java-like syntax
+    Python,     // Python-like syntax
+    Rust,       // Rust-like syntax
+    TypeScript, // TypeScript-like syntax
 }
 
 /// Plugin system configuration
@@ -161,10 +161,7 @@ impl Default for PluginConfig {
                 PathBuf::from("./plugins"),
                 PathBuf::from("~/.neo-decompilerr/plugins"),
             ],
-            enabled_plugins: vec![
-                "syscall_analyzer".to_string(),
-                "nep_detector".to_string(),
-            ],
+            enabled_plugins: vec!["syscall_analyzer".to_string(), "nep_detector".to_string()],
             plugin_settings: HashMap::new(),
             plugin_timeout: 10,
         }
@@ -194,7 +191,7 @@ impl Default for PerformanceConfig {
     fn default() -> Self {
         Self {
             parallel_processing: true,
-            worker_threads: None, // Use system default
+            worker_threads: None,        // Use system default
             memory_limit_mb: Some(1024), // 1GB limit
             enable_caching: true,
             cache_size_limit: 10000,
@@ -256,8 +253,9 @@ pub struct ConfigLoader;
 impl ConfigLoader {
     /// Load configuration from file
     pub fn load_from_file(path: &std::path::Path) -> Result<DecompilerConfig, ConfigError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ConfigError::FileNotFound { path: path.to_string_lossy().to_string() })?;
+        let content = std::fs::read_to_string(path).map_err(|e| ConfigError::FileNotFound {
+            path: path.to_string_lossy().to_string(),
+        })?;
         let config: DecompilerConfig = toml::from_str(&content)?;
         Ok(config)
     }
@@ -289,15 +287,24 @@ impl ConfigLoader {
     }
 
     /// Load syscall definitions from TOML files
-    pub fn load_syscall_definitions(path: &std::path::Path) -> Result<Vec<SyscallDefinition>, ConfigError> {
+    pub fn load_syscall_definitions(
+        path: &std::path::Path,
+    ) -> Result<Vec<SyscallDefinition>, ConfigError> {
         let mut definitions = Vec::new();
 
         if path.is_dir() {
-            for entry in std::fs::read_dir(path).map_err(|e| ConfigError::FileNotFound { path: path.to_string_lossy().to_string() })? {
-                let entry = entry.map_err(|e| ConfigError::InvalidFormat { reason: e.to_string() })?;
+            for entry in std::fs::read_dir(path).map_err(|e| ConfigError::FileNotFound {
+                path: path.to_string_lossy().to_string(),
+            })? {
+                let entry = entry.map_err(|e| ConfigError::InvalidFormat {
+                    reason: e.to_string(),
+                })?;
                 let path = entry.path();
                 if path.extension().map_or(false, |ext| ext == "toml") {
-                    let content = std::fs::read_to_string(&path).map_err(|e| ConfigError::FileNotFound { path: path.to_string_lossy().to_string() })?;
+                    let content =
+                        std::fs::read_to_string(&path).map_err(|e| ConfigError::FileNotFound {
+                            path: path.to_string_lossy().to_string(),
+                        })?;
                     let mut file_definitions: Vec<SyscallDefinition> = toml::from_str(&content)?;
                     definitions.append(&mut file_definitions);
                 }
@@ -308,7 +315,10 @@ impl ConfigLoader {
     }
 
     /// Merge two configurations, with `override_config` taking precedence
-    fn merge_configs(_base: DecompilerConfig, override_config: DecompilerConfig) -> DecompilerConfig {
+    fn merge_configs(
+        _base: DecompilerConfig,
+        override_config: DecompilerConfig,
+    ) -> DecompilerConfig {
         // Merge configuration values with precedence
         override_config
     }
@@ -348,9 +358,12 @@ mod tests {
         let config = DecompilerConfig::default();
         let serialized = toml::to_string(&config).unwrap();
         let deserialized: DecompilerConfig = toml::from_str(&serialized).unwrap();
-        
+
         // Compare some key fields
-        assert_eq!(config.analysis.enable_type_inference, deserialized.analysis.enable_type_inference);
+        assert_eq!(
+            config.analysis.enable_type_inference,
+            deserialized.analysis.enable_type_inference
+        );
         assert_eq!(config.output.indent_size, deserialized.output.indent_size);
     }
 }

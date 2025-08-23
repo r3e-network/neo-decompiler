@@ -1,12 +1,12 @@
 //! Frontend parsers for Neo N3 file formats
 
-pub mod nef_parser;
 pub mod manifest_parser;
+pub mod nef_parser;
 
-pub use nef_parser::{NEFParser, NEFFile};
 pub use manifest_parser::{
-    ManifestParser, ContractManifest, ContractABI, ContractMethod, ContractEvent, 
-    ContractParameter, ContractPermission, ContractGroup, ContractFeatures, Trust,
-    ValidationOptions, StandardDefinition, MethodSignature, EventSignature,
-    NeoType, EnhancedABI, EnhancedMethod, EnhancedEvent
+    ContractABI, ContractEvent, ContractFeatures, ContractGroup, ContractManifest, ContractMethod,
+    ContractParameter, ContractPermission, EnhancedABI, EnhancedEvent, EnhancedMethod,
+    EventSignature, ManifestParser, MethodSignature, NeoType, StandardDefinition, Trust,
+    ValidationOptions,
 };
+pub use nef_parser::{NEFFile, NEFParser};

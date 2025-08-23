@@ -29,7 +29,7 @@ impl Default for PluginManager {
 pub trait Plugin: Send + Sync {
     /// Plugin name
     fn name(&self) -> &str;
-    
+
     /// Plugin version
     fn version(&self) -> &str;
 }

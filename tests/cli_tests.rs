@@ -1,13 +1,13 @@
 //! CLI interface tests
-//! 
+//!
 //! Tests the command-line interface using assert_cmd to verify correct behavior
 //! of all CLI commands and arguments.
 
+use crate::common::*;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use tempfile::TempDir;
-use crate::common::*;
 
 /// Helper to create a test command
 fn neo_decompile_cmd() -> Command {
@@ -45,26 +45,29 @@ fn test_disasm_command() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("disasm")
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("PUSH").or(predicate::str::is_match(r"[0-9a-fA-F]+:").unwrap()));
+        .stdout(
+            predicate::str::contains("PUSH")
+                .or(predicate::str::is_match(r"[0-9a-fA-F]+:").unwrap()),
+        );
 }
 
 /// Test disasm command with output file
-#[test] 
+#[test]
 fn test_disasm_with_output_file() {
     let temp_dir = TempDir::new().unwrap();
     let sample_nef = SampleNefData::minimal();
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     let output_path = temp_dir.path().join("output.asm");
-    
+
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("disasm")
         .arg(&nef_path)
@@ -72,7 +75,7 @@ fn test_disasm_with_output_file() {
         .arg(&output_path)
         .assert()
         .success();
-    
+
     // Verify output file was created
     assert!(output_path.exists(), "Output file should be created");
     let content = fs::read_to_string(&output_path).unwrap();
@@ -87,7 +90,7 @@ fn test_disasm_with_flags() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     // Test with --stats flag
     neo_decompile_cmd()
         .arg("disasm")
@@ -96,7 +99,7 @@ fn test_disasm_with_flags() {
         .assert()
         .success()
         .stdout(predicate::str::contains("Statistics").or(predicate::str::contains("size")));
-    
+
     // Test with --bytes flag
     neo_decompile_cmd()
         .arg("disasm")
@@ -104,7 +107,7 @@ fn test_disasm_with_flags() {
         .arg("--bytes")
         .assert()
         .success();
-    
+
     // Test with --comments flag
     neo_decompile_cmd()
         .arg("disasm")
@@ -122,7 +125,7 @@ fn test_cfg_command() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("cfg")
         .arg(&nef_path)
@@ -139,9 +142,9 @@ fn test_cfg_json_format() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     let output_path = temp_dir.path().join("cfg.json");
-    
+
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("cfg")
         .arg(&nef_path)
@@ -151,12 +154,12 @@ fn test_cfg_json_format() {
         .arg(&output_path)
         .assert()
         .success();
-    
+
     // Verify JSON output
     assert!(output_path.exists());
     let content = fs::read_to_string(&output_path).unwrap();
-    let _json: serde_json::Value = serde_json::from_str(&content)
-        .expect("Output should be valid JSON");
+    let _json: serde_json::Value =
+        serde_json::from_str(&content).expect("Output should be valid JSON");
 }
 
 /// Test decompile command
@@ -167,7 +170,7 @@ fn test_decompile_command() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("decompile")
         .arg(&nef_path)
@@ -180,17 +183,17 @@ fn test_decompile_command() {
 #[test]
 fn test_decompile_with_manifest() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     let sample_nef = SampleNefData::minimal();
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     let sample_manifest = SampleManifest::simple_contract();
     let manifest_json = sample_manifest.to_json();
     let manifest_path = temp_dir.path().join("test.manifest.json");
     fs::write(&manifest_path, &manifest_json).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("decompile")
         .arg(&nef_path)
@@ -209,7 +212,7 @@ fn test_decompile_output_formats() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     // Test Python format
     neo_decompile_cmd()
         .arg("decompile")
@@ -218,7 +221,7 @@ fn test_decompile_output_formats() {
         .arg("python")
         .assert()
         .success();
-    
+
     // Test C format
     neo_decompile_cmd()
         .arg("decompile")
@@ -227,7 +230,7 @@ fn test_decompile_output_formats() {
         .arg("c")
         .assert()
         .success();
-    
+
     // Test JSON format
     let json_output_path = temp_dir.path().join("output.json");
     neo_decompile_cmd()
@@ -239,12 +242,12 @@ fn test_decompile_output_formats() {
         .arg(&json_output_path)
         .assert()
         .success();
-    
+
     // Verify JSON is valid
     assert!(json_output_path.exists());
     let content = fs::read_to_string(&json_output_path).unwrap();
-    let _json: serde_json::Value = serde_json::from_str(&content)
-        .expect("JSON output should be valid");
+    let _json: serde_json::Value =
+        serde_json::from_str(&content).expect("JSON output should be valid");
 }
 
 /// Test decompile with optimization levels
@@ -255,7 +258,7 @@ fn test_decompile_optimization_levels() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     // Test different optimization levels
     for opt_level in 0..=3 {
         neo_decompile_cmd()
@@ -276,7 +279,7 @@ fn test_analyze_command() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("analyze")
         .arg(&nef_path)
@@ -293,7 +296,7 @@ fn test_analyze_types() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     // Test security analysis
     neo_decompile_cmd()
         .arg("analyze")
@@ -301,7 +304,7 @@ fn test_analyze_types() {
         .arg("--security")
         .assert()
         .success();
-    
+
     // Test NEP compliance
     neo_decompile_cmd()
         .arg("analyze")
@@ -309,7 +312,7 @@ fn test_analyze_types() {
         .arg("--nep-compliance")
         .assert()
         .success();
-    
+
     // Test performance analysis
     neo_decompile_cmd()
         .arg("analyze")
@@ -317,7 +320,7 @@ fn test_analyze_types() {
         .arg("--performance")
         .assert()
         .success();
-    
+
     // Test all analysis types
     neo_decompile_cmd()
         .arg("analyze")
@@ -335,30 +338,32 @@ fn test_info_command() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("info")
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(predicate::str::contains("Contract Information").or(predicate::str::contains("Size")));
+        .stdout(
+            predicate::str::contains("Contract Information").or(predicate::str::contains("Size")),
+        );
 }
 
 /// Test info command with manifest
 #[test]
 fn test_info_with_manifest() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     let sample_nef = SampleNefData::minimal();
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     let sample_manifest = SampleManifest::nep17_token();
     let manifest_json = sample_manifest.to_json();
     let manifest_path = temp_dir.path().join("test.manifest.json");
     fs::write(&manifest_path, &manifest_json).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("info")
         .arg(&nef_path)
@@ -377,7 +382,7 @@ fn test_info_output_formats() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     // Test JSON format
     let json_output_path = temp_dir.path().join("info.json");
     neo_decompile_cmd()
@@ -389,7 +394,7 @@ fn test_info_output_formats() {
         .arg(&json_output_path)
         .assert()
         .success();
-    
+
     // Note: The actual CLI might output to stdout, so we test that it succeeds
     neo_decompile_cmd()
         .arg("info")
@@ -405,14 +410,14 @@ fn test_info_output_formats() {
 #[test]
 fn test_config_commands() {
     let temp_dir = TempDir::new().unwrap();
-    
+
     // Test config show
     neo_decompile_cmd()
         .arg("config")
         .arg("show")
         .assert()
         .success();
-    
+
     // Test config generate
     let config_path = temp_dir.path().join("generated.toml");
     neo_decompile_cmd()
@@ -422,9 +427,9 @@ fn test_config_commands() {
         .arg(&config_path)
         .assert()
         .success();
-    
+
     assert!(config_path.exists(), "Config file should be generated");
-    
+
     // Test config validate
     neo_decompile_cmd()
         .arg("config")
@@ -440,14 +445,14 @@ fn test_config_commands() {
 fn test_init_command() {
     let temp_dir = TempDir::new().unwrap();
     let project_dir = temp_dir.path().join("test_project");
-    
+
     neo_decompile_cmd()
         .arg("init")
         .arg(&project_dir)
         .assert()
         .success()
         .stdout(predicate::str::contains("Initialized"));
-    
+
     // Verify files were created
     assert!(project_dir.join("decompiler.toml").exists());
     assert!(project_dir.join("README_DECOMPILER.md").exists());
@@ -458,11 +463,11 @@ fn test_init_command() {
 fn test_init_force_overwrite() {
     let temp_dir = TempDir::new().unwrap();
     let project_dir = temp_dir.path().join("force_test");
-    
+
     // Create directory and file first
     fs::create_dir_all(&project_dir).unwrap();
     fs::write(project_dir.join("decompiler.toml"), "existing content").unwrap();
-    
+
     // Should fail without force
     neo_decompile_cmd()
         .arg("init")
@@ -470,7 +475,7 @@ fn test_init_force_overwrite() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("exist"));
-    
+
     // Should succeed with force
     neo_decompile_cmd()
         .arg("init")
@@ -488,7 +493,7 @@ fn test_verbose_flag() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     // Test different verbosity levels
     neo_decompile_cmd()
         .arg("-v")
@@ -496,14 +501,14 @@ fn test_verbose_flag() {
         .arg(&nef_path)
         .assert()
         .success();
-    
+
     neo_decompile_cmd()
         .arg("-vv")
         .arg("disasm")
         .arg(&nef_path)
         .assert()
         .success();
-    
+
     neo_decompile_cmd()
         .arg("-vvv")
         .arg("disasm")
@@ -520,7 +525,7 @@ fn test_quiet_flag() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("--quiet")
         .arg("disasm")
@@ -539,12 +544,12 @@ fn test_invalid_file_handling() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("No such file").or(predicate::str::contains("not found")));
-    
+
     // Test with invalid NEF file
     let temp_dir = TempDir::new().unwrap();
     let invalid_nef_path = temp_dir.path().join("invalid.nef");
     fs::write(&invalid_nef_path, b"not a nef file").unwrap();
-    
+
     neo_decompile_cmd()
         .arg("disasm")
         .arg(&invalid_nef_path)
@@ -561,9 +566,9 @@ fn test_multi_format_output() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     let output_path = temp_dir.path().join("output.pseudo");
-    
+
     neo_decompile_cmd()
         .arg("decompile")
         .arg(&nef_path)
@@ -572,7 +577,7 @@ fn test_multi_format_output() {
         .arg("--multi-format")
         .assert()
         .success();
-    
+
     // With multi-format, additional files should be created
     // (This depends on the implementation creating .py, .c, .html files)
     assert!(output_path.exists(), "Primary output should exist");
@@ -586,12 +591,14 @@ fn test_performance_metrics() {
     let nef_bytes = sample_nef.to_bytes();
     let nef_path = temp_dir.path().join("test.nef");
     fs::write(&nef_path, &nef_bytes).unwrap();
-    
+
     neo_decompile_cmd()
         .arg("decompile")
         .arg(&nef_path)
         .arg("--metrics")
         .assert()
         .success()
-        .stderr(predicate::str::contains("Performance Metrics").or(predicate::str::contains("time")));
+        .stderr(
+            predicate::str::contains("Performance Metrics").or(predicate::str::contains("time")),
+        );
 }

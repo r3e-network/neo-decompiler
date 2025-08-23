@@ -4,7 +4,7 @@
 //! implementing constraint-based type inference with support for Neo N3's complete type system.
 
 use crate::common::types::*;
-use crate::core::ir::{Operation, Expression, IRFunction, IRBlock};
+use crate::core::ir::{Expression, IRBlock, IRFunction, Operation};
 use std::collections::HashMap;
 use std::fmt;
 
@@ -37,10 +37,7 @@ pub enum Type {
     /// Nullable types (type that can be null)
     Nullable(Box<Type>),
     /// Generic types with type parameters
-    Generic {
-        base: String,
-        parameters: Vec<Type>,
-    },
+    Generic { base: String, parameters: Vec<Type> },
     /// User-defined types
     UserDefined(String),
     /// Unknown/inferred type
@@ -228,25 +225,31 @@ pub enum TypeConstraint {
 pub enum TypeError {
     #[error("Type mismatch: expected {expected}, found {found}")]
     Mismatch { expected: Type, found: Type },
-    
+
     #[error("Undefined variable: {name}")]
     UndefinedVariable { name: String },
-    
+
     #[error("Type {type_name} does not support operation {operation}")]
-    UnsupportedOperation { type_name: String, operation: String },
-    
+    UnsupportedOperation {
+        type_name: String,
+        operation: String,
+    },
+
     #[error("Cannot unify types {type1} and {type2}")]
     UnificationFailure { type1: Type, type2: Type },
-    
+
     #[error("Infinite type detected in constraint")]
     InfiniteType,
-    
+
     #[error("Constraint solving failed: {reason}")]
     ConstraintSolvingFailure { reason: String },
-    
+
     #[error("Type {type_name} does not have field {field_name}")]
-    FieldNotFound { type_name: String, field_name: String },
-    
+    FieldNotFound {
+        type_name: String,
+        field_name: String,
+    },
+
     #[error("Cannot convert {from} to {to}")]
     ConversionError { from: Type, to: Type },
 }
@@ -277,7 +280,10 @@ impl Type {
 
     /// Check if type is nullable
     pub fn is_nullable(&self) -> bool {
-        matches!(self, Type::Nullable(_) | Type::Primitive(PrimitiveType::Null))
+        matches!(
+            self,
+            Type::Nullable(_) | Type::Primitive(PrimitiveType::Null)
+        )
     }
 
     /// Check if type is a container (array, map, buffer)
@@ -292,14 +298,23 @@ impl Type {
 
     /// Check if type supports comparison operations
     pub fn supports_comparison(&self) -> bool {
-        matches!(self, 
-            Type::Primitive(PrimitiveType::Integer | PrimitiveType::Boolean | PrimitiveType::ByteString)
+        matches!(
+            self,
+            Type::Primitive(
+                PrimitiveType::Integer | PrimitiveType::Boolean | PrimitiveType::ByteString
+            )
         )
     }
 
     /// Check if type supports indexing operations
     pub fn supports_indexing(&self) -> bool {
-        matches!(self, Type::Array(_) | Type::Map { .. } | Type::Buffer | Type::Primitive(PrimitiveType::ByteString))
+        matches!(
+            self,
+            Type::Array(_)
+                | Type::Map { .. }
+                | Type::Buffer
+                | Type::Primitive(PrimitiveType::ByteString)
+        )
     }
 
     /// Get the element type for container types
@@ -325,37 +340,43 @@ impl Type {
             // Unknown types are compatible with everything
             (Type::Unknown, _) | (_, Type::Unknown) => true,
             (Type::Any, _) | (_, Type::Any) => true,
-            
+
             // Exact type matches
             (a, b) if a == b => true,
-            
+
             // Special conversions before general primitive matching
-            (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::ByteString)) => true,
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::Integer)) => true,
-            
+            (
+                Type::Primitive(PrimitiveType::Integer),
+                Type::Primitive(PrimitiveType::ByteString),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::Integer),
+            ) => true,
+
             // Primitive type compatibility
             (Type::Primitive(a), Type::Primitive(b)) => a == b,
-            
+
             // Array compatibility (covariant in element type)
             (Type::Array(a), Type::Array(b)) => a.is_compatible_with(b),
-            
+
             // Map compatibility (covariant in both key and value)
             (Type::Map { key: k1, value: v1 }, Type::Map { key: k2, value: v2 }) => {
                 k1.is_compatible_with(k2) && v1.is_compatible_with(v2)
             }
-            
+
             // Nullable compatibility
             (Type::Nullable(inner), other) => inner.is_compatible_with(other),
             (other, Type::Nullable(inner)) => other.is_compatible_with(inner),
-            
+
             // Union type compatibility
             (Type::Union(types), other) => types.iter().any(|t| t.is_compatible_with(other)),
             (other, Type::Union(types)) => types.iter().any(|t| other.is_compatible_with(t)),
-            
+
             // Buffer and ByteString are somewhat compatible
             (Type::Buffer, Type::Primitive(PrimitiveType::ByteString)) => true,
             (Type::Primitive(PrimitiveType::ByteString), Type::Buffer) => true,
-            
+
             _ => false,
         }
     }
@@ -370,32 +391,32 @@ impl Type {
         match (self, supertype) {
             // Any type is a subtype of Any
             (_, Type::Any) => true,
-            
+
             // Never is a subtype of any type
             (Type::Never, _) => true,
-            
+
             // Null is a subtype of nullable types
             (Type::Primitive(PrimitiveType::Null), Type::Nullable(_)) => true,
-            
+
             // Type variables and unknown types
             (Type::Variable(_), _) | (_, Type::Variable(_)) => true,
             (Type::Unknown, _) | (_, Type::Unknown) => true,
-            
+
             // Exact matches
             (a, b) if a == b => true,
-            
+
             // Structural subtyping for arrays (covariant)
             (Type::Array(elem1), Type::Array(elem2)) => elem1.is_subtype_of(elem2),
-            
+
             // Structural subtyping for maps
             (Type::Map { key: k1, value: v1 }, Type::Map { key: k2, value: v2 }) => {
                 k1.is_subtype_of(k2) && v1.is_subtype_of(v2)
             }
-            
+
             // Union types
             (Type::Union(types), target) => types.iter().all(|t| t.is_subtype_of(target)),
             (source, Type::Union(types)) => types.iter().any(|t| source.is_subtype_of(t)),
-            
+
             _ => false,
         }
     }
@@ -410,22 +431,22 @@ impl Type {
             Type::Primitive(PrimitiveType::ECPoint) => Some(33), // Compressed point
             Type::Primitive(PrimitiveType::Signature) => Some(64), // ECDSA signature
             Type::Primitive(PrimitiveType::PublicKey) => Some(33), // Compressed public key
-            Type::Primitive(PrimitiveType::Null) => Some(1), // Null marker
-            
+            Type::Primitive(PrimitiveType::Null) => Some(1),     // Null marker
+
             // Variable-size types return None
             Type::Primitive(PrimitiveType::Integer) => None, // BigInteger - variable size
             Type::Primitive(PrimitiveType::ByteString) => None, // Variable length
-            Type::Primitive(PrimitiveType::String) => None, // Variable length string
+            Type::Primitive(PrimitiveType::String) => None,  // Variable length string
             Type::Primitive(PrimitiveType::ByteArray) => None, // Variable length byte array
-            Type::Array(_) => None, // Variable number of elements
-            Type::Map { .. } => None, // Variable number of key-value pairs
-            Type::Buffer => None, // Variable size mutable buffer
-            Type::Struct(_) => None, // Depends on field types
-            Type::Union(_) => None, // Depends on active type
-            Type::Function { .. } => None, // Functions don't have a fixed size
-            Type::Contract(_) => Some(20), // Contract hash is 160-bit
-            Type::InteropInterface(_) => None, // Opaque type
-            Type::Pointer(_) => Some(8), // 64-bit pointer
+            Type::Array(_) => None,                          // Variable number of elements
+            Type::Map { .. } => None,                        // Variable number of key-value pairs
+            Type::Buffer => None,                            // Variable size mutable buffer
+            Type::Struct(_) => None,                         // Depends on field types
+            Type::Union(_) => None,                          // Depends on active type
+            Type::Function { .. } => None,                   // Functions don't have a fixed size
+            Type::Contract(_) => Some(20),                   // Contract hash is 160-bit
+            Type::InteropInterface(_) => None,               // Opaque type
+            Type::Pointer(_) => Some(8),                     // 64-bit pointer
             Type::Nullable(inner) => {
                 // Nullable adds overhead for null flag
                 inner.byte_size().map(|size| size + 1)
@@ -488,10 +509,10 @@ impl Type {
             Type::Primitive(PrimitiveType::Boolean) => true,
             Type::Primitive(PrimitiveType::Integer) => true, // 0 is false, others true
             Type::Primitive(PrimitiveType::ByteString) => true, // Empty string is false
-            Type::Array(_) => true, // Empty array is false
-            Type::Map { .. } => true, // Empty map is false
-            Type::Buffer => true, // Empty buffer is false
-            Type::Primitive(PrimitiveType::Null) => false, // Always false
+            Type::Array(_) => true,                          // Empty array is false
+            Type::Map { .. } => true,                        // Empty map is false
+            Type::Buffer => true,                            // Empty buffer is false
+            Type::Primitive(PrimitiveType::Null) => false,   // Always false
             Type::Nullable(_) => true, // Null is false, value follows inner type
             _ => false,
         }
@@ -509,7 +530,10 @@ impl Type {
                 let type_strs: Vec<String> = types.iter().map(|t| t.to_string()).collect();
                 format!("({})", type_strs.join(" | "))
             }
-            Type::Function { parameters, return_type } => {
+            Type::Function {
+                parameters,
+                return_type,
+            } => {
                 let param_strs: Vec<String> = parameters.iter().map(|p| p.to_string()).collect();
                 format!("({}) -> {}", param_strs.join(", "), return_type.to_string())
             }
@@ -534,7 +558,7 @@ impl Type {
     pub fn array(element_type: Type) -> Type {
         Type::Array(Box::new(element_type))
     }
-    
+
     /// Create type for Neo N3 map with specific key and value types
     pub fn map(key_type: Type, value_type: Type) -> Type {
         Type::Map {
@@ -542,12 +566,12 @@ impl Type {
             value: Box::new(value_type),
         }
     }
-    
+
     /// Create nullable type
     pub fn nullable(inner_type: Type) -> Type {
         Type::Nullable(Box::new(inner_type))
     }
-    
+
     /// Create function type
     pub fn function(parameters: Vec<Type>, return_type: Type) -> Type {
         Type::Function {
@@ -597,7 +621,7 @@ impl TypeInferenceContext {
                 return Some(ty);
             }
         }
-        
+
         // Check global variable types
         self.variable_types.get(name)
     }
@@ -652,101 +676,122 @@ impl TypeInferenceEngine {
     /// Create new type inference engine
     pub fn new() -> Self {
         let mut context = TypeInferenceContext::new();
-        
+
         // Initialize with comprehensive Neo N3 syscalls
         Self::init_syscall_database(&mut context);
-        
+
         Self { context }
     }
 
     /// Initialize complete syscall type database
     fn init_syscall_database(context: &mut TypeInferenceContext) {
         // Storage syscalls
-        context.syscall_types.insert(0x0c40166b, SyscallSignature {
-            name: "System.Storage.Get".to_string(),
-            parameters: vec![Type::Primitive(PrimitiveType::ByteString)],
-            return_type: Type::Nullable(Box::new(Type::Primitive(PrimitiveType::ByteString))),
-            effects: vec![SideEffect::StorageRead],
-        });
-        
-        context.syscall_types.insert(0xd90f55cf, SyscallSignature {
-            name: "System.Storage.Put".to_string(),
-            parameters: vec![
-                Type::Primitive(PrimitiveType::ByteString),
-                Type::Primitive(PrimitiveType::ByteString),
-            ],
-            return_type: Type::Primitive(PrimitiveType::Null),
-            effects: vec![SideEffect::StorageWrite],
-        });
-        
-        context.syscall_types.insert(0x64122a5c, SyscallSignature {
-            name: "System.Storage.Delete".to_string(),
-            parameters: vec![Type::Primitive(PrimitiveType::ByteString)],
-            return_type: Type::Primitive(PrimitiveType::Null),
-            effects: vec![SideEffect::StorageWrite],
-        });
-        
+        context.syscall_types.insert(
+            0x0c40166b,
+            SyscallSignature {
+                name: "System.Storage.Get".to_string(),
+                parameters: vec![Type::Primitive(PrimitiveType::ByteString)],
+                return_type: Type::Nullable(Box::new(Type::Primitive(PrimitiveType::ByteString))),
+                effects: vec![SideEffect::StorageRead],
+            },
+        );
+
+        context.syscall_types.insert(
+            0xd90f55cf,
+            SyscallSignature {
+                name: "System.Storage.Put".to_string(),
+                parameters: vec![
+                    Type::Primitive(PrimitiveType::ByteString),
+                    Type::Primitive(PrimitiveType::ByteString),
+                ],
+                return_type: Type::Primitive(PrimitiveType::Null),
+                effects: vec![SideEffect::StorageWrite],
+            },
+        );
+
+        context.syscall_types.insert(
+            0x64122a5c,
+            SyscallSignature {
+                name: "System.Storage.Delete".to_string(),
+                parameters: vec![Type::Primitive(PrimitiveType::ByteString)],
+                return_type: Type::Primitive(PrimitiveType::Null),
+                effects: vec![SideEffect::StorageWrite],
+            },
+        );
+
         // Blockchain syscalls
-        context.syscall_types.insert(0xdde70a99, SyscallSignature {
-            name: "System.Blockchain.GetHeight".to_string(),
-            parameters: vec![],
-            return_type: Type::Primitive(PrimitiveType::Integer),
-            effects: vec![SideEffect::Pure],
-        });
-        
+        context.syscall_types.insert(
+            0xdde70a99,
+            SyscallSignature {
+                name: "System.Blockchain.GetHeight".to_string(),
+                parameters: vec![],
+                return_type: Type::Primitive(PrimitiveType::Integer),
+                effects: vec![SideEffect::Pure],
+            },
+        );
+
         // Contract syscalls
-        context.syscall_types.insert(0x627d5b52, SyscallSignature {
-            name: "System.Contract.Call".to_string(),
-            parameters: vec![
-                Type::Primitive(PrimitiveType::Hash160),
-                Type::Primitive(PrimitiveType::ByteString),
-                Type::Array(Box::new(Type::Any)),
-            ],
-            return_type: Type::Any,
-            effects: vec![SideEffect::ContractCall],
-        });
-        
+        context.syscall_types.insert(
+            0x627d5b52,
+            SyscallSignature {
+                name: "System.Contract.Call".to_string(),
+                parameters: vec![
+                    Type::Primitive(PrimitiveType::Hash160),
+                    Type::Primitive(PrimitiveType::ByteString),
+                    Type::Array(Box::new(Type::Any)),
+                ],
+                return_type: Type::Any,
+                effects: vec![SideEffect::ContractCall],
+            },
+        );
+
         // Runtime syscalls
-        context.syscall_types.insert(0x49aa75e6, SyscallSignature {
-            name: "System.Runtime.Log".to_string(),
-            parameters: vec![Type::Primitive(PrimitiveType::ByteString)],
-            return_type: Type::Primitive(PrimitiveType::Null),
-            effects: vec![SideEffect::EventEmit],
-        });
-        
+        context.syscall_types.insert(
+            0x49aa75e6,
+            SyscallSignature {
+                name: "System.Runtime.Log".to_string(),
+                parameters: vec![Type::Primitive(PrimitiveType::ByteString)],
+                return_type: Type::Primitive(PrimitiveType::Null),
+                effects: vec![SideEffect::EventEmit],
+            },
+        );
+
         // Crypto syscalls
-        context.syscall_types.insert(0x16ed57a1, SyscallSignature {
-            name: "System.Crypto.CheckSig".to_string(),
-            parameters: vec![
-                Type::Primitive(PrimitiveType::Signature),
-                Type::Primitive(PrimitiveType::ECPoint),
-            ],
-            return_type: Type::Primitive(PrimitiveType::Boolean),
-            effects: vec![SideEffect::Pure],
-        });
+        context.syscall_types.insert(
+            0x16ed57a1,
+            SyscallSignature {
+                name: "System.Crypto.CheckSig".to_string(),
+                parameters: vec![
+                    Type::Primitive(PrimitiveType::Signature),
+                    Type::Primitive(PrimitiveType::ECPoint),
+                ],
+                return_type: Type::Primitive(PrimitiveType::Boolean),
+                effects: vec![SideEffect::Pure],
+            },
+        );
     }
 
     /// Main type inference entry point
     pub fn infer_types(&mut self, function: &mut IRFunction) -> Result<(), TypeError> {
         let start_time = std::time::Instant::now();
-        
+
         // Phase 1: Collect type constraints from all blocks
         for (_block_id, block) in &function.blocks {
             self.collect_block_constraints(block)?;
         }
-        
+
         // Phase 2: Add parameter and local variable constraints
         self.collect_function_constraints(function)?;
-        
+
         // Phase 3: Solve all collected constraints
         self.solve_constraints()?;
-        
+
         // Phase 4: Apply inferred types back to function
         self.apply_inferred_types(function)?;
-        
+
         // Update statistics
         self.context.stats.inference_time_us = start_time.elapsed().as_micros() as u64;
-        
+
         if self.context.has_errors() {
             Err(self.context.errors[0].clone())
         } else {
@@ -767,33 +812,36 @@ impl TypeInferenceEngine {
         // Add parameter type constraints
         for param in &function.parameters {
             if param.param_type != Type::Unknown {
-                self.context.set_variable_type(param.name.clone(), param.param_type.clone());
+                self.context
+                    .set_variable_type(param.name.clone(), param.param_type.clone());
             }
         }
-        
+
         // Add local variable constraints
         for local in &function.locals {
             if local.var_type != Type::Unknown {
-                self.context.set_variable_type(local.name.clone(), local.var_type.clone());
+                self.context
+                    .set_variable_type(local.name.clone(), local.var_type.clone());
             }
             // Also consider the inferred type from local_type field
             if local.local_type != Type::Unknown {
-                let var_type = self.context.get_variable_type(&local.name)
-                    .cloned().unwrap_or(Type::Unknown);
-                self.context.add_constraint(TypeConstraint::Equal(
-                    var_type,
-                    local.local_type.clone()
-                ));
+                let var_type = self
+                    .context
+                    .get_variable_type(&local.name)
+                    .cloned()
+                    .unwrap_or(Type::Unknown);
+                self.context
+                    .add_constraint(TypeConstraint::Equal(var_type, local.local_type.clone()));
             }
         }
-        
+
         Ok(())
     }
 
     /// Collect type constraints from an operation
     fn collect_operation_constraints(&mut self, operation: &Operation) -> Result<(), TypeError> {
         use crate::core::ir::Operation;
-        
+
         match operation {
             Operation::Assign { target, source } => {
                 let source_type = self.infer_expression_type(source)?;
@@ -802,62 +850,92 @@ impl TypeInferenceEngine {
                     self.context.next_type_var += 1;
                     var_id
                 });
-                
-                self.context.add_constraint(TypeConstraint::Equal(target_type.clone(), source_type));
-                self.context.set_variable_type(target.name.clone(), target_type);
+
+                self.context
+                    .add_constraint(TypeConstraint::Equal(target_type.clone(), source_type));
+                self.context
+                    .set_variable_type(target.name.clone(), target_type);
             }
-            
-            Operation::Arithmetic { target, left, right, operator } => {
+
+            Operation::Arithmetic {
+                target,
+                left,
+                right,
+                operator,
+            } => {
                 let left_type = self.infer_expression_type(left)?;
                 let right_type = self.infer_expression_type(right)?;
-                let result_type = self.infer_binary_result_type(&left_type, &right_type, *operator)?;
-                
-                self.context.add_constraint(TypeConstraint::SupportsOperation(left_type.clone(), *operator));
-                self.context.add_constraint(TypeConstraint::SupportsOperation(right_type.clone(), *operator));
-                self.context.set_variable_type(target.name.clone(), result_type);
+                let result_type =
+                    self.infer_binary_result_type(&left_type, &right_type, *operator)?;
+
+                self.context
+                    .add_constraint(TypeConstraint::SupportsOperation(
+                        left_type.clone(),
+                        *operator,
+                    ));
+                self.context
+                    .add_constraint(TypeConstraint::SupportsOperation(
+                        right_type.clone(),
+                        *operator,
+                    ));
+                self.context
+                    .set_variable_type(target.name.clone(), result_type);
             }
-            
-            Operation::Unary { target, operand, operator } => {
+
+            Operation::Unary {
+                target,
+                operand,
+                operator,
+            } => {
                 let operand_type = self.infer_expression_type(operand)?;
                 let result_type = self.infer_unary_result_type(&operand_type, *operator)?;
-                
-                self.context.set_variable_type(target.name.clone(), result_type);
+
+                self.context
+                    .set_variable_type(target.name.clone(), result_type);
             }
-            
-            Operation::Syscall { name: _, arguments, return_type, target } => {
+
+            Operation::Syscall {
+                name: _,
+                arguments,
+                return_type,
+                target,
+            } => {
                 // Handle syscall invocations
                 if let Some(result_var) = target {
                     let result_type = return_type.clone().unwrap_or(Type::Unknown);
-                    self.context.set_variable_type(result_var.name.clone(), result_type);
+                    self.context
+                        .set_variable_type(result_var.name.clone(), result_type);
                 }
-                
+
                 // Add constraints for argument types
                 for arg in arguments {
                     let _arg_type = self.infer_expression_type(arg)?;
                     // Note: syscall argument validation could be added here
                 }
             }
-            
+
             // Handle other operation types that don't affect type constraints directly
             Operation::ContractCall { target, .. } => {
                 // Contract call result type - could be inferred from contract ABI
                 if let Some(result_var) = target {
-                    self.context.set_variable_type(result_var.name.clone(), Type::Unknown);
+                    self.context
+                        .set_variable_type(result_var.name.clone(), Type::Unknown);
                 }
             }
-            
+
             Operation::Storage { target, .. } => {
                 // Storage operations typically return the stored/loaded value
                 if let Some(result_var) = target {
-                    self.context.set_variable_type(result_var.name.clone(), Type::Unknown);
+                    self.context
+                        .set_variable_type(result_var.name.clone(), Type::Unknown);
                 }
             }
-            
+
             _ => {
                 // Handle other operation types as needed
             }
         }
-        
+
         Ok(())
     }
 
@@ -866,27 +944,27 @@ impl TypeInferenceEngine {
         let mut changed = true;
         let mut iteration = 0;
         const MAX_ITERATIONS: usize = 100;
-        
+
         while changed && iteration < MAX_ITERATIONS {
             changed = false;
             iteration += 1;
-            
+
             // Process each constraint
             for constraint in self.context.constraints.clone() {
                 if self.solve_single_constraint(&constraint)? {
                     changed = true;
                 }
             }
-            
+
             self.context.stats.unification_steps += 1;
         }
-        
+
         if iteration >= MAX_ITERATIONS {
             return Err(TypeError::ConstraintSolvingFailure {
                 reason: "Maximum iterations exceeded in constraint solving".to_string(),
             });
         }
-        
+
         self.context.stats.constraints_solved = self.context.constraints.len();
         Ok(())
     }
@@ -894,15 +972,13 @@ impl TypeInferenceEngine {
     /// Solve a single type constraint
     fn solve_single_constraint(&mut self, constraint: &TypeConstraint) -> Result<bool, TypeError> {
         match constraint {
-            TypeConstraint::Equal(t1, t2) => {
-                self.unify(t1, t2)
-            }
-            
+            TypeConstraint::Equal(t1, t2) => self.unify(t1, t2),
+
             TypeConstraint::Subtype(sub, sup) => {
                 // Check if subtype relationship already holds
                 let resolved_sub = self.resolve_type(sub);
                 let resolved_sup = self.resolve_type(sup);
-                
+
                 if !resolved_sub.is_subtype_of(&resolved_sup) {
                     // Try to make it work through unification
                     self.unify(&resolved_sub, &resolved_sup)
@@ -910,29 +986,35 @@ impl TypeInferenceEngine {
                     Ok(false) // Already satisfied
                 }
             }
-            
+
             TypeConstraint::SupportsOperation(t, op) => {
                 let resolved_type = self.resolve_type(t);
-                
+
                 if !self.type_supports_operation(&resolved_type, *op) {
                     // Try to find a compatible type
-                    let compatible_type = self.find_operation_compatible_type(&resolved_type, *op)?;
+                    let compatible_type =
+                        self.find_operation_compatible_type(&resolved_type, *op)?;
                     self.unify(&resolved_type, &compatible_type)
                 } else {
                     Ok(false) // Already satisfied
                 }
             }
-            
+
             TypeConstraint::HasField(t, field_name, field_type) => {
                 let resolved_type = self.resolve_type(t);
-                
+
                 match resolved_type {
                     Type::Struct(ref struct_type) => {
-                        if let Some(field) = struct_type.fields.iter().find(|f| f.name == *field_name) {
+                        if let Some(field) =
+                            struct_type.fields.iter().find(|f| f.name == *field_name)
+                        {
                             self.unify(&field.field_type, field_type)
                         } else {
                             Err(TypeError::FieldNotFound {
-                                type_name: struct_type.name.clone().unwrap_or("Anonymous".to_string()),
+                                type_name: struct_type
+                                    .name
+                                    .clone()
+                                    .unwrap_or("Anonymous".to_string()),
                                 field_name: field_name.clone(),
                             })
                         }
@@ -954,19 +1036,20 @@ impl TypeInferenceEngine {
                     _ => Err(TypeError::FieldNotFound {
                         type_name: resolved_type.to_string(),
                         field_name: field_name.clone(),
-                    })
+                    }),
                 }
             }
-            
+
             TypeConstraint::Indexable(container, index, element) => {
                 let resolved_container = self.resolve_type(container);
                 let resolved_index = self.resolve_type(index);
                 let resolved_element = self.resolve_type(element);
-                
+
                 match resolved_container {
                     Type::Array(ref elem_type) => {
                         // Index must be integer, element must match array element type
-                        let index_unified = self.unify(&resolved_index, &Type::Primitive(PrimitiveType::Integer))?;
+                        let index_unified =
+                            self.unify(&resolved_index, &Type::Primitive(PrimitiveType::Integer))?;
                         let element_unified = self.unify(&resolved_element, elem_type)?;
                         Ok(index_unified || element_unified)
                     }
@@ -978,27 +1061,28 @@ impl TypeInferenceEngine {
                     }
                     Type::Variable(_) => {
                         // Create appropriate container type
-                        let container_type = if resolved_index == Type::Primitive(PrimitiveType::Integer) {
-                            Type::Array(Box::new(resolved_element.clone()))
-                        } else {
-                            Type::Map {
-                                key: Box::new(resolved_index.clone()),
-                                value: Box::new(resolved_element.clone()),
-                            }
-                        };
+                        let container_type =
+                            if resolved_index == Type::Primitive(PrimitiveType::Integer) {
+                                Type::Array(Box::new(resolved_element.clone()))
+                            } else {
+                                Type::Map {
+                                    key: Box::new(resolved_index.clone()),
+                                    value: Box::new(resolved_element.clone()),
+                                }
+                            };
                         self.unify(&resolved_container, &container_type)
                     }
                     _ => Err(TypeError::UnsupportedOperation {
                         type_name: resolved_container.to_string(),
                         operation: "indexing".to_string(),
-                    })
+                    }),
                 }
             }
-            
+
             TypeConstraint::Convertible(from, to) => {
                 let resolved_from = self.resolve_type(from);
                 let resolved_to = self.resolve_type(to);
-                
+
                 if self.is_convertible(&resolved_from, &resolved_to) {
                     Ok(false) // Already satisfied
                 } else {
@@ -1008,7 +1092,7 @@ impl TypeInferenceEngine {
                     })
                 }
             }
-            
+
             _ => Ok(false), // Other constraints not yet implemented
         }
     }
@@ -1017,11 +1101,11 @@ impl TypeInferenceEngine {
     fn unify(&mut self, t1: &Type, t2: &Type) -> Result<bool, TypeError> {
         let resolved1 = self.resolve_type(t1);
         let resolved2 = self.resolve_type(t2);
-        
+
         if resolved1 == resolved2 {
             return Ok(false); // Already unified
         }
-        
+
         match (&resolved1, &resolved2) {
             // Variable unification
             (Type::Variable(var1), Type::Variable(var2)) => {
@@ -1032,32 +1116,28 @@ impl TypeInferenceEngine {
                     Ok(false)
                 }
             }
-            
+
             (Type::Variable(var), other) | (other, Type::Variable(var)) => {
                 // Occurs check
                 if self.occurs_check(*var, other) {
                     return Err(TypeError::InfiniteType);
                 }
-                
+
                 self.context.bindings.insert(*var, other.clone());
                 Ok(true)
             }
-            
+
             // Structural unification
-            (Type::Array(elem1), Type::Array(elem2)) => {
-                self.unify(elem1, elem2)
-            }
-            
+            (Type::Array(elem1), Type::Array(elem2)) => self.unify(elem1, elem2),
+
             (Type::Map { key: k1, value: v1 }, Type::Map { key: k2, value: v2 }) => {
                 let key_unified = self.unify(k1, k2)?;
                 let value_unified = self.unify(v1, v2)?;
                 Ok(key_unified || value_unified)
             }
-            
-            (Type::Nullable(inner1), Type::Nullable(inner2)) => {
-                self.unify(inner1, inner2)
-            }
-            
+
+            (Type::Nullable(inner1), Type::Nullable(inner2)) => self.unify(inner1, inner2),
+
             // Compatible types that can be unified
             (t1, t2) if t1.is_compatible_with(t2) => {
                 // Choose the more specific type
@@ -1076,12 +1156,12 @@ impl TypeInferenceEngine {
                 }
                 Ok(false)
             }
-            
+
             // Unification failure
             _ => Err(TypeError::UnificationFailure {
                 type1: resolved1,
                 type2: resolved2,
-            })
+            }),
         }
     }
 
@@ -1102,16 +1182,20 @@ impl TypeInferenceEngine {
                 self.occurs_check(var, key) || self.occurs_check(var, value)
             }
             Type::Nullable(inner) => self.occurs_check(var, inner),
-            Type::Function { parameters, return_type } => {
-                parameters.iter().any(|p| self.occurs_check(var, p)) || 
-                self.occurs_check(var, return_type)
+            Type::Function {
+                parameters,
+                return_type,
+            } => {
+                parameters.iter().any(|p| self.occurs_check(var, p))
+                    || self.occurs_check(var, return_type)
             }
             Type::Generic { parameters, .. } => {
                 parameters.iter().any(|p| self.occurs_check(var, p))
             }
-            Type::Struct(struct_type) => {
-                struct_type.fields.iter().any(|f| self.occurs_check(var, &f.field_type))
-            }
+            Type::Struct(struct_type) => struct_type
+                .fields
+                .iter()
+                .any(|f| self.occurs_check(var, &f.field_type)),
             _ => false,
         }
     }
@@ -1153,43 +1237,47 @@ impl TypeInferenceEngine {
     pub fn common_supertype(&self, t1: &Type, t2: &Type) -> Type {
         let resolved1 = self.resolve_type(t1);
         let resolved2 = self.resolve_type(t2);
-        
+
         match (&resolved1, &resolved2) {
             (a, b) if a == b => a.clone(),
-            
+
             // Special Neo N3 type compatibility rules
-            (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::Boolean)) |
-            (Type::Primitive(PrimitiveType::Boolean), Type::Primitive(PrimitiveType::Integer)) => {
+            (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::Boolean))
+            | (Type::Primitive(PrimitiveType::Boolean), Type::Primitive(PrimitiveType::Integer)) => {
                 Type::Any // No common supertype, must be Any
             }
-            
-            (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::ByteString)) |
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::Integer)) => {
+
+            (
+                Type::Primitive(PrimitiveType::Integer),
+                Type::Primitive(PrimitiveType::ByteString),
+            )
+            | (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::Integer),
+            ) => {
                 Type::Any // Both are convertible but no direct supertype
             }
-            
+
             // Array types - covariant in element type
             (Type::Array(elem1), Type::Array(elem2)) => {
                 Type::Array(Box::new(self.common_supertype(elem1, elem2)))
             }
-            
+
             // Map types
-            (Type::Map { key: k1, value: v1 }, Type::Map { key: k2, value: v2 }) => {
-                Type::Map {
-                    key: Box::new(self.common_supertype(k1, k2)),
-                    value: Box::new(self.common_supertype(v1, v2)),
-                }
-            }
-            
+            (Type::Map { key: k1, value: v1 }, Type::Map { key: k2, value: v2 }) => Type::Map {
+                key: Box::new(self.common_supertype(k1, k2)),
+                value: Box::new(self.common_supertype(v1, v2)),
+            },
+
             // Nullable types
             (Type::Nullable(inner1), Type::Nullable(inner2)) => {
                 Type::Nullable(Box::new(self.common_supertype(inner1, inner2)))
             }
-            
+
             (Type::Nullable(inner), other) | (other, Type::Nullable(inner)) => {
                 Type::Nullable(Box::new(self.common_supertype(inner, other)))
             }
-            
+
             // Union types
             (Type::Union(types1), Type::Union(types2)) => {
                 let mut all_types = types1.clone();
@@ -1198,7 +1286,7 @@ impl TypeInferenceEngine {
                 all_types.dedup();
                 Type::Union(all_types)
             }
-            
+
             (Type::Union(types), other) | (other, Type::Union(types)) => {
                 let mut all_types = types.clone();
                 all_types.push(other.clone());
@@ -1206,7 +1294,7 @@ impl TypeInferenceEngine {
                 all_types.dedup();
                 Type::Union(all_types)
             }
-            
+
             // Default to Any for incompatible types
             _ => Type::Any,
         }
@@ -1217,60 +1305,64 @@ impl TypeInferenceEngine {
         if types.is_empty() {
             return Ok(Type::Unknown);
         }
-        
+
         if types.len() == 1 {
             return Ok(types[0].clone());
         }
-        
+
         // Start with first type and unify with each subsequent type
         let mut result = types[0].clone();
         for ty in types.iter().skip(1) {
             result = self.common_supertype(&result, ty);
         }
-        
+
         Ok(result)
     }
 
     /// Infer type of an expression
     pub fn infer_expression_type(&mut self, expr: &Expression) -> Result<Type, TypeError> {
         match expr {
-            Expression::Variable(var) => {
-                self.context.get_variable_type(&var.name)
-                    .cloned()
-                    .ok_or_else(|| TypeError::UndefinedVariable { name: var.name.clone() })
-            }
-            
-            Expression::Literal(literal) => {
-                Ok(self.infer_literal_type(literal))
-            }
-            
+            Expression::Variable(var) => self
+                .context
+                .get_variable_type(&var.name)
+                .cloned()
+                .ok_or_else(|| TypeError::UndefinedVariable {
+                    name: var.name.clone(),
+                }),
+
+            Expression::Literal(literal) => Ok(self.infer_literal_type(literal)),
+
             Expression::BinaryOp { left, right, op } => {
                 let left_type = self.infer_expression_type(left)?;
                 let right_type = self.infer_expression_type(right)?;
                 self.infer_binary_result_type(&left_type, &right_type, *op)
             }
-            
+
             Expression::UnaryOp { operand, op } => {
                 let operand_type = self.infer_expression_type(operand)?;
                 self.infer_unary_result_type(&operand_type, *op)
             }
-            
-            Expression::Call { function, arguments } => {
-                self.infer_call_result_type(function, arguments)
-            }
-            
+
+            Expression::Call {
+                function,
+                arguments,
+            } => self.infer_call_result_type(function, arguments),
+
             Expression::Field { object, field } => {
                 let object_type = self.infer_expression_type(object)?;
                 self.infer_field_access_type(&object_type, field)
             }
-            
+
             Expression::Index { array, index } => {
                 let array_type = self.infer_expression_type(array)?;
                 let index_type = self.infer_expression_type(index)?;
                 self.infer_index_result_type(&array_type, &index_type)
             }
-            
-            Expression::Cast { target_type, expression } => {
+
+            Expression::Cast {
+                target_type,
+                expression,
+            } => {
                 let source_type = self.infer_expression_type(expression)?;
                 if self.is_convertible(&source_type, target_type) {
                     Ok(target_type.clone())
@@ -1281,7 +1373,7 @@ impl TypeInferenceEngine {
                     })
                 }
             }
-            
+
             _ => Ok(Type::Unknown), // Fallback for unhandled expressions
         }
     }
@@ -1301,75 +1393,95 @@ impl TypeInferenceEngine {
     }
 
     /// Infer result type of binary operation
-    fn infer_binary_result_type(&self, left: &Type, right: &Type, op: BinaryOperator) -> Result<Type, TypeError> {
+    fn infer_binary_result_type(
+        &self,
+        left: &Type,
+        right: &Type,
+        op: BinaryOperator,
+    ) -> Result<Type, TypeError> {
         use BinaryOperator::*;
-        
+
         let left_resolved = self.resolve_type(left);
         let right_resolved = self.resolve_type(right);
-        
+
         match op {
             // Arithmetic operations - require numeric types
             Add | Sub | Mul | Div | Mod | Pow => {
                 match (&left_resolved, &right_resolved) {
-                    (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::Integer)) => {
-                        Ok(Type::Primitive(PrimitiveType::Integer))
-                    }
+                    (
+                        Type::Primitive(PrimitiveType::Integer),
+                        Type::Primitive(PrimitiveType::Integer),
+                    ) => Ok(Type::Primitive(PrimitiveType::Integer)),
                     // String concatenation for ADD
-                    (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::ByteString)) 
-                        if op == Add => {
-                        Ok(Type::Primitive(PrimitiveType::ByteString))
-                    }
+                    (
+                        Type::Primitive(PrimitiveType::ByteString),
+                        Type::Primitive(PrimitiveType::ByteString),
+                    ) if op == Add => Ok(Type::Primitive(PrimitiveType::ByteString)),
                     _ => Err(TypeError::UnsupportedOperation {
-                        type_name: format!("{} {} {}", left_resolved.to_string(), 
-                                         format!("{:?}", op), right_resolved.to_string()),
+                        type_name: format!(
+                            "{} {} {}",
+                            left_resolved.to_string(),
+                            format!("{:?}", op),
+                            right_resolved.to_string()
+                        ),
                         operation: format!("{:?}", op),
-                    })
+                    }),
                 }
             }
-            
+
             // Bitwise operations - require integer types
-            And | Or | Xor | LeftShift | RightShift => {
-                match (&left_resolved, &right_resolved) {
-                    (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::Integer)) => {
-                        Ok(Type::Primitive(PrimitiveType::Integer))
-                    }
-                    _ => Err(TypeError::UnsupportedOperation {
-                        type_name: format!("{} {} {}", left_resolved.to_string(), 
-                                         format!("{:?}", op), right_resolved.to_string()),
-                        operation: format!("{:?}", op),
-                    })
-                }
-            }
-            
+            And | Or | Xor | LeftShift | RightShift => match (&left_resolved, &right_resolved) {
+                (
+                    Type::Primitive(PrimitiveType::Integer),
+                    Type::Primitive(PrimitiveType::Integer),
+                ) => Ok(Type::Primitive(PrimitiveType::Integer)),
+                _ => Err(TypeError::UnsupportedOperation {
+                    type_name: format!(
+                        "{} {} {}",
+                        left_resolved.to_string(),
+                        format!("{:?}", op),
+                        right_resolved.to_string()
+                    ),
+                    operation: format!("{:?}", op),
+                }),
+            },
+
             // Comparison operations - return boolean
             Equal | NotEqual => Ok(Type::Primitive(PrimitiveType::Boolean)),
-            
+
             Less | LessEqual | Greater | GreaterEqual => {
                 if left_resolved.supports_comparison() && right_resolved.supports_comparison() {
                     Ok(Type::Primitive(PrimitiveType::Boolean))
                 } else {
                     Err(TypeError::UnsupportedOperation {
-                        type_name: format!("{} {} {}", left_resolved.to_string(), 
-                                         format!("{:?}", op), right_resolved.to_string()),
+                        type_name: format!(
+                            "{} {} {}",
+                            left_resolved.to_string(),
+                            format!("{:?}", op),
+                            right_resolved.to_string()
+                        ),
                         operation: format!("{:?}", op),
                     })
                 }
             }
-            
+
             // Logical operations - require boolean types
-            BoolAnd | BoolOr => {
-                match (&left_resolved, &right_resolved) {
-                    (Type::Primitive(PrimitiveType::Boolean), Type::Primitive(PrimitiveType::Boolean)) => {
-                        Ok(Type::Primitive(PrimitiveType::Boolean))
-                    }
-                    _ => Err(TypeError::UnsupportedOperation {
-                        type_name: format!("{} {} {}", left_resolved.to_string(), 
-                                         format!("{:?}", op), right_resolved.to_string()),
-                        operation: format!("{:?}", op),
-                    })
-                }
-            }
-            
+            BoolAnd | BoolOr => match (&left_resolved, &right_resolved) {
+                (
+                    Type::Primitive(PrimitiveType::Boolean),
+                    Type::Primitive(PrimitiveType::Boolean),
+                ) => Ok(Type::Primitive(PrimitiveType::Boolean)),
+                _ => Err(TypeError::UnsupportedOperation {
+                    type_name: format!(
+                        "{} {} {}",
+                        left_resolved.to_string(),
+                        format!("{:?}", op),
+                        right_resolved.to_string()
+                    ),
+                    operation: format!("{:?}", op),
+                }),
+            },
+
             // Handle alternative names
             Subtract => self.infer_binary_result_type(left, right, Sub),
             Multiply => self.infer_binary_result_type(left, right, Mul),
@@ -1378,67 +1490,75 @@ impl TypeInferenceEngine {
     }
 
     /// Infer result type of unary operation
-    fn infer_unary_result_type(&self, operand: &Type, op: UnaryOperator) -> Result<Type, TypeError> {
+    fn infer_unary_result_type(
+        &self,
+        operand: &Type,
+        op: UnaryOperator,
+    ) -> Result<Type, TypeError> {
         use UnaryOperator::*;
-        
+
         let operand_resolved = self.resolve_type(operand);
-        
+
         match op {
             // Arithmetic unary operations
-            Negate | Abs | Sign => {
-                match operand_resolved {
-                    Type::Primitive(PrimitiveType::Integer) => Ok(Type::Primitive(PrimitiveType::Integer)),
-                    _ => Err(TypeError::UnsupportedOperation {
-                        type_name: operand_resolved.to_string(),
-                        operation: format!("{:?}", op),
-                    })
+            Negate | Abs | Sign => match operand_resolved {
+                Type::Primitive(PrimitiveType::Integer) => {
+                    Ok(Type::Primitive(PrimitiveType::Integer))
                 }
-            }
-            
+                _ => Err(TypeError::UnsupportedOperation {
+                    type_name: operand_resolved.to_string(),
+                    operation: format!("{:?}", op),
+                }),
+            },
+
             // Bitwise NOT
-            Not | BitwiseNot => {
-                match operand_resolved {
-                    Type::Primitive(PrimitiveType::Integer) => Ok(Type::Primitive(PrimitiveType::Integer)),
-                    _ => Err(TypeError::UnsupportedOperation {
-                        type_name: operand_resolved.to_string(),
-                        operation: format!("{:?}", op),
-                    })
+            Not | BitwiseNot => match operand_resolved {
+                Type::Primitive(PrimitiveType::Integer) => {
+                    Ok(Type::Primitive(PrimitiveType::Integer))
                 }
-            }
-            
+                _ => Err(TypeError::UnsupportedOperation {
+                    type_name: operand_resolved.to_string(),
+                    operation: format!("{:?}", op),
+                }),
+            },
+
             // Logical NOT
-            BoolNot => {
-                match operand_resolved {
-                    Type::Primitive(PrimitiveType::Boolean) => Ok(Type::Primitive(PrimitiveType::Boolean)),
-                    _ => Err(TypeError::UnsupportedOperation {
-                        type_name: operand_resolved.to_string(),
-                        operation: format!("{:?}", op),
-                    })
+            BoolNot => match operand_resolved {
+                Type::Primitive(PrimitiveType::Boolean) => {
+                    Ok(Type::Primitive(PrimitiveType::Boolean))
                 }
-            }
-            
+                _ => Err(TypeError::UnsupportedOperation {
+                    type_name: operand_resolved.to_string(),
+                    operation: format!("{:?}", op),
+                }),
+            },
+
             // Mathematical functions
-            Sqrt => {
-                match operand_resolved {
-                    Type::Primitive(PrimitiveType::Integer) => Ok(Type::Primitive(PrimitiveType::Integer)),
-                    _ => Err(TypeError::UnsupportedOperation {
-                        type_name: operand_resolved.to_string(),
-                        operation: format!("{:?}", op),
-                    })
+            Sqrt => match operand_resolved {
+                Type::Primitive(PrimitiveType::Integer) => {
+                    Ok(Type::Primitive(PrimitiveType::Integer))
                 }
-            }
+                _ => Err(TypeError::UnsupportedOperation {
+                    type_name: operand_resolved.to_string(),
+                    operation: format!("{:?}", op),
+                }),
+            },
         }
     }
 
     /// Infer result type of function call
-    fn infer_call_result_type(&mut self, function: &str, arguments: &[Expression]) -> Result<Type, TypeError> {
+    fn infer_call_result_type(
+        &mut self,
+        function: &str,
+        arguments: &[Expression],
+    ) -> Result<Type, TypeError> {
         // Check if it's a known function
         if let Some(func_type) = self.context.function_types.get(function) {
             if let Type::Function { return_type, .. } = func_type {
                 return Ok((**return_type).clone());
             }
         }
-        
+
         // Check if it's a syscall based on name pattern
         if function.starts_with("System.") {
             // Try to find syscall by name
@@ -1448,22 +1568,26 @@ impl TypeInferenceEngine {
                 }
             }
         }
-        
+
         // Try to parse as syscall hash
         if let Ok(hash) = u32::from_str_radix(function.trim_start_matches("0x"), 16) {
             if let Some(syscall) = self.context.syscall_types.get(&hash) {
                 return Ok(syscall.return_type.clone());
             }
         }
-        
+
         // Default to Any for unknown functions
         Ok(Type::Any)
     }
 
     /// Infer type of field access
-    fn infer_field_access_type(&self, object_type: &Type, field_name: &str) -> Result<Type, TypeError> {
+    fn infer_field_access_type(
+        &self,
+        object_type: &Type,
+        field_name: &str,
+    ) -> Result<Type, TypeError> {
         let resolved_type = self.resolve_type(object_type);
-        
+
         match resolved_type {
             Type::Struct(ref struct_type) => {
                 for field in &struct_type.fields {
@@ -1479,15 +1603,19 @@ impl TypeInferenceEngine {
             _ => Err(TypeError::FieldNotFound {
                 type_name: resolved_type.to_string(),
                 field_name: field_name.to_string(),
-            })
+            }),
         }
     }
 
     /// Infer result type of array/map indexing
-    fn infer_index_result_type(&self, container_type: &Type, index_type: &Type) -> Result<Type, TypeError> {
+    fn infer_index_result_type(
+        &self,
+        container_type: &Type,
+        index_type: &Type,
+    ) -> Result<Type, TypeError> {
         let resolved_container = self.resolve_type(container_type);
         let resolved_index = self.resolve_type(index_type);
-        
+
         match resolved_container {
             Type::Array(ref element_type) => {
                 // Index should be integer
@@ -1529,7 +1657,7 @@ impl TypeInferenceEngine {
             _ => Err(TypeError::UnsupportedOperation {
                 type_name: resolved_container.to_string(),
                 operation: "indexing".to_string(),
-            })
+            }),
         }
     }
 
@@ -1537,7 +1665,7 @@ impl TypeInferenceEngine {
     fn type_supports_operation(&self, ty: &Type, op: BinaryOperator) -> bool {
         use BinaryOperator::*;
         let resolved = self.resolve_type(ty);
-        
+
         match op {
             // Arithmetic operations
             Add | Sub | Mul | Div | Mod | Pow | Subtract | Multiply | Divide => {
@@ -1548,19 +1676,17 @@ impl TypeInferenceEngine {
                     _ => false,
                 }
             }
-            
+
             // Bitwise operations
             And | Or | Xor | LeftShift | RightShift => {
                 matches!(resolved, Type::Primitive(PrimitiveType::Integer))
             }
-            
+
             // Comparison operations
             Equal | NotEqual => true, // All types can be compared for equality
-            
-            Less | LessEqual | Greater | GreaterEqual => {
-                resolved.supports_comparison()
-            }
-            
+
+            Less | LessEqual | Greater | GreaterEqual => resolved.supports_comparison(),
+
             // Logical operations
             BoolAnd | BoolOr => {
                 matches!(resolved, Type::Primitive(PrimitiveType::Boolean))
@@ -1569,23 +1695,23 @@ impl TypeInferenceEngine {
     }
 
     /// Find a type compatible with the given operation
-    fn find_operation_compatible_type(&self, ty: &Type, op: BinaryOperator) -> Result<Type, TypeError> {
+    fn find_operation_compatible_type(
+        &self,
+        ty: &Type,
+        op: BinaryOperator,
+    ) -> Result<Type, TypeError> {
         use BinaryOperator::*;
-        
+
         match op {
             Add | Sub | Mul | Div | Mod | Pow | Subtract | Multiply | Divide => {
                 Ok(Type::Primitive(PrimitiveType::Integer))
             }
-            And | Or | Xor | LeftShift | RightShift => {
-                Ok(Type::Primitive(PrimitiveType::Integer))
-            }
+            And | Or | Xor | LeftShift | RightShift => Ok(Type::Primitive(PrimitiveType::Integer)),
             Equal | NotEqual => Ok(ty.clone()), // Any type works
             Less | LessEqual | Greater | GreaterEqual => {
                 Ok(Type::Primitive(PrimitiveType::Integer)) // Most common comparable type
             }
-            BoolAnd | BoolOr => {
-                Ok(Type::Primitive(PrimitiveType::Boolean))
-            }
+            BoolAnd | BoolOr => Ok(Type::Primitive(PrimitiveType::Boolean)),
         }
     }
 
@@ -1593,67 +1719,113 @@ impl TypeInferenceEngine {
     fn is_convertible(&self, from: &Type, to: &Type) -> bool {
         let from_resolved = self.resolve_type(from);
         let to_resolved = self.resolve_type(to);
-        
+
         // Same type is always convertible
         if from_resolved == to_resolved {
             return true;
         }
-        
+
         match (&from_resolved, &to_resolved) {
             // Any/Unknown types
             (Type::Unknown, _) | (_, Type::Unknown) => true,
             (Type::Any, _) | (_, Type::Any) => true,
-            
+
             // Neo N3 specific conversions (based on CONVERT opcode semantics)
-            
+
             // Integer conversions
-            (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::Boolean)) => true,
-            (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::ByteString)) => true,
-            
+            (Type::Primitive(PrimitiveType::Integer), Type::Primitive(PrimitiveType::Boolean)) => {
+                true
+            }
+            (
+                Type::Primitive(PrimitiveType::Integer),
+                Type::Primitive(PrimitiveType::ByteString),
+            ) => true,
+
             // Boolean conversions
-            (Type::Primitive(PrimitiveType::Boolean), Type::Primitive(PrimitiveType::Integer)) => true,
-            (Type::Primitive(PrimitiveType::Boolean), Type::Primitive(PrimitiveType::ByteString)) => true,
-            
+            (Type::Primitive(PrimitiveType::Boolean), Type::Primitive(PrimitiveType::Integer)) => {
+                true
+            }
+            (
+                Type::Primitive(PrimitiveType::Boolean),
+                Type::Primitive(PrimitiveType::ByteString),
+            ) => true,
+
             // ByteString conversions
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::Integer)) => true,
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::Boolean)) => true,
+            (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::Integer),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::Boolean),
+            ) => true,
             (Type::Primitive(PrimitiveType::ByteString), Type::Buffer) => true,
-            
+
             // Buffer conversions
             (Type::Buffer, Type::Primitive(PrimitiveType::ByteString)) => true,
-            
+
             // Array to ByteString (serialization)
             (Type::Array(_), Type::Primitive(PrimitiveType::ByteString)) => true,
             (Type::Primitive(PrimitiveType::ByteString), Type::Array(_)) => true,
-            
-            // Struct to ByteString (serialization) 
+
+            // Struct to ByteString (serialization)
             (Type::Struct(_), Type::Primitive(PrimitiveType::ByteString)) => true,
             (Type::Primitive(PrimitiveType::ByteString), Type::Struct(_)) => true,
-            
+
             // Map to ByteString (serialization)
             (Type::Map { .. }, Type::Primitive(PrimitiveType::ByteString)) => true,
             (Type::Primitive(PrimitiveType::ByteString), Type::Map { .. }) => true,
-            
+
             // Nullable unwrapping
             (Type::Nullable(inner), other) => self.is_convertible(inner, &other),
             (other, Type::Nullable(inner)) => self.is_convertible(&other, inner),
-            
+
             // ECPoint to ByteString
-            (Type::Primitive(PrimitiveType::ECPoint), Type::Primitive(PrimitiveType::ByteString)) => true,
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::ECPoint)) => true,
-            
+            (
+                Type::Primitive(PrimitiveType::ECPoint),
+                Type::Primitive(PrimitiveType::ByteString),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::ECPoint),
+            ) => true,
+
             // Hash types to ByteString
-            (Type::Primitive(PrimitiveType::Hash160), Type::Primitive(PrimitiveType::ByteString)) => true,
-            (Type::Primitive(PrimitiveType::Hash256), Type::Primitive(PrimitiveType::ByteString)) => true,
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::Hash160)) => true,
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::Hash256)) => true,
-            
+            (
+                Type::Primitive(PrimitiveType::Hash160),
+                Type::Primitive(PrimitiveType::ByteString),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::Hash256),
+                Type::Primitive(PrimitiveType::ByteString),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::Hash160),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::Hash256),
+            ) => true,
+
             // PublicKey and Signature to ByteString
-            (Type::Primitive(PrimitiveType::PublicKey), Type::Primitive(PrimitiveType::ByteString)) => true,
-            (Type::Primitive(PrimitiveType::Signature), Type::Primitive(PrimitiveType::ByteString)) => true,
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::PublicKey)) => true,
-            (Type::Primitive(PrimitiveType::ByteString), Type::Primitive(PrimitiveType::Signature)) => true,
-            
+            (
+                Type::Primitive(PrimitiveType::PublicKey),
+                Type::Primitive(PrimitiveType::ByteString),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::Signature),
+                Type::Primitive(PrimitiveType::ByteString),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::PublicKey),
+            ) => true,
+            (
+                Type::Primitive(PrimitiveType::ByteString),
+                Type::Primitive(PrimitiveType::Signature),
+            ) => true,
+
             _ => false,
         }
     }
@@ -1673,7 +1845,7 @@ impl TypeInferenceEngine {
                 }
             }
         }
-        
+
         // Apply types to parameters
         for param in &mut function.parameters {
             if let Some(inferred_type) = self.context.get_variable_type(&param.name) {
@@ -1686,7 +1858,7 @@ impl TypeInferenceEngine {
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -1714,7 +1886,7 @@ impl TypeInferenceEngine {
     /// Export type information for external use
     pub fn export_type_info(&self) -> HashMap<String, Type> {
         let mut exported = HashMap::new();
-        
+
         // Export resolved variable types
         for (name, ty) in &self.context.variable_types {
             let resolved = self.resolve_type(ty);
@@ -1722,7 +1894,7 @@ impl TypeInferenceEngine {
                 exported.insert(name.clone(), resolved);
             }
         }
-        
+
         exported
     }
 
@@ -1749,19 +1921,21 @@ impl TypeInferenceEngine {
                 PrimitiveType::ByteArray => "ByteArray".to_string(),
             },
             Type::Array(elem) => format!("{}[]", self.format_type_annotation(elem)),
-            Type::Map { key, value } => format!("Map<{}, {}>", 
-                self.format_type_annotation(key), 
+            Type::Map { key, value } => format!(
+                "Map<{}, {}>",
+                self.format_type_annotation(key),
                 self.format_type_annotation(value)
             ),
             Type::Buffer => "Buffer".to_string(),
             Type::Struct(s) => s.name.clone().unwrap_or("struct".to_string()),
             Type::Nullable(inner) => format!("{}?", self.format_type_annotation(inner)),
             Type::Union(types) => {
-                let formatted: Vec<String> = types.iter()
+                let formatted: Vec<String> = types
+                    .iter()
                     .map(|t| self.format_type_annotation(t))
                     .collect();
                 format!("({})", formatted.join(" | "))
-            },
+            }
             Type::Contract(c) => c.name.clone(),
             Type::InteropInterface(name) => format!("InteropInterface<{}>", name),
             Type::Any => "any".to_string(),
@@ -1773,34 +1947,43 @@ impl TypeInferenceEngine {
     /// Extract type metadata from inferred types
     pub fn extract_type_metadata(&self) -> TypeMetadata {
         let mut metadata = TypeMetadata::new();
-        
+
         // Extract variable type information
         for (name, ty) in &self.context.variable_types {
             let resolved = self.resolve_type(ty);
             if resolved != Type::Unknown {
-                metadata.variable_types.insert(name.clone(), resolved.clone());
-                metadata.type_annotations.insert(name.clone(), self.format_type_annotation(&resolved));
+                metadata
+                    .variable_types
+                    .insert(name.clone(), resolved.clone());
+                metadata
+                    .type_annotations
+                    .insert(name.clone(), self.format_type_annotation(&resolved));
             }
         }
-        
+
         // Extract function signatures
         for (name, ty) in &self.context.function_types {
-            metadata.function_signatures.insert(name.clone(), ty.clone());
+            metadata
+                .function_signatures
+                .insert(name.clone(), ty.clone());
         }
-        
+
         // Extract storage patterns
         for (pattern, ty) in &self.context.storage_types {
-            metadata.storage_patterns.insert(pattern.clone(), ty.clone());
+            metadata
+                .storage_patterns
+                .insert(pattern.clone(), ty.clone());
         }
-        
+
         metadata.inference_stats = self.context.stats.clone();
-        
+
         metadata
     }
 
     /// Helper method to integrate with LocalVariable updates
     pub fn update_local_variable_type(&mut self, variable_name: &str, inferred_type: Type) {
-        self.context.set_variable_type(variable_name.to_string(), inferred_type);
+        self.context
+            .set_variable_type(variable_name.to_string(), inferred_type);
     }
 
     /// Bulk update variable types from external source
@@ -1825,7 +2008,7 @@ impl TypeInferenceEngine {
     /// Get unresolved type variables
     pub fn get_unresolved_variables(&self) -> Vec<String> {
         let mut unresolved = Vec::new();
-        
+
         for (name, ty) in &self.context.variable_types {
             let resolved = self.resolve_type(ty);
             match resolved {
@@ -1835,21 +2018,27 @@ impl TypeInferenceEngine {
                 _ => {}
             }
         }
-        
+
         unresolved
     }
 
     /// Create struct type from field information
-    pub fn create_struct_type(&mut self, name: Option<String>, fields: Vec<(String, Type)>) -> Type {
-        let field_types = fields.into_iter().enumerate().map(|(i, (field_name, field_type))| {
-            FieldType {
+    pub fn create_struct_type(
+        &mut self,
+        name: Option<String>,
+        fields: Vec<(String, Type)>,
+    ) -> Type {
+        let field_types = fields
+            .into_iter()
+            .enumerate()
+            .map(|(i, (field_name, field_type))| FieldType {
                 name: field_name,
                 field_type,
                 index: i,
                 optional: false,
-            }
-        }).collect();
-        
+            })
+            .collect();
+
         Type::Struct(StructType {
             name,
             fields: field_types,
@@ -1885,12 +2074,12 @@ impl TypeMetadata {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Get type annotation for variable
     pub fn get_annotation(&self, variable_name: &str) -> Option<&String> {
         self.type_annotations.get(variable_name)
     }
-    
+
     /// Check if variable has known type
     pub fn has_type_info(&self, variable_name: &str) -> bool {
         self.variable_types.contains_key(variable_name)
@@ -1919,7 +2108,7 @@ impl fmt::Display for Type {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::ir::{IRFunction, IRBlock, Parameter, LocalVariable};
+    use crate::core::ir::{IRBlock, IRFunction, LocalVariable, Parameter};
 
     #[test]
     fn test_type_compatibility() {
@@ -1945,36 +2134,39 @@ mod tests {
         assert!(!int_type.is_boolean());
         assert!(int_type.supports_arithmetic());
         assert!(int_type.supports_comparison());
-        
+
         assert!(bool_type.is_boolean());
         assert!(!bool_type.is_numeric());
         assert!(!bool_type.supports_arithmetic());
-        
+
         assert!(string_type.is_string());
         assert!(string_type.supports_comparison());
-        
+
         assert!(array_type.is_container());
         assert!(array_type.supports_indexing());
-        
+
         assert!(nullable_type.is_nullable());
     }
 
     #[test]
     fn test_type_inference_context() {
         let mut ctx = TypeInferenceContext::new();
-        
+
         let var1 = ctx.fresh_type_var();
         let var2 = ctx.fresh_type_var();
 
         assert_ne!(var1, var2);
         assert_eq!(ctx.constraints.len(), 0);
-        
+
         ctx.add_constraint(TypeConstraint::Equal(var1.clone(), var2.clone()));
         assert_eq!(ctx.constraints.len(), 1);
-        
+
         // Test variable type management
         ctx.set_variable_type("x".to_string(), Type::Primitive(PrimitiveType::Integer));
-        assert_eq!(ctx.get_variable_type("x"), Some(&Type::Primitive(PrimitiveType::Integer)));
+        assert_eq!(
+            ctx.get_variable_type("x"),
+            Some(&Type::Primitive(PrimitiveType::Integer))
+        );
     }
 
     #[test]
@@ -1987,13 +2179,13 @@ mod tests {
 
         // Any is supertype of everything
         assert!(int_type.is_subtype_of(&any_type));
-        
+
         // Never is subtype of everything
         assert!(never_type.is_subtype_of(&int_type));
-        
+
         // Null is subtype of nullable types
         assert!(null_type.is_subtype_of(&nullable_int));
-        
+
         // Exact matches
         assert!(int_type.is_subtype_of(&int_type));
     }
@@ -2008,11 +2200,11 @@ mod tests {
             }
             _ => assert!(false, "Expected array type"),
         }
-        
+
         // Test map type creation
         let map_type = Type::map(
             Type::Primitive(PrimitiveType::ByteString),
-            Type::Primitive(PrimitiveType::Integer)
+            Type::Primitive(PrimitiveType::Integer),
         );
         match map_type {
             Type::Map { key, value } => {
@@ -2021,7 +2213,7 @@ mod tests {
             }
             _ => assert!(false, "Expected map type"),
         }
-        
+
         // Test nullable type creation
         let nullable_type = Type::nullable(Type::Primitive(PrimitiveType::Integer));
         match nullable_type {
@@ -2035,16 +2227,19 @@ mod tests {
     #[test]
     fn test_syscall_type_database() {
         let engine = TypeInferenceEngine::new();
-        
+
         // Test syscall signature lookup
         let storage_get = engine.context.get_syscall_type(0x0c40166b);
         assert!(storage_get.is_some());
-        
+
         let sig = storage_get.unwrap();
         assert_eq!(sig.name, "System.Storage.Get");
         assert_eq!(sig.parameters.len(), 1);
-        assert_eq!(sig.parameters[0], Type::Primitive(PrimitiveType::ByteString));
-        
+        assert_eq!(
+            sig.parameters[0],
+            Type::Primitive(PrimitiveType::ByteString)
+        );
+
         match &sig.return_type {
             Type::Nullable(inner) => {
                 assert_eq!(**inner, Type::Primitive(PrimitiveType::ByteString));
@@ -2056,12 +2251,12 @@ mod tests {
     #[test]
     fn test_error_handling() {
         let mut ctx = TypeInferenceContext::new();
-        
+
         // Test error addition
         let error = TypeError::UndefinedVariable {
             name: "unknown_var".to_string(),
         };
-        
+
         ctx.add_error(error.clone());
         assert!(ctx.has_errors());
         assert_eq!(ctx.get_errors().len(), 1);
@@ -2071,25 +2266,46 @@ mod tests {
     #[test]
     fn test_type_environment_scoping() {
         let mut ctx = TypeInferenceContext::new();
-        
+
         // Set variable in global scope
-        ctx.set_variable_type("global_var".to_string(), Type::Primitive(PrimitiveType::Integer));
-        assert_eq!(ctx.get_variable_type("global_var"), Some(&Type::Primitive(PrimitiveType::Integer)));
-        
+        ctx.set_variable_type(
+            "global_var".to_string(),
+            Type::Primitive(PrimitiveType::Integer),
+        );
+        assert_eq!(
+            ctx.get_variable_type("global_var"),
+            Some(&Type::Primitive(PrimitiveType::Integer))
+        );
+
         // Push new scope
         ctx.push_scope();
-        ctx.set_variable_type("local_var".to_string(), Type::Primitive(PrimitiveType::Boolean));
-        
+        ctx.set_variable_type(
+            "local_var".to_string(),
+            Type::Primitive(PrimitiveType::Boolean),
+        );
+
         // Should find both variables
-        assert_eq!(ctx.get_variable_type("global_var"), Some(&Type::Primitive(PrimitiveType::Integer)));
-        assert_eq!(ctx.get_variable_type("local_var"), Some(&Type::Primitive(PrimitiveType::Boolean)));
-        
+        assert_eq!(
+            ctx.get_variable_type("global_var"),
+            Some(&Type::Primitive(PrimitiveType::Integer))
+        );
+        assert_eq!(
+            ctx.get_variable_type("local_var"),
+            Some(&Type::Primitive(PrimitiveType::Boolean))
+        );
+
         // Pop scope
         ctx.pop_scope();
-        
+
         // Should still find global variable
-        assert_eq!(ctx.get_variable_type("global_var"), Some(&Type::Primitive(PrimitiveType::Integer)));
+        assert_eq!(
+            ctx.get_variable_type("global_var"),
+            Some(&Type::Primitive(PrimitiveType::Integer))
+        );
         // But local variable should still be accessible via global storage
-        assert_eq!(ctx.get_variable_type("local_var"), Some(&Type::Primitive(PrimitiveType::Boolean)));
+        assert_eq!(
+            ctx.get_variable_type("local_var"),
+            Some(&Type::Primitive(PrimitiveType::Boolean))
+        );
     }
 }

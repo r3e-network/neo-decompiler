@@ -5,7 +5,7 @@
   },
   "contract_name": "Contract_Assert",
   "events": [],
-  "instructions_count": 65,
+  "instructions_count": 64,
   "methods": [
     {
       "name": "testAssertFalse",
@@ -43,5 +43,5 @@
       "safe": false
     }
   ],
-  "pseudocode": "void main() {\n    // Initialize 1 local slots;\n    assert(true);\n    assert(false);\n    // Initialize 1 local slots;\n    // Initialize 2 local slots;\n    // Unhandled opcode: TRY at offset 34;\n    try  {\n\n        // try block -> block_9\n    }\n catch  {\n        // catch block -> block_3\n    }\n finally  {\n        // finally block -> block_4\n    }\n\n}\n"
+  "pseudocode": "void main() {\n    // Initialize 1 local slots, 0 static slots;\n    assert(true);\n    assert(false);\n    // Initialize 1 local slots, 0 static slots;\n    // Initialize 2 local slots, 0 static slots;\n    // Unhandled opcode: TRY at offset 33;\n    try  {\n\n        // try block -> block_7\n    }\n catch  {\n        // catch block -> block_2\n    }\n finally  {\n        // finally block -> block_4\n    }\n\n}\n"
 }

@@ -1,12 +1,12 @@
 //! Sample NEF files and test data for comprehensive testing
-//! 
+//!
 //! This module provides realistic sample contracts based on common Neo N3
 //! patterns and standards, useful for integration testing and examples.
 
+use crate::common::*;
+use serde_json;
 use std::fs;
 use std::path::Path;
-use serde_json;
-use crate::common::*;
 
 /// Sample NEP-17 token contract with complete implementation
 pub struct Nep17TokenSample {
@@ -29,7 +29,7 @@ impl Nep17TokenSample {
     /// Generate realistic NEP-17 bytecode
     pub fn generate_bytecode(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
-        
+
         // Contract initialization
         bytecode.extend_from_slice(&[
             // Initialize storage prefix for token balances
@@ -42,40 +42,41 @@ impl Nep17TokenSample {
             0x10, // PUSH0 (initial balance)
             0x62, 0x01, 0x84, 0x14, // SYSCALL Storage.Put
         ]);
-        
+
         // Symbol method implementation
         bytecode.extend_from_slice(&[
             0x0C, 0x06, 0x73, 0x79, 0x6D, 0x62, 0x6F, 0x6C, // PUSHDATA1 "symbol"
             0x41, 0x9D, 0x7A, 0x97, // SYSCALL CheckWitness
             0x2C, 0x0F, // JMP_IF skip
         ]);
-        
+
         // Push symbol string
         let symbol_bytes = self.symbol.as_bytes();
         bytecode.push(0x0C); // PUSHDATA1
         bytecode.push(symbol_bytes.len() as u8);
         bytecode.extend_from_slice(symbol_bytes);
         bytecode.push(0x41); // RET
-        
+
         // Decimals method
         bytecode.extend_from_slice(&[
             0x0C, 0x08, 0x64, 0x65, 0x63, 0x69, 0x6D, 0x61, 0x6C, 0x73, // "decimals"
         ]);
         bytecode.push(0x10 + self.decimals); // PUSH(decimals)
         bytecode.push(0x41); // RET
-        
+
         // TotalSupply method
         bytecode.extend_from_slice(&[
-            0x0C, 0x0B, 0x74, 0x6F, 0x74, 0x61, 0x6C, 0x53, 0x75, 0x70, 0x70, 0x6C, 0x79, // "totalSupply"
+            0x0C, 0x0B, 0x74, 0x6F, 0x74, 0x61, 0x6C, 0x53, 0x75, 0x70, 0x70, 0x6C,
+            0x79, // "totalSupply"
         ]);
-        
+
         // Push total supply as integer
         let supply_bytes = self.total_supply.to_le_bytes();
         bytecode.push(0x0C); // PUSHDATA1
         bytecode.push(supply_bytes.len() as u8);
         bytecode.extend_from_slice(&supply_bytes);
         bytecode.push(0x41); // RET
-        
+
         // BalanceOf method
         bytecode.extend_from_slice(&[
             0x0C, 0x09, 0x62, 0x61, 0x6C, 0x61, 0x6E, 0x63, 0x65, 0x4F, 0x66, // "balanceOf"
@@ -86,7 +87,7 @@ impl Nep17TokenSample {
             0x62, 0x7D, 0xDA, 0x17, // SYSCALL Storage.Get
             0x41, // RET
         ]);
-        
+
         // Transfer method (simplified)
         bytecode.extend_from_slice(&[
             0x0C, 0x08, 0x74, 0x72, 0x61, 0x6E, 0x73, 0x66, 0x65, 0x72, // "transfer"
@@ -96,12 +97,11 @@ impl Nep17TokenSample {
             0x2C, 0x05, // JMP_IF continue
             0x10, // PUSH0 (false)
             0x41, // RET
-            
             // Transfer logic (simplified)
             0x11, // PUSH1 (true)
             0x41, // RET
         ]);
-        
+
         bytecode
     }
 
@@ -122,7 +122,7 @@ impl Nep17TokenSample {
                     {
                         "name": "decimals",
                         "parameters": [],
-                        "returntype": "Integer", 
+                        "returntype": "Integer",
                         "offset": 50,
                         "safe": true
                     },
@@ -153,7 +153,7 @@ impl Nep17TokenSample {
                                 "type": "Hash160"
                             },
                             {
-                                "name": "to", 
+                                "name": "to",
                                 "type": "Hash160"
                             },
                             {
@@ -183,7 +183,7 @@ impl Nep17TokenSample {
                                 "type": "Hash160"
                             },
                             {
-                                "name": "amount", 
+                                "name": "amount",
                                 "type": "Integer"
                             }
                         ]
@@ -201,13 +201,14 @@ impl Nep17TokenSample {
                 "Author": "Neo Test Suite",
                 "Description": "Sample NEP-17 token for testing"
             }
-        })).expect("Failed to generate manifest JSON")
+        }))
+        .expect("Failed to generate manifest JSON")
     }
 
     /// Create complete NEF file
     pub fn generate_nef(&self) -> SampleNefData {
         let bytecode = self.generate_bytecode();
-        
+
         SampleNefData {
             magic: *b"NEF3",
             compiler: {
@@ -216,7 +217,10 @@ impl Nep17TokenSample {
                 compiler[..compiler_str.len()].copy_from_slice(compiler_str);
                 compiler
             },
-            source_url: format!("https://github.com/neo-project/{}", self.contract_name.to_lowercase()),
+            source_url: format!(
+                "https://github.com/neo-project/{}",
+                self.contract_name.to_lowercase()
+            ),
             tokens: vec![],
             bytecode,
             checksum: calculate_nef_checksum(&bytecode),
@@ -240,19 +244,19 @@ impl Nep11NftSample {
 
     pub fn generate_bytecode(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
-        
+
         // NFT-specific methods
         bytecode.extend_from_slice(&[
             // Symbol method
             0x0C, 0x06, 0x73, 0x79, 0x6D, 0x62, 0x6F, 0x6C, // "symbol"
         ]);
-        
+
         let symbol_bytes = self.symbol.as_bytes();
         bytecode.push(0x0C);
         bytecode.push(symbol_bytes.len() as u8);
         bytecode.extend_from_slice(symbol_bytes);
         bytecode.push(0x41); // RET
-        
+
         // TokensOf method
         bytecode.extend_from_slice(&[
             0x0C, 0x08, 0x74, 0x6F, 0x6B, 0x65, 0x6E, 0x73, 0x4F, 0x66, // "tokensOf"
@@ -262,26 +266,26 @@ impl Nep11NftSample {
         ]);
         bytecode.extend_from_slice(&[0x00; 16]); // Empty array data
         bytecode.push(0x41); // RET
-        
+
         // OwnerOf method
         bytecode.extend_from_slice(&[
             0x0C, 0x07, 0x6F, 0x77, 0x6E, 0x65, 0x72, 0x4F, 0x66, // "ownerOf"
             // Token ID parameter handling
             0x6B, // DUP
             0x0C, 0x05, 0x6F, 0x77, 0x6E, 0x65, 0x72, // "owner" prefix
-            0x6C, // ROT  
+            0x6C, // ROT
             0x8C, // CAT
             0x62, 0x7D, 0xDA, 0x17, // Storage.Get
             0x41, // RET
         ]);
-        
+
         // Transfer method
         bytecode.extend_from_slice(&[
             0x0C, 0x08, 0x74, 0x72, 0x61, 0x6E, 0x73, 0x66, 0x65, 0x72, // "transfer"
             0x11, // PUSH1 (simplified - always return true)
             0x41, // RET
         ]);
-        
+
         bytecode
     }
 
@@ -320,7 +324,7 @@ impl Nep11NftSample {
                                 "type": "Hash160"
                             }
                         ],
-                        "returntype": "Integer", 
+                        "returntype": "Integer",
                         "offset": 40,
                         "safe": true
                     },
@@ -329,7 +333,7 @@ impl Nep11NftSample {
                         "parameters": [
                             {
                                 "name": "owner",
-                                "type": "Hash160"  
+                                "type": "Hash160"
                             }
                         ],
                         "returntype": "Array",
@@ -378,7 +382,7 @@ impl Nep11NftSample {
                                 "type": "Hash160"
                             },
                             {
-                                "name": "to", 
+                                "name": "to",
                                 "type": "Hash160"
                             },
                             {
@@ -395,7 +399,7 @@ impl Nep11NftSample {
             },
             "permissions": [
                 {
-                    "contract": "*", 
+                    "contract": "*",
                     "methods": "*"
                 }
             ],
@@ -404,12 +408,13 @@ impl Nep11NftSample {
                 "Author": "Neo Test Suite",
                 "Description": "Sample NEP-11 NFT for testing"
             }
-        })).expect("Failed to generate NEP-11 manifest")
+        }))
+        .expect("Failed to generate NEP-11 manifest")
     }
 
     pub fn generate_nef(&self) -> SampleNefData {
         let bytecode = self.generate_bytecode();
-        
+
         SampleNefData {
             magic: *b"NEF3",
             compiler: {
@@ -418,7 +423,10 @@ impl Nep11NftSample {
                 compiler[..compiler_str.len()].copy_from_slice(compiler_str);
                 compiler
             },
-            source_url: format!("https://github.com/neo-project/{}", self.contract_name.to_lowercase()),
+            source_url: format!(
+                "https://github.com/neo-project/{}",
+                self.contract_name.to_lowercase()
+            ),
             tokens: vec![],
             bytecode,
             checksum: calculate_nef_checksum(&bytecode),
@@ -472,14 +480,14 @@ impl ComplexContractSample {
 
     pub fn generate_bytecode(&self) -> Vec<u8> {
         let mut bytecode = Vec::new();
-        
+
         for func in &self.functions {
             // Function name check
             let name_bytes = func.name.as_bytes();
             bytecode.push(0x0C); // PUSHDATA1
             bytecode.push(name_bytes.len() as u8);
             bytecode.extend_from_slice(name_bytes);
-            
+
             // Function implementation
             if func.has_conditions {
                 bytecode.extend_from_slice(&[
@@ -489,14 +497,14 @@ impl ComplexContractSample {
                     0x3A, // THROW
                 ]);
             }
-            
+
             if func.has_loops {
                 bytecode.extend_from_slice(&[
                     0x15, // PUSH5 (loop counter)
                     // Loop start
                     0x6B, // DUP
                     0x10, // PUSH0
-                    0x9F, // GT  
+                    0x9F, // GT
                     0x2C, 0x0C, // JMP_IF 12 bytes (exit loop)
                     // Loop body
                     0x6B, // DUP
@@ -508,38 +516,44 @@ impl ComplexContractSample {
                     0x75, // DROP
                 ]);
             }
-            
+
             if func.calls_syscalls {
                 bytecode.extend_from_slice(&[
-                    0x0C, 0x0A, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x57, 0x6F, 0x72, 0x6C, 0x64, // "HelloWorld"
+                    0x0C, 0x0A, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x57, 0x6F, 0x72, 0x6C,
+                    0x64, // "HelloWorld"
                     0x62, 0x7D, 0xF6, 0xE2, // System.Runtime.Log
                     0x62, 0xE6, 0x33, 0x8C, // Crypto.SHA256
                 ]);
             }
-            
+
             // Function return
             bytecode.extend_from_slice(&[
                 0x11, // PUSH1 (success)
                 0x41, // RET
             ]);
         }
-        
+
         bytecode
     }
 
     pub fn generate_manifest(&self) -> String {
-        let methods: Vec<_> = self.functions.iter().enumerate().map(|(i, func)| {
-            serde_json::json!({
-                "name": func.name,
-                "parameters": func.parameters.iter().map(|p| serde_json::json!({
-                    "name": p,
-                    "type": "Any"
-                })).collect::<Vec<_>>(),
-                "returntype": "Any",
-                "offset": i * 100,
-                "safe": !func.calls_syscalls
+        let methods: Vec<_> = self
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(i, func)| {
+                serde_json::json!({
+                    "name": func.name,
+                    "parameters": func.parameters.iter().map(|p| serde_json::json!({
+                        "name": p,
+                        "type": "Any"
+                    })).collect::<Vec<_>>(),
+                    "returntype": "Any",
+                    "offset": i * 100,
+                    "safe": !func.calls_syscalls
+                })
             })
-        }).collect();
+            .collect();
 
         serde_json::to_string_pretty(&serde_json::json!({
             "name": self.name,
@@ -559,12 +573,13 @@ impl ComplexContractSample {
                 "Author": "Neo Test Suite",
                 "Description": "Complex contract with multiple function types"
             }
-        })).expect("Failed to generate complex contract manifest")
+        }))
+        .expect("Failed to generate complex contract manifest")
     }
 
     pub fn generate_nef(&self) -> SampleNefData {
         let bytecode = self.generate_bytecode();
-        
+
         SampleNefData {
             magic: *b"NEF3",
             compiler: {
@@ -573,7 +588,10 @@ impl ComplexContractSample {
                 compiler[..compiler_str.len()].copy_from_slice(compiler_str);
                 compiler
             },
-            source_url: format!("https://github.com/neo-project/{}", self.name.to_lowercase()),
+            source_url: format!(
+                "https://github.com/neo-project/{}",
+                self.name.to_lowercase()
+            ),
             tokens: vec![],
             bytecode,
             checksum: calculate_nef_checksum(&bytecode),
@@ -593,59 +611,73 @@ fn calculate_nef_checksum(bytecode: &[u8]) -> u32 {
 }
 
 /// Save sample contracts to files for testing
-pub fn save_samples_to_directory<P: AsRef<Path>>(directory: P) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_samples_to_directory<P: AsRef<Path>>(
+    directory: P,
+) -> Result<(), Box<dyn std::error::Error>> {
     let dir = directory.as_ref();
     fs::create_dir_all(dir)?;
-    
+
     // NEP-17 Token
     let nep17 = Nep17TokenSample::default();
     let nef_data = nep17.generate_nef();
     let nef_bytes = nef_data.to_bytes();
     fs::write(dir.join("nep17_token.nef"), &nef_bytes)?;
-    fs::write(dir.join("nep17_token.manifest.json"), nep17.generate_manifest())?;
-    
+    fs::write(
+        dir.join("nep17_token.manifest.json"),
+        nep17.generate_manifest(),
+    )?;
+
     // NEP-11 NFT
     let nep11 = Nep11NftSample::default();
     let nef_data = nep11.generate_nef();
     let nef_bytes = nef_data.to_bytes();
     fs::write(dir.join("nep11_nft.nef"), &nef_bytes)?;
-    fs::write(dir.join("nep11_nft.manifest.json"), nep11.generate_manifest())?;
-    
+    fs::write(
+        dir.join("nep11_nft.manifest.json"),
+        nep11.generate_manifest(),
+    )?;
+
     // Complex Contract
     let complex = ComplexContractSample::default();
     let nef_data = complex.generate_nef();
     let nef_bytes = nef_data.to_bytes();
     fs::write(dir.join("complex_contract.nef"), &nef_bytes)?;
-    fs::write(dir.join("complex_contract.manifest.json"), complex.generate_manifest())?;
-    
+    fs::write(
+        dir.join("complex_contract.manifest.json"),
+        complex.generate_manifest(),
+    )?;
+
     // Minimal test cases
     let minimal = SampleNefData::minimal();
     fs::write(dir.join("minimal.nef"), minimal.to_bytes())?;
     let minimal_manifest = SampleManifest::simple_contract();
-    fs::write(dir.join("minimal.manifest.json"), minimal_manifest.to_json())?;
-    
+    fs::write(
+        dir.join("minimal.manifest.json"),
+        minimal_manifest.to_json(),
+    )?;
+
     // Control flow test
     let control_flow = SampleNefData::with_control_flow();
     fs::write(dir.join("control_flow.nef"), control_flow.to_bytes())?;
-    
+
     Ok(())
 }
 
 /// Load all sample contracts from a directory
 pub fn load_samples_from_directory<P: AsRef<Path>>(
-    directory: P
+    directory: P,
 ) -> Result<Vec<(Vec<u8>, Option<String>)>, Box<dyn std::error::Error>> {
     let dir = directory.as_ref();
     let mut samples = Vec::new();
-    
+
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
-        
+
         if let Some(extension) = path.extension() {
             if extension == "nef" {
                 let nef_data = fs::read(&path)?;
-                
+
                 // Look for corresponding manifest
                 let manifest_path = path.with_extension("manifest.json");
                 let manifest_data = if manifest_path.exists() {
@@ -653,12 +685,12 @@ pub fn load_samples_from_directory<P: AsRef<Path>>(
                 } else {
                     None
                 };
-                
+
                 samples.push((nef_data, manifest_data));
             }
         }
     }
-    
+
     Ok(samples)
 }
 
@@ -673,11 +705,14 @@ mod tests {
         let bytecode = nep17.generate_bytecode();
         let manifest = nep17.generate_manifest();
         let nef = nep17.generate_nef();
-        
+
         assert!(!bytecode.is_empty(), "Should generate bytecode");
         assert!(manifest.contains("NEP-17"), "Should be NEP-17 compliant");
         assert_eq!(nef.magic, *b"NEF3", "Should have correct NEF magic");
-        assert_eq!(nef.bytecode, bytecode, "NEF should contain generated bytecode");
+        assert_eq!(
+            nef.bytecode, bytecode,
+            "NEF should contain generated bytecode"
+        );
     }
 
     #[test]
@@ -685,10 +720,13 @@ mod tests {
         let nep11 = Nep11NftSample::default();
         let bytecode = nep11.generate_bytecode();
         let manifest = nep11.generate_manifest();
-        
+
         assert!(!bytecode.is_empty(), "Should generate bytecode");
         assert!(manifest.contains("NEP-11"), "Should be NEP-11 compliant");
-        assert!(manifest.contains("tokensOf"), "Should have NFT-specific methods");
+        assert!(
+            manifest.contains("tokensOf"),
+            "Should have NFT-specific methods"
+        );
     }
 
     #[test]
@@ -696,40 +734,49 @@ mod tests {
         let complex = ComplexContractSample::default();
         let bytecode = complex.generate_bytecode();
         let manifest = complex.generate_manifest();
-        
+
         assert!(!bytecode.is_empty(), "Should generate bytecode");
-        assert!(manifest.contains("calculateHash"), "Should include all functions");
-        assert!(manifest.contains("processArray"), "Should include all functions");
-        assert!(manifest.contains("verifySignatures"), "Should include all functions");
+        assert!(
+            manifest.contains("calculateHash"),
+            "Should include all functions"
+        );
+        assert!(
+            manifest.contains("processArray"),
+            "Should include all functions"
+        );
+        assert!(
+            manifest.contains("verifySignatures"),
+            "Should include all functions"
+        );
     }
 
     #[test]
     fn test_save_and_load_samples() {
         let temp_dir = TempDir::new().unwrap();
         let dir_path = temp_dir.path();
-        
+
         // Save samples
         save_samples_to_directory(dir_path).unwrap();
-        
+
         // Verify files were created
         assert!(dir_path.join("nep17_token.nef").exists());
         assert!(dir_path.join("nep17_token.manifest.json").exists());
         assert!(dir_path.join("nep11_nft.nef").exists());
         assert!(dir_path.join("complex_contract.nef").exists());
         assert!(dir_path.join("minimal.nef").exists());
-        
+
         // Load samples back
         let samples = load_samples_from_directory(dir_path).unwrap();
         assert!(samples.len() >= 4, "Should load multiple samples");
-        
+
         // Verify sample structure
         for (nef_data, manifest_data) in samples {
             assert!(!nef_data.is_empty(), "NEF data should not be empty");
             assert!(nef_data.starts_with(b"NEF"), "Should have NEF magic");
-            
+
             if let Some(manifest) = manifest_data {
-                let _: serde_json::Value = serde_json::from_str(&manifest)
-                    .expect("Manifest should be valid JSON");
+                let _: serde_json::Value =
+                    serde_json::from_str(&manifest).expect("Manifest should be valid JSON");
             }
         }
     }

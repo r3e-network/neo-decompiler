@@ -1,5 +1,5 @@
 //! Neo N3 Decompiler CLI Application
-//! 
+//!
 //! A comprehensive command-line interface for the Neo N3 smart contract decompiler.
 //! Provides multiple analysis modes, output formats, and development tools.
 
@@ -35,14 +35,14 @@ fn main() {
     // Execute the command and handle errors gracefully
     if let Err(e) = cli.run() {
         error!("Command failed: {}", e);
-        
+
         // Print cause chain for better debugging
         let mut cause = e.source();
         while let Some(err) = cause {
             error!("  Caused by: {}", err);
             cause = err.source();
         }
-        
+
         process::exit(1);
     }
 }

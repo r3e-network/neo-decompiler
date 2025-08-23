@@ -1,10 +1,10 @@
 //! Contract manifest parser for Neo N3
 
 use crate::common::errors::ManifestParseError;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use indexmap::IndexMap;
 
 /// Contract manifest parser with validation and type system integration
 pub struct ManifestParser {
@@ -143,7 +143,10 @@ impl ManifestParser {
     }
 
     /// Load standards from configuration
-    pub fn load_standards<P: AsRef<std::path::Path>>(&mut self, _config_dir: P) -> Result<(), ManifestParseError> {
+    pub fn load_standards<P: AsRef<std::path::Path>>(
+        &mut self,
+        _config_dir: P,
+    ) -> Result<(), ManifestParseError> {
         // Implementation would load from TOML files like nep17.toml
         // Add built-in NEP-17 standard definition
         self.add_nep17_standard();
@@ -156,18 +159,50 @@ impl ManifestParser {
             name: "NEP-17".to_string(),
             version: "1.0".to_string(),
             required_methods: vec![
-                MethodSignature { name: "symbol".to_string(), parameters: vec![], return_type: Some("String".to_string()) },
-                MethodSignature { name: "decimals".to_string(), parameters: vec![], return_type: Some("Integer".to_string()) },
-                MethodSignature { name: "totalSupply".to_string(), parameters: vec![], return_type: Some("Integer".to_string()) },
-                MethodSignature { name: "balanceOf".to_string(), parameters: vec!["Hash160".to_string()], return_type: Some("Integer".to_string()) },
-                MethodSignature { name: "transfer".to_string(), parameters: vec!["Hash160".to_string(), "Hash160".to_string(), "Integer".to_string(), "Any".to_string()], return_type: Some("Boolean".to_string()) },
+                MethodSignature {
+                    name: "symbol".to_string(),
+                    parameters: vec![],
+                    return_type: Some("String".to_string()),
+                },
+                MethodSignature {
+                    name: "decimals".to_string(),
+                    parameters: vec![],
+                    return_type: Some("Integer".to_string()),
+                },
+                MethodSignature {
+                    name: "totalSupply".to_string(),
+                    parameters: vec![],
+                    return_type: Some("Integer".to_string()),
+                },
+                MethodSignature {
+                    name: "balanceOf".to_string(),
+                    parameters: vec!["Hash160".to_string()],
+                    return_type: Some("Integer".to_string()),
+                },
+                MethodSignature {
+                    name: "transfer".to_string(),
+                    parameters: vec![
+                        "Hash160".to_string(),
+                        "Hash160".to_string(),
+                        "Integer".to_string(),
+                        "Any".to_string(),
+                    ],
+                    return_type: Some("Boolean".to_string()),
+                },
             ],
-            required_events: vec![
-                EventSignature { name: "Transfer".to_string(), parameters: vec!["Hash160".to_string(), "Hash160".to_string(), "Integer".to_string()] },
-            ],
-            optional_methods: vec![
-                MethodSignature { name: "name".to_string(), parameters: vec![], return_type: Some("String".to_string()) },
-            ],
+            required_events: vec![EventSignature {
+                name: "Transfer".to_string(),
+                parameters: vec![
+                    "Hash160".to_string(),
+                    "Hash160".to_string(),
+                    "Integer".to_string(),
+                ],
+            }],
+            optional_methods: vec![MethodSignature {
+                name: "name".to_string(),
+                parameters: vec![],
+                return_type: Some("String".to_string()),
+            }],
         };
         self.standards.insert("NEP-17".to_string(), nep17);
     }
@@ -175,12 +210,15 @@ impl ManifestParser {
     /// Parse manifest from JSON string with comprehensive validation
     pub fn parse(&self, json: &str) -> Result<ContractManifest, ManifestParseError> {
         let value: Value = serde_json::from_str(json)?;
-        let value = value.as_object()
-            .ok_or_else(|| ManifestParseError::MissingField { field: "root".to_string() })?;
-        
+        let value = value
+            .as_object()
+            .ok_or_else(|| ManifestParseError::MissingField {
+                field: "root".to_string(),
+            })?;
+
         // Validate required fields exist
         self.validate_required_fields(value)?;
-        
+
         // Extract required fields
         let name = value
             .get("name")
@@ -193,7 +231,7 @@ impl ManifestParser {
         // Parse groups with validation
         let groups = self.parse_groups(value.get("groups"))?;
 
-        // Parse features  
+        // Parse features
         let features = self.parse_features(value.get("features"))?;
 
         // Parse ABI with comprehensive validation
@@ -204,9 +242,10 @@ impl ManifestParser {
 
         // Parse trusts with validation
         let trusts = self.parse_trusts(value.get("trusts"))?;
-        
+
         // Parse supported standards
-        let supported_standards = self.parse_supported_standards(value.get("supportedstandards"))?;
+        let supported_standards =
+            self.parse_supported_standards(value.get("supportedstandards"))?;
 
         // Parse extra data
         let extra = value.get("extra").cloned().unwrap_or(Value::Null);
@@ -221,17 +260,20 @@ impl ManifestParser {
             supported_standards,
             extra,
         };
-        
+
         // Validate manifest consistency
         self.validate_manifest(&manifest)?;
-        
+
         Ok(manifest)
     }
-    
+
     /// Validate that required fields are present
-    fn validate_required_fields(&self, value: &serde_json::Map<String, Value>) -> Result<(), ManifestParseError> {
+    fn validate_required_fields(
+        &self,
+        value: &serde_json::Map<String, Value>,
+    ) -> Result<(), ManifestParseError> {
         let required_fields = ["name", "abi"];
-        
+
         for field in &required_fields {
             if !value.contains_key(*field) {
                 return Err(ManifestParseError::MissingField {
@@ -239,25 +281,25 @@ impl ManifestParser {
                 });
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate manifest consistency and standards compliance
     fn validate_manifest(&self, manifest: &ContractManifest) -> Result<(), ManifestParseError> {
         // Validate ABI consistency
         if self.validation_options.validate_abi {
             self.validate_abi_consistency(&manifest.abi)?;
         }
-        
+
         // Check standards compliance
         if self.validation_options.check_standards {
             self.check_standards_compliance(manifest)?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate ABI internal consistency
     fn validate_abi_consistency(&self, abi: &ContractABI) -> Result<(), ManifestParseError> {
         // Check for duplicate method names
@@ -267,7 +309,7 @@ impl ManifestParser {
                 return Err(ManifestParseError::InvalidABI);
             }
         }
-        
+
         // Check for duplicate event names
         let mut event_names = std::collections::HashSet::new();
         for event in &abi.events {
@@ -275,7 +317,7 @@ impl ManifestParser {
                 return Err(ManifestParseError::InvalidABI);
             }
         }
-        
+
         // Validate parameter and return types
         for method in &abi.methods {
             for param in &method.parameters {
@@ -285,18 +327,21 @@ impl ManifestParser {
                 self.validate_neo_type(ret_type)?;
             }
         }
-        
+
         for event in &abi.events {
             for param in &event.parameters {
                 self.validate_neo_type(&param.param_type)?;
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Check compliance with supported standards
-    fn check_standards_compliance(&self, manifest: &ContractManifest) -> Result<(), ManifestParseError> {
+    fn check_standards_compliance(
+        &self,
+        manifest: &ContractManifest,
+    ) -> Result<(), ManifestParseError> {
         for standard_name in &manifest.supported_standards {
             if let Some(standard) = self.standards.get(standard_name) {
                 self.validate_standard_compliance(&manifest.abi, standard)?;
@@ -304,44 +349,60 @@ impl ManifestParser {
         }
         Ok(())
     }
-    
+
     /// Validate compliance with a specific standard
-    fn validate_standard_compliance(&self, abi: &ContractABI, standard: &StandardDefinition) -> Result<(), ManifestParseError> {
+    fn validate_standard_compliance(
+        &self,
+        abi: &ContractABI,
+        standard: &StandardDefinition,
+    ) -> Result<(), ManifestParseError> {
         // Check required methods
         for required_method in &standard.required_methods {
             let found = abi.methods.iter().any(|method| {
-                method.name == required_method.name &&
-                method.parameters.len() == required_method.parameters.len() &&
-                method.return_type == required_method.return_type
+                method.name == required_method.name
+                    && method.parameters.len() == required_method.parameters.len()
+                    && method.return_type == required_method.return_type
             });
-            
+
             if !found {
                 return Err(ManifestParseError::InvalidABI);
             }
         }
-        
+
         // Check required events
         for required_event in &standard.required_events {
             let found = abi.events.iter().any(|event| {
-                event.name == required_event.name &&
-                event.parameters.len() == required_event.parameters.len()
+                event.name == required_event.name
+                    && event.parameters.len() == required_event.parameters.len()
             });
-            
+
             if !found {
                 return Err(ManifestParseError::InvalidABI);
             }
         }
-        
+
         Ok(())
     }
 
     /// Validate Neo N3 type name
     fn validate_neo_type(&self, type_name: &str) -> Result<(), ManifestParseError> {
         let valid_types = [
-            "Any", "Boolean", "Integer", "ByteString", "Buffer", "Array", "Map", "Struct",
-            "Hash160", "Hash256", "PublicKey", "Signature", "InteropInterface", "Void"
+            "Any",
+            "Boolean",
+            "Integer",
+            "ByteString",
+            "Buffer",
+            "Array",
+            "Map",
+            "Struct",
+            "Hash160",
+            "Hash256",
+            "PublicKey",
+            "Signature",
+            "InteropInterface",
+            "Void",
         ];
-        
+
         if valid_types.contains(&type_name) || self.validation_options.allow_custom_types {
             Ok(())
         } else {
@@ -364,7 +425,9 @@ impl ManifestParser {
             "InteropInterface" => Some(NeoType::InteropInterface),
             "Void" => Some(NeoType::Void),
             _ if type_str.starts_with("Array") => Some(NeoType::Array(Box::new(NeoType::Any))),
-            _ if type_str.starts_with("Map") => Some(NeoType::Map(Box::new(NeoType::Any), Box::new(NeoType::Any))),
+            _ if type_str.starts_with("Map") => {
+                Some(NeoType::Map(Box::new(NeoType::Any), Box::new(NeoType::Any)))
+            }
             _ if type_str.starts_with("Struct") => Some(NeoType::Struct(vec![])),
             _ => Some(NeoType::Custom(type_str.to_string())),
         }
@@ -374,31 +437,43 @@ impl ManifestParser {
     pub fn extract_abi(&self, manifest: &ContractManifest) -> EnhancedABI {
         let mut method_lookup = IndexMap::new();
         let mut event_lookup = IndexMap::new();
-        
+
         // Build method lookup table
         for method in &manifest.abi.methods {
             let enhanced_method = EnhancedMethod {
                 base: method.clone(),
-                parameter_types: method.parameters.iter()
-                    .map(|p| self.map_neo_type_to_internal(&p.param_type).unwrap_or(NeoType::Any))
+                parameter_types: method
+                    .parameters
+                    .iter()
+                    .map(|p| {
+                        self.map_neo_type_to_internal(&p.param_type)
+                            .unwrap_or(NeoType::Any)
+                    })
                     .collect(),
-                return_type_mapped: method.return_type.as_ref()
+                return_type_mapped: method
+                    .return_type
+                    .as_ref()
                     .and_then(|t| self.map_neo_type_to_internal(t)),
             };
             method_lookup.insert(method.name.clone(), enhanced_method);
         }
-        
+
         // Build event lookup table
         for event in &manifest.abi.events {
             let enhanced_event = EnhancedEvent {
                 base: event.clone(),
-                parameter_types: event.parameters.iter()
-                    .map(|p| self.map_neo_type_to_internal(&p.param_type).unwrap_or(NeoType::Any))
+                parameter_types: event
+                    .parameters
+                    .iter()
+                    .map(|p| {
+                        self.map_neo_type_to_internal(&p.param_type)
+                            .unwrap_or(NeoType::Any)
+                    })
                     .collect(),
             };
             event_lookup.insert(event.name.clone(), enhanced_event);
         }
-        
+
         EnhancedABI {
             base: manifest.abi.clone(),
             method_lookup,
@@ -406,38 +481,54 @@ impl ManifestParser {
             supported_standards: manifest.supported_standards.clone(),
         }
     }
-    
+
     /// Get method by name with enhanced type information
-    pub fn get_method_info<'a>(&self, manifest: &'a ContractManifest, method_name: &str) -> Option<&'a ContractMethod> {
+    pub fn get_method_info<'a>(
+        &self,
+        manifest: &'a ContractManifest,
+        method_name: &str,
+    ) -> Option<&'a ContractMethod> {
         manifest.abi.methods.iter().find(|m| m.name == method_name)
     }
-    
+
     /// Get event by name
-    pub fn get_event_info<'a>(&self, manifest: &'a ContractManifest, event_name: &str) -> Option<&'a ContractEvent> {
+    pub fn get_event_info<'a>(
+        &self,
+        manifest: &'a ContractManifest,
+        event_name: &str,
+    ) -> Option<&'a ContractEvent> {
         manifest.abi.events.iter().find(|e| e.name == event_name)
     }
-    
+
     /// Detect supported standards from ABI analysis
     pub fn detect_standards(&self, manifest: &ContractManifest) -> Vec<String> {
         let mut detected = Vec::new();
-        
+
         for (standard_name, standard_def) in &self.standards {
-            if self.validate_standard_compliance(&manifest.abi, standard_def).is_ok() {
+            if self
+                .validate_standard_compliance(&manifest.abi, standard_def)
+                .is_ok()
+            {
                 detected.push(standard_name.clone());
             }
         }
-        
+
         detected
     }
 
     /// Parse contract groups with validation
-    fn parse_groups(&self, groups_value: Option<&Value>) -> Result<Vec<ContractGroup>, ManifestParseError> {
+    fn parse_groups(
+        &self,
+        groups_value: Option<&Value>,
+    ) -> Result<Vec<ContractGroup>, ManifestParseError> {
         let mut groups = Vec::new();
 
         if let Some(Value::Array(array)) = groups_value {
             for group_value in array {
-                let group_obj = group_value.as_object().ok_or(ManifestParseError::InvalidGroup)?;
-                
+                let group_obj = group_value
+                    .as_object()
+                    .ok_or(ManifestParseError::InvalidGroup)?;
+
                 let pubkey = group_obj
                     .get("pubkey")
                     .and_then(|v| v.as_str())
@@ -449,7 +540,7 @@ impl ManifestParser {
                     .and_then(|v| v.as_str())
                     .ok_or(ManifestParseError::InvalidGroup)?
                     .to_string();
-                
+
                 // Validate public key format (33 bytes hex)
                 if self.validation_options.validate_hashes {
                     self.validate_public_key(&pubkey)?;
@@ -462,41 +553,52 @@ impl ManifestParser {
 
         Ok(groups)
     }
-    
+
     /// Validate public key format
     fn validate_public_key(&self, pubkey: &str) -> Result<(), ManifestParseError> {
-        if pubkey.len() != 66 { // 33 bytes * 2 hex chars per byte
+        if pubkey.len() != 66 {
+            // 33 bytes * 2 hex chars per byte
             return Err(ManifestParseError::InvalidGroup);
         }
-        
+
         // Check if it's valid hex
         if !pubkey.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(ManifestParseError::InvalidGroup);
         }
-        
+
         Ok(())
     }
-    
+
     /// Validate signature format
     fn validate_signature(&self, signature: &str) -> Result<(), ManifestParseError> {
-        if signature.len() != 128 { // 64 bytes * 2 hex chars per byte
+        if signature.len() != 128 {
+            // 64 bytes * 2 hex chars per byte
             return Err(ManifestParseError::InvalidGroup);
         }
-        
+
         // Check if it's valid hex
         if !signature.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(ManifestParseError::InvalidGroup);
         }
-        
+
         Ok(())
     }
 
     /// Parse contract features
-    fn parse_features(&self, features_value: Option<&Value>) -> Result<ContractFeatures, ManifestParseError> {
+    fn parse_features(
+        &self,
+        features_value: Option<&Value>,
+    ) -> Result<ContractFeatures, ManifestParseError> {
         let features = if let Some(Value::Object(obj)) = features_value {
             ContractFeatures {
-                storage: obj.get("storage").and_then(|v| v.as_bool()).unwrap_or(false),
-                payable: obj.get("payable").and_then(|v| v.as_bool()).unwrap_or(false),
+                storage: obj
+                    .get("storage")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
+                payable: obj
+                    .get("payable")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
             }
         } else {
             ContractFeatures::default()
@@ -529,11 +631,16 @@ impl ManifestParser {
     }
 
     /// Parse ABI methods with enhanced validation
-    fn parse_methods(&self, methods_array: &[Value]) -> Result<Vec<ContractMethod>, ManifestParseError> {
+    fn parse_methods(
+        &self,
+        methods_array: &[Value],
+    ) -> Result<Vec<ContractMethod>, ManifestParseError> {
         let mut methods = Vec::new();
 
         for method_value in methods_array {
-            let method_obj = method_value.as_object().ok_or(ManifestParseError::InvalidABI)?;
+            let method_obj = method_value
+                .as_object()
+                .ok_or(ManifestParseError::InvalidABI)?;
 
             let name = method_obj
                 .get("name")
@@ -546,7 +653,8 @@ impl ManifestParser {
                 .and_then(|v| v.as_i64())
                 .unwrap_or(-1) as i32;
 
-            let parameters = if let Some(Value::Array(params_array)) = method_obj.get("parameters") {
+            let parameters = if let Some(Value::Array(params_array)) = method_obj.get("parameters")
+            {
                 self.parse_parameters(params_array)?
             } else {
                 Vec::new()
@@ -575,11 +683,16 @@ impl ManifestParser {
     }
 
     /// Parse method parameters with type validation
-    fn parse_parameters(&self, params_array: &[Value]) -> Result<Vec<ContractParameter>, ManifestParseError> {
+    fn parse_parameters(
+        &self,
+        params_array: &[Value],
+    ) -> Result<Vec<ContractParameter>, ManifestParseError> {
         let mut parameters = Vec::new();
 
         for param_value in params_array {
-            let param_obj = param_value.as_object().ok_or(ManifestParseError::InvalidABI)?;
+            let param_obj = param_value
+                .as_object()
+                .ok_or(ManifestParseError::InvalidABI)?;
 
             let name = param_obj
                 .get("name")
@@ -592,7 +705,7 @@ impl ManifestParser {
                 .and_then(|v| v.as_str())
                 .ok_or(ManifestParseError::InvalidABI)?
                 .to_string();
-            
+
             // Validate parameter type
             self.validate_neo_type(&param_type)?;
 
@@ -603,11 +716,16 @@ impl ManifestParser {
     }
 
     /// Parse ABI events with type validation
-    fn parse_events(&self, events_array: &[Value]) -> Result<Vec<ContractEvent>, ManifestParseError> {
+    fn parse_events(
+        &self,
+        events_array: &[Value],
+    ) -> Result<Vec<ContractEvent>, ManifestParseError> {
         let mut events = Vec::new();
 
         for event_value in events_array {
-            let event_obj = event_value.as_object().ok_or(ManifestParseError::InvalidABI)?;
+            let event_obj = event_value
+                .as_object()
+                .ok_or(ManifestParseError::InvalidABI)?;
 
             let name = event_obj
                 .get("name")
@@ -628,19 +746,24 @@ impl ManifestParser {
     }
 
     /// Parse contract permissions with hash validation
-    fn parse_permissions(&self, perms_value: Option<&Value>) -> Result<Vec<ContractPermission>, ManifestParseError> {
+    fn parse_permissions(
+        &self,
+        perms_value: Option<&Value>,
+    ) -> Result<Vec<ContractPermission>, ManifestParseError> {
         let mut permissions = Vec::new();
 
         if let Some(Value::Array(array)) = perms_value {
             for perm_value in array {
-                let perm_obj = perm_value.as_object().ok_or(ManifestParseError::InvalidPermission)?;
+                let perm_obj = perm_value
+                    .as_object()
+                    .ok_or(ManifestParseError::InvalidPermission)?;
 
                 let contract = perm_obj
                     .get("contract")
                     .and_then(|v| v.as_str())
                     .ok_or(ManifestParseError::InvalidPermission)?
                     .to_string();
-                
+
                 // Validate contract hash format if not wildcard
                 if self.validation_options.validate_hashes && contract != "*" {
                     self.validate_contract_hash(&contract)?;
@@ -684,7 +807,10 @@ impl ManifestParser {
     }
 
     /// Parse supported standards
-    fn parse_supported_standards(&self, standards_value: Option<&Value>) -> Result<Vec<String>, ManifestParseError> {
+    fn parse_supported_standards(
+        &self,
+        standards_value: Option<&Value>,
+    ) -> Result<Vec<String>, ManifestParseError> {
         let mut standards = Vec::new();
 
         if let Some(Value::Array(array)) = standards_value {
@@ -961,7 +1087,7 @@ mod tests {
         let enhanced_abi = parser.extract_abi(&manifest);
         assert_eq!(enhanced_abi.method_lookup.len(), 1);
         assert_eq!(enhanced_abi.event_lookup.len(), 1);
-        
+
         let method = enhanced_abi.method_lookup.get("testMethod").unwrap();
         assert_eq!(method.parameter_types.len(), 1);
         assert_eq!(method.parameter_types[0], NeoType::Hash160);
@@ -974,30 +1100,85 @@ mod tests {
         let manifest = ContractManifest {
             name: "NEP17Token".to_string(),
             groups: Vec::new(),
-            features: ContractFeatures { storage: true, payable: false },
+            features: ContractFeatures {
+                storage: true,
+                payable: false,
+            },
             abi: ContractABI {
                 methods: vec![
-                    ContractMethod { name: "symbol".to_string(), offset: 0, parameters: vec![], return_type: Some("String".to_string()), safe: true },
-                    ContractMethod { name: "decimals".to_string(), offset: 10, parameters: vec![], return_type: Some("Integer".to_string()), safe: true },
-                    ContractMethod { name: "totalSupply".to_string(), offset: 20, parameters: vec![], return_type: Some("Integer".to_string()), safe: true },
-                    ContractMethod { name: "balanceOf".to_string(), offset: 30, parameters: vec![ContractParameter { name: "account".to_string(), param_type: "Hash160".to_string() }], return_type: Some("Integer".to_string()), safe: true },
-                    ContractMethod { name: "transfer".to_string(), offset: 40, parameters: vec![
-                        ContractParameter { name: "from".to_string(), param_type: "Hash160".to_string() },
-                        ContractParameter { name: "to".to_string(), param_type: "Hash160".to_string() },
-                        ContractParameter { name: "amount".to_string(), param_type: "Integer".to_string() },
-                        ContractParameter { name: "data".to_string(), param_type: "Any".to_string() },
-                    ], return_type: Some("Boolean".to_string()), safe: false },
-                ],
-                events: vec![
-                    ContractEvent { 
-                        name: "Transfer".to_string(), 
+                    ContractMethod {
+                        name: "symbol".to_string(),
+                        offset: 0,
+                        parameters: vec![],
+                        return_type: Some("String".to_string()),
+                        safe: true,
+                    },
+                    ContractMethod {
+                        name: "decimals".to_string(),
+                        offset: 10,
+                        parameters: vec![],
+                        return_type: Some("Integer".to_string()),
+                        safe: true,
+                    },
+                    ContractMethod {
+                        name: "totalSupply".to_string(),
+                        offset: 20,
+                        parameters: vec![],
+                        return_type: Some("Integer".to_string()),
+                        safe: true,
+                    },
+                    ContractMethod {
+                        name: "balanceOf".to_string(),
+                        offset: 30,
+                        parameters: vec![ContractParameter {
+                            name: "account".to_string(),
+                            param_type: "Hash160".to_string(),
+                        }],
+                        return_type: Some("Integer".to_string()),
+                        safe: true,
+                    },
+                    ContractMethod {
+                        name: "transfer".to_string(),
+                        offset: 40,
                         parameters: vec![
-                            ContractParameter { name: "from".to_string(), param_type: "Hash160".to_string() },
-                            ContractParameter { name: "to".to_string(), param_type: "Hash160".to_string() },
-                            ContractParameter { name: "amount".to_string(), param_type: "Integer".to_string() },
-                        ]
-                    }
+                            ContractParameter {
+                                name: "from".to_string(),
+                                param_type: "Hash160".to_string(),
+                            },
+                            ContractParameter {
+                                name: "to".to_string(),
+                                param_type: "Hash160".to_string(),
+                            },
+                            ContractParameter {
+                                name: "amount".to_string(),
+                                param_type: "Integer".to_string(),
+                            },
+                            ContractParameter {
+                                name: "data".to_string(),
+                                param_type: "Any".to_string(),
+                            },
+                        ],
+                        return_type: Some("Boolean".to_string()),
+                        safe: false,
+                    },
                 ],
+                events: vec![ContractEvent {
+                    name: "Transfer".to_string(),
+                    parameters: vec![
+                        ContractParameter {
+                            name: "from".to_string(),
+                            param_type: "Hash160".to_string(),
+                        },
+                        ContractParameter {
+                            name: "to".to_string(),
+                            param_type: "Hash160".to_string(),
+                        },
+                        ContractParameter {
+                            name: "amount".to_string(),
+                            param_type: "Integer".to_string(),
+                        },
+                    ],
+                }],
             },
             permissions: Vec::new(),
             trusts: Vec::new(),
@@ -1012,15 +1193,15 @@ mod tests {
     #[test]
     fn test_parse_invalid_manifest() {
         let parser = ManifestParser::new();
-        
+
         // Missing name
         let json_missing_name = r#"{"abi": {"methods": [], "events": []}}"#;
         assert!(parser.parse(json_missing_name).is_err());
-        
+
         // Invalid JSON
         let invalid_json = r#"{"name": "test", invalid}"#;
         assert!(parser.parse(invalid_json).is_err());
-        
+
         // Invalid group format
         let json_invalid_group = r#"{
             "name": "test",
@@ -1034,16 +1215,16 @@ mod tests {
     fn test_validation_options() {
         let mut options = ValidationOptions::default();
         options.validate_hashes = false;
-        
+
         let parser = ManifestParser::with_options(options);
-        
+
         // Should not validate hash formats when disabled
         let json_with_invalid_hash = r#"{
             "name": "test",
             "abi": {"methods": [], "events": []},
             "permissions": [{"contract": "invalid_hash", "methods": []}]
         }"#;
-        
+
         assert!(parser.parse(json_with_invalid_hash).is_ok());
     }
 }

@@ -1,39 +1,39 @@
 //! # Neo N3 Decompiler Library
-//! 
-//! A comprehensive Neo N3 smart contract decompiler that transforms compiled NEF 
+//!
+//! A comprehensive Neo N3 smart contract decompiler that transforms compiled NEF
 //! (Neo Executable Format) bytecode into human-readable pseudocode.
-//! 
+//!
 //! ## Architecture Overview
-//! 
+//!
 //! The decompiler follows a modular pipeline architecture:
-//! 
+//!
 //! ```text
 //! NEF File → Frontend → Core Engine → Analysis → Backend → Output
 //!    ↓         ↓           ↓          ↓         ↓        ↓
 //!  Parser   Disasm     Lifter     CFG/Types  Codegen  Pseudocode
 //! ```
-//! 
+//!
 //! ## Quick Start
-//! 
+//!
 //! ```rust,no_run
 //! use neo_decompiler::{Decompiler, DecompilerConfig};
-//! 
+//!
 //! let config = DecompilerConfig::default();
 //! let decompiler = Decompiler::new(config);
-//! 
+//!
 //! let nef_data = std::fs::read("contract.nef")?;
 //! let manifest = std::fs::read_to_string("contract.manifest.json")?;
-//! 
+//!
 //! let result = decompiler.decompile(&nef_data, Some(&manifest))?;
 //! println!("{}", result.pseudocode);
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-pub mod common;
-pub mod frontend;
-pub mod core;
 pub mod analysis;
 pub mod backend;
+pub mod common;
+pub mod core;
+pub mod frontend;
 pub mod plugins;
 
 #[cfg(test)]
@@ -44,26 +44,19 @@ pub mod cli;
 
 // Re-export main types for convenience
 pub use common::{
-    types::{Instruction, OpCode, Operand},
+    config::{ConfigLoader, DecompilerConfig},
     errors::{DecompilerError, DecompilerResult},
-    config::{DecompilerConfig, ConfigLoader},
+    types::{Instruction, OpCode, Operand},
 };
 
 pub use frontend::{
-    nef_parser::{NEFParser, NEFFile},
-    manifest_parser::{ManifestParser, ContractManifest},
+    manifest_parser::{ContractManifest, ManifestParser},
+    nef_parser::{NEFFile, NEFParser},
 };
 
-pub use core::{
-    disassembler::Disassembler,
-    lifter::IRLifter,
-    decompiler::DecompilerEngine,
-};
+pub use core::{decompiler::DecompilerEngine, disassembler::Disassembler, lifter::IRLifter};
 
-pub use backend::{
-    pseudocode::PseudocodeGenerator,
-    reports::ReportGenerator,
-};
+pub use backend::{pseudocode::PseudocodeGenerator, reports::ReportGenerator};
 
 /// Main decompiler facade providing high-level API
 pub struct Decompiler {
@@ -98,7 +91,7 @@ impl Decompiler {
     ) -> DecompilerResult<DecompilationResult> {
         // Parse NEF file
         let nef_file = self.nef_parser.parse(nef_data)?;
-        
+
         // Parse manifest if provided
         let manifest = match manifest_json {
             Some(json) => Some(self.manifest_parser.parse(json)?),
@@ -141,4 +134,3 @@ pub struct DecompilationResult {
     /// Contract manifest (if provided)
     pub manifest: Option<ContractManifest>,
 }
-

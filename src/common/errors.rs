@@ -168,7 +168,10 @@ pub enum AnalysisError {
     AnalysisFailure(String),
 
     #[error("Invalid contract hash: expected {expected_length} bytes, got {actual_length}")]
-    InvalidContractHash { expected_length: usize, actual_length: usize },
+    InvalidContractHash {
+        expected_length: usize,
+        actual_length: usize,
+    },
 }
 
 /// Code generation errors
@@ -257,7 +260,9 @@ impl DecompilerError {
         match self {
             DecompilerError::NEFParse(NEFParseError::InvalidMagic) => ErrorSeverity::Critical,
             DecompilerError::NEFParse(NEFParseError::InvalidChecksum { .. }) => ErrorSeverity::High,
-            DecompilerError::Disassembly(DisassemblyError::UnknownOpcode { .. }) => ErrorSeverity::Medium,
+            DecompilerError::Disassembly(DisassemblyError::UnknownOpcode { .. }) => {
+                ErrorSeverity::Medium
+            }
             DecompilerError::TypeInference(_) => ErrorSeverity::Medium,
             DecompilerError::Analysis(_) => ErrorSeverity::Low,
             DecompilerError::Plugin(_) => ErrorSeverity::Low,
@@ -268,18 +273,18 @@ impl DecompilerError {
 
 impl NEFParseError {
     fn is_recoverable(&self) -> bool {
-        matches!(self, 
-            NEFParseError::InvalidMethodToken { .. } | 
-            NEFParseError::UnsupportedVersion { .. }
+        matches!(
+            self,
+            NEFParseError::InvalidMethodToken { .. } | NEFParseError::UnsupportedVersion { .. }
         )
     }
 }
 
 impl DisassemblyError {
     fn is_recoverable(&self) -> bool {
-        matches!(self, 
-            DisassemblyError::UnknownOpcode { .. } |
-            DisassemblyError::InvalidSyscallHash { .. }
+        matches!(
+            self,
+            DisassemblyError::UnknownOpcode { .. } | DisassemblyError::InvalidSyscallHash { .. }
         )
     }
 }
@@ -310,12 +315,10 @@ mod tests {
 
     #[test]
     fn test_error_recovery() {
-        let recoverable = DecompilerError::TypeInference(
-            TypeInferenceError::TypeMismatch {
-                expected: "int".to_string(),
-                actual: "string".to_string(),
-            }
-        );
+        let recoverable = DecompilerError::TypeInference(TypeInferenceError::TypeMismatch {
+            expected: "int".to_string(),
+            actual: "string".to_string(),
+        });
         assert!(recoverable.is_recoverable());
 
         let non_recoverable = DecompilerError::NEFParse(NEFParseError::InvalidMagic);

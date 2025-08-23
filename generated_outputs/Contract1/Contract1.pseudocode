@@ -1,7 +1,7 @@
 void main() {
-    // Initialize 1 local slots;
+    // Initialize 1 local slots, 0 static slots;
     temp0 = convert<Buffer>(0x01020304);
-    // Initialize 1 local slots;
+    // Initialize 1 local slots, 0 static slots;
     temp1 = convert<Buffer>(0x01020304);
     return arg_6
 }

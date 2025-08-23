@@ -5,7 +5,7 @@
   },
   "contract_name": "Contract_Throw",
   "events": [],
-  "instructions_count": 13,
+  "instructions_count": 14,
   "methods": [
     {
       "name": "testMain",
@@ -20,5 +20,5 @@
       "safe": false
     }
   ],
-  "pseudocode": "void main() {\n    // TODO: Implement opcode UNKNOWN_B8 at offset 7;\n    if (1)\n     {\n\n        // true branch -> block_2\n    }\n else  {\n        // false branch -> block_3\n    }\n\n    // Unhandled opcode: STARG5 at offset 10;\n    0.Clear();\n    // Effects: [SystemStateRead];\n    abort(0x506c6561736520737570706c79206174206c65617374206f6e6520617267756d656e742e);\n    return arg_6\n}\n"
+  "pseudocode": "void main() {\n    // Initialize 1 local slots, 1 static slots;\n    // Unhandled opcode: STARG5 at offset 3;\n    arg_2.append(arg_3);\n    // TODO: Implement opcode UNKNOWN_B8 at offset 6;\n    if (1)\n     {\n\n        // true branch -> block_1\n    }\n else  {\n        // false branch -> block_2\n    }\n\n    // Unhandled opcode: STARG5 at offset 9;\n    0.Clear();\n    // Effects: [SystemStateRead];\n    abort(0x506c6561736520737570706c79206174206c65617374206f6e6520617267756d656e742e);\n    return arg_6\n}\n"
 }

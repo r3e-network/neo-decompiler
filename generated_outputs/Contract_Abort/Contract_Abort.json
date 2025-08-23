@@ -5,7 +5,7 @@
   },
   "contract_name": "Contract_Abort",
   "events": [],
-  "instructions_count": 62,
+  "instructions_count": 61,
   "methods": [
     {
       "name": "testAbort",
@@ -70,5 +70,5 @@
       "safe": false
     }
   ],
-  "pseudocode": "void main() {\n    // Unhandled opcode: STARG3 at offset 0;\n    // Initialize 1 local slots;\n    // Effects: [Pure, SystemStateRead];\n    abort();\n}\n"
+  "pseudocode": "void main() {\n    // Initialize 1 local slots, 0 static slots;\n    // Effects: [Pure, SystemStateRead];\n    abort();\n}\n"
 }

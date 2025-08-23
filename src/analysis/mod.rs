@@ -4,14 +4,14 @@
 // Complete analysis framework implementation
 
 pub mod cfg;
-pub mod types;
 pub mod effects;
+pub mod types;
 
 // CFG demonstration module
 pub mod cfg_demo;
 
 // Re-export key types
 pub use cfg::*;
-pub use types::*;
-pub use effects::*;
 pub use cfg_demo::*;
+pub use effects::*;
+pub use types::*;

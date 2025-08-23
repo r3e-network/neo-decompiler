@@ -1,0 +1,38 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_GoTo",
+  "events": [],
+  "instructions_count": 284,
+  "methods": [
+    {
+      "name": "test",
+      "offset": 0,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testTry",
+      "offset": 63,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testTryComplex",
+      "offset": 138,
+      "parameters": [
+        {
+          "name": "exception",
+          "param_type": "Boolean"
+        }
+      ],
+      "return_type": "Void",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 1 local slots, 0 static slots;\n    temp1 = (local5 + 1);\n    if ((temp1 >= -2147483648))\n     {\n\n        // true branch -> block_6\n    }\n else  {\n        // false branch -> block_5\n    }\n\n    if ((temp1 <= 2147483647))\n     {\n\n        // true branch -> block_13\n    }\n else  {\n        // false branch -> block_8\n    }\n\n    temp4 = (temp2 == local9);\n    temp5 = (temp1 & 4294967295);\n    // Initialize 2 local slots, 0 static slots;\n    if ((temp5 <= 2147483647))\n     {\n\n        // true branch -> block_13\n    }\n else  {\n        // false branch -> block_12\n    }\n\n    // Unhandled opcode: TRY at offset 68;\n    try  {\n\n        // try block -> block_16\n    }\n catch  {\n        // catch block -> block_14\n    }\n\n    temp2 = (temp5 - 4294967296);\n}\n"
+}
