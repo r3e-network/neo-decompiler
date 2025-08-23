@@ -1,0 +1,59 @@
+# Rust build artifacts
+/target/
+Cargo.lock
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test outputs and logs
+*.log
+*.tmp
+/tmp/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Debug files
+*.pdb
+
+# Generated outputs (keep structure but ignore temporary files)
+decompiled_contracts/*/stdout.log
+decompiled_contracts/*/stderr.log
+decompiled_contracts/*/command.log
+decompiled_contracts/*/*.error
+
+# Temporary analysis files
+debug_*.py
+analyze_*.py
+manual_*.py
+fix_*.py
+test_*.py
+*.json.tmp
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup files
+*.bak
+*.orig
+
+# Editor files
+*.sublime-*
+*.code-workspace
+
+# Local configuration
+local_config.toml
+.env

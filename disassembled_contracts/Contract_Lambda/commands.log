@@ -1,2 +1,0 @@
-Disasm: ./target/release/neo-decompiler disasm test_data/neo_artifacts/nef_files/Contract_Lambda.nef --output disassembled_contracts/Contract_Lambda/Contract_Lambda_disasm.txt --offsets --operands --comments
-Info: ./target/release/neo-decompiler info test_data/neo_artifacts/nef_files/Contract_Lambda.nef

@@ -1,1 +1,0 @@
-./target/release/neo-decompiler decompile test_data/neo_artifacts/nef_files/Contract_ABISafe.nef --manifest test_data/neo_artifacts/manifests/Contract_ABISafe.manifest.json --output decompiled_contracts/Contract_ABISafe/Contract_ABISafe_decompiled.txt --format pseudocode --type-inference --reports --metrics --verbose

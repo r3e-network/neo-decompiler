@@ -1,1 +1,0 @@
-./target/release/neo-decompiler decompile test_data/neo_artifacts/nef_files/Contract_String.nef --manifest test_data/neo_artifacts/manifests/Contract_String.manifest.json --output decompiled_contracts/Contract_String/Contract_String_decompiled.txt --format pseudocode --type-inference --reports --metrics --verbose

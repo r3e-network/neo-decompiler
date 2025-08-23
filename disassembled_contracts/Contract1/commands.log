@@ -1,2 +1,0 @@
-Disasm: ./target/release/neo-decompiler disasm test_data/neo_artifacts/nef_files/Contract1.nef --output disassembled_contracts/Contract1/Contract1_disasm.txt --offsets --operands --comments
-Info: ./target/release/neo-decompiler info test_data/neo_artifacts/nef_files/Contract1.nef
