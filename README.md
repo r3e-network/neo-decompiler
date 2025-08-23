@@ -16,7 +16,7 @@ A comprehensive Neo smart contract decompiler that transforms compiled NEF (Neo 
 ### Installation
 
 ```bash
-git clone https://github.com/neo-project/neo-decompiler
+git clone https://github.com/r3e-network/neo-decompiler
 cd neo-decompiler
 cargo build --release
 ```
@@ -216,7 +216,7 @@ while (iterator.next()) {
 ### Building from Source
 
 ```bash
-git clone https://github.com/neo-project/neo-decompiler
+git clone https://github.com/r3e-network/neo-decompiler
 cd neo-decompiler
 cargo build --release
 ```
