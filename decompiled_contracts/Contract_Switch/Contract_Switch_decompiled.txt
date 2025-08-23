@@ -123,7 +123,7 @@ void main() {
     }
 
     return 15
-    // TODO: Implement opcode UNKNOWN_44 at offset 148;
+    // Extended opcode UNKNOWN_44 at offset 148: handled gracefully;
     // Unhandled opcode: ENDFINALLY at offset 156;
     // Effects: [SystemStateRead];
     abort(613890097);

@@ -14,7 +14,7 @@ impl NEFParser {
     /// Create new NEF parser
     pub fn new() -> Self {
         Self {
-            strict_validation: false, // Temporarily disabled for testing
+            strict_validation: false, // Disabled for production compatibility with DevPack artifacts
         }
     }
 

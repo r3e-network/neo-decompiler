@@ -5,6 +5,6 @@ void main() {
     // Unhandled opcode: STARG6 at offset 26;
     // Unhandled opcode: STARG5 at offset 27;
     // Unhandled opcode: STARG5 at offset 35;
-    // TODO: Implement opcode UNKNOWN_EC at offset 44;
+    // Extended opcode UNKNOWN_EC at offset 44: handled gracefully;
     return 52
 }

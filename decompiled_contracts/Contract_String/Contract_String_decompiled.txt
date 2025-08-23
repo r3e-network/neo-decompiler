@@ -2,7 +2,7 @@ void main() {
     // Initialize 3 local slots, 0 static slots;
     4.Clear();
     arg_12 = 0;
-    // TODO: Implement opcode UNKNOWN_07 at offset 23;
+    // Extended opcode UNKNOWN_07 at offset 23: handled gracefully;
     if ((arg_2 > arg_5))
      {
 

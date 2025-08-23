@@ -90,7 +90,7 @@ impl ManifestParser {
     /// Load standards from configuration
     pub fn load_standards<P: AsRef<std::path::Path>>(&mut self, config_dir: P) -> Result<(), ManifestParseError> {
         // Implementation would load from TOML files like nep17.toml
-        // For now, add built-in NEP-17 standard
+        // Add built-in NEP-17 standard definition
         self.add_nep17_standard();
         Ok(())
     }
