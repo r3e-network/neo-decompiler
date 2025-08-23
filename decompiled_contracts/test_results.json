@@ -1,42 +1,45 @@
 {
   "total_contracts": 22,
-  "successful": 0,
-  "failed": 22,
-  "success_rate": 0.0,
+  "successful": 4,
+  "failed": 18,
+  "success_rate": 0.18181818181818182,
   "results": [
     {
       "contract": "Contract1",
-      "success": false,
-      "return_code": 1,
-      "stdout_length": 299,
-      "stderr_length": 0,
+      "success": true,
+      "return_code": 0,
+      "stdout_length": 0,
+      "stderr_length": 113,
       "output_files": [
         "decompiled_contracts/Contract1/stdout.log",
         "decompiled_contracts/Contract1/command.log",
-        "decompiled_contracts/Contract1/stderr.log"
+        "decompiled_contracts/Contract1/stderr.log",
+        "decompiled_contracts/Contract1/Contract1_decompiled.txt"
       ]
     },
     {
       "contract": "Contract_ABIAttributes",
-      "success": false,
-      "return_code": 1,
-      "stdout_length": 299,
-      "stderr_length": 0,
+      "success": true,
+      "return_code": 0,
+      "stdout_length": 0,
+      "stderr_length": 111,
       "output_files": [
         "decompiled_contracts/Contract_ABIAttributes/stdout.log",
         "decompiled_contracts/Contract_ABIAttributes/command.log",
+        "decompiled_contracts/Contract_ABIAttributes/Contract_ABIAttributes_decompiled.txt",
         "decompiled_contracts/Contract_ABIAttributes/stderr.log"
       ]
     },
     {
       "contract": "Contract_ABISafe",
-      "success": false,
-      "return_code": 1,
-      "stdout_length": 299,
-      "stderr_length": 0,
+      "success": true,
+      "return_code": 0,
+      "stdout_length": 0,
+      "stderr_length": 111,
       "output_files": [
         "decompiled_contracts/Contract_ABISafe/stdout.log",
         "decompiled_contracts/Contract_ABISafe/command.log",
+        "decompiled_contracts/Contract_ABISafe/Contract_ABISafe_decompiled.txt",
         "decompiled_contracts/Contract_ABISafe/stderr.log"
       ]
     },
@@ -44,7 +47,7 @@
       "contract": "Contract_Abort",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 248,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Abort/stdout.log",
@@ -56,7 +59,7 @@
       "contract": "Contract_Array",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 218,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Array/stdout.log",
@@ -68,7 +71,7 @@
       "contract": "Contract_Assert",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 218,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Assert/stdout.log",
@@ -80,7 +83,7 @@
       "contract": "Contract_Assignment",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 220,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Assignment/stdout.log",
@@ -92,7 +95,7 @@
       "contract": "Contract_BigInteger",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 218,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_BigInteger/stdout.log",
@@ -104,7 +107,7 @@
       "contract": "Contract_Concat",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 255,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Concat/stdout.log",
@@ -116,7 +119,7 @@
       "contract": "Contract_Delegate",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 218,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Delegate/stdout.log",
@@ -128,7 +131,7 @@
       "contract": "Contract_GoTo",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 220,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_GoTo/stdout.log",
@@ -140,7 +143,7 @@
       "contract": "Contract_Lambda",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 218,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Lambda/stdout.log",
@@ -152,7 +155,7 @@
       "contract": "Contract_NULL",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 216,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_NULL/stdout.log",
@@ -162,11 +165,12 @@
     },
     {
       "contract": "Contract_Params",
-      "success": false,
-      "return_code": 1,
-      "stdout_length": 299,
-      "stderr_length": 0,
+      "success": true,
+      "return_code": 0,
+      "stdout_length": 0,
+      "stderr_length": 114,
       "output_files": [
+        "decompiled_contracts/Contract_Params/Contract_Params_decompiled.txt",
         "decompiled_contracts/Contract_Params/stdout.log",
         "decompiled_contracts/Contract_Params/command.log",
         "decompiled_contracts/Contract_Params/stderr.log"
@@ -176,7 +180,7 @@
       "contract": "Contract_PostfixUnary",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 217,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_PostfixUnary/stdout.log",
@@ -188,7 +192,7 @@
       "contract": "Contract_Returns",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 257,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Returns/stdout.log",
@@ -200,7 +204,7 @@
       "contract": "Contract_StaticVar",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 246,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_StaticVar/stdout.log",
@@ -212,7 +216,7 @@
       "contract": "Contract_String",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 218,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_String/stdout.log",
@@ -224,7 +228,7 @@
       "contract": "Contract_Switch",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 220,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Switch/stdout.log",
@@ -236,7 +240,7 @@
       "contract": "Contract_Throw",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 216,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Throw/stdout.log",
@@ -248,7 +252,7 @@
       "contract": "Contract_TryCatch",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 255,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_TryCatch/stdout.log",
@@ -260,7 +264,7 @@
       "contract": "Contract_Types",
       "success": false,
       "return_code": 1,
-      "stdout_length": 299,
+      "stdout_length": 246,
       "stderr_length": 0,
       "output_files": [
         "decompiled_contracts/Contract_Types/stdout.log",

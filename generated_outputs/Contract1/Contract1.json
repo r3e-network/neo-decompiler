@@ -1,0 +1,82 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract1",
+  "events": [],
+  "instructions_count": 82,
+  "methods": [
+    {
+      "name": "unitTest_001",
+      "offset": 0,
+      "parameters": [],
+      "return_type": "ByteArray",
+      "safe": false
+    },
+    {
+      "name": "testVoid",
+      "offset": 14,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "testArgs1",
+      "offset": 27,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "ByteArray",
+      "safe": false
+    },
+    {
+      "name": "testArgs2",
+      "offset": 48,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "ByteArray"
+        }
+      ],
+      "return_type": "ByteArray",
+      "safe": false
+    },
+    {
+      "name": "testArgs3",
+      "offset": 53,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "Integer"
+        },
+        {
+          "name": "b",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testArgs4",
+      "offset": 108,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "Integer"
+        },
+        {
+          "name": "b",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 1 local slots;\n    temp0 = convert<Buffer>(0x01020304);\n    // Initialize 1 local slots;\n    temp1 = convert<Buffer>(0x01020304);\n    // Unhandled opcode: RET at offset 26;\n    return arg_6\n}\n"
+}

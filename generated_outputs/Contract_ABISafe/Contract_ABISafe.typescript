@@ -1,0 +1,7 @@
+// Generated from Neo N3 bytecode
+import { Neo } from 'neo';
+
+void main() {
+    // Unhandled opcode: RET at offset 1;
+    return 1
+}

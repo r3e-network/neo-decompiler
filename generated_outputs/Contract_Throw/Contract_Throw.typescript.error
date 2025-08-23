@@ -1,0 +1,5 @@
+Return code: 1
+Stdout: [2m2025-08-23T01:09:44.510329Z[0m [31mERROR[0m Command failed: Disassembly error: Unknown opcode: 0xb8 at offset 7
+[2m2025-08-23T01:09:44.510338Z[0m [31mERROR[0m   Caused by: Unknown opcode: 0xb8 at offset 7
+
+Stderr: 

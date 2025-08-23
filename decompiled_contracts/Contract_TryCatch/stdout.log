@@ -1,2 +1,2 @@
-[2m2025-08-23T00:43:07.456608Z[0m [31mERROR[0m Command failed: Analysis error: CFG construction error: CFG construction failed: Invalid block reference: 0
-[2m2025-08-23T00:43:07.456618Z[0m [31mERROR[0m   Caused by: CFG construction error: CFG construction failed: Invalid block reference: 0
+[2m2025-08-23T01:06:36.361110Z[0m [31mERROR[0m Command failed: IR lifting error: Stack underflow when lifting instruction at offset 0
+[2m2025-08-23T01:06:36.361118Z[0m [31mERROR[0m   Caused by: Stack underflow when lifting instruction at offset 0

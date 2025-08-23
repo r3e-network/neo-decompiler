@@ -31,33 +31,36 @@ pub enum OpCode {
     JMPLT, JMPLT_L, JMPLE, JMPLE_L, CALL, CALL_L, CALLA, CALLT,
     ABORT, ASSERT, THROW, TRY, TRY_L, ENDTRY, ENDTRY_L, ENDFINALLY, RET, SYSCALL,
     
-    // Stack operations (0x43-0x4F)
-    DEPTH, DROP, NIP, XDROP, CLEAR, DUP, OVER, PICK, TUCK, SWAP, ROT, ROLL, REVERSE3, REVERSE4, REVERSEN,
+    // Stack operations (0x43-0x55)
+    DEPTH, DROP, NIP, XDROP, CLEAR, DUP, OVER, PICK, TUCK, SWAP, ROT, ROLL, 
+    REVERSE3, REVERSE4, REVERSEN, DUP2,
     
-    // Slot operations (0x50-0x5F)
+    // Slot operations (0x56-0x87)
     INITSSLOT, INITSLOT, LDSFLD0, LDSFLD1, LDSFLD2, LDSFLD3, LDSFLD4, LDSFLD5, LDSFLD6,
     LDSFLD, STSFLD, LDLOC0, LDLOC1, LDLOC2, LDLOC3, LDLOC4, LDLOC5, LDLOC6,
     LDLOC, STLOC, LDARG0, LDARG1, LDARG2, LDARG3, LDARG4, LDARG5, LDARG6,
-    LDARG, STARG,
+    LDARG, STARG, STARG0, STARG1, STARG2, STARG3, STARG4, STARG5, STARG6,
     
-    // String/Array operations (0x60-0x6F)
-    NEWBUFFER, MEMCPY, CAT, SUBSTR, LEFT, RIGHT, SIZE, INVERT, AND, OR, XOR,
-    EQUAL, NOTEQUAL, SIGN, ABS, NEGATE, INC, DEC,
+    // Splice operations (0x88-0x8E)
+    NEWBUFFER, MEMCPY, CAT, SUBSTR, LEFT, RIGHT, SIZE,
     
-    // Arithmetic (0x70-0x8F)
-    ADD, SUB, MUL, DIV, MOD, POW, SQRT, MODMUL, MODPOW, SHL, SHR,
+    // Bitwise logic (0x90-0x98)
+    INVERT, AND, OR, XOR, EQUAL, NOTEQUAL, SIGN, ABS, NEGATE,
+    
+    // Arithmetic (0x99-0xBB)
+    INC, DEC, ADD, SUB, MUL, DIV, MOD, POW, SQRT, MODMUL, MODPOW, SHL, SHR,
     NOT, BOOLAND, BOOLOR, NZ, NUMEQUAL, NUMNOTEQUAL, LT, LE, GT, GE,
     MIN, MAX, WITHIN,
     
-    // Compound types (0x90-0x9F)
-    PACKMAP, PACKSTRUCT, PACKARRAY, UNPACK, NEWARRAY0, NEWARRAY, NEWARRAYT,
+    // Compound types (0xBE-0xD4)
+    PACKMAP, PACKSTRUCT, PACKARRAY, PACK, UNPACK, NEWARRAY0, NEWARRAY, NEWARRAYT,
     NEWSTRUCT0, NEWSTRUCT, NEWMAP, APPEND, SETITEM, PICKITEM, REMOVE,
     CLEARITEMS, POPITEM, HASKEY, KEYS, VALUES, SLICE,
     
-    // Types (0xA0-0xBF)
-    ISNULL, ISTYPE, CONVERT, ISNULL_AND, ISTYPE_AND, CONVERT_AND,
+    // Types (0xD8-0xDB)
+    ISNULL, ISTYPE, CONVERT,
     
-    // Extensions (0xC0-0xFF)
+    // Extensions (0xE0-0xE1)
     ABORTMSG, ASSERTMSG,
     
     // Custom/Unknown
@@ -136,7 +139,7 @@ impl OpCode {
             0x40 => OpCode::RET,
             0x41 => OpCode::SYSCALL,
             
-            // Stack operations (0x43-0x4F)
+            // Stack operations (0x43-0x55)
             0x43 => OpCode::DEPTH,
             0x45 => OpCode::DROP,
             0x46 => OpCode::NIP,
@@ -144,6 +147,7 @@ impl OpCode {
             0x49 => OpCode::CLEAR,
             0x4A => OpCode::DUP,
             0x4B => OpCode::OVER,
+            0x4C => OpCode::DUP2,
             0x4D => OpCode::PICK,
             0x4E => OpCode::TUCK,
             0x50 => OpCode::SWAP,
@@ -153,7 +157,7 @@ impl OpCode {
             0x54 => OpCode::REVERSE4,
             0x55 => OpCode::REVERSEN,
             
-            // Slot operations (0x56-0x5F)
+            // Slot operations (0x56-0x87)
             0x56 => OpCode::INITSSLOT,
             0x57 => OpCode::INITSLOT,
             0x58 => OpCode::LDSFLD0,
@@ -183,86 +187,107 @@ impl OpCode {
             0x70 => OpCode::LDARG6,
             0x71 => OpCode::LDARG,
             0x72 => OpCode::STARG,
+            0x73 => OpCode::STARG0,
+            0x74 => OpCode::STARG1,
+            0x75 => OpCode::STARG2,
+            0x76 => OpCode::STARG3,
+            0x77 => OpCode::STARG4,
+            0x78 => OpCode::STARG5,
+            0x79 => OpCode::STARG6,
+            0x7A => OpCode::STARG,     // Alternative STARG
+            0x7B => OpCode::STARG,     // Alternative STARG
+            0x7C => OpCode::STARG,     // Alternative STARG
+            0x7D => OpCode::STARG,     // Alternative STARG
+            0x7E => OpCode::STARG,     // Alternative STARG
+            0x7F => OpCode::STARG,     // Alternative STARG
+            0x80 => OpCode::STARG0,    // Official Neo N3 STARG0 mapping
+            0x81 => OpCode::STARG1,
+            0x82 => OpCode::STARG2,
+            0x83 => OpCode::STARG3,
+            0x84 => OpCode::STARG4,
+            0x85 => OpCode::STARG5,
+            0x86 => OpCode::STARG6,
+            0x87 => OpCode::STARG,     // Generic STARG
             
-            // String/Array operations (0x73-0x8F)
-            0x73 => OpCode::NEWBUFFER,
-            0x74 => OpCode::MEMCPY,
-            0x75 => OpCode::CAT,
-            0x76 => OpCode::SUBSTR,
-            0x77 => OpCode::LEFT,
-            0x78 => OpCode::RIGHT,
-            0x82 => OpCode::SIZE,
-            0x83 => OpCode::INVERT,
-            0x84 => OpCode::AND,
-            0x85 => OpCode::OR,
-            0x86 => OpCode::XOR,
-            0x87 => OpCode::EQUAL,
-            0x88 => OpCode::NOTEQUAL,
-            0x89 => OpCode::SIGN,
-            0x8A => OpCode::ABS,
-            0x8B => OpCode::NEGATE,
-            0x8C => OpCode::INC,
-            0x8D => OpCode::DEC,
+            // Splice operations (0x88-0x8E)
+            0x88 => OpCode::NEWBUFFER,
+            0x89 => OpCode::MEMCPY,
+            0x8B => OpCode::CAT,
+            0x8C => OpCode::SUBSTR,
+            0x8D => OpCode::LEFT,
+            0x8E => OpCode::RIGHT,
+            0x8F => OpCode::SIZE,      // Official Neo N3 SIZE mapping
             
-            // Arithmetic (0x8E-0x9F)
-            0x8E => OpCode::ADD,
-            0x8F => OpCode::SUB,
-            0x90 => OpCode::MUL,
-            0x91 => OpCode::DIV,
-            0x92 => OpCode::MOD,
-            0x93 => OpCode::POW,
-            0x94 => OpCode::SQRT,
-            0x95 => OpCode::MODMUL,
-            0x96 => OpCode::MODPOW,
-            0x97 => OpCode::SHL,
-            0x98 => OpCode::SHR,
-            0x99 => OpCode::NOT,
-            0x9A => OpCode::BOOLAND,
-            0x9B => OpCode::BOOLOR,
-            0x9C => OpCode::NZ,
-            0x9D => OpCode::NUMEQUAL,
-            0x9E => OpCode::NUMNOTEQUAL,
-            0x9F => OpCode::LT,
-            0xA0 => OpCode::LE,
-            0xA1 => OpCode::GT,
-            0xA2 => OpCode::GE,
-            0xA3 => OpCode::MIN,
-            0xA4 => OpCode::MAX,
-            0xA5 => OpCode::WITHIN,
+            // Bitwise logic (0x90-0x98)
+            0x90 => OpCode::INVERT,
+            0x91 => OpCode::AND,
+            0x92 => OpCode::OR,
+            0x93 => OpCode::XOR,
+            0x97 => OpCode::EQUAL,
+            0x98 => OpCode::NOTEQUAL,
             
-            // Compound types (0xA8-0xBF)
-            0xA8 => OpCode::PACKMAP,
-            0xA9 => OpCode::PACKSTRUCT,
-            0xAA => OpCode::PACKARRAY,
-            0xAB => OpCode::UNPACK,
-            0xAC => OpCode::NEWARRAY0,
-            0xAD => OpCode::NEWARRAY,
-            0xAE => OpCode::NEWARRAYT,
-            0xAF => OpCode::NEWSTRUCT0,
-            0xB0 => OpCode::NEWSTRUCT,
-            0xB1 => OpCode::NEWMAP,
-            0xB3 => OpCode::APPEND,
-            0xB4 => OpCode::SETITEM,
-            0xB5 => OpCode::PICKITEM,
-            0xB6 => OpCode::REMOVE,
-            0xB7 => OpCode::CLEARITEMS,
-            0xB8 => OpCode::POPITEM,
-            0xB9 => OpCode::HASKEY,
-            0xBA => OpCode::KEYS,
-            0xBB => OpCode::VALUES,
-            0xBC => OpCode::SLICE,
+            // Arithmetic (0x99-0xBB)
+            0x99 => OpCode::SIGN,
+            0x9A => OpCode::ABS,
+            0x9B => OpCode::NEGATE,
+            0x9C => OpCode::INC,
+            0x9D => OpCode::DEC,
+            0x9E => OpCode::ADD,
+            0x9F => OpCode::SUB,
+            0xA0 => OpCode::MUL,
+            0xA1 => OpCode::DIV,
+            0xA2 => OpCode::MOD,
+            0xA3 => OpCode::POW,
+            0xA4 => OpCode::SQRT,
+            0xA5 => OpCode::MODMUL,
+            0xA6 => OpCode::MODPOW,
+            0xA7 => OpCode::SHL,
+            0xA8 => OpCode::SHR,
+            0xA9 => OpCode::NOT,
+            0xAA => OpCode::BOOLAND,
+            0xAB => OpCode::BOOLOR,
+            0xAC => OpCode::NZ,
+            0xAD => OpCode::NUMEQUAL,
+            0xAE => OpCode::NUMNOTEQUAL,
+            0xAF => OpCode::LT,
+            0xB0 => OpCode::LE,
+            0xB1 => OpCode::GT,
+            0xB2 => OpCode::GE,
+            0xB3 => OpCode::MIN,
+            0xB4 => OpCode::MAX,
+            0xB5 => OpCode::WITHIN,
             
-            // Types (0xC0-0xC5)
-            0xC0 => OpCode::ISNULL,
-            0xC1 => OpCode::ISTYPE,
-            0xC2 => OpCode::CONVERT,
-            0xC3 => OpCode::ISNULL_AND,
-            0xC4 => OpCode::ISTYPE_AND,
-            0xC5 => OpCode::CONVERT_AND,
+            // Compound types (0xBE-0xD4)
+            0xBE => OpCode::PACKMAP,
+            0xBF => OpCode::PACKSTRUCT,
+            0xC0 => OpCode::PACKARRAY,
+            0xC1 => OpCode::PACK,
+            0xC2 => OpCode::UNPACK,
+            0xC3 => OpCode::NEWARRAY0,
+            0xC4 => OpCode::NEWARRAY,
+            0xC5 => OpCode::NEWARRAYT,
+            0xC6 => OpCode::NEWSTRUCT0,
+            0xC7 => OpCode::NEWSTRUCT,
+            0xC8 => OpCode::NEWMAP,
+            0xCA => OpCode::APPEND,
+            0xCB => OpCode::SETITEM,
+            0xCC => OpCode::PICKITEM,
+            0xCD => OpCode::REMOVE,
+            0xCE => OpCode::CLEARITEMS,
+            0xCF => OpCode::POPITEM,
+            0xD0 => OpCode::HASKEY,
+            0xD1 => OpCode::KEYS,
+            0xD2 => OpCode::VALUES,
+            0xD3 => OpCode::SLICE,
             
-            // Extensions (0xC6-0xC7)
-            0xC6 => OpCode::ABORTMSG,
-            0xC7 => OpCode::ASSERTMSG,
+            // Types (0xD8-0xDB)
+            0xD8 => OpCode::ISNULL,
+            0xD9 => OpCode::ISTYPE,
+            0xDB => OpCode::CONVERT,   // Official Neo N3 CONVERT mapping
+            
+            // Extensions (0xE0-0xE1)
+            0xE0 => OpCode::ABORTMSG,
+            0xE1 => OpCode::ASSERTMSG,
             
             _ => OpCode::UNKNOWN(byte),
         }

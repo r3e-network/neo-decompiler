@@ -1,2 +1,2 @@
-[2m2025-08-23T00:43:07.419299Z[0m [31mERROR[0m Command failed: Analysis error: CFG construction error: CFG construction failed: Invalid block reference: 0
-[2m2025-08-23T00:43:07.419308Z[0m [31mERROR[0m   Caused by: CFG construction error: CFG construction failed: Invalid block reference: 0
+[2m2025-08-23T01:06:36.323087Z[0m [31mERROR[0m Command failed: Disassembly error: Unknown opcode: 0x4c at offset 10
+[2m2025-08-23T01:06:36.323096Z[0m [31mERROR[0m   Caused by: Unknown opcode: 0x4c at offset 10

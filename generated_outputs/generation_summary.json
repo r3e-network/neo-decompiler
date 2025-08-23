@@ -1,0 +1,953 @@
+{
+  "total_contracts": 22,
+  "total_attempts": 198,
+  "total_successful": 58,
+  "results": {
+    "Contract1": {
+      "pseudocode": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 224
+      },
+      "c": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 276
+      },
+      "python": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 231
+      },
+      "rust": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 271
+      },
+      "typescript": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 286
+      },
+      "json": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 1757
+      },
+      "html": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 814
+      },
+      "disasm": {
+        "success": true
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_ABIAttributes": {
+      "pseudocode": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 71
+      },
+      "c": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 123
+      },
+      "python": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 78
+      },
+      "rust": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 118
+      },
+      "typescript": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 133
+      },
+      "json": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 427
+      },
+      "html": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 649
+      },
+      "disasm": {
+        "success": true
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_ABISafe": {
+      "pseudocode": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 71
+      },
+      "c": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 123
+      },
+      "python": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 78
+      },
+      "rust": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 118
+      },
+      "typescript": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 133
+      },
+      "json": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 704
+      },
+      "html": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 649
+      },
+      "disasm": {
+        "success": true
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Abort": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Array": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Assert": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Assignment": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_BigInteger": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Concat": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": true
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Delegate": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_GoTo": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Lambda": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_NULL": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Params": {
+      "pseudocode": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 3513
+      },
+      "c": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 3565
+      },
+      "python": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 3727
+      },
+      "rust": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 3560
+      },
+      "typescript": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 3575
+      },
+      "json": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 4026
+      },
+      "html": {
+        "success": true,
+        "return_code": 0,
+        "file_size": 4227
+      },
+      "disasm": {
+        "success": true
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_PostfixUnary": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": true
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Returns": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": true
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_StaticVar": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_String": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Switch": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Throw": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_TryCatch": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": true
+      },
+      "info": {
+        "success": true
+      }
+    },
+    "Contract_Types": {
+      "pseudocode": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "c": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "python": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "rust": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "typescript": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "json": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "html": {
+        "success": false,
+        "return_code": 1,
+        "file_size": 0
+      },
+      "disasm": {
+        "success": false
+      },
+      "info": {
+        "success": true
+      }
+    }
+  }
+}

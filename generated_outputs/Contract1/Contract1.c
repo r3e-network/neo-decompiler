@@ -1,0 +1,11 @@
+// Generated from Neo N3 bytecode
+#include <neo.h>
+
+void main() {
+    // Initialize 1 local slots;
+    temp0 = convert<Buffer>(0x01020304);
+    // Initialize 1 local slots;
+    temp1 = convert<Buffer>(0x01020304);
+    // Unhandled opcode: RET at offset 26;
+    return arg_6
+}

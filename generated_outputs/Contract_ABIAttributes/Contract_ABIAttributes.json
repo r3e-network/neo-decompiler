@@ -1,0 +1,19 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_ABIAttributes",
+  "events": [],
+  "instructions_count": 2,
+  "methods": [
+    {
+      "name": "test",
+      "offset": 0,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Unhandled opcode: RET at offset 1;\n    return 0\n}\n"
+}

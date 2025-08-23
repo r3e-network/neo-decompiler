@@ -1,0 +1,40 @@
+0000: REVERSE4  ; REVERSE4
+0004: INITSLOT SlotInit { static_slots: 1, local_slots: 0 }  ; INITSLOT
+0008: STARG5  ; STARG5
+000c: PUSHDATA1 Bytes([104, 101, 108, 108, 111])  ; PUSHDATA1
+0010: CAT  ; CAT
+0014: CONVERT StackItemType(ByteString)  ; CONVERT
+0018: RET  ; RET
+001c: INITSLOT SlotInit { static_slots: 2, local_slots: 0 }  ; INITSLOT
+0020: STARG5  ; STARG5
+0024: STARG6  ; STARG6
+0028: CAT  ; CAT
+002c: CONVERT StackItemType(ByteString)  ; CONVERT
+0030: PUSHDATA1 Bytes([104, 101, 108, 108, 111])  ; PUSHDATA1
+0034: CAT  ; CAT
+0038: CONVERT StackItemType(ByteString)  ; CONVERT
+003c: RET  ; RET
+0040: INITSLOT SlotInit { static_slots: 3, local_slots: 0 }  ; INITSLOT
+0044: STARG5  ; STARG5
+0048: STARG6  ; STARG6
+004c: CAT  ; CAT
+0050: CONVERT StackItemType(ByteString)  ; CONVERT
+0054: STARG SlotIndex(139)  ; STARG
+0058: CONVERT StackItemType(ByteString)  ; CONVERT
+005c: PUSHDATA1 Bytes([104, 101, 108, 108, 111])  ; PUSHDATA1
+0060: CAT  ; CAT
+0064: CONVERT StackItemType(ByteString)  ; CONVERT
+0068: RET  ; RET
+006c: INITSLOT SlotInit { static_slots: 4, local_slots: 0 }  ; INITSLOT
+0070: STARG5  ; STARG5
+0074: STARG6  ; STARG6
+0078: CAT  ; CAT
+007c: CONVERT StackItemType(ByteString)  ; CONVERT
+0080: STARG SlotIndex(139)  ; STARG
+0084: CONVERT StackItemType(ByteString)  ; CONVERT
+0088: STARG SlotIndex(139)  ; STARG
+008c: CONVERT StackItemType(ByteString)  ; CONVERT
+0090: PUSHDATA1 Bytes([104, 101, 108, 108, 111])  ; PUSHDATA1
+0094: CAT  ; CAT
+0098: CONVERT StackItemType(ByteString)  ; CONVERT
+009c: RET  ; RET
