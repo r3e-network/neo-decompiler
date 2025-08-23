@@ -65,7 +65,7 @@ This document presents a comprehensive technical design for a Neo N3 decompiler 
 ## 3. Detailed Directory Structure
 
 ```
-neo-n3-decompiler/
+neo-decompilerr/
 ├── Cargo.toml                          # Root project configuration
 ├── Cargo.lock                          # Dependency lock file
 ├── README.md                           # Project overview and usage
@@ -984,14 +984,14 @@ impl ConfigLoader {
 
 ```toml
 [package]
-name = "neo-n3-decompiler"
+name = "neo-decompilerr"
 version = "0.1.0"
 edition = "2021"
 authors = ["Neo Development Team"]
 license = "MIT OR Apache-2.0"
 description = "A comprehensive Neo N3 smart contract decompiler"
-homepage = "https://github.com/neo-project/neo-n3-decompiler"
-repository = "https://github.com/neo-project/neo-n3-decompiler"
+homepage = "https://github.com/neo-project/neo-decompilerr"
+repository = "https://github.com/neo-project/neo-decompilerr"
 readme = "README.md"
 keywords = ["neo", "blockchain", "decompiler", "smart-contracts"]
 categories = ["development-tools", "parsing"]
@@ -1049,7 +1049,7 @@ plugin-system = ["libloading", "inventory"]
 parallel = ["rayon"]
 
 [[bin]]
-name = "neo-decompile"
+name = "neo-decompiler"
 path = "src/main.rs"
 
 [lib]
@@ -1065,7 +1065,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-[profile.dev.package.neo-decompiler]
+[profile.dev.package.neo-decompilerr]
 opt-level = 2  # Optimize this crate even in debug mode
 
 [workspace]

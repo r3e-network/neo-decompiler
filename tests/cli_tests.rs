@@ -11,7 +11,7 @@ use crate::common::*;
 
 /// Helper to create a test command
 fn neo_decompile_cmd() -> Command {
-    Command::cargo_bin("neo-decompile").unwrap()
+    Command::cargo_bin("neo-decompiler").unwrap()
 }
 
 /// Test basic help output

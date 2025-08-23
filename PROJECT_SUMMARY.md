@@ -14,7 +14,7 @@ This project provides a comprehensive technical design and initial implementatio
 
 ### 2. Complete Project Structure
 ```
-neo-n3-decompiler/
+neo-decompilerr/
 ├── src/                           # Source code (12 modules implemented)
 │   ├── lib.rs                     # Library root with unified API
 │   ├── main.rs                    # CLI application

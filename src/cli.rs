@@ -26,7 +26,7 @@ use crate::{
 /// Neo N3 smart contracts from their compiled NEF bytecode.
 #[derive(Parser)]
 #[command(
-    name = "neo-decompile",
+    name = "neo-decompiler",
     version = "0.1.0", 
     author = "Neo Development Team",
     about = "Neo N3 Smart Contract Decompiler",
@@ -34,11 +34,11 @@ use crate::{
                   disassembly, control flow analysis, decompilation to multiple formats,
                   security analysis, and metadata extraction.",
     after_help = "Examples:\n\
-      neo-decompile disasm contract.nef\n\
-      neo-decompile decompile -m contract.manifest.json -o output.py -f python contract.nef\n\
-      neo-decompile cfg --dot contract.nef > contract.dot\n\
-      neo-decompile analyze --security --nep-compliance contract.nef\n\
-      neo-decompile info --metadata contract.nef"
+      neo-decompiler disasm contract.nef\n\
+      neo-decompiler decompile -m contract.manifest.json -o output.py -f python contract.nef\n\
+      neo-decompiler cfg --dot contract.nef > contract.dot\n\
+      neo-decompiler analyze --security --nep-compliance contract.nef\n\
+      neo-decompiler info --metadata contract.nef"
 )]
 pub struct Cli {
     #[command(subcommand)]

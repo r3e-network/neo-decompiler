@@ -8,11 +8,11 @@ A comprehensive decompiler project for Neo N3 smart contracts, providing analysi
 
 ```bash
 # Install from crates.io (when published)
-cargo install neo-n3-decompiler
+cargo install neo-decompilerr
 
 # Or build from source
-git clone https://github.com/neo-project/neo-n3-decompiler
-cd neo-n3-decompiler
+git clone https://github.com/neo-project/neo-decompilerr
+cd neo-decompilerr
 cargo build --release
 ```
 
@@ -20,22 +20,22 @@ cargo build --release
 
 ```bash
 # Initialize a new decompiler project
-neo-decompile init
+neo-decompiler init
 
 # Disassemble a NEF file
-neo-decompile disasm contract.nef
+neo-decompiler disasm contract.nef
 
 # Full decompilation with manifest
-neo-decompile decompile -m contract.manifest.json -o output.pseudo contract.nef
+neo-decompiler decompile -m contract.manifest.json -o output.pseudo contract.nef
 
 # Generate control flow graph
-neo-decompile cfg --format dot contract.nef > contract.dot
+neo-decompiler cfg --format dot contract.nef > contract.dot
 
 # Security and compliance analysis
-neo-decompile analyze --security --nep-compliance contract.nef
+neo-decompiler analyze --security --nep-compliance contract.nef
 
 # Extract contract information
-neo-decompile info --metadata --methods contract.nef
+neo-decompiler info --metadata --methods contract.nef
 ```
 
 ## Features
@@ -73,13 +73,13 @@ Pretty disassembly with offsets, operands, and optional comments.
 
 ```bash
 # Basic disassembly
-neo-decompile disasm contract.nef
+neo-decompiler disasm contract.nef
 
 # With detailed information
-neo-decompile disasm --bytes --comments --stats contract.nef
+neo-decompiler disasm --bytes --comments --stats contract.nef
 
 # Save to file
-neo-decompile disasm -o contract.asm contract.nef
+neo-decompiler disasm -o contract.asm contract.nef
 ```
 
 ### `cfg` - Control Flow Graph
@@ -87,13 +87,13 @@ Generate control flow graphs in various formats.
 
 ```bash
 # GraphViz DOT format
-neo-decompile cfg contract.nef > contract.dot
+neo-decompiler cfg contract.nef > contract.dot
 
 # JSON format for programmatic use
-neo-decompile cfg -f json -o graph.json contract.nef
+neo-decompiler cfg -f json -o graph.json contract.nef
 
 # With detailed analysis
-neo-decompile cfg --show-instructions --analysis contract.nef
+neo-decompiler cfg --show-instructions --analysis contract.nef
 ```
 
 ### `decompile` - Full Decompilation
@@ -101,16 +101,16 @@ Complete decompilation to human-readable pseudocode.
 
 ```bash
 # Basic decompilation
-neo-decompile decompile contract.nef
+neo-decompiler decompile contract.nef
 
 # With manifest and Python output
-neo-decompile decompile -m contract.manifest.json -f python -o contract.py contract.nef
+neo-decompiler decompile -m contract.manifest.json -f python -o contract.py contract.nef
 
 # Multiple formats
-neo-decompile decompile --multi-format -o contract.pseudo contract.nef
+neo-decompiler decompile --multi-format -o contract.pseudo contract.nef
 
 # With performance metrics
-neo-decompile decompile --metrics --reports contract.nef
+neo-decompiler decompile --metrics --reports contract.nef
 ```
 
 ### `analyze` - Security and Compliance
@@ -118,16 +118,16 @@ Comprehensive analysis for security and standard compliance.
 
 ```bash
 # Security analysis
-neo-decompile analyze --security contract.nef
+neo-decompiler analyze --security contract.nef
 
 # NEP compliance checking
-neo-decompile analyze --nep-compliance -m contract.manifest.json contract.nef
+neo-decompiler analyze --nep-compliance -m contract.manifest.json contract.nef
 
 # Complete analysis
-neo-decompile analyze --all --format html -o report.html contract.nef
+neo-decompiler analyze --all --format html -o report.html contract.nef
 
 # Performance analysis
-neo-decompile analyze --performance --threshold high contract.nef
+neo-decompiler analyze --performance --threshold high contract.nef
 ```
 
 ### `info` - Contract Information
@@ -135,13 +135,13 @@ Extract metadata and contract information.
 
 ```bash
 # Basic information
-neo-decompile info contract.nef
+neo-decompiler info contract.nef
 
 # With manifest details
-neo-decompile info -m contract.manifest.json --methods --dependencies contract.nef
+neo-decompiler info -m contract.manifest.json --methods --dependencies contract.nef
 
 # JSON output for automation
-neo-decompile info -f json --stats --compiler contract.nef
+neo-decompiler info -f json --stats --compiler contract.nef
 ```
 
 ## Configuration
@@ -173,13 +173,13 @@ format = "compact"
 ### Configuration Commands
 ```bash
 # Show current configuration
-neo-decompile config show
+neo-decompiler config show
 
 # Generate default configuration
-neo-decompile config generate -o decompiler.toml
+neo-decompiler config generate -o decompiler.toml
 
 # Validate configuration
-neo-decompile config validate decompiler.toml
+neo-decompiler config validate decompiler.toml
 ```
 
 ## Library Usage
@@ -267,36 +267,36 @@ wget https://example.com/sample-token.nef
 wget https://example.com/sample-token.manifest.json
 
 # Full analysis
-neo-decompile analyze --all -m sample-token.manifest.json sample-token.nef
+neo-decompiler analyze --all -m sample-token.manifest.json sample-token.nef
 
 # Generate Python-style decompilation
-neo-decompile decompile -f python -m sample-token.manifest.json sample-token.nef
+neo-decompiler decompile -f python -m sample-token.manifest.json sample-token.nef
 ```
 
 ### Security Audit
 ```bash
 # Comprehensive security analysis
-neo-decompile analyze --security --format sarif -o security-report.sarif contract.nef
+neo-decompiler analyze --security --format sarif -o security-report.sarif contract.nef
 
 # Check NEP compliance
-neo-decompile analyze --nep-compliance -m manifest.json contract.nef
+neo-decompiler analyze --nep-compliance -m manifest.json contract.nef
 
 # Performance analysis
-neo-decompile analyze --performance --threshold medium contract.nef
+neo-decompiler analyze --performance --threshold medium contract.nef
 ```
 
 ### Development Workflow
 ```bash
 # Initialize project
-neo-decompile init ./analysis-project
+neo-decompiler init ./analysis-project
 
 # Generate configuration
-neo-decompile config generate -o ./analysis-project/decompiler.toml
+neo-decompiler config generate -o ./analysis-project/decompiler.toml
 
 # Batch analysis
 for nef in *.nef; do
     echo "Analyzing $nef..."
-    neo-decompile analyze --all "$nef" > "${nef%.nef}-analysis.json"
+    neo-decompiler analyze --all "$nef" > "${nef%.nef}-analysis.json"
 done
 ```
 
@@ -324,8 +324,8 @@ Typical performance characteristics:
 
 ### Development Setup
 ```bash
-git clone https://github.com/neo-project/neo-n3-decompiler
-cd neo-n3-decompiler
+git clone https://github.com/neo-project/neo-decompilerr
+cd neo-decompilerr
 cargo build
 cargo test
 ```

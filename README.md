@@ -1,6 +1,6 @@
-# Neo N3 Decompiler
+# Neo Decompiler
 
-A comprehensive Neo N3 smart contract decompiler that transforms compiled NEF (Neo Executable Format) bytecode into human-readable pseudocode.
+A comprehensive Neo smart contract decompiler that transforms compiled NEF (Neo Executable Format) bytecode into human-readable pseudocode.
 
 ## Features
 
@@ -16,8 +16,8 @@ A comprehensive Neo N3 smart contract decompiler that transforms compiled NEF (N
 ### Installation
 
 ```bash
-git clone https://github.com/neo-project/neo-n3-decompiler
-cd neo-n3-decompiler
+git clone https://github.com/neo-project/neo-decompiler
+cd neo-decompiler
 cargo build --release
 ```
 
@@ -25,16 +25,16 @@ cargo build --release
 
 ```bash
 # Decompile a NEF file
-./target/release/neo-decompile decompile contract.nef
+./target/release/neo-decompiler decompile contract.nef
 
 # Include contract manifest for better analysis
-./target/release/neo-decompile decompile contract.nef -m contract.manifest.json
+./target/release/neo-decompiler decompile contract.nef -m contract.manifest.json
 
 # Generate analysis reports
-./target/release/neo-decompile decompile contract.nef --reports --metrics
+./target/release/neo-decompiler decompile contract.nef --reports --metrics
 
 # Different output formats
-./target/release/neo-decompile decompile contract.nef -f json -o output.json
+./target/release/neo-decompiler decompile contract.nef -f json -o output.json
 ```
 
 ### Library Usage
@@ -216,8 +216,8 @@ while (iterator.next()) {
 ### Building from Source
 
 ```bash
-git clone https://github.com/neo-project/neo-n3-decompiler
-cd neo-n3-decompiler
+git clone https://github.com/neo-project/neo-decompiler
+cd neo-decompiler
 cargo build --release
 ```
 

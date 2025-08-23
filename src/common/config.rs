@@ -159,7 +159,7 @@ impl Default for PluginConfig {
             enabled: true,
             plugin_paths: vec![
                 PathBuf::from("./plugins"),
-                PathBuf::from("~/.neo-decompiler/plugins"),
+                PathBuf::from("~/.neo-decompilerr/plugins"),
             ],
             enabled_plugins: vec![
                 "syscall_analyzer".to_string(),
@@ -270,7 +270,7 @@ impl ConfigLoader {
         let config_paths = [
             "./decompiler.toml",
             "./config/decompiler.toml",
-            "~/.neo-decompiler/config.toml",
+            "~/.neo-decompilerr/config.toml",
         ];
 
         for path in &config_paths {

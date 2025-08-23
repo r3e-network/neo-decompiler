@@ -175,22 +175,22 @@ neo-decompilation/
 
 ```bash
 # Initialize a new project
-neo-decompile init
+neo-decompiler init
 
 # Pretty disassembly
-neo-decompile disasm --stats --comments contract.nef
+neo-decompiler disasm --stats --comments contract.nef
 
 # Control flow graph
-neo-decompile cfg --format dot contract.nef > contract.dot
+neo-decompiler cfg --format dot contract.nef > contract.dot
 
 # Full decompilation with multiple formats
-neo-decompile decompile -f python -m manifest.json --multi-format contract.nef
+neo-decompiler decompile -f python -m manifest.json --multi-format contract.nef
 
 # Comprehensive security analysis
-neo-decompile analyze --all --format html -o report.html contract.nef
+neo-decompiler analyze --all --format html -o report.html contract.nef
 
 # Extract contract information
-neo-decompile info --metadata --methods --stats contract.nef
+neo-decompiler info --metadata --methods --stats contract.nef
 ```
 
 ### Library Integration

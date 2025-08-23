@@ -818,7 +818,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "neo-n3-decompiler"
+name = "neo-decompiler"
 version = "0.1.0"
 dependencies = [
  "anyhow",

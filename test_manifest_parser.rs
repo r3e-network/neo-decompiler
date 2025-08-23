@@ -1,7 +1,7 @@
 // Simple standalone test for the manifest parser
 // This bypasses the compilation issues with other modules
 
-use neo_n3_decompiler::frontend::{ManifestParser, ValidationOptions};
+use neo_decompiler::frontend::{ManifestParser, ValidationOptions};
 
 fn main() {
     println!("Testing Neo N3 Contract Manifest Parser");

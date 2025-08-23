@@ -1,7 +1,7 @@
 cargo:rerun-if-env-changed=RUSTONIG_DYNAMIC_LIBONIG
 cargo:rerun-if-env-changed=RUSTONIG_STATIC_LIBONIG
 cargo:rerun-if-env-changed=RUSTONIG_SYSTEM_LIBONIG
-OUT_DIR = Some(/home/neo/git/neo-decompilation/target/release/build/onig_sys-483455f83f5db4af/out)
+OUT_DIR = Some(/home/neo/git/neo-decompiler/target/release/build/onig_sys-483455f83f5db4af/out)
 OPT_LEVEL = Some(3)
 TARGET = Some(x86_64-unknown-linux-gnu)
 HOST = Some(x86_64-unknown-linux-gnu)
@@ -45,4 +45,4 @@ ARFLAGS_x86_64_unknown_linux_gnu = None
 cargo:rerun-if-env-changed=ARFLAGS_x86_64-unknown-linux-gnu
 ARFLAGS_x86_64-unknown-linux-gnu = None
 cargo:rustc-link-lib=static=onig
-cargo:rustc-link-search=native=/home/neo/git/neo-decompilation/target/release/build/onig_sys-483455f83f5db4af/out
+cargo:rustc-link-search=native=/home/neo/git/neo-decompiler/target/release/build/onig_sys-483455f83f5db4af/out
