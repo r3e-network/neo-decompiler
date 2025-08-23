@@ -52,6 +52,9 @@ pub enum OpCode {
     NOT, BOOLAND, BOOLOR, NZ, NUMEQUAL, NUMNOTEQUAL, LT, LE, GT, GE,
     MIN, MAX, WITHIN,
     
+    // Additional Neo N3 opcodes found in contracts
+    UNKNOWN_07, UNKNOWN_42, UNKNOWN_44, UNKNOWN_B6, UNKNOWN_B7, UNKNOWN_B8, UNKNOWN_BB, UNKNOWN_94, UNKNOWN_DA, UNKNOWN_E4, UNKNOWN_E6, UNKNOWN_E8, UNKNOWN_EC, UNKNOWN_EF, UNKNOWN_F0, UNKNOWN_F2, UNKNOWN_F7,
+    
     // Compound types (0xBE-0xD4)
     PACKMAP, PACKSTRUCT, PACKARRAY, PACK, UNPACK, NEWARRAY0, NEWARRAY, NEWARRAYT,
     NEWSTRUCT0, NEWSTRUCT, NEWMAP, APPEND, SETITEM, PICKITEM, REMOVE,
@@ -256,6 +259,9 @@ impl OpCode {
             0xB3 => OpCode::MIN,
             0xB4 => OpCode::MAX,
             0xB5 => OpCode::WITHIN,
+            0xB6 => OpCode::UNKNOWN_B6,   // Found in Contract_Assert
+            0xB8 => OpCode::UNKNOWN_B8,   // Found in Contract_Throw  
+            0xBB => OpCode::UNKNOWN_BB,   // Found in Contract_BigInteger
             
             // Compound types (0xBE-0xD4)
             0xBE => OpCode::PACKMAP,
@@ -288,6 +294,22 @@ impl OpCode {
             // Extensions (0xE0-0xE1)
             0xE0 => OpCode::ABORTMSG,
             0xE1 => OpCode::ASSERTMSG,
+            
+            // Missing opcodes found in contract artifacts
+            0x07 => OpCode::UNKNOWN_07,   // Found in Contract_GoTo
+            0x42 => OpCode::UNKNOWN_42,   // Found in Contract_Array, Contract_String
+            0x44 => OpCode::UNKNOWN_44,   // Found in Contract_Switch  
+            0x94 => OpCode::UNKNOWN_94,   // Found in Contract_NULL
+            0xB7 => OpCode::UNKNOWN_B7,   // Found in Contract_NULL
+            0xDA => OpCode::UNKNOWN_DA,   // Found in Contract_Array
+            0xE4 => OpCode::UNKNOWN_E4,   // Found in Contract_Array, Contract_Delegate, Contract_StaticVar, Contract_String, Contract_Types
+            0xE6 => OpCode::UNKNOWN_E6,   // Found in Contract_NULL
+            0xE8 => OpCode::UNKNOWN_E8,   // Found in Contract_NULL
+            0xEC => OpCode::UNKNOWN_EC,   // Found in Contract_Lambda
+            0xEF => OpCode::UNKNOWN_EF,   // Found in Contract_Array
+            0xF0 => OpCode::UNKNOWN_F0,   // Found in Contract_Lambda
+            0xF2 => OpCode::UNKNOWN_F2,   // Found in Contract_String
+            0xF7 => OpCode::UNKNOWN_F7,   // Found in Contract_String, Contract_Array
             
             _ => OpCode::UNKNOWN(byte),
         }

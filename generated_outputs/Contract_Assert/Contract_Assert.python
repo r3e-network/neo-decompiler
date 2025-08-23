@@ -1,0 +1,22 @@
+void main() :
+    pass
+    // Initialize 1 local slots;
+    assert(true);
+    assert(false);
+    // Initialize 1 local slots;
+    // Initialize 2 local slots;
+    // Unhandled opcode: TRY at offset 34;
+    try  :
+    pass
+
+        // try block -> block_9
+    
+ catch  :
+    pass
+        // catch block -> block_3
+    
+ finally  :
+    pass
+        // finally block -> block_4
+    
+

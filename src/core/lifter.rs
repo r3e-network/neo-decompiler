@@ -622,6 +622,19 @@ impl IRLifter {
             OpCode::ABORTMSG => operations.extend(self.lift_abort(true)?),
             
             // For unhandled opcodes, add a comment
+            // Unknown opcodes - handle gracefully to avoid failures
+            OpCode::UNKNOWN_07 | OpCode::UNKNOWN_42 | OpCode::UNKNOWN_44 | OpCode::UNKNOWN_B6 | 
+            OpCode::UNKNOWN_B7 | OpCode::UNKNOWN_B8 | OpCode::UNKNOWN_BB | OpCode::UNKNOWN_94 | 
+            OpCode::UNKNOWN_DA | OpCode::UNKNOWN_E4 | OpCode::UNKNOWN_E6 | OpCode::UNKNOWN_E8 | 
+            OpCode::UNKNOWN_EC | OpCode::UNKNOWN_EF | OpCode::UNKNOWN_F0 | OpCode::UNKNOWN_F2 | 
+            OpCode::UNKNOWN_F7 => {
+                operations.push(Operation::Comment(
+                    format!("TODO: Implement opcode {:?} at offset {}", 
+                            instruction.opcode, instruction.offset)
+                ));
+                // For now, assume these are stack-neutral operations
+            }
+            
             _ => {
                 operations.push(Operation::Comment(
                     format!("Unhandled opcode: {:?} at offset {}", instruction.opcode, instruction.offset)

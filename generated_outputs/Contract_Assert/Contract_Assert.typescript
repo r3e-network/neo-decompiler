@@ -1,0 +1,22 @@
+// Generated from Neo N3 bytecode
+import { Neo } from 'neo';
+
+void main() {
+    // Initialize 1 local slots;
+    assert(true);
+    assert(false);
+    // Initialize 1 local slots;
+    // Initialize 2 local slots;
+    // Unhandled opcode: TRY at offset 34;
+    try  {
+
+        // try block -> block_9
+    }
+ catch  {
+        // catch block -> block_3
+    }
+ finally  {
+        // finally block -> block_4
+    }
+
+}

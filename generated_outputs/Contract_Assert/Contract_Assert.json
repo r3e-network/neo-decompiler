@@ -1,0 +1,47 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_Assert",
+  "events": [],
+  "instructions_count": 65,
+  "methods": [
+    {
+      "name": "testAssertFalse",
+      "offset": 0,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testAssertInFunction",
+      "offset": 16,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testAssertInTry",
+      "offset": 28,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testAssertInCatch",
+      "offset": 51,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testAssertInFinally",
+      "offset": 84,
+      "parameters": [],
+      "return_type": "Integer",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 1 local slots;\n    assert(true);\n    assert(false);\n    // Initialize 1 local slots;\n    // Initialize 2 local slots;\n    // Unhandled opcode: TRY at offset 34;\n    try  {\n\n        // try block -> block_9\n    }\n catch  {\n        // catch block -> block_3\n    }\n finally  {\n        // finally block -> block_4\n    }\n\n}\n"
+}

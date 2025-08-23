@@ -345,19 +345,9 @@ impl InstructionDecoder {
 
             // === MESSAGE OPERATIONS ===
             OpCode::ABORTMSG | OpCode::ASSERTMSG => {
-                if data.is_empty() {
-                    return Err(DisassemblyError::TruncatedInstruction { offset });
-                }
-                let len = data[0] as usize;
-                if data.len() < 1 + len {
-                    return Err(DisassemblyError::TruncatedInstruction { offset });
-                }
-                let message = String::from_utf8(data[1..1+len].to_vec())
-                    .map_err(|_| DisassemblyError::InvalidOperand { 
-                        opcode: format!("{:?}", opcode), 
-                        offset 
-                    })?;
-                Ok((Some(Operand::Message(message)), 1 + len as u8))
+                // ABORTMSG and ASSERTMSG don't take operands
+                // The message should already be on the stack from a previous PUSHDATA instruction
+                Ok((None, 0))
             }
 
             // === INSTRUCTIONS WITHOUT OPERANDS ===

@@ -1,0 +1,62 @@
+0000: STARG3  ; STARG3
+0004: INITSLOT SlotInit { static_slots: 0, local_slots: 1 }  ; INITSLOT
+0008: PUSH0  ; PUSH0
+000c: LDARG6  ; LDARG6
+0010: ABORT  ; ABORT
+0014: INITSLOT SlotInit { static_slots: 0, local_slots: 1 }  ; INITSLOT
+0018: PUSH0  ; PUSH0
+001c: LDARG6  ; LDARG6
+0020: PUSHDATA1 Bytes([65, 66, 79, 82, 84, 32, 77, 83, 71])  ; PUSHDATA1
+0024: ABORTMSG  ; ABORTMSG
+0028: INITSLOT SlotInit { static_slots: 1, local_slots: 1 }  ; INITSLOT
+002c: PUSH0  ; PUSH0
+0030: LDARG6  ; LDARG6
+0034: STARG5  ; STARG5
+0038: JMPIFNOT JumpTarget8(4)  ; JMPIFNOT
+003c: CALL JumpTarget8(-25)  ; CALL
+0040: CALL JumpTarget8(-33)  ; CALL
+0044: INITSLOT SlotInit { static_slots: 1, local_slots: 2 }  ; INITSLOT
+0048: PUSH0  ; PUSH0
+004c: LDARG6  ; LDARG6
+0050: TRY TryBlock { catch_offset: 10, finally_offset: Some(15) }  ; TRY
+0054: STARG5  ; STARG5
+0058: JMPIFNOT JumpTarget8(4)  ; JMPIFNOT
+005c: CALL JumpTarget8(-40)  ; CALL
+0060: CALL JumpTarget8(-48)  ; CALL
+0064: LDARG SlotIndex(17)  ; LDARG
+0068: LDARG6  ; LDARG6
+006c: ENDTRY JumpTarget8(5)  ; ENDTRY
+0070: PUSH2  ; PUSH2
+0074: LDARG6  ; LDARG6
+0078: ENDFINALLY  ; ENDFINALLY
+007c: LDLOC SlotIndex(64)  ; LDLOC
+0080: INITSLOT SlotInit { static_slots: 1, local_slots: 2 }  ; INITSLOT
+0084: PUSH0  ; PUSH0
+0088: LDARG6  ; LDARG6
+008c: TRY TryBlock { catch_offset: 17, finally_offset: Some(25) }  ; TRY
+0090: PUSH1  ; PUSH1
+0094: LDARG6  ; LDARG6
+0098: PUSHDATA1 Bytes([101, 120, 99, 101, 112, 116, 105, 111, 110])  ; PUSHDATA1
+009c: THROW  ; THROW
+00a0: LDARG SlotIndex(120)  ; LDARG
+00a4: JMPIFNOT JumpTarget8(4)  ; JMPIFNOT
+00a8: CALL JumpTarget8(-80)  ; CALL
+00ac: CALL JumpTarget8(-88)  ; CALL
+00b0: PUSH2  ; PUSH2
+00b4: LDARG6  ; LDARG6
+00b8: ENDFINALLY  ; ENDFINALLY
+00bc: INITSLOT SlotInit { static_slots: 1, local_slots: 2 }  ; INITSLOT
+00c0: PUSH0  ; PUSH0
+00c4: LDARG6  ; LDARG6
+00c8: TRY TryBlock { catch_offset: 7, finally_offset: Some(12) }  ; TRY
+00cc: PUSH1  ; PUSH1
+00d0: LDARG6  ; LDARG6
+00d4: ENDTRY JumpTarget8(0)  ; ENDTRY
+00d8: LDARG SlotIndex(18)  ; LDARG
+00dc: LDARG6  ; LDARG6
+00e0: ENDTRY JumpTarget8(0)  ; ENDTRY
+00e4: STARG5  ; STARG5
+00e8: JMPIFNOT JumpTarget8(4)  ; JMPIFNOT
+00ec: CALL JumpTarget8(-107)  ; CALL
+00f0: CALL JumpTarget8(-115)  ; CALL
+00f4: RET  ; RET
