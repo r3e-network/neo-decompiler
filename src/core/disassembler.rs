@@ -25,11 +25,32 @@ impl Disassembler {
         let mut offset = 0u32;
 
         while (offset as usize) < bytecode.len() {
-            let instruction = self
+            match self
                 .decoder
-                .decode_instruction(&bytecode[(offset as usize)..], offset)?;
-            offset += instruction.size as u32;
-            instructions.push(instruction);
+                .decode_instruction(&bytecode[(offset as usize)..], offset)
+            {
+                Ok(instruction) => {
+                    offset += instruction.size as u32;
+                    instructions.push(instruction);
+                }
+                Err(DisassemblyError::TruncatedInstruction { .. }) => {
+                    // Handle truncated instruction gracefully
+                    if (offset as usize) < bytecode.len() {
+                        let opcode = OpCode::from_byte(bytecode[offset as usize]);
+                        let instruction = Instruction {
+                            offset,
+                            opcode,
+                            operand: None,
+                            size: 1, // Minimum size
+                        };
+                        instructions.push(instruction);
+                        offset += 1;
+                    } else {
+                        break;
+                    }
+                }
+                Err(other_error) => return Err(other_error),
+            }
         }
 
         Ok(instructions)

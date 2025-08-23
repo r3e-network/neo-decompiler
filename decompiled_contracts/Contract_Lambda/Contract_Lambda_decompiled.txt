@@ -1,0 +1,10 @@
+void main() {
+    // Initialize 0 local slots, 1 static slots;
+    // Unhandled opcode: STARG5 at offset 3;
+    // Unhandled opcode: STARG3 at offset 5;
+    // Unhandled opcode: STARG6 at offset 26;
+    // Unhandled opcode: STARG5 at offset 27;
+    // Unhandled opcode: STARG5 at offset 35;
+    // TODO: Implement opcode UNKNOWN_EC at offset 44;
+    return 52
+}

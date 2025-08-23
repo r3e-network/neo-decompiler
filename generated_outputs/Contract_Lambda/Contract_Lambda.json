@@ -1,0 +1,227 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_Lambda",
+  "events": [],
+  "instructions_count": 475,
+  "methods": [
+    {
+      "name": "checkZero",
+      "offset": 0,
+      "parameters": [
+        {
+          "name": "i",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "checkZero2",
+      "offset": 11,
+      "parameters": [
+        {
+          "name": "num",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "checkZero3",
+      "offset": 30,
+      "parameters": [
+        {
+          "name": "num",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "checkPositiveOdd",
+      "offset": 53,
+      "parameters": [
+        {
+          "name": "i",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "invokeSum",
+      "offset": 64,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "Integer"
+        },
+        {
+          "name": "b",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "invokeSum2",
+      "offset": 76,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "Integer"
+        },
+        {
+          "name": "b",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "fibo",
+      "offset": 202,
+      "parameters": [
+        {
+          "name": "c",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "changeName",
+      "offset": 378,
+      "parameters": [
+        {
+          "name": "name",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "changeName2",
+      "offset": 405,
+      "parameters": [
+        {
+          "name": "name",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "forEachVar",
+      "offset": 448,
+      "parameters": [
+        {
+          "name": "array",
+          "param_type": "Array"
+        }
+      ],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "forVar",
+      "offset": 514,
+      "parameters": [
+        {
+          "name": "array",
+          "param_type": "Array"
+        }
+      ],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "anyGreatThanZero",
+      "offset": 625,
+      "parameters": [
+        {
+          "name": "array",
+          "param_type": "Array"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "anyGreatThan",
+      "offset": 676,
+      "parameters": [
+        {
+          "name": "array",
+          "param_type": "Array"
+        },
+        {
+          "name": "target",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "whereGreaterThanZero",
+      "offset": 699,
+      "parameters": [
+        {
+          "name": "array",
+          "param_type": "Array"
+        }
+      ],
+      "return_type": "Array",
+      "safe": false
+    },
+    {
+      "name": "testLambdaDefault",
+      "offset": 753,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testLambdaNotDefault",
+      "offset": 820,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "Integer"
+        },
+        {
+          "name": "b",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "_initialize",
+      "offset": 887,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 0 local slots, 1 static slots;\n    // Unhandled opcode: STARG5 at offset 3;\n    // Unhandled opcode: STARG3 at offset 5;\n    // Unhandled opcode: STARG6 at offset 26;\n    // Unhandled opcode: STARG5 at offset 27;\n    // Unhandled opcode: STARG5 at offset 35;\n    // TODO: Implement opcode UNKNOWN_EC at offset 44;\n    return 52\n}\n"
+}

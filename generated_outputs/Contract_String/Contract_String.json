@@ -1,0 +1,223 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_String",
+  "events": [],
+  "instructions_count": 393,
+  "methods": [
+    {
+      "name": "testMain",
+      "offset": 0,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "testEqual",
+      "offset": 82,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "testSubstring",
+      "offset": 127,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "testEmpty",
+      "offset": 163,
+      "parameters": [],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testIsNullOrEmpty",
+      "offset": 166,
+      "parameters": [
+        {
+          "name": "str",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "testEndWith",
+      "offset": 181,
+      "parameters": [
+        {
+          "name": "str",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "testContains",
+      "offset": 220,
+      "parameters": [
+        {
+          "name": "str",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "testIndexOf",
+      "offset": 237,
+      "parameters": [
+        {
+          "name": "str",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testInterpolatedStringHandler",
+      "offset": 252,
+      "parameters": [],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testTrim",
+      "offset": 579,
+      "parameters": [
+        {
+          "name": "str",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testPickItem",
+      "offset": 646,
+      "parameters": [
+        {
+          "name": "s",
+          "param_type": "String"
+        },
+        {
+          "name": "index",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testSubstringToEnd",
+      "offset": 653,
+      "parameters": [
+        {
+          "name": "s",
+          "param_type": "String"
+        },
+        {
+          "name": "startIndex",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testConcat",
+      "offset": 664,
+      "parameters": [
+        {
+          "name": "s1",
+          "param_type": "String"
+        },
+        {
+          "name": "s2",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testIndexOfChar",
+      "offset": 686,
+      "parameters": [
+        {
+          "name": "s",
+          "param_type": "String"
+        },
+        {
+          "name": "c",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    },
+    {
+      "name": "testToLower",
+      "offset": 695,
+      "parameters": [
+        {
+          "name": "s",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testToUpper",
+      "offset": 743,
+      "parameters": [
+        {
+          "name": "s",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testTrimChar",
+      "offset": 791,
+      "parameters": [
+        {
+          "name": "s",
+          "param_type": "String"
+        },
+        {
+          "name": "trimChar",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "testLength",
+      "offset": 846,
+      "parameters": [
+        {
+          "name": "s",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Integer",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 3 local slots, 0 static slots;\n    4.Clear();\n    arg_12 = 0;\n    // TODO: Implement opcode UNKNOWN_07 at offset 23;\n    if ((arg_2 > arg_5))\n     {\n\n        // true branch -> block_1\n    }\n else  {\n        // false branch -> block_1\n    }\n\n    temp0 = local101 + 0x20;\n    local101 = temp0;\n    temp2 = arg_2 + 0x212043757272656e742074696d657374616d7020697320;\n    temp3 = temp2 + arg_0;\n    temp4 = temp3 + 0x2e;\n    temp5 = convert<string>(temp4);\n    syscall_9647e7cf();\n    return temp5\n}\n"
+}

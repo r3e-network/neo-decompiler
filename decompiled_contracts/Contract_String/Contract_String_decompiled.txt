@@ -1,0 +1,23 @@
+void main() {
+    // Initialize 3 local slots, 0 static slots;
+    4.Clear();
+    arg_12 = 0;
+    // TODO: Implement opcode UNKNOWN_07 at offset 23;
+    if ((arg_2 > arg_5))
+     {
+
+        // true branch -> block_1
+    }
+ else  {
+        // false branch -> block_1
+    }
+
+    temp0 = local101 + 0x20;
+    local101 = temp0;
+    temp2 = arg_2 + 0x212043757272656e742074696d657374616d7020697320;
+    temp3 = temp2 + arg_0;
+    temp4 = temp3 + 0x2e;
+    temp5 = convert<string>(temp4);
+    syscall_9647e7cf();
+    return temp5
+}

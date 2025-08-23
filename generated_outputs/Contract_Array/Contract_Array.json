@@ -165,5 +165,5 @@
       "safe": false
     }
   ],
-  "pseudocode": "void main() {\n    // Initialize 4 local slots, 0 static slots;\n    arg_18 = 4;\n    // Unhandled opcode: STARG0 at offset 30;\n    local9 = arg_0;\n    return 4\n}\n"
+  "pseudocode": "void main() {\n    // Initialize 4 local slots, 0 static slots;\n    arg_18 = 4;\n    // Unhandled opcode: STARG0 at offset 30;\n    local11 = arg_0;\n    return 4\n}\n"
 }

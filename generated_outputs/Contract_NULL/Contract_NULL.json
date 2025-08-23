@@ -1,0 +1,225 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_NULL",
+  "events": [],
+  "instructions_count": 454,
+  "methods": [
+    {
+      "name": "isNull",
+      "offset": 0,
+      "parameters": [
+        {
+          "name": "value",
+          "param_type": "Any"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "equalNullA",
+      "offset": 8,
+      "parameters": [
+        {
+          "name": "value",
+          "param_type": "Any"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "equalNullB",
+      "offset": 15,
+      "parameters": [
+        {
+          "name": "value",
+          "param_type": "Any"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "equalNotNullA",
+      "offset": 21,
+      "parameters": [
+        {
+          "name": "value",
+          "param_type": "Any"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "equalNotNullB",
+      "offset": 28,
+      "parameters": [
+        {
+          "name": "value",
+          "param_type": "Any"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "nullCoalescing",
+      "offset": 35,
+      "parameters": [
+        {
+          "name": "code",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "nullCollation",
+      "offset": 49,
+      "parameters": [
+        {
+          "name": "code",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "nullPropertyGT",
+      "offset": 68,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "nullPropertyLT",
+      "offset": 80,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "nullPropertyGE",
+      "offset": 92,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "nullPropertyLE",
+      "offset": 104,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "nullProperty",
+      "offset": 116,
+      "parameters": [
+        {
+          "name": "a",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "ifNull",
+      "offset": 128,
+      "parameters": [
+        {
+          "name": "obj",
+          "param_type": "Any"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "nullCollationAndCollation",
+      "offset": 138,
+      "parameters": [
+        {
+          "name": "code",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Any",
+      "safe": false
+    },
+    {
+      "name": "nullCollationAndCollation2",
+      "offset": 167,
+      "parameters": [
+        {
+          "name": "code",
+          "param_type": "String"
+        }
+      ],
+      "return_type": "Any",
+      "safe": false
+    },
+    {
+      "name": "nullType",
+      "offset": 208,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "nullCoalescingAssignment",
+      "offset": 221,
+      "parameters": [
+        {
+          "name": "nullableArg",
+          "param_type": "Integer"
+        }
+      ],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "staticNullableCoalesceAssignment",
+      "offset": 486,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "_initialize",
+      "offset": 653,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 1 local slots, 1 static slots;\n    // Unhandled opcode: STARG5 at offset 3;\n    return local5\n}\n"
+}

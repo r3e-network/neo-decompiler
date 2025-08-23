@@ -1,0 +1,52 @@
+{
+  "compilation_info": {
+    "optimization_level": 1,
+    "type_inference_enabled": true
+  },
+  "contract_name": "Contract_PostfixUnary",
+  "events": [],
+  "instructions_count": 456,
+  "methods": [
+    {
+      "name": "test",
+      "offset": 0,
+      "parameters": [],
+      "return_type": "String",
+      "safe": false
+    },
+    {
+      "name": "isValid",
+      "offset": 337,
+      "parameters": [
+        {
+          "name": "person",
+          "param_type": "Any"
+        }
+      ],
+      "return_type": "Boolean",
+      "safe": false
+    },
+    {
+      "name": "testUndefinedCase",
+      "offset": 356,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "testInvert",
+      "offset": 749,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    },
+    {
+      "name": "_initialize",
+      "offset": 976,
+      "parameters": [],
+      "return_type": "Void",
+      "safe": false
+    }
+  ],
+  "pseudocode": "void main() {\n    // Initialize 1 local slots, 0 static slots;\n    // Unhandled opcode: STARG6 at offset 36;\n    1.Clear();\n    temp2 = (local8 + 1);\n    if ((temp2 >= -2147483648))\n     {\n\n        // true branch -> block_4\n    }\n else  {\n        // false branch -> block_3\n    }\n\n    if ((temp2 <= 2147483647))\n     {\n\n        // true branch -> block_7\n    }\n else  {\n        // false branch -> block_5\n    }\n\n    temp4 = 1.has_key(temp3);\n    local13.Clear();\n    1.Clear();\n    temp6 = (4 + 1);\n    if ((temp6 >= -2147483648))\n     {\n\n        // true branch -> block_9\n    }\n else  {\n        // false branch -> block_8\n    }\n\n    temp7 = (temp2 & 4294967295);\n    if ((temp7 <= 2147483647))\n     {\n\n        // true branch -> block_7\n    }\n else  {\n        // false branch -> block_6\n    }\n\n    if ((temp6 <= 2147483647))\n     {\n\n        // true branch -> block_12\n    }\n else  {\n        // false branch -> block_10\n    }\n\n    temp3 = (temp7 - 4294967296);\n    temp9 = 1.has_key(temp8);\n    local18.Clear();\n    return 4\n    temp11 = (temp6 & 4294967295);\n    if ((temp11 <= 2147483647))\n     {\n\n        // true branch -> block_12\n    }\n else  {\n        // false branch -> block_11\n    }\n\n    temp8 = (temp11 - 4294967296);\n}\n"
+}
