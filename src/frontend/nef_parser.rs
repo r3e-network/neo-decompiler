@@ -246,7 +246,7 @@ impl NEFParser {
 
     /// Find the start of actual bytecode in data by looking for instruction patterns
     fn find_bytecode_start(&self, data: &[u8]) -> usize {
-        // Look for INITSLOT instruction pattern which commonly starts Neo N3 methods
+        // Strategy 1: Look for INITSLOT instruction pattern (most reliable)
         for (i, window) in data.windows(3).enumerate() {
             if window[0] == 0x57 {
                 // INITSLOT opcode
@@ -261,25 +261,42 @@ impl NEFParser {
             }
         }
 
-        // Fallback: Look for common starting opcodes
+        // Strategy 2: Look for common instruction sequences that indicate bytecode start
+        for (i, window) in data.windows(2).enumerate() {
+            // Look for PUSH instructions followed by reasonable operands
+            if window[0] >= 0x10 && window[0] <= 0x20 {  // PUSH0-PUSH16
+                return i;
+            }
+            
+            // Look for PUSHDATA1 with reasonable length
+            if window[0] == 0x0C && window[1] <= 32 {  // PUSHDATA1 with length <= 32
+                return i;
+            }
+        }
+
+        // Strategy 3: Look for any known Neo N3 opcode that could start bytecode
         for (i, &byte) in data.iter().enumerate() {
             if byte != 0x00 {
-                // Common Neo N3 opcodes that indicate start of bytecode
+                // Expanded list of opcodes that could start bytecode
                 if matches!(
                     byte,
                     0x0C | 0x0D | 0x0E |    // PUSHDATA1/2/4
-                    0x10
-                        ..=0x20 |          // PUSH0-PUSH16  
+                    0x10..=0x20 |          // PUSH0-PUSH16  
+                    0x40 | 0x41 |          // RET, SYSCALL
                     0x57 |                 // INITSLOT
                     0x21 |                 // NOP
-                    0x40 // RET (end of previous method)
+                    0x22..=0x3F |          // Jump and control flow
+                    0x43..=0x55 |          // Stack operations
+                    0x56..=0x87 |          // Slot operations
+                    0x8E..=0xBF |          // Arithmetic and compound operations
+                    0xDB                   // CONVERT
                 ) {
                     return i;
                 }
             }
         }
 
-        // If no recognizable opcodes found, assume it starts at first non-zero byte
+        // Strategy 4: Look for any non-zero byte as last resort
         for (i, &byte) in data.iter().enumerate() {
             if byte != 0x00 {
                 return i;

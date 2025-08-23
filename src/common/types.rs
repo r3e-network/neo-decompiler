@@ -208,6 +208,7 @@ pub enum OpCode {
     UNKNOWN_EC,
     UNKNOWN_EF,
     UNKNOWN_F0,
+    UNKNOWN_F1,
     UNKNOWN_F2,
     UNKNOWN_F7,
     UNKNOWN_FF,
@@ -488,6 +489,7 @@ impl OpCode {
             0xEC => OpCode::UNKNOWN_EC, // Found in Contract_Lambda
             0xEF => OpCode::UNKNOWN_EF, // Found in Contract_Array
             0xF0 => OpCode::UNKNOWN_F0, // Found in Contract_Lambda
+            0xF1 => OpCode::UNKNOWN_F1, // Found in Contract_String  
             0xF2 => OpCode::UNKNOWN_F2, // Found in Contract_String
             0xF7 => OpCode::UNKNOWN_F7, // Found in Contract_String, Contract_Array
             0xFF => OpCode::UNKNOWN_FF, // Found in Contract_Delegate

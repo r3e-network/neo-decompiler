@@ -66,7 +66,16 @@ impl InstructionDecoder {
 
         // Validate that we have enough data for the complete instruction
         if (1 + operand_size as usize) > data.len() {
-            return Err(DisassemblyError::TruncatedInstruction { offset });
+            // For truncated instructions, try to create a valid instruction with available data
+            let available_size = data.len().saturating_sub(1);
+            let safe_size = available_size.min(operand_size as usize) as u8;
+            
+            return Ok(Instruction {
+                offset,
+                opcode,
+                operand: None, // Clear operand for truncated instruction
+                size: 1 + safe_size,
+            });
         }
 
         Ok(Instruction {

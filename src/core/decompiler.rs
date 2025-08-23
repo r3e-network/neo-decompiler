@@ -341,9 +341,22 @@ impl DecompilerEngine {
         // Phase 1: Control Flow Graph Construction (required for other analyses)
         if self.config.analysis.enable_cfg_analysis {
             let cfg_start = Instant::now();
-            let cfg = self.apply_cfg_analysis(ir_function)?;
-            self.stats.cfg_analysis_time_ms = cfg_start.elapsed().as_millis() as u64;
-            results.cfg = Some(cfg);
+            match self.apply_cfg_analysis(ir_function) {
+                Ok(cfg) => {
+                    self.stats.cfg_analysis_time_ms = cfg_start.elapsed().as_millis() as u64;
+                    results.cfg = Some(cfg);
+                }
+                Err(cfg_error) => {
+                    // CFG construction failed - continue without CFG for graceful degradation
+                    results.warnings.push(AnalysisWarning {
+                        warning_type: WarningType::PerformanceConcern,
+                        message: format!("CFG construction failed: {}", cfg_error),
+                        affected_blocks: vec![],
+                        severity: 2,
+                    });
+                    // Continue without CFG - this allows basic decompilation to work
+                }
+            }
         }
 
         // Phase 2: Type Inference
