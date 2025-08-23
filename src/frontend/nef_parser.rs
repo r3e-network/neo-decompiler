@@ -62,8 +62,11 @@ impl NEFParser {
                 });
             }
 
-            let actual_length = data.len() - bytecode_start - 4; // -4 for checksum
-            let bytecode = data[bytecode_start..bytecode_start + actual_length].to_vec();
+            // Be more conservative with bytecode length calculation
+            let max_safe_length = data.len().saturating_sub(bytecode_start).saturating_sub(4); // -4 for checksum
+            let actual_length = max_safe_length.min(8192); // Cap at 8KB for safety
+            let end_pos = (bytecode_start + actual_length).min(data.len());
+            let bytecode = data[bytecode_start..end_pos].to_vec();
             (bytecode, actual_length)
         } else {
             // Use script_length from header
