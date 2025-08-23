@@ -241,26 +241,30 @@ impl NEFParser {
 
     /// Find the start of actual bytecode in data by looking for instruction patterns
     fn find_bytecode_start(&self, data: &[u8]) -> usize {
-        // Skip any padding/zeros and look for common Neo N3 opcodes
+        // Look for INITSLOT instruction pattern which commonly starts Neo N3 methods
+        for (i, window) in data.windows(3).enumerate() {
+            if window[0] == 0x57 {  // INITSLOT opcode
+                // Validate that this looks like a real INITSLOT instruction
+                let local_count = window[1];
+                let arg_count = window[2];
+                
+                // Reasonable limits for slot counts (0-255 each, but usually much smaller)
+                if local_count <= 16 && arg_count <= 16 {
+                    return i;
+                }
+            }
+        }
+        
+        // Fallback: Look for common starting opcodes
         for (i, &byte) in data.iter().enumerate() {
             if byte != 0x00 {
                 // Common Neo N3 opcodes that indicate start of bytecode
                 if matches!(byte, 
                     0x0C | 0x0D | 0x0E |    // PUSHDATA1/2/4
-                    0x10..=0x20 |          // PUSH0-PUSH16
-                    0x40 | 0x41 |          // RET, SYSCALL
+                    0x10..=0x20 |          // PUSH0-PUSH16  
                     0x57 |                 // INITSLOT
                     0x21 |                 // NOP
-                    0x22..=0x2F |          // Jump instructions
-                    0x30..=0x3F |          // Stack operations
-                    0x48..=0x4F |          // Dup/Drop operations
-                    0x50..=0x5F |          // Numeric operations
-                    0x60..=0x6F |          // Bitwise operations
-                    0x70..=0x7F |          // Array operations
-                    0x80..=0x8F |          // String operations
-                    0x90..=0x9F |          // Type operations
-                    0xA0..=0xAF |          // Crypto operations
-                    0xDB | 0xDC | 0xDD     // CONVERT, NEWBUFFER, NEWARRAYT
+                    0x40                   // RET (end of previous method)
                 ) {
                     return i;
                 }

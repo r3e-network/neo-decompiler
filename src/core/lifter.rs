@@ -1372,9 +1372,26 @@ impl IRLifter {
     
     /// Lift slot initialization
     fn lift_init_slot(&mut self, instruction: &Instruction) -> Result<Vec<Operation>, LiftError> {
-        if let Some(Operand::SlotInit { local_slots, .. }) = &instruction.operand {
+        if let Some(Operand::SlotInit { local_slots, static_slots }) = &instruction.operand {
+            // In Neo N3, INITSLOT typically appears at method start
+            // If the stack is empty but we're using STARG instructions later,
+            // we need to simulate that arguments were passed to this method
+            if self.stack.is_empty() {
+                // Push placeholder arguments based on common usage patterns
+                // This is a heuristic - in a full implementation, we'd use manifest info
+                for i in 0..4 {  // Assume up to 4 arguments might be needed
+                    let arg_var = Variable {
+                        name: format!("arg_{}", i),
+                        id: self.var_counter,
+                        var_type: VariableType::Parameter,
+                    };
+                    self.var_counter += 1;
+                    self.push_stack(Expression::Variable(arg_var));
+                }
+            }
+            
             Ok(vec![Operation::Comment(
-                format!("Initialize {} local slots", local_slots)
+                format!("Initialize {} local slots, {} static slots", local_slots, static_slots)
             )])
         } else {
             Ok(vec![])
