@@ -1,0 +1,1 @@
+./target/release/neo-decompiler decompile test_data/neo_artifacts/nef_files/Contract_TryCatch.nef --manifest test_data/neo_artifacts/manifests/Contract_TryCatch.manifest.json --output decompiled_contracts/Contract_TryCatch/Contract_TryCatch_decompiled.txt --format pseudocode --type-inference --reports --metrics --verbose

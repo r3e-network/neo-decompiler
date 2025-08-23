@@ -1,0 +1,26 @@
+{
+  "name": "Contract_Params",
+  "groups": [],
+  "features": {},
+  "supportedstandards": [],
+  "abi": {
+    "methods": [
+      {
+        "name": "test",
+        "parameters": [],
+        "returntype": "Integer",
+        "offset": 77,
+        "safe": false
+      }
+    ],
+    "events": []
+  },
+  "permissions": [],
+  "trusts": [],
+  "extra": {
+    "Version": "3.8.1",
+    "nef": {
+      "optimization": "All"
+    }
+  }
+}

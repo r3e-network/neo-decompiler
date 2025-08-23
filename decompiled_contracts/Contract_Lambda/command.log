@@ -1,0 +1,1 @@
+./target/release/neo-decompiler decompile test_data/neo_artifacts/nef_files/Contract_Lambda.nef --manifest test_data/neo_artifacts/manifests/Contract_Lambda.manifest.json --output decompiled_contracts/Contract_Lambda/Contract_Lambda_decompiled.txt --format pseudocode --type-inference --reports --metrics --verbose
