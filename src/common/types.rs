@@ -53,8 +53,8 @@ pub enum OpCode {
     
     // Additional Neo N3 opcodes found in contracts  
     UNKNOWN_07, UNKNOWN_42, UNKNOWN_44, UNKNOWN_B6, UNKNOWN_B7, UNKNOWN_B8, UNKNOWN_BB, UNKNOWN_94, 
-    UNKNOWN_DA, UNKNOWN_E4, UNKNOWN_E6, UNKNOWN_E8, UNKNOWN_E9, UNKNOWN_EC, UNKNOWN_EF, 
-    UNKNOWN_F0, UNKNOWN_F2, UNKNOWN_F7,
+    UNKNOWN_DA, UNKNOWN_E4, UNKNOWN_E6, UNKNOWN_E8, UNKNOWN_E9, UNKNOWN_EA, UNKNOWN_EC, UNKNOWN_EF, 
+    UNKNOWN_F0, UNKNOWN_F2, UNKNOWN_F7, UNKNOWN_FF,
     
     // Compound types (0xBE-0xD4)
     PACKMAP, PACKSTRUCT, PACKARRAY, PACK, UNPACK, NEWARRAY0, NEWARRAY, NEWARRAYT,
@@ -307,11 +307,13 @@ impl OpCode {
             0xE6 => OpCode::UNKNOWN_E6,   // Found in Contract_NULL
             0xE8 => OpCode::UNKNOWN_E8,   // Found in Contract_NULL
             0xE9 => OpCode::UNKNOWN_E9,   // Found in Contract_Array
+            0xEA => OpCode::UNKNOWN_EA,   // Found in Contract_String
             0xEC => OpCode::UNKNOWN_EC,   // Found in Contract_Lambda
             0xEF => OpCode::UNKNOWN_EF,   // Found in Contract_Array
             0xF0 => OpCode::UNKNOWN_F0,   // Found in Contract_Lambda
             0xF2 => OpCode::UNKNOWN_F2,   // Found in Contract_String
             0xF7 => OpCode::UNKNOWN_F7,   // Found in Contract_String, Contract_Array
+            0xFF => OpCode::UNKNOWN_FF,   // Found in Contract_Delegate
             
             _ => OpCode::UNKNOWN(byte),
         }

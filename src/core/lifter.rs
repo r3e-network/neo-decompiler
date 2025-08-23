@@ -626,8 +626,8 @@ impl IRLifter {
             OpCode::UNKNOWN_07 | OpCode::UNKNOWN_42 | OpCode::UNKNOWN_44 | OpCode::UNKNOWN_B6 | 
             OpCode::UNKNOWN_B7 | OpCode::UNKNOWN_B8 | OpCode::UNKNOWN_BB | OpCode::UNKNOWN_94 | 
             OpCode::UNKNOWN_DA | OpCode::UNKNOWN_E4 | OpCode::UNKNOWN_E6 | OpCode::UNKNOWN_E8 | 
-            OpCode::UNKNOWN_E9 | OpCode::UNKNOWN_EC | OpCode::UNKNOWN_EF | OpCode::UNKNOWN_F0 | 
-            OpCode::UNKNOWN_F2 | OpCode::UNKNOWN_F7 => {
+            OpCode::UNKNOWN_E9 | OpCode::UNKNOWN_EA | OpCode::UNKNOWN_EC | OpCode::UNKNOWN_EF | 
+            OpCode::UNKNOWN_F0 | OpCode::UNKNOWN_F2 | OpCode::UNKNOWN_F7 | OpCode::UNKNOWN_FF => {
                 operations.push(Operation::Comment(
                     format!("TODO: Implement opcode {:?} at offset {}", 
                             instruction.opcode, instruction.offset)
