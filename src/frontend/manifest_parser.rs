@@ -1,7 +1,6 @@
 //! Contract manifest parser for Neo N3
 
 use crate::common::errors::ManifestParseError;
-use crate::common::types::{Hash160, ContractId, StackItemType};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;

@@ -5,7 +5,6 @@ use crate::common::{
     types::*, 
     config::DecompilerConfig
 };
-use std::convert::TryInto;
 
 /// Neo N3 bytecode disassembler
 pub struct Disassembler {

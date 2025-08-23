@@ -5,7 +5,7 @@
 
 use crate::analysis::cfg::*;
 use crate::core::ir::{IRFunction, IRBlock, Terminator, Expression};
-use crate::common::types::{BlockId, Literal};
+use crate::common::types::Literal;
 
 /// Creates a demo function with complex control flow for testing CFG analysis
 pub fn create_complex_demo_function() -> IRFunction {

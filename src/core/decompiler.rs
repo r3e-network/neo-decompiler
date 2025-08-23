@@ -2,15 +2,15 @@
 
 use crate::common::{errors::AnalysisError, config::DecompilerConfig, types::*};
 use crate::common::types::{StorageOp, Variable};
-use crate::core::{ir::{IRFunction, IRBlock, Operation, Expression, Terminator, StackOp, Parameter, LocalVariable}, syscalls::SyscallDatabase};
+use crate::core::{ir::{IRFunction, IRBlock, Operation, Expression, Terminator, StackOp}, syscalls::SyscallDatabase};
 use crate::frontend::manifest_parser::ContractManifest;
 use crate::analysis::{
     types::{Type, TypeInferenceEngine, TypeInferenceContext, TypeConstraint, TypeError},
     cfg::{ControlFlowGraph, CFGBuilder, Loop},
     effects::{Effect, EffectInferenceEngine, KeyPattern}
 };
-use std::collections::{HashMap, HashSet, VecDeque};
-use std::time::{Duration, Instant};
+use std::collections::{HashMap, HashSet};
+use std::time::Instant;
 
 /// Main decompilation engine with comprehensive analysis passes
 pub struct DecompilerEngine {
@@ -1866,7 +1866,7 @@ impl DecompilerEngine {
     /// Analyze stack depth requirements
     fn analyze_stack_depth(&self, ir_function: &IRFunction) -> Result<u32, AnalysisError> {
         let mut max_depth = 0u32;
-        let mut current_depth = 0u32;
+        let current_depth = 0u32;
         
         for block in ir_function.blocks.values() {
             let mut block_depth = current_depth;

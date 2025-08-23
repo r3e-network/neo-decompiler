@@ -8,7 +8,6 @@
 //! - `info`: Metadata extraction and file information
 
 use std::path::PathBuf;
-use std::io::{self, Write};
 use std::fs;
 use std::time::Instant;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -16,7 +15,7 @@ use serde_json;
 use tracing::{info, warn, debug};
 
 use crate::{
-    Decompiler, DecompilationResult, DecompilerConfig, DecompilerError, DecompilerResult,
+    Decompiler, DecompilationResult, DecompilerConfig,
     NEFParser, ManifestParser, Disassembler,
 };
 

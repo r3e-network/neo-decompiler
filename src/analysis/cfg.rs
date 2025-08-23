@@ -10,7 +10,7 @@
 
 use crate::core::ir::{IRFunction, IRBlock, Terminator};
 use crate::common::types::BlockId;
-use std::collections::{HashMap, HashSet, VecDeque, BTreeSet, BTreeMap};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 
 /// CFG analysis errors

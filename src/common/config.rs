@@ -308,7 +308,7 @@ impl ConfigLoader {
     }
 
     /// Merge two configurations, with `override_config` taking precedence
-    fn merge_configs(base: DecompilerConfig, override_config: DecompilerConfig) -> DecompilerConfig {
+    fn merge_configs(_base: DecompilerConfig, override_config: DecompilerConfig) -> DecompilerConfig {
         // Merge configuration values with precedence
         override_config
     }

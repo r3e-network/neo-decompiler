@@ -1,7 +1,6 @@
 //! Core type definitions for the Neo N3 decompiler
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 /// Neo N3 VM instruction representation
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -52,8 +51,10 @@ pub enum OpCode {
     NOT, BOOLAND, BOOLOR, NZ, NUMEQUAL, NUMNOTEQUAL, LT, LE, GT, GE,
     MIN, MAX, WITHIN,
     
-    // Additional Neo N3 opcodes found in contracts
-    UNKNOWN_07, UNKNOWN_42, UNKNOWN_44, UNKNOWN_B6, UNKNOWN_B7, UNKNOWN_B8, UNKNOWN_BB, UNKNOWN_94, UNKNOWN_DA, UNKNOWN_E4, UNKNOWN_E6, UNKNOWN_E8, UNKNOWN_EC, UNKNOWN_EF, UNKNOWN_F0, UNKNOWN_F2, UNKNOWN_F7,
+    // Additional Neo N3 opcodes found in contracts  
+    UNKNOWN_07, UNKNOWN_42, UNKNOWN_44, UNKNOWN_B6, UNKNOWN_B7, UNKNOWN_B8, UNKNOWN_BB, UNKNOWN_94, 
+    UNKNOWN_DA, UNKNOWN_E4, UNKNOWN_E6, UNKNOWN_E8, UNKNOWN_E9, UNKNOWN_EC, UNKNOWN_EF, 
+    UNKNOWN_F0, UNKNOWN_F2, UNKNOWN_F7,
     
     // Compound types (0xBE-0xD4)
     PACKMAP, PACKSTRUCT, PACKARRAY, PACK, UNPACK, NEWARRAY0, NEWARRAY, NEWARRAYT,
@@ -305,6 +306,7 @@ impl OpCode {
             0xE4 => OpCode::UNKNOWN_E4,   // Found in Contract_Array, Contract_Delegate, Contract_StaticVar, Contract_String, Contract_Types
             0xE6 => OpCode::UNKNOWN_E6,   // Found in Contract_NULL
             0xE8 => OpCode::UNKNOWN_E8,   // Found in Contract_NULL
+            0xE9 => OpCode::UNKNOWN_E9,   // Found in Contract_Array
             0xEC => OpCode::UNKNOWN_EC,   // Found in Contract_Lambda
             0xEF => OpCode::UNKNOWN_EF,   // Found in Contract_Array
             0xF0 => OpCode::UNKNOWN_F0,   // Found in Contract_Lambda

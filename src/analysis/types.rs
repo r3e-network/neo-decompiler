@@ -5,8 +5,7 @@
 
 use crate::common::types::*;
 use crate::core::ir::{Operation, Expression, IRFunction, IRBlock};
-use crate::analysis::cfg::ControlFlowGraph;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 
 /// Comprehensive type system for Neo N3 with enhanced type support
