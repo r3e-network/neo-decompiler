@@ -1,7 +1,0 @@
-void main() {
-    // Initialize 0 local slots, 2 static slots;
-    // Unhandled opcode: STARG5 at offset 3;
-    // Unhandled opcode: STARG6 at offset 4;
-    result4 = (arg2 ** arg3);
-    return result4
-}

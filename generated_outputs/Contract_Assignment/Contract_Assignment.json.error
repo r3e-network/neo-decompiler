@@ -1,5 +1,0 @@
-Return code: 1
-Stdout: [2m2025-08-23T04:09:51.498547Z[0m [31mERROR[0m Command failed: IR lifting error: Invalid operand for instruction at offset 33
-[2m2025-08-23T04:09:51.498561Z[0m [31mERROR[0m   Caused by: Invalid operand for instruction at offset 33
-
-Stderr: 

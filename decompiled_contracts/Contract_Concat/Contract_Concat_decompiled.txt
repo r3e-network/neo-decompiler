@@ -1,7 +1,0 @@
-void main() {
-    // Initialize 0 local slots, 1 static slots;
-    // Unhandled opcode: STARG5 at offset 3;
-    result4 = arg3 + 0x68656c6c6f;
-    result5 = convert<string>(result4);
-    return result5
-}

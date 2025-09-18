@@ -1,8 +1,0 @@
-// Generated from Neo N3 bytecode
-#include <neo.h>
-
-void main() {
-    // Initialize 1 local slots, 0 static slots;
-    // Effects: [Pure, SystemStateRead];
-    abort();
-}

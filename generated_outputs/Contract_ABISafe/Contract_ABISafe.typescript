@@ -1,6 +1,0 @@
-// Generated from Neo N3 bytecode
-import { Neo } from 'neo';
-
-void main() {
-    return 1
-}

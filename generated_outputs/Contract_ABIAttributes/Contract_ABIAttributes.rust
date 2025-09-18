@@ -1,6 +1,0 @@
-// Generated from Neo N3 bytecode
-use neo::*;
-
-void main() {
-    return 0
-}

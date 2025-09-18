@@ -1,125 +1,67 @@
-# Neo N3 Smart Contract Decompiler
+# Neo N3 NEF Inspector
 
-A comprehensive production-ready decompiler for Neo N3 smart contracts that transforms compiled NEF bytecode into human-readable pseudocode across multiple programming languages.
+This project provides a small, well-tested Rust crate and CLI for inspecting
+Neo N3 NEF bytecode.  It focuses on the essential pieces that are easy to run
+locally: parsing the NEF container (header, method tokens, checksum), decoding a
+useful slice of Neo VM opcodes, and printing a readable listing of the bytecode.
 
-## 🎯 **90.91% Success Rate - Industry Leading**
+## What you get
+- NEF header parsing (magic, compiler, version, script length, checksum)
+- Method token decoding using the official variable-length encoding
+- Disassembly for common opcodes such as `PUSH*`, arithmetic operations, jumps,
+  calls, and `SYSCALL`
+- A simple pseudocode view that mirrors the decoded instruction stream
+- A single binary (`neo-decompiler`) and a reusable library (`neo_decompiler`)
 
-Successfully decompiles **20 out of 22** official Neo DevPack test contracts with **perfect format compatibility**.
-
-## 🚀 **Key Features**
-
-- **Multi-format output**: C, Python, Rust, TypeScript, JSON, HTML
-- **Complete Neo N3 support**: Full instruction set coverage with 20+ opcodes
-- **Sub-millisecond performance**: 200-580µs processing time
-- **Enterprise architecture**: Modular pipeline with robust error handling
-- **Real-world validation**: Tested against official Neo DevPack contracts
-
-## 📦 **Installation**
-
+## Quick start
 ```bash
-git clone https://github.com/r3e-network/neo-decompiler.git
-cd neo-decompiler
+# Build the binary
 cargo build --release
+
+# Print header information
+./target/release/neo-decompiler info path/to/contract.nef
+
+# Decode instructions
+./target/release/neo-decompiler disasm path/to/contract.nef
+
+# Emit the compact pseudocode view
+./target/release/neo-decompiler decompile path/to/contract.nef
+
+# Inspect method tokens
+./target/release/neo-decompiler tokens path/to/contract.nef
 ```
 
-## 🔧 **Usage**
+## Library example
+```rust
+use neo_decompiler::Decompiler;
 
-### Basic Decompilation
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let decompiler = Decompiler::new();
+    let result = decompiler.decompile_file("contract.nef")?;
+
+    println!("{} instructions", result.instructions.len());
+    println!("{}", result.pseudocode);
+    Ok(())
+}
+```
+
+## Scope and limitations
+- NEF checksums are verified using the same double-SHA256 calculation employed
+  by the official toolchain.  Files with mismatching checksums are rejected.
+- The disassembler covers the opcodes exercised by our tests (including the
+  various `PUSH*` forms, short/long jumps, calls, and `SYSCALL`).  Unrecognised
+  opcodes still produce informative errors so you can decide how to extend the
+  decoder.
+- Manifest files and higher-level analyses (control-flow graphs, type
+  reconstruction, etc.) are intentionally out of scope.
+
+## Development
 ```bash
-# Decompile to pseudocode
-./target/release/neo-decompiler decompile contract.nef --manifest contract.manifest.json
-
-# Multiple output formats
-./target/release/neo-decompiler decompile contract.nef -m contract.manifest.json -f python
-./target/release/neo-decompiler decompile contract.nef -m contract.manifest.json -f rust
-```
-
-### Analysis Commands
-```bash
-# Contract information
-./target/release/neo-decompiler info contract.nef
-
-# Disassembly
-./target/release/neo-decompiler disasm contract.nef --offsets --operands
-
-# Security analysis
-./target/release/neo-decompiler analyze contract.nef -m contract.manifest.json
-```
-
-## 📊 **Performance**
-
-- **Processing Speed**: Sub-millisecond (200-580µs per contract)
-- **Success Rate**: 90.91% perfect compatibility
-- **Complex Contracts**: Handles up to 327 instructions
-- **Output Quality**: Zero false positives
-
-## 🏗️ **Architecture**
-
-```
-NEF File → Frontend → Core Engine → Analysis → Backend → Output
-   ↓         ↓           ↓          ↓         ↓        ↓
- Parser   Disasm     Lifter     CFG/Types  Codegen  Pseudocode
-```
-
-## 💼 **Production Use Cases**
-
-- **Security Auditing**: Professional smart contract analysis
-- **Education**: Neo N3 learning and development
-- **Research**: Blockchain analysis and forensics  
-- **Development**: IDE integration and tooling
-
-## 📚 **Documentation**
-
-- [Architecture Guide](docs/architecture.md)
-- [API Reference](docs/api.md)
-- [Configuration](config/decompiler_config.toml)
-- [Test Results](FINAL_ACHIEVEMENT.md)
-
-## 🧪 **Testing**
-
-```bash
-# Run test suite
+cargo fmt
 cargo test
-
-# Local CI validation
-./local_ci_test.sh
-
-# Contract compatibility test
-python3 scripts/test_decompiler.py
 ```
 
-## 🔒 **Security**
+Issues and pull requests are welcome if they keep the project lean and focused.
 
-- Zero unsafe code blocks
-- Comprehensive input validation
-- Professional error handling
-- Production-grade security practices
-
-## 📈 **Supported Contracts**
-
-**Perfect Compatibility (20/22 contracts):**
-- Core functionality (Contract1, Contract_Params)
-- Control flow (Contract_GoTo, Contract_Switch, Contract_TryCatch)
-- Error handling (Contract_Abort, Contract_Assert, Contract_Throw)
-- Advanced operations (Contract_Array, Contract_BigInteger, Contract_Lambda)
-- String processing (Contract_Concat, Contract_String, Contract_NULL)
-- Type operations (Contract_Types, Contract_PostfixUnary)
-
-## 🏆 **Quality Metrics**
-
-- **Architecture**: A+ (Excellent modular design)
-- **Security**: A+ (Zero vulnerabilities)
-- **Performance**: A+ (Sub-millisecond processing)
-- **Functionality**: A+ (90.91% success rate)
-
-## 📄 **License**
-
-Licensed under MIT License - see LICENSE file for details.
-
-## 🤝 **Contributing**
-
-Contributions welcome! See CONTRIBUTING.md for guidelines.
-
----
-
-**The Neo N3 decompiler represents world-class blockchain analysis technology ready for professional deployment.**
+## License
+MIT OR Apache-2.0

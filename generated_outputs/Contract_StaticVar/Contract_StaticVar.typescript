@@ -1,8 +1,0 @@
-// Generated from Neo N3 bytecode
-import { Neo } from 'neo';
-
-void main() {
-    // Initialize 0 local slots, 1 static slots;
-    // Unhandled opcode: STARG5 at offset 3;
-    return arg_3
-}

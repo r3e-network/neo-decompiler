@@ -1,5 +1,0 @@
-Return code: 1
-Stdout: [2m2025-08-23T02:21:50.844455Z[0m [31mERROR[0m Command failed: IR lifting error: Stack underflow when lifting instruction at offset 4
-[2m2025-08-23T02:21:50.844463Z[0m [31mERROR[0m   Caused by: Stack underflow when lifting instruction at offset 4
-
-Stderr: 

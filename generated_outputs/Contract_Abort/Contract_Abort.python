@@ -1,5 +1,0 @@
-void main() :
-    pass
-    // Initialize 1 local slots, 0 static slots;
-    // Effects: [Pure, SystemStateRead];
-    abort();
