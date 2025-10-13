@@ -1,8 +1,6 @@
-use std::io::Write;
-
 use assert_cmd::Command;
 use predicates::str::contains;
-use tempfile::NamedTempFile;
+use tempfile::tempdir;
 
 fn build_sample_nef() -> Vec<u8> {
     let script = [0x10, 0x11, 0x9E, 0x40];
@@ -45,13 +43,14 @@ fn build_nef_with_no_tokens() -> Vec<u8> {
 
 #[test]
 fn info_command_prints_header() {
-    let mut file = NamedTempFile::new().expect("tempfile");
-    file.write_all(&build_sample_nef()).unwrap();
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
 
     Command::cargo_bin("neo-decompiler")
         .unwrap()
         .arg("info")
-        .arg(file.path())
+        .arg(&nef_path)
         .assert()
         .success()
         .stdout(contains("Method tokens: 1"));
@@ -59,41 +58,81 @@ fn info_command_prints_header() {
 
 #[test]
 fn disasm_command_outputs_instructions() {
-    let mut file = NamedTempFile::new().expect("tempfile");
-    file.write_all(&build_sample_nef()).unwrap();
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
 
     Command::cargo_bin("neo-decompiler")
         .unwrap()
         .arg("disasm")
-        .arg(file.path())
+        .arg(&nef_path)
         .assert()
         .success()
         .stdout(contains("0000: PUSH0"));
 }
 
 #[test]
-fn decompile_command_outputs_pseudocode() {
-    let mut file = NamedTempFile::new().expect("tempfile");
-    file.write_all(&build_sample_nef()).unwrap();
+fn decompile_command_outputs_high_level_by_default() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
 
     Command::cargo_bin("neo-decompiler")
         .unwrap()
         .arg("decompile")
-        .arg(file.path())
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("contract NeoContract"));
+}
+
+#[test]
+fn decompile_command_supports_pseudocode_format() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+
+    Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("decompile")
+        .arg("--format")
+        .arg("pseudocode")
+        .arg(&nef_path)
         .assert()
         .success()
         .stdout(contains("ADD"));
 }
 
 #[test]
+fn decompile_command_uses_manifest_when_provided() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    let manifest_path = dir.path().join("custom.manifest.json");
+
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(&manifest_path, SAMPLE_MANIFEST).unwrap();
+
+    Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("decompile")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("contract SampleToken"));
+}
+
+#[test]
 fn tokens_command_lists_entries() {
-    let mut file = NamedTempFile::new().expect("tempfile");
-    file.write_all(&build_sample_nef()).unwrap();
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
 
     Command::cargo_bin("neo-decompiler")
         .unwrap()
         .arg("tokens")
-        .arg(file.path())
+        .arg(&nef_path)
         .assert()
         .success()
         .stdout(contains("method=foo"));
@@ -101,14 +140,55 @@ fn tokens_command_lists_entries() {
 
 #[test]
 fn tokens_command_handles_empty() {
-    let mut file = NamedTempFile::new().expect("tempfile");
-    file.write_all(&build_nef_with_no_tokens()).unwrap();
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_nef_with_no_tokens()).unwrap();
 
     Command::cargo_bin("neo-decompiler")
         .unwrap()
         .arg("tokens")
-        .arg(file.path())
+        .arg(&nef_path)
         .assert()
         .success()
         .stdout(contains("no method tokens"));
 }
+
+#[test]
+fn info_command_loads_manifest_when_available() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    let manifest_path = dir.path().join("contract.manifest.json");
+
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(&manifest_path, SAMPLE_MANIFEST).unwrap();
+
+    Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("info")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("Manifest contract: SampleToken"));
+}
+
+const SAMPLE_MANIFEST: &str = r#"
+{
+    "name": "SampleToken",
+    "supportedstandards": ["NEP-17"],
+    "features": { "storage": true, "payable": false },
+    "abi": {
+        "methods": [
+            {
+                "name": "symbol",
+                "parameters": [],
+                "returntype": "String",
+                "offset": 0,
+                "safe": true
+            }
+        ],
+        "events": []
+    },
+    "permissions": [],
+    "trusts": "*"
+}
+"#;

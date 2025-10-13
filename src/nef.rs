@@ -191,7 +191,7 @@ impl NefParser {
     /// Calculate the checksum defined by the NEF specification (first four bytes of double SHA-256).
     pub fn calculate_checksum(payload: &[u8]) -> u32 {
         let first = Sha256::digest(payload);
-        let second = Sha256::digest(&first);
+        let second = Sha256::digest(first);
         u32::from_le_bytes(second[..4].try_into().unwrap())
     }
 }

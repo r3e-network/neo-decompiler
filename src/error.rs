@@ -16,6 +16,9 @@ pub enum Error {
 
     #[error(transparent)]
     Io(#[from] io::Error),
+
+    #[error(transparent)]
+    Manifest(#[from] ManifestError),
 }
 
 /// Errors returned while parsing NEF containers.
@@ -51,4 +54,17 @@ pub enum DisassemblyError {
 
     #[error("unknown opcode 0x{opcode:02X} at offset {offset}")]
     UnknownOpcode { opcode: u8, offset: usize },
+}
+
+/// Errors returned while parsing Neo manifest files.
+#[derive(Debug, Error)]
+pub enum ManifestError {
+    #[error("failed to read manifest: {0}")]
+    Io(#[from] io::Error),
+
+    #[error("manifest json parse error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("manifest contains invalid utf-8: {error}")]
+    InvalidUtf8 { error: String },
 }

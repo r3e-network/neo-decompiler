@@ -10,10 +10,14 @@ pub mod decompiler;
 pub mod disassembler;
 pub mod error;
 pub mod instruction;
+pub mod manifest;
+pub mod native_contracts;
 pub mod nef;
+pub mod syscalls;
 
 pub use crate::decompiler::{Decompilation, Decompiler};
 pub use crate::disassembler::Disassembler;
 pub use crate::error::{Error, Result};
 pub use crate::instruction::{Instruction, OpCode, Operand};
+pub use crate::manifest::{ContractManifest, ManifestAbi, ManifestFeatures, ManifestMethod};
 pub use crate::nef::{MethodToken, NefFile, NefHeader, NefParser};

@@ -1,0 +1,173 @@
+[
+  {
+    "class_name": "CryptoLib",
+    "name": "CryptoLib",
+    "script_hash": "1bf575ab1189688413610a35a12886cde0b66c72",
+    "methods": [
+      "Keccak256",
+      "Murmur32",
+      "RIPEMD160",
+      "RecoverSecp256K1",
+      "Sha256",
+      "VerifyWithECDsa",
+      "VerifyWithECDsaV0",
+      "VerifyWithEd25519"
+    ]
+  },
+  {
+    "class_name": "Notary",
+    "name": "Notary",
+    "script_hash": "3bec3531119bbad76dd044920b0de6c3194fe1c1",
+    "methods": [
+      "BalanceOf",
+      "ExpirationOf",
+      "GetMaxNotValidBeforeDelta",
+      "LockDepositUntil",
+      "OnNEP17Payment",
+      "SetMaxNotValidBeforeDelta",
+      "Verify",
+      "Withdraw"
+    ]
+  },
+  {
+    "class_name": "OracleContract",
+    "name": "OracleContract",
+    "script_hash": "588717117e0aa81072afab71d2dd89fe7c4b92fe",
+    "methods": [
+      "Finish",
+      "GetPrice",
+      "Request",
+      "SetPrice",
+      "Verify"
+    ]
+  },
+  {
+    "class_name": "PolicyContract",
+    "name": "PolicyContract",
+    "script_hash": "7bc681c0a1f71d543457b68bba8d5f9fdd4e5ecc",
+    "methods": [
+      "BlockAccount",
+      "GetAttributeFeeV0",
+      "GetAttributeFeeV1",
+      "GetExecFeeFactor",
+      "GetFeePerByte",
+      "GetMaxTraceableBlocks",
+      "GetMaxValidUntilBlockIncrement",
+      "GetMillisecondsPerBlock",
+      "GetStoragePrice",
+      "IsBlocked",
+      "SetAttributeFeeV0",
+      "SetAttributeFeeV1",
+      "SetExecFeeFactor",
+      "SetFeePerByte",
+      "SetMaxTraceableBlocks",
+      "SetMaxValidUntilBlockIncrement",
+      "SetMillisecondsPerBlock",
+      "SetStoragePrice",
+      "UnblockAccount"
+    ]
+  },
+  {
+    "class_name": "LedgerContract",
+    "name": "LedgerContract",
+    "script_hash": "bef2043140362a77c15099c7e64c12f700b665da",
+    "methods": [
+      "CurrentHash",
+      "CurrentIndex",
+      "GetBlock",
+      "GetTransactionForContract",
+      "GetTransactionFromBlock",
+      "GetTransactionHeight",
+      "GetTransactionSigners",
+      "GetTransactionVMState"
+    ]
+  },
+  {
+    "class_name": "StdLib",
+    "name": "StdLib",
+    "script_hash": "c0ef39cee0e4e925c6c2a06a79e1440dd86fceac",
+    "methods": [
+      "Atoi",
+      "Base58CheckDecode",
+      "Base58CheckEncode",
+      "Base58Decode",
+      "Base58Encode",
+      "Base64Decode",
+      "Base64Encode",
+      "Base64UrlDecode",
+      "Base64UrlEncode",
+      "Deserialize",
+      "Itoa",
+      "JsonDeserialize",
+      "JsonSerialize",
+      "MemoryCompare",
+      "MemorySearch",
+      "Serialize",
+      "StrLen",
+      "StringSplit"
+    ]
+  },
+  {
+    "class_name": "GasToken",
+    "name": "GasToken",
+    "script_hash": "cf76e28bd0062c4a478ee35561011319f3cfa4d2",
+    "methods": [
+      "BalanceOf",
+      "OnManifestCompose",
+      "TotalSupply",
+      "Transfer"
+    ]
+  },
+  {
+    "class_name": "RoleManagement",
+    "name": "RoleManagement",
+    "script_hash": "e295e391544c178ad94f03ec4dcdff78534ecf49",
+    "methods": [
+      "DesignateAsRole",
+      "GetDesignatedByRole"
+    ]
+  },
+  {
+    "class_name": "NeoToken",
+    "name": "NeoToken",
+    "script_hash": "f563ea40bc283d4d0e05c48ea305b3f2a07340ef",
+    "methods": [
+      "BalanceOf",
+      "GetAccountState",
+      "GetAllCandidates",
+      "GetCandidateVote",
+      "GetCommittee",
+      "GetCommitteeAddress",
+      "GetGasPerBlock",
+      "GetNextBlockValidators",
+      "GetRegisterPrice",
+      "OnManifestCompose",
+      "OnNEP17Payment",
+      "RegisterCandidate",
+      "SetGasPerBlock",
+      "SetRegisterPrice",
+      "TotalSupply",
+      "Transfer",
+      "UnclaimedGas",
+      "UnregisterCandidate",
+      "Vote"
+    ]
+  },
+  {
+    "class_name": "ContractManagement",
+    "name": "ContractManagement",
+    "script_hash": "fda3fa4346ea532a258fc497ddaddb6437c9fdff",
+    "methods": [
+      "Deploy",
+      "Destroy",
+      "GetContract",
+      "GetContractById",
+      "GetContractHashes",
+      "GetMinimumDeploymentFee",
+      "HasMethod",
+      "IsContract",
+      "SetMinimumDeploymentFee",
+      "Update"
+    ]
+  }
+]

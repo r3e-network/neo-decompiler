@@ -1,0 +1,261 @@
+[
+  {
+    "name": "System.Contract.CreateStandardAccount",
+    "handler": "CreateStandardAccount",
+    "price": "0",
+    "call_flags": "CallFlags.None",
+    "hash": 42441167
+  },
+  {
+    "name": "System.Runtime.GetTime",
+    "handler": "GetTime",
+    "price": "1 << 3",
+    "call_flags": "CallFlags.None",
+    "hash": 59294647
+  },
+  {
+    "name": "System.Contract.CreateMultisigAccount",
+    "handler": "CreateMultisigAccount",
+    "price": "0",
+    "call_flags": "CallFlags.None",
+    "hash": 166277994
+  },
+  {
+    "name": "System.Contract.NativePostPersist",
+    "handler": "NativePostPersistAsync",
+    "price": "0",
+    "call_flags": "CallFlags.States",
+    "hash": 375234884
+  },
+  {
+    "name": "System.Iterator.Value",
+    "handler": "IteratorValue",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.None",
+    "hash": 499078387
+  },
+  {
+    "name": "System.Crypto.CheckSig",
+    "handler": "CheckSig",
+    "price": "CheckSigPrice",
+    "call_flags": "CallFlags.None",
+    "hash": 666101590
+  },
+  {
+    "name": "System.Runtime.GetRandom",
+    "handler": "GetRandom",
+    "price": "0",
+    "call_flags": "CallFlags.None",
+    "hash": 682221163
+  },
+  {
+    "name": "System.Runtime.GetScriptContainer",
+    "handler": "GetScriptContainer",
+    "price": "1 << 3",
+    "call_flags": "CallFlags.None",
+    "hash": 805851437
+  },
+  {
+    "name": "System.Storage.Get",
+    "handler": "Get",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.ReadStates",
+    "hash": 837311890
+  },
+  {
+    "name": "System.Runtime.GetEntryScriptHash",
+    "handler": "EntryScriptHash",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.None",
+    "hash": 954381561
+  },
+  {
+    "name": "System.Crypto.CheckMultisig",
+    "handler": "CheckMultisig",
+    "price": "0",
+    "call_flags": "CallFlags.None",
+    "hash": 987549854
+  },
+  {
+    "name": "System.Runtime.GetCallingScriptHash",
+    "handler": "CallingScriptHash",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.None",
+    "hash": 1013863225
+  },
+  {
+    "name": "System.Runtime.GetInvocationCounter",
+    "handler": "GetInvocationCounter",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.None",
+    "hash": 1125197700
+  },
+  {
+    "name": "System.Contract.Call",
+    "handler": "CallContract",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.ReadStates | CallFlags.AllowCall",
+    "hash": 1381727586
+  },
+  {
+    "name": "System.Runtime.Notify",
+    "handler": "RuntimeNotify",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.AllowNotify",
+    "hash": 1634664853
+  },
+  {
+    "name": "System.Contract.CallNative",
+    "handler": "CallNativeContract",
+    "price": "0",
+    "call_flags": "CallFlags.None",
+    "hash": 1736177434
+  },
+  {
+    "name": "System.Runtime.GetExecutingScriptHash",
+    "handler": "CurrentScriptHash",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.None",
+    "hash": 1957232347
+  },
+  {
+    "name": "System.Contract.GetCallFlags",
+    "handler": "GetCallFlags",
+    "price": "1 << 10",
+    "call_flags": "CallFlags.None",
+    "hash": 2168117909
+  },
+  {
+    "name": "System.Storage.Put",
+    "handler": "Put",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.WriteStates",
+    "hash": 2216181734
+  },
+  {
+    "name": "System.Runtime.CurrentSigners",
+    "handler": "GetCurrentSigners",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.None",
+    "hash": 2333667756
+  },
+  {
+    "name": "System.Runtime.CheckWitness",
+    "handler": "CheckWitness",
+    "price": "1 << 10",
+    "call_flags": "CallFlags.None",
+    "hash": 2364286968
+  },
+  {
+    "name": "System.Runtime.LoadScript",
+    "handler": "RuntimeLoadScript",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.AllowCall",
+    "hash": 2407533747
+  },
+  {
+    "name": "System.Contract.NativeOnPersist",
+    "handler": "NativeOnPersistAsync",
+    "price": "0",
+    "call_flags": "CallFlags.States",
+    "hash": 2478627630
+  },
+  {
+    "name": "System.Runtime.Log",
+    "handler": "RuntimeLog",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.AllowNotify",
+    "hash": 2521294799
+  },
+  {
+    "name": "System.Storage.Find",
+    "handler": "Find",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.ReadStates",
+    "hash": 2595762399
+  },
+  {
+    "name": "System.Iterator.Next",
+    "handler": "IteratorNext",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.None",
+    "hash": 2632779932
+  },
+  {
+    "name": "System.Runtime.GetTrigger",
+    "handler": "Trigger",
+    "price": "1 << 3",
+    "call_flags": "CallFlags.None",
+    "hash": 2688056809
+  },
+  {
+    "name": "System.Runtime.BurnGas",
+    "handler": "BurnGas",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.None",
+    "hash": 3163314883
+  },
+  {
+    "name": "System.Storage.GetContext",
+    "handler": "GetStorageContext",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.ReadStates",
+    "hash": 3462919835
+  },
+  {
+    "name": "System.Runtime.GasLeft",
+    "handler": "GasLeft",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.None",
+    "hash": 3470297108
+  },
+  {
+    "name": "System.Runtime.GetAddressVersion",
+    "handler": "GetAddressVersion",
+    "price": "1 << 3",
+    "call_flags": "CallFlags.None",
+    "hash": 3700574540
+  },
+  {
+    "name": "System.Runtime.GetNetwork",
+    "handler": "GetNetwork",
+    "price": "1 << 3",
+    "call_flags": "CallFlags.None",
+    "hash": 3768646597
+  },
+  {
+    "name": "System.Storage.GetReadOnlyContext",
+    "handler": "GetReadOnlyContext",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.ReadStates",
+    "hash": 3798709494
+  },
+  {
+    "name": "System.Storage.AsReadOnly",
+    "handler": "AsReadOnly",
+    "price": "1 << 4",
+    "call_flags": "CallFlags.ReadStates",
+    "hash": 3921628278
+  },
+  {
+    "name": "System.Storage.Delete",
+    "handler": "Delete",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.WriteStates",
+    "hash": 3989133359
+  },
+  {
+    "name": "System.Runtime.GetNotifications",
+    "handler": "GetNotifications",
+    "price": "1 << 12",
+    "call_flags": "CallFlags.None",
+    "hash": 4046799655
+  },
+  {
+    "name": "System.Runtime.Platform",
+    "handler": "GetPlatform",
+    "price": "1 << 3",
+    "call_flags": "CallFlags.None",
+    "hash": 4143741362
+  }
+]
