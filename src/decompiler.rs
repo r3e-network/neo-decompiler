@@ -7,6 +7,7 @@ use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::ContractManifest;
 use crate::native_contracts;
 use crate::nef::{NefFile, NefParser};
+use crate::util;
 
 /// Main entry point used by the CLI and tests.
 #[derive(Debug, Default)]
@@ -198,7 +199,7 @@ fn render_high_level(
                 "    // {}{} hash={} params={} return=0x{:02X} flags=0x{:02X}",
                 token.method,
                 contract_note,
-                format_hash(&token.hash),
+                util::format_hash(&token.hash),
                 token.params,
                 token.return_type,
                 token.call_flags
@@ -249,15 +250,6 @@ fn format_manifest_type(kind: &str) -> String {
         "any" => "any".into(),
         other => other.to_string(),
     }
-}
-
-fn format_hash(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        use std::fmt::Write;
-        let _ = write!(s, "{byte:02X}");
-    }
-    s
 }
 
 #[derive(Debug, Default)]

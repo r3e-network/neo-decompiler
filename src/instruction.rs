@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::syscalls;
+use crate::util;
 
 /// A decoded Neo VM instruction with its bytecode offset.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,10 +48,7 @@ impl fmt::Display for Operand {
             Operand::I64(v) => write!(f, "{v}"),
             Operand::Bytes(bytes) => {
                 write!(f, "0x")?;
-                for byte in bytes {
-                    write!(f, "{byte:02X}")?;
-                }
-                Ok(())
+                util::write_upper_hex(f, bytes)
             }
             Operand::Jump(offset) => write!(f, "{offset}"),
             Operand::Jump32(offset) => write!(f, "{offset}"),

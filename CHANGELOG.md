@@ -9,3 +9,5 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `documentation`, README links).
 - Add contributor and community health guidelines (CONTRIBUTING,
   CODE_OF_CONDUCT, SECURITY, SUPPORT, RELEASING) and a developer `Justfile`.
+- Centralise hexadecimal formatting utilities shared by the CLI, decompiler,
+  and instruction display code.

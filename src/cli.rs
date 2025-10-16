@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::manifest::ContractManifest;
 use crate::native_contracts;
 use crate::nef::NefParser;
+use crate::util;
 
 /// Command line interface for the minimal Neo N3 decompiler.
 #[derive(Debug, Parser)]
@@ -147,7 +148,7 @@ impl Cli {
                 .unwrap_or_default();
             println!(
                 "#{index}: hash={}{} method={} params={} return=0x{:02X} flags=0x{:02X}",
-                format_hash(&token.hash),
+                util::format_hash(&token.hash),
                 contract_label,
                 token.method,
                 token.params,
@@ -179,13 +180,4 @@ impl Cli {
 
         None
     }
-}
-
-fn format_hash(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    use std::fmt::Write;
-    for byte in bytes {
-        let _ = write!(s, "{byte:02X}");
-    }
-    s
 }

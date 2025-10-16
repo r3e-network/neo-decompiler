@@ -14,6 +14,7 @@ pub mod manifest;
 pub mod native_contracts;
 pub mod nef;
 pub mod syscalls;
+mod util;
 
 pub use crate::decompiler::{Decompilation, Decompiler};
 pub use crate::disassembler::Disassembler;
