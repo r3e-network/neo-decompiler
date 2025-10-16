@@ -57,3 +57,4 @@ __pycache__/
 # Local configuration
 local_config.toml
 .env
+.serena/

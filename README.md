@@ -1,5 +1,9 @@
 # Neo N3 NEF Inspector
 
+[![CI](https://github.com/r3e-network/neo-decompiler/actions/workflows/ci.yml/badge.svg)](https://github.com/r3e-network/neo-decompiler/actions/workflows/ci.yml)
+[![docs.rs](https://img.shields.io/docsrs/neo-decompiler)](https://docs.rs/neo-decompiler)
+[![License](https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue.svg)](#license)
+
 This project provides a small, well-tested Rust crate and CLI for inspecting
 Neo N3 NEF bytecode packages. It focuses on the essential pieces that are easy
 to run locally: parsing the NEF container (header, method tokens, checksum),
@@ -41,6 +45,15 @@ cargo build --release
 ./target/release/neo-decompiler tokens path/to/contract.nef
 ```
 
+## Installation
+```bash
+# Install the latest commit from the main branch
+cargo install --git https://github.com/r3e-network/neo-decompiler --locked
+
+# Or install locally from a checkout
+cargo install --path . --locked
+```
+
 ## Library example
 ```rust
 use neo_decompiler::Decompiler;
@@ -76,7 +89,26 @@ cargo fmt
 cargo test
 ```
 
+If you use [`just`](https://github.com/casey/just), the repository ships with a
+`Justfile` providing shortcuts for the common workflows above.
+
 Issues and pull requests are welcome if they keep the project lean and focused.
 
+## Contributing
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development guidelines and
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for behavioural expectations.
+
+## Support & Security
+- Support channels are documented in [`SUPPORT.md`](SUPPORT.md).
+- Responsible disclosure guidance lives in [`SECURITY.md`](SECURITY.md).
+
+## Changelog
+Recent project history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
+
+## Minimum supported Rust version
+The crate is tested against Rust `1.70` and newer on CI. Older toolchains are
+not guaranteed to work.
+
 ## License
-MIT OR Apache-2.0
+Dual licensed under MIT or Apache-2.0.
+See `LICENSE-MIT` and `LICENSE-APACHE` for details.
