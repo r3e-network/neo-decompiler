@@ -200,6 +200,17 @@ mod tests {
     }
 
     #[test]
+    fn decodes_calla_operand() {
+        let bytecode = [0x36, 0x34, 0x12];
+        let instructions = Disassembler::new()
+            .disassemble(&bytecode)
+            .expect("disassembly succeeds");
+
+        assert_eq!(instructions.len(), 1);
+        assert_eq!(instructions[0].operand, Some(Operand::U16(0x1234)));
+    }
+
+    #[test]
     fn decodes_pushdata2() {
         let bytecode = [0x0D, 0x04, 0x00, 0xDE, 0xAD, 0xBE, 0xEF];
         let instruction = Disassembler::new().disassemble(&bytecode).expect("success")[0].clone();

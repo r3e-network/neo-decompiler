@@ -80,6 +80,8 @@ def operand_encoding(name: str) -> str:
         return "OperandEncoding::Jump32"
     if name == "CALLT":
         return "OperandEncoding::U16"
+    if name == "CALLA":
+        return "OperandEncoding::U16"
     if name == "TRY":
         return "OperandEncoding::Bytes(2)"
     if name == "TRY_L":

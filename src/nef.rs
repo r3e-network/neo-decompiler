@@ -103,16 +103,25 @@ impl NefParser {
         let script = bytes[offset..script_end].to_vec();
         offset = script_end;
 
+        let payload_end = offset;
         let checksum_bytes = bytes[offset..offset + CHECKSUM_SIZE]
             .try_into()
             .expect("checksum slice");
         let checksum = u32::from_le_bytes(checksum_bytes);
 
-        let calculated = Self::calculate_checksum(&bytes[..offset]);
+        let calculated = Self::calculate_checksum(&bytes[..payload_end]);
         if checksum != calculated {
             return Err(NefError::ChecksumMismatch {
                 expected: checksum,
                 calculated,
+            }
+            .into());
+        }
+
+        offset = payload_end + CHECKSUM_SIZE;
+        if offset != bytes.len() {
+            return Err(NefError::TrailingData {
+                extra: bytes.len() - offset,
             }
             .into());
         }
@@ -334,5 +343,19 @@ mod tests {
         assert_eq!(token.params, 2);
         assert_eq!(token.return_type, 0x21);
         assert_eq!(token.call_flags, 0x0F);
+    }
+
+    #[test]
+    fn rejects_trailing_bytes() {
+        let script = vec![0x40];
+        let bytes = build_sample(&script);
+        let mut with_extra = bytes.clone();
+        with_extra.push(0x99);
+
+        let err = NefParser::new().parse(&with_extra).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::Error::Nef(NefError::TrailingData { extra: 1 })
+        ));
     }
 }

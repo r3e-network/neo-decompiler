@@ -1,9 +1,10 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
 use crate::disassembler::Disassembler;
 use crate::error::Result;
-use crate::instruction::{Instruction, OpCode, Operand};
+use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
 use crate::manifest::ContractManifest;
 use crate::native_contracts;
 use crate::nef::{NefFile, NefParser};
@@ -211,8 +212,9 @@ fn render_high_level(
     writeln!(output).unwrap();
     writeln!(output, "    fn script_entry() {{").unwrap();
 
-    let mut emitter = HighLevelEmitter::new();
+    let mut emitter = HighLevelEmitter::with_program(instructions);
     for instruction in instructions {
+        emitter.advance_to(instruction.offset);
         emitter.emit_instruction(instruction);
     }
     let statements = emitter.finish();
@@ -257,11 +259,37 @@ struct HighLevelEmitter {
     stack: Vec<String>,
     statements: Vec<String>,
     next_temp: usize,
+    pending_closers: BTreeMap<usize, usize>,
+    else_targets: BTreeMap<usize, usize>,
+    skip_jumps: BTreeSet<usize>,
+    program: Vec<Instruction>,
+    index_by_offset: BTreeMap<usize, usize>,
 }
 
 impl HighLevelEmitter {
-    fn new() -> Self {
-        Self::default()
+    fn with_program(instructions: &[Instruction]) -> Self {
+        let mut emitter = Self {
+            program: instructions.to_vec(),
+            ..Self::default()
+        };
+        for (index, instruction) in instructions.iter().enumerate() {
+            emitter.index_by_offset.insert(instruction.offset, index);
+        }
+        emitter
+    }
+
+    fn advance_to(&mut self, offset: usize) {
+        if let Some(count) = self.pending_closers.remove(&offset) {
+            for _ in 0..count {
+                self.statements.push("}".into());
+            }
+        }
+
+        if let Some(count) = self.else_targets.remove(&offset) {
+            for _ in 0..count {
+                self.statements.push("else {".into());
+            }
+        }
     }
 
     fn emit_instruction(&mut self, instruction: &Instruction) {
@@ -285,14 +313,39 @@ impl HighLevelEmitter {
             Sub => self.binary_op(instruction, "-"),
             Mul => self.binary_op(instruction, "*"),
             Div => self.binary_op(instruction, "/"),
+            Mod => self.binary_op(instruction, "%"),
+            And => self.binary_op(instruction, "&"),
+            Or => self.binary_op(instruction, "|"),
+            Xor => self.binary_op(instruction, "^"),
+            Shl => self.binary_op(instruction, "<<"),
+            Shr => self.binary_op(instruction, ">>"),
+            Equal | Numequal => self.binary_op(instruction, "=="),
+            Notequal | Numnotequal => self.binary_op(instruction, "!="),
+            Gt => self.binary_op(instruction, ">"),
+            Ge => self.binary_op(instruction, ">="),
+            Lt => self.binary_op(instruction, "<"),
+            Le => self.binary_op(instruction, "<="),
+            Booland => self.binary_op(instruction, "&&"),
+            Boolor => self.binary_op(instruction, "||"),
+            Inc => self.unary_op(instruction, |value| format!("{value} + 1")),
+            Dec => self.unary_op(instruction, |value| format!("{value} - 1")),
+            Negate => self.unary_op(instruction, |value| format!("-{value}")),
+            Not => self.unary_op(instruction, |value| format!("!{value}")),
+            Nz => self.unary_op(instruction, |value| format!("{value} != 0")),
+            Abs => self.unary_op(instruction, |value| format!("{value}.abs()")),
+            Drop => self.drop_top(instruction),
+            Dup => self.dup_top(instruction),
+            Over => self.over_second(instruction),
+            Swap => self.swap_top(instruction),
+            Nip => self.nip_second(instruction),
             Syscall => self.emit_syscall(instruction),
             Ret => self.emit_return(instruction),
-            Jmp => self.emit_relative(instruction, 2, "jump"),
-            Jmp_L => self.emit_relative(instruction, 5, "jump"),
+            Jmp => self.emit_jump(instruction, 2),
+            Jmp_L => self.emit_jump(instruction, 5),
             Jmpif => self.emit_relative(instruction, 2, "jump-if"),
             Jmpif_L => self.emit_relative(instruction, 5, "jump-if"),
-            Jmpifnot => self.emit_relative(instruction, 2, "jump-ifnot"),
-            Jmpifnot_L => self.emit_relative(instruction, 5, "jump-ifnot"),
+            Jmpifnot => self.emit_if_block(instruction),
+            Jmpifnot_L => self.emit_if_block(instruction),
             JmpEq => self.emit_relative(instruction, 2, "jump-if-eq"),
             JmpEq_L => self.emit_relative(instruction, 5, "jump-if-eq"),
             JmpNe => self.emit_relative(instruction, 2, "jump-if-ne"),
@@ -321,7 +374,16 @@ impl HighLevelEmitter {
         }
     }
 
-    fn finish(self) -> Vec<String> {
+    fn finish(mut self) -> Vec<String> {
+        if !self.pending_closers.is_empty() {
+            let mut remaining: Vec<_> = self.pending_closers.into_iter().collect();
+            remaining.sort_by_key(|(offset, _)| *offset);
+            for (_, count) in remaining {
+                for _ in 0..count {
+                    self.statements.push("}".into());
+                }
+            }
+        }
         self.statements
     }
 
@@ -335,11 +397,7 @@ impl HighLevelEmitter {
     fn binary_op(&mut self, instruction: &Instruction, symbol: &str) {
         self.push_comment(instruction);
         if self.stack.len() < 2 {
-            self.statements.push(format!(
-                "// {:04X}: insufficient values on stack for {}",
-                instruction.offset,
-                instruction.opcode.mnemonic()
-            ));
+            self.stack_underflow(instruction, 2);
             return;
         }
 
@@ -349,6 +407,78 @@ impl HighLevelEmitter {
         self.statements
             .push(format!("let {temp} = {left} {symbol} {right};"));
         self.stack.push(temp);
+    }
+
+    fn unary_op<F>(&mut self, instruction: &Instruction, build: F)
+    where
+        F: Fn(&str) -> String,
+    {
+        self.push_comment(instruction);
+        if let Some(value) = self.stack.pop() {
+            let temp = self.next_temp();
+            self.statements
+                .push(format!("let {temp} = {};", build(&value)));
+            self.stack.push(temp);
+        } else {
+            self.stack_underflow(instruction, 1);
+        }
+    }
+
+    fn drop_top(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        if let Some(value) = self.stack.pop() {
+            self.statements.push(format!("// drop {value}"));
+        } else {
+            self.stack_underflow(instruction, 1);
+        }
+    }
+
+    fn dup_top(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        if let Some(value) = self.stack.last().cloned() {
+            let temp = self.next_temp();
+            self.statements
+                .push(format!("let {temp} = {value}; // duplicate top of stack"));
+            self.stack.push(temp);
+        } else {
+            self.stack_underflow(instruction, 1);
+        }
+    }
+
+    fn over_second(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        if self.stack.len() < 2 {
+            self.stack_underflow(instruction, 2);
+            return;
+        }
+        let value = self.stack[self.stack.len() - 2].clone();
+        let temp = self.next_temp();
+        self.statements
+            .push(format!("let {temp} = {value}; // copy second stack value"));
+        self.stack.push(temp);
+    }
+
+    fn swap_top(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        if self.stack.len() < 2 {
+            self.stack_underflow(instruction, 2);
+            return;
+        }
+        let len = self.stack.len();
+        self.stack.swap(len - 1, len - 2);
+        self.statements
+            .push("// swapped top two stack values".into());
+    }
+
+    fn nip_second(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        if self.stack.len() < 2 {
+            self.stack_underflow(instruction, 2);
+            return;
+        }
+        let removed = self.stack.remove(self.stack.len() - 2);
+        self.statements
+            .push(format!("// remove second stack value {removed}"));
     }
 
     fn emit_return(&mut self, instruction: &Instruction) {
@@ -383,6 +513,43 @@ impl HighLevelEmitter {
         }
     }
 
+    fn emit_if_block(&mut self, instruction: &Instruction) {
+        let width = Self::branch_width(instruction.opcode);
+        let delta = match instruction.operand {
+            Some(Operand::Jump(value)) => value as isize,
+            Some(Operand::Jump32(value)) => value as isize,
+            _ => {
+                self.emit_relative(instruction, width, "jump-ifnot");
+                return;
+            }
+        };
+        let target = instruction.offset as isize + width + delta;
+        if target <= instruction.offset as isize {
+            self.emit_relative(instruction, width, "jump-ifnot");
+            return;
+        }
+        let condition = match self.stack.pop() {
+            Some(value) => value,
+            None => {
+                self.push_comment(instruction);
+                self.stack_underflow(instruction, 1);
+                return;
+            }
+        };
+        self.push_comment(instruction);
+        self.statements.push(format!("if {condition} {{"));
+        let closer_entry = self.pending_closers.entry(target as usize).or_insert(0);
+        *closer_entry += 1;
+
+        if let Some((jump_offset, jump_target)) = self.detect_else(target as usize) {
+            self.skip_jumps.insert(jump_offset);
+            let else_entry = self.else_targets.entry(target as usize).or_insert(0);
+            *else_entry += 1;
+            let closer = self.pending_closers.entry(jump_target).or_insert(0);
+            *closer += 1;
+        }
+    }
+
     fn emit_relative(&mut self, instruction: &Instruction, width: isize, label: &str) {
         let delta = match instruction.operand {
             Some(Operand::Jump(value)) => value as isize,
@@ -410,9 +577,25 @@ impl HighLevelEmitter {
         self.note(instruction, &format!("{detail} (not yet translated)"));
     }
 
+    fn emit_jump(&mut self, instruction: &Instruction, width: isize) {
+        if self.skip_jumps.remove(&instruction.offset) {
+            // jump consumed by structured if/else handling
+            return;
+        }
+        self.emit_relative(instruction, width, "jump");
+    }
+
     fn note(&mut self, instruction: &Instruction, message: &str) {
         self.statements
             .push(format!("// {:04X}: {}", instruction.offset, message));
+    }
+
+    fn stack_underflow(&mut self, instruction: &Instruction, needed: usize) {
+        self.statements.push(format!(
+            "// {:04X}: insufficient values on stack for {} (needs {needed})",
+            instruction.offset,
+            instruction.opcode.mnemonic()
+        ));
     }
 
     fn push_comment(&mut self, instruction: &Instruction) {
@@ -427,6 +610,41 @@ impl HighLevelEmitter {
         let name = format!("t{}", self.next_temp);
         self.next_temp += 1;
         name
+    }
+
+    fn detect_else(&self, false_offset: usize) -> Option<(usize, usize)> {
+        let target_index = *self.index_by_offset.get(&false_offset)?;
+        if target_index == 0 {
+            return None;
+        }
+        let jump = self.program.get(target_index.checked_sub(1)?)?;
+        let width = Self::branch_width(jump.opcode);
+        let target = self.forward_jump_target(jump, width)?;
+        if target > false_offset {
+            Some((jump.offset, target))
+        } else {
+            None
+        }
+    }
+
+    fn forward_jump_target(&self, instruction: &Instruction, width: isize) -> Option<usize> {
+        let target = match instruction.operand {
+            Some(Operand::Jump(delta)) => instruction.offset as isize + width + delta as isize,
+            Some(Operand::Jump32(delta)) => instruction.offset as isize + width + delta as isize,
+            _ => return None,
+        };
+        if target < 0 {
+            return None;
+        }
+        Some(target as usize)
+    }
+
+    fn branch_width(opcode: OpCode) -> isize {
+        match opcode.operand_encoding() {
+            OperandEncoding::Jump8 => 2,
+            OperandEncoding::Jump32 => 5,
+            _ => 1,
+        }
     }
 }
 
@@ -521,5 +739,77 @@ mod tests {
         assert!(decompilation
             .high_level
             .contains("syscall(\"System.Runtime.Platform\")"));
+    }
+
+    #[test]
+    fn high_level_lifts_boolean_ops() {
+        // Script: PUSH1, PUSH1, BOOLAND, RET
+        let script = [0x11, 0x11, 0xAB, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        assert!(decompilation.high_level.contains("let t2 = t0 && t1;"));
+    }
+
+    #[test]
+    fn high_level_handles_stack_manipulation_and_unary_ops() {
+        // Script: PUSH1, DUP, ADD, INC, RET
+        let script = [0x11, 0x4A, 0x9E, 0x9C, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        assert!(decompilation
+            .high_level
+            .contains("let t1 = t0; // duplicate top of stack"));
+        assert!(decompilation.high_level.contains("let t3 = t2 + 1;"));
+    }
+
+    #[test]
+    fn high_level_lifts_simple_if_block() {
+        // Script: PUSH1, JMPIFNOT +3, PUSH2, RET, PUSH3, RET
+        let script = [0x11, 0x26, 0x03, 0x12, 0x40, 0x13, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        let high_level = &decompilation.high_level;
+        assert!(high_level.contains("if t0 {"));
+        assert!(high_level.contains("// 0003: PUSH2"));
+        assert!(high_level.contains("}\n        // 0006: RET"));
+    }
+
+    #[test]
+    fn high_level_closes_if_at_end() {
+        // Script: PUSH1, JMPIFNOT +2, PUSH2, RET
+        let script = [0x11, 0x26, 0x02, 0x12, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        let high_level = &decompilation.high_level;
+        assert!(high_level.contains("if t0 {"));
+        assert!(high_level.contains("        }\n    }\n}"));
+    }
+
+    #[test]
+    fn high_level_lifts_if_else_block() {
+        // Script: PUSH1, JMPIFNOT +3, PUSH2, JMP +2, PUSH3, RET, RET
+        let script = [0x11, 0x26, 0x03, 0x12, 0x22, 0x02, 0x13, 0x40, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        let high_level = &decompilation.high_level;
+        assert!(high_level.contains("if t0 {"));
+        assert!(high_level.contains("else {"));
+        assert!(high_level.contains("let t1 = 2;"));
+        assert!(high_level.contains("let t2 = 3;"));
     }
 }

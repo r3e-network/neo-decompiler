@@ -36,6 +36,9 @@ pub enum NefError {
     #[error("checksum mismatch: expected {expected:#010x}, calculated {calculated:#010x}")]
     ChecksumMismatch { expected: u32, calculated: u32 },
 
+    #[error("unexpected trailing data after checksum (extra {extra} bytes)")]
+    TrailingData { extra: usize },
+
     #[error("compiler field is not valid UTF-8")]
     InvalidCompiler,
 
