@@ -45,6 +45,30 @@ cargo build --release
 ./target/release/neo-decompiler tokens path/to/contract.nef
 ```
 
+## Worked example (nccs)
+
+The repository ships with a minimal C# contract under
+[`examples/hello_world`](examples/hello_world/HelloWorld.cs). You can compile it
+with the official Neo C# compiler (`nccs`) and immediately feed the result into
+the decompiler:
+
+```bash
+# Install the Neo compiler if you do not already have it
+dotnet tool install -g Neo.Compiler.CSharp
+
+# Compile the example contract
+nccs compile \
+  examples/hello_world/HelloWorld.cs \
+  --nef build/HelloWorld.nef \
+  --manifest build/HelloWorld.manifest.json
+
+# Decompile (auto-detects the manifest sitting next to the NEF)
+neo-decompiler decompile build/HelloWorld.nef
+```
+
+The `examples/README.md` file explains the walkthrough and can serve as a
+starting point for your own experiments.
+
 ## Installation
 ```bash
 # Install the latest commit from the main branch
