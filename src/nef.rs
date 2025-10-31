@@ -2,17 +2,20 @@ use crate::error::{NefError, Result};
 
 use sha2::{Digest, Sha256};
 
-const HEADER_SIZE: usize = 44;
+const FIXED_HEADER_SIZE: usize = 68;
 const CHECKSUM_SIZE: usize = 4;
 const MAGIC: [u8; 4] = *b"NEF3";
+const MAX_SOURCE_LEN: usize = 256;
+const MAX_METHOD_TOKENS: usize = 128;
+const MAX_SCRIPT_LEN: usize = 1_048_576; // ExecutionEngineLimits.Default.MaxItemSize
+const CALL_FLAGS_ALLOWED_MASK: u8 = 0x0F; // CallFlags::All in Neo runtime
 
 /// Parsed NEF header information.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NefHeader {
     pub magic: [u8; 4],
     pub compiler: String,
-    pub version: u32,
-    pub script_length: u32,
+    pub source: String,
 }
 
 /// Method token entry present in the NEF container.
@@ -20,8 +23,8 @@ pub struct NefHeader {
 pub struct MethodToken {
     pub hash: [u8; 20],
     pub method: String,
-    pub params: u8,
-    pub return_type: u8,
+    pub parameters_count: u16,
+    pub has_return_value: bool,
     pub call_flags: u8,
 }
 
@@ -37,7 +40,13 @@ pub struct NefFile {
 impl NefFile {
     /// Length of the payload included in the checksum calculation.
     pub fn payload_len(&self) -> usize {
-        HEADER_SIZE + encoded_method_tokens_size(&self.method_tokens) + self.script.len()
+        let fixed_header_len = FIXED_HEADER_SIZE; // magic + fixed 64-byte compiler
+        let source_bytes = self.header.source.as_bytes();
+        let source_len = varint_encoded_len(source_bytes.len() as u32) + source_bytes.len();
+        let tokens_len = encoded_method_tokens_size(&self.method_tokens);
+        let script_len = varint_encoded_len(self.script.len() as u32) + self.script.len();
+
+        fixed_header_len + source_len + 1 + tokens_len + 2 + script_len
     }
 }
 
@@ -52,7 +61,7 @@ impl NefParser {
 
     /// Parse a NEF file from raw bytes.
     pub fn parse(&self, bytes: &[u8]) -> Result<NefFile> {
-        if bytes.len() < HEADER_SIZE + CHECKSUM_SIZE {
+        if bytes.len() < FIXED_HEADER_SIZE + CHECKSUM_SIZE {
             return Err(NefError::TooShort.into());
         }
 
@@ -70,38 +79,67 @@ impl NefParser {
         }
         offset += 4;
 
-        let compiler_raw = &bytes[offset..offset + 32];
+        let compiler_raw = &bytes[offset..offset + 64];
         let compiler_len = compiler_raw
             .iter()
             .position(|&b| b == 0)
             .unwrap_or(compiler_raw.len());
         let compiler = std::str::from_utf8(&compiler_raw[..compiler_len])
             .map_err(|_| NefError::InvalidCompiler)?
-            .trim()
             .to_string();
-        offset += 32;
+        offset += 64;
 
-        let version = u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
-        offset += 4;
-
-        let script_length =
-            u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
-        offset += 4;
-
-        let (method_tokens, consumed) = self.parse_method_tokens(bytes, offset)?;
+        let (source, consumed) = read_varstring(bytes, offset)?;
         offset += consumed;
-
-        let script_end = offset + script_length;
-        if script_end + CHECKSUM_SIZE > bytes.len() {
-            return Err(NefError::ScriptLengthMismatch {
-                declared: script_length,
-                available: bytes.len().saturating_sub(offset + CHECKSUM_SIZE),
+        if source.len() > MAX_SOURCE_LEN {
+            return Err(NefError::SourceTooLong {
+                length: source.len(),
+                max: MAX_SOURCE_LEN,
             }
             .into());
         }
 
-        let script = bytes[offset..script_end].to_vec();
-        offset = script_end;
+        let reserved = *bytes
+            .get(offset)
+            .ok_or(NefError::UnexpectedEof { offset })?;
+        if reserved != 0 {
+            return Err(NefError::ReservedByteNonZero {
+                offset,
+                value: reserved,
+            }
+            .into());
+        }
+        offset += 1;
+
+        let (method_tokens, consumed) = self.parse_method_tokens(bytes, offset)?;
+        offset += consumed;
+
+        let reserved_u16_bytes = bytes
+            .get(offset..offset + 2)
+            .ok_or(NefError::UnexpectedEof { offset })?;
+        let reserved_u16 = u16::from_le_bytes(reserved_u16_bytes.try_into().unwrap());
+        if reserved_u16 != 0 {
+            return Err(NefError::ReservedWordNonZero {
+                offset,
+                value: reserved_u16,
+            }
+            .into());
+        }
+        offset += 2;
+
+        let (script, consumed) = read_varbytes(bytes, offset)?;
+        offset += consumed;
+        let script_len = script.len();
+        if script_len == 0 {
+            return Err(NefError::EmptyScript.into());
+        }
+        if script_len > MAX_SCRIPT_LEN {
+            return Err(NefError::ScriptTooLarge {
+                length: script_len,
+                max: MAX_SCRIPT_LEN,
+            }
+            .into());
+        }
 
         let payload_end = offset;
         let checksum_bytes = bytes[offset..offset + CHECKSUM_SIZE]
@@ -130,8 +168,7 @@ impl NefParser {
             header: NefHeader {
                 magic,
                 compiler,
-                version,
-                script_length: script_length as u32,
+                source,
             },
             method_tokens,
             script,
@@ -147,6 +184,14 @@ impl NefParser {
         let start = offset;
         let (count, varint_len) = read_varint(bytes, offset)?;
         offset += varint_len;
+
+        if count as usize > MAX_METHOD_TOKENS {
+            return Err(NefError::TooManyMethodTokens {
+                count: count as usize,
+                max: MAX_METHOD_TOKENS,
+            }
+            .into());
+        }
 
         let mut tokens = Vec::with_capacity(count as usize);
         for index in 0..count as usize {
@@ -168,28 +213,49 @@ impl NefParser {
             let method = std::str::from_utf8(method_bytes)
                 .map_err(|_| NefError::InvalidMethodToken { index })?
                 .to_string();
+            if method.starts_with('_') {
+                return Err(NefError::MethodNameInvalid { name: method }.into());
+            }
             offset = method_end;
 
-            let params = *bytes
-                .get(offset)
+            let params_bytes = bytes
+                .get(offset..offset + 2)
                 .ok_or(NefError::UnexpectedEof { offset })?;
-            offset += 1;
+            let params = u16::from_le_bytes(params_bytes.try_into().unwrap());
+            offset += 2;
 
-            let return_type = *bytes
-                .get(offset)
-                .ok_or(NefError::UnexpectedEof { offset })?;
-            offset += 1;
+            let has_return_value = match bytes.get(offset) {
+                Some(0) => {
+                    offset += 1;
+                    false
+                }
+                Some(1) => {
+                    offset += 1;
+                    true
+                }
+                Some(_) => {
+                    return Err(NefError::InvalidMethodToken { index }.into());
+                }
+                None => return Err(NefError::UnexpectedEof { offset }.into()),
+            };
 
             let call_flags = *bytes
                 .get(offset)
                 .ok_or(NefError::UnexpectedEof { offset })?;
             offset += 1;
+            if call_flags & !CALL_FLAGS_ALLOWED_MASK != 0 {
+                return Err(NefError::CallFlagsInvalid {
+                    flags: call_flags,
+                    allowed: CALL_FLAGS_ALLOWED_MASK,
+                }
+                .into());
+            }
 
             tokens.push(MethodToken {
                 hash,
                 method,
-                params,
-                return_type,
+                parameters_count: params,
+                has_return_value,
                 call_flags,
             });
         }
@@ -225,7 +291,16 @@ fn read_varint(bytes: &[u8], offset: usize) -> Result<(u32, usize)> {
             let value = u32::from_le_bytes(slice.try_into().unwrap());
             Ok((value, 5))
         }
-        0xFF => Err(NefError::InvalidMethodToken { index: usize::MAX }.into()),
+        0xFF => {
+            let slice = bytes
+                .get(offset + 1..offset + 9)
+                .ok_or(NefError::UnexpectedEof { offset })?;
+            let value = u64::from_le_bytes(slice.try_into().unwrap());
+            if value > u32::MAX as u64 {
+                return Err(NefError::IntegerOverflow { offset }.into());
+            }
+            Ok((value as u32, 9))
+        }
     }
 }
 
@@ -235,7 +310,9 @@ fn encoded_method_tokens_size(tokens: &[MethodToken]) -> usize {
         size += 20; // hash
         size += varint_encoded_len(token.method.len() as u32);
         size += token.method.len();
-        size += 3; // params + return type + call flags
+        size += 2; // parameters count
+        size += 1; // return value flag
+        size += 1; // call flags
     }
     size
 }
@@ -248,23 +325,64 @@ fn varint_encoded_len(value: u32) -> usize {
     }
 }
 
+fn read_varstring(bytes: &[u8], offset: usize) -> Result<(String, usize)> {
+    let (len, consumed) = read_varint(bytes, offset)?;
+    let start = offset + consumed;
+    let end = start + len as usize;
+    let slice = bytes
+        .get(start..end)
+        .ok_or(NefError::UnexpectedEof { offset: start })?;
+    let value = std::str::from_utf8(slice)
+        .map_err(|_| NefError::InvalidUtf8String { offset: start })?
+        .to_string();
+    Ok((value, consumed + slice.len()))
+}
+
+fn read_varbytes(bytes: &[u8], offset: usize) -> Result<(Vec<u8>, usize)> {
+    let (len, consumed) = read_varint(bytes, offset)?;
+    let start = offset + consumed;
+    let end = start + len as usize;
+    let slice = bytes
+        .get(start..end)
+        .ok_or(NefError::UnexpectedEof { offset: start })?;
+    Ok((slice.to_vec(), consumed + slice.len()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn write_varint(buf: &mut Vec<u8>, value: u32) {
+        match value {
+            0x00..=0xFC => buf.push(value as u8),
+            0xFD..=0xFFFF => {
+                buf.push(0xFD);
+                buf.extend_from_slice(&(value as u16).to_le_bytes());
+            }
+            _ => {
+                buf.push(0xFE);
+                buf.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+    }
+
     fn build_sample(payload_script: &[u8]) -> Vec<u8> {
         let mut data = Vec::new();
         data.extend_from_slice(&MAGIC);
-        let mut compiler = [0u8; 32];
+        let mut compiler = [0u8; 64];
         let name = b"neo-sample";
         compiler[..name.len()].copy_from_slice(name);
         data.extend_from_slice(&compiler);
-        data.extend_from_slice(&1u32.to_le_bytes());
-        data.extend_from_slice(&(payload_script.len() as u32).to_le_bytes());
-
-        // Method tokens: empty set
-        data.push(0); // varint-encoded zero
-
+        // source (empty string)
+        data.push(0);
+        // reserved byte
+        data.push(0);
+        // method tokens: empty set
+        data.push(0);
+        // reserved word
+        data.extend_from_slice(&0u16.to_le_bytes());
+        // script
+        write_varint(&mut data, payload_script.len() as u32);
         data.extend_from_slice(payload_script);
         let checksum = NefParser::calculate_checksum(&data);
         data.extend_from_slice(&checksum.to_le_bytes());
@@ -279,9 +397,9 @@ mod tests {
 
         assert_eq!(nef.header.magic, MAGIC);
         assert_eq!(nef.header.compiler, "neo-sample");
+        assert!(nef.header.source.is_empty());
         assert_eq!(nef.script, script);
         assert!(nef.method_tokens.is_empty());
-        assert_eq!(nef.header.script_length, 3);
     }
 
     #[test]
@@ -312,27 +430,32 @@ mod tests {
         let script = vec![0x40];
         let mut data = Vec::new();
         data.extend_from_slice(&MAGIC);
-        let mut compiler = [0u8; 32];
+        let mut compiler = [0u8; 64];
         compiler[..4].copy_from_slice(b"test");
         data.extend_from_slice(&compiler);
-        data.extend_from_slice(&1u32.to_le_bytes());
-        data.extend_from_slice(&(script.len() as u32).to_le_bytes());
+        // source (empty)
+        data.push(0);
+        // reserved byte
+        data.push(0);
 
         // one method token
-        data.push(1);
-        // hash
+        data.push(1); // count
         data.extend_from_slice(&[0x11; 20]);
-        // method name length (3) as varint
-        data.push(3);
+        write_varint(&mut data, 3);
         data.extend_from_slice(b"foo");
         // params
-        data.push(2);
-        // return type
-        data.push(0x21);
-        // call flags
+        data.extend_from_slice(&2u16.to_le_bytes());
+        // return flag (true)
+        data.push(1);
+        // call flags (0x0F)
         data.push(0x0F);
 
+        // reserved word
+        data.extend_from_slice(&0u16.to_le_bytes());
+        // script
+        write_varint(&mut data, script.len() as u32);
         data.extend_from_slice(&script);
+
         let checksum = NefParser::calculate_checksum(&data);
         data.extend_from_slice(&checksum.to_le_bytes());
 
@@ -340,9 +463,135 @@ mod tests {
         assert_eq!(nef.method_tokens.len(), 1);
         let token = &nef.method_tokens[0];
         assert_eq!(token.method, "foo");
-        assert_eq!(token.params, 2);
-        assert_eq!(token.return_type, 0x21);
+        assert_eq!(token.parameters_count, 2);
+        assert!(token.has_return_value);
         assert_eq!(token.call_flags, 0x0F);
+    }
+
+    #[test]
+    fn rejects_method_name_with_leading_underscore() {
+        let script = vec![0x40];
+        let mut data = Vec::new();
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&[0u8; 64]);
+        data.push(0); // source
+        data.push(0); // reserved
+        data.push(1); // one token
+        data.extend_from_slice(&[0x22; 20]);
+        write_varint(&mut data, 2);
+        data.extend_from_slice(b"_x");
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.push(0); // no return
+        data.push(0x01); // call flags
+        data.extend_from_slice(&0u16.to_le_bytes());
+        write_varint(&mut data, script.len() as u32);
+        data.extend_from_slice(&script);
+        let checksum = NefParser::calculate_checksum(&data);
+        data.extend_from_slice(&checksum.to_le_bytes());
+
+        let err = NefParser::new().parse(&data).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::Error::Nef(NefError::MethodNameInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_call_flags_with_unsupported_bits() {
+        let script = vec![0x40];
+        let mut data = Vec::new();
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&[0u8; 64]);
+        data.push(0); // source
+        data.push(0); // reserved
+        data.push(1); // one token
+        data.extend_from_slice(&[0x33; 20]);
+        write_varint(&mut data, 3);
+        data.extend_from_slice(b"foo");
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.push(0); // no return
+        data.push(0x80); // unsupported flag bit
+        data.extend_from_slice(&0u16.to_le_bytes());
+        write_varint(&mut data, script.len() as u32);
+        data.extend_from_slice(&script);
+        let checksum = NefParser::calculate_checksum(&data);
+        data.extend_from_slice(&checksum.to_le_bytes());
+
+        let err = NefParser::new().parse(&data).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::Error::Nef(NefError::CallFlagsInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_source_too_long() {
+        let script = vec![0x40];
+        let mut data = Vec::new();
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&[0u8; 64]);
+        let long_source = "a".repeat(MAX_SOURCE_LEN + 1);
+        write_varint(&mut data, long_source.len() as u32);
+        data.extend_from_slice(long_source.as_bytes());
+        data.push(0); // reserved byte
+        data.push(0); // zero tokens
+        data.extend_from_slice(&0u16.to_le_bytes());
+        write_varint(&mut data, script.len() as u32);
+        data.extend_from_slice(&script);
+        let checksum = NefParser::calculate_checksum(&data);
+        data.extend_from_slice(&checksum.to_le_bytes());
+
+        let err = NefParser::new().parse(&data).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::Error::Nef(NefError::SourceTooLong { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_too_many_method_tokens() {
+        let script = vec![0x40];
+        let mut data = Vec::new();
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&[0u8; 64]);
+        data.push(0); // source
+        data.push(0); // reserved
+                      // declare more than allowed tokens
+        write_varint(&mut data, (MAX_METHOD_TOKENS + 1) as u32);
+        // no token payload needed because parser should error on count alone
+        data.extend_from_slice(&0u16.to_le_bytes());
+        write_varint(&mut data, script.len() as u32);
+        data.extend_from_slice(&script);
+        let checksum = NefParser::calculate_checksum(&data);
+        data.extend_from_slice(&checksum.to_le_bytes());
+
+        let err = NefParser::new().parse(&data).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::Error::Nef(NefError::TooManyMethodTokens { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_script_too_large() {
+        let script = vec![0u8; MAX_SCRIPT_LEN + 1];
+        let mut data = Vec::new();
+        data.extend_from_slice(&MAGIC);
+        data.extend_from_slice(&[0u8; 64]);
+        data.push(0); // source
+        data.push(0); // reserved
+        data.push(0); // zero tokens
+        data.extend_from_slice(&0u16.to_le_bytes());
+        write_varint(&mut data, script.len() as u32);
+        data.extend_from_slice(&script);
+        let checksum = NefParser::calculate_checksum(&data);
+        data.extend_from_slice(&checksum.to_le_bytes());
+
+        let err = NefParser::new().parse(&data).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::Error::Nef(NefError::ScriptTooLarge { .. })
+        ));
     }
 
     #[test]

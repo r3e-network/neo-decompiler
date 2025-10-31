@@ -2,23 +2,39 @@ use assert_cmd::Command;
 use predicates::str::contains;
 use tempfile::tempdir;
 
+fn write_varint(buf: &mut Vec<u8>, value: u32) {
+    match value {
+        0x00..=0xFC => buf.push(value as u8),
+        0xFD..=0xFFFF => {
+            buf.push(0xFD);
+            buf.extend_from_slice(&(value as u16).to_le_bytes());
+        }
+        _ => {
+            buf.push(0xFE);
+            buf.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+}
+
 fn build_sample_nef() -> Vec<u8> {
     let script = [0x10, 0x11, 0x9E, 0x40];
     let mut data = Vec::new();
     data.extend_from_slice(b"NEF3");
-    let mut compiler = [0u8; 32];
+    let mut compiler = [0u8; 64];
     compiler[..4].copy_from_slice(b"test");
     data.extend_from_slice(&compiler);
-    data.extend_from_slice(&1u32.to_le_bytes());
-    data.extend_from_slice(&(script.len() as u32).to_le_bytes());
-    // single method token
+    data.push(0); // source (empty)
+    data.push(0); // reserved byte
+                  // single method token
     data.push(1);
     data.extend_from_slice(&[0x11; 20]);
-    data.push(3); // method name length
+    write_varint(&mut data, 3);
     data.extend_from_slice(b"foo");
-    data.push(2); // params
-    data.push(0x21); // return type
+    data.extend_from_slice(&2u16.to_le_bytes()); // params
+    data.push(1); // has return value
     data.push(0x0F); // call flags
+    data.extend_from_slice(&0u16.to_le_bytes()); // reserved word
+    write_varint(&mut data, script.len() as u32);
     data.extend_from_slice(&script);
     let checksum = neo_decompiler::nef::NefParser::calculate_checksum(&data);
     data.extend_from_slice(&checksum.to_le_bytes());
@@ -29,12 +45,14 @@ fn build_nef_with_no_tokens() -> Vec<u8> {
     let script = [0x40];
     let mut data = Vec::new();
     data.extend_from_slice(b"NEF3");
-    let mut compiler = [0u8; 32];
+    let mut compiler = [0u8; 64];
     compiler[..4].copy_from_slice(b"test");
     data.extend_from_slice(&compiler);
-    data.extend_from_slice(&1u32.to_le_bytes());
-    data.extend_from_slice(&(script.len() as u32).to_le_bytes());
-    data.push(0);
+    data.push(0); // source
+    data.push(0); // reserved byte
+    data.push(0); // zero tokens
+    data.extend_from_slice(&0u16.to_le_bytes()); // reserved word
+    write_varint(&mut data, script.len() as u32);
     data.extend_from_slice(&script);
     let checksum = neo_decompiler::nef::NefParser::calculate_checksum(&data);
     data.extend_from_slice(&checksum.to_le_bytes());

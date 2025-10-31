@@ -66,8 +66,10 @@ impl Cli {
 
         println!("File: {}", path.display());
         println!("Compiler: {}", nef.header.compiler);
-        println!("Version: {}", nef.header.version);
-        println!("Script length: {} bytes", nef.header.script_length);
+        if !nef.header.source.is_empty() {
+            println!("Source: {}", nef.header.source);
+        }
+        println!("Script length: {} bytes", nef.script.len());
         println!("Method tokens: {}", nef.method_tokens.len());
         println!("Checksum: 0x{:08X}", nef.checksum);
 
@@ -147,12 +149,12 @@ impl Cli {
                 .map(|info| format!(" ({})", info.name))
                 .unwrap_or_default();
             println!(
-                "#{index}: hash={}{} method={} params={} return=0x{:02X} flags=0x{:02X}",
+                "#{index}: hash={}{} method={} params={} returns={} flags=0x{:02X}",
                 util::format_hash(&token.hash),
                 contract_label,
                 token.method,
-                token.params,
-                token.return_type,
+                token.parameters_count,
+                token.has_return_value,
                 token.call_flags
             );
         }
