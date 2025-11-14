@@ -25,7 +25,7 @@ documents that describe the machine-readable output of the CLI commands:
   to strip whitespace or `--output schema.json` to persist the file, ensuring
   deterministic access without cloning the repository. Add `--validate path/to.json`
   (or `--validate -` to read from stdin) to verify that a JSON report matches the
-  selected schema.
+  selected schema, and combine `--no-print` to suppress the schema body during validation.
 
 ## Validating output
 

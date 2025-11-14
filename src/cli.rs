@@ -123,6 +123,10 @@ struct SchemaArgs {
     #[arg(long, requires = "schema")]
     output: Option<PathBuf>,
 
+    /// Skip printing the schema when validating
+    #[arg(long, requires = "validate")]
+    no_print: bool,
+
     /// Validate a JSON file against the specified schema
     #[arg(long, requires = "schema", conflicts_with_all = ["list", "list_json"])]
     validate: Option<PathBuf>,
@@ -536,7 +540,9 @@ impl Cli {
             self.validate_against_schema(entry.kind.as_str(), &value, target)?;
         }
         let json = self.render_json(&value)?;
-        println!("{json}");
+        if !args.no_print {
+            println!("{json}");
+        }
         if let Some(path) = args.output.as_ref() {
             std::fs::write(path, &json)?;
         }

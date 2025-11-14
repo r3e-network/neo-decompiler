@@ -513,6 +513,7 @@ fn schema_command_outputs_embedded_schema() {
         .arg("info")
         .arg("--validate")
         .arg("-")
+        .arg("--no-print")
         .write_stdin(info_json_bytes.clone())
         .output()
         .expect("schema validation via stdin");
