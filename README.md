@@ -246,8 +246,8 @@ Formal schema files live under [`docs/schema`](docs/schema) for every JSON comma
 (`info.schema.json`, `disasm.schema.json`, `decompile.schema.json`, `tokens.schema.json`).
 See [`docs/schema/README.md`](docs/schema/README.md) for versioning guarantees,
 validation instructions, and per-command details. Use
-`neo-decompiler schema --list` to discover the available schemas (with a short
-description) or `--list-json` for machine-readable listings, and
+`neo-decompiler schema --list` to discover the available schemas (with version
+and description) or `--list-json` for machine-readable listings, and
 `neo-decompiler schema <info|disasm|decompile|tokens>` (optionally with
 `--json-compact` or `--output schema.json`) to print or persist them without
 cloning the repository.

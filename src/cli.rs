@@ -122,7 +122,7 @@ struct SchemaArgs {
     output: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
 enum SchemaKind {
     Info,
     Disasm,
@@ -134,21 +134,25 @@ impl SchemaKind {
     const ALL: [SchemaMetadata; 4] = [
         SchemaMetadata::new(
             SchemaKind::Info,
+            SCHEMA_VERSION,
             INFO_SCHEMA,
             "NEF metadata, manifest summary, method tokens, warnings",
         ),
         SchemaMetadata::new(
             SchemaKind::Disasm,
+            SCHEMA_VERSION,
             DISASM_SCHEMA,
             "Instruction stream with operand metadata",
         ),
         SchemaMetadata::new(
             SchemaKind::Decompile,
+            SCHEMA_VERSION,
             DECOMPILE_SCHEMA,
             "High-level output + pseudocode + disassembly",
         ),
         SchemaMetadata::new(
             SchemaKind::Tokens,
+            SCHEMA_VERSION,
             TOKENS_SCHEMA,
             "Standalone method-token listing",
         ),
@@ -166,26 +170,34 @@ impl SchemaKind {
 
 struct SchemaMetadata {
     kind: SchemaKind,
+    version: &'static str,
     contents: &'static str,
     description: &'static str,
 }
 
 impl SchemaMetadata {
-    const fn new(kind: SchemaKind, contents: &'static str, description: &'static str) -> Self {
+    const fn new(
+        kind: SchemaKind,
+        version: &'static str,
+        contents: &'static str,
+        description: &'static str,
+    ) -> Self {
         Self {
             kind,
+            version,
             contents,
             description,
         }
     }
 
     fn matches(&self, kind: SchemaKind) -> bool {
-        self.kind as u8 == kind as u8
+        self.kind == kind
     }
 
     fn report(&self) -> SchemaReport<'_> {
         SchemaReport {
             name: self.kind.as_str(),
+            version: self.version,
             description: self.description,
         }
     }
@@ -194,8 +206,11 @@ impl SchemaMetadata {
 #[derive(Serialize)]
 struct SchemaReport<'a> {
     name: &'a str,
+    version: &'a str,
     description: &'a str,
 }
+
+const SCHEMA_VERSION: &str = "1.0.0";
 
 const INFO_SCHEMA: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -490,7 +505,12 @@ impl Cli {
                 self.print_json(&listing)?;
             } else {
                 for entry in SchemaKind::ALL {
-                    println!("{} - {}", entry.kind.as_str(), entry.description);
+                    println!(
+                        "{} v{} - {}",
+                        entry.kind.as_str(),
+                        entry.version,
+                        entry.description
+                    );
                 }
             }
             return Ok(());
