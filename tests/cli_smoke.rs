@@ -440,6 +440,25 @@ fn schema_command_outputs_embedded_schema() {
     let listing = String::from_utf8_lossy(&list.stdout);
     assert!(listing.contains("info"));
     assert!(listing.contains("disasm"));
+
+    let dir = tempdir().expect("schema dir");
+    let schema_path = dir.path().join("info.schema.json");
+    let file_output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("schema")
+        .arg("info")
+        .arg("--json-compact")
+        .arg("--output")
+        .arg(&schema_path)
+        .output()
+        .expect("schema output to file");
+    assert!(file_output.status.success());
+    let file_contents = std::fs::read_to_string(&schema_path).expect("schema written to disk");
+    let persisted: Value = serde_json::from_str(&file_contents).expect("file schema valid");
+    assert_eq!(
+        persisted["title"],
+        Value::String("neo-decompiler info report".into())
+    );
 }
 
 const SAMPLE_MANIFEST: &str = r#"

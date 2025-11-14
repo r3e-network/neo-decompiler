@@ -248,7 +248,8 @@ See [`docs/schema/README.md`](docs/schema/README.md) for versioning guarantees,
 validation instructions, and per-command details. Use
 `neo-decompiler schema --list` to discover the available schemas, and
 `neo-decompiler schema <info|disasm|decompile|tokens>` (optionally with
-`--json-compact`) to print them without cloning the repository.
+`--json-compact` or `--output schema.json`) to print or persist them without
+cloning the repository.
 
 ## Development
 ```bash

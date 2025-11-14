@@ -106,12 +106,16 @@ enum TokensFormat {
 #[derive(Debug, Args)]
 struct SchemaArgs {
     /// List available schemas
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["schema", "output"])]
     list: bool,
 
     /// Schema to print
     #[arg(value_enum, required_unless_present = "list")]
     schema: Option<SchemaKind>,
+
+    /// Write the schema to a file instead of stdout
+    #[arg(long, requires = "schema")]
+    output: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -448,7 +452,12 @@ impl Cli {
             .expect("--schema <name> is required unless --list is set");
         let value: Value = serde_json::from_str(schema.contents())
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-        self.print_json(&value)
+        let json = self.render_json(&value)?;
+        println!("{json}");
+        if let Some(path) = args.output.as_ref() {
+            std::fs::write(path, json)?;
+        }
+        Ok(())
     }
 
     fn resolve_manifest_path(&self, nef_path: &Path) -> Option<PathBuf> {
@@ -465,13 +474,17 @@ impl Cli {
         None
     }
 
-    fn print_json<T: Serialize>(&self, value: &T) -> Result<()> {
-        let json = if self.json_compact {
+    fn render_json<T: Serialize>(&self, value: &T) -> io::Result<String> {
+        if self.json_compact {
             serde_json::to_string(value)
         } else {
             serde_json::to_string_pretty(value)
         }
-        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+    }
+
+    fn print_json<T: Serialize>(&self, value: &T) -> Result<()> {
+        let json = self.render_json(value)?;
         println!("{json}");
         Ok(())
     }
