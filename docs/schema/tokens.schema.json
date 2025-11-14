@@ -26,8 +26,8 @@
       ],
       "properties": {
         "method": {"type": "string"},
-        "hash_le": {"type": "string", "pattern": "^[0-9A-F]+$"},
-        "hash_be": {"type": "string", "pattern": "^[0-9A-F]+$"},
+        "hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
+        "hash_be": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
         "parameters": {"type": "integer", "minimum": 0},
         "returns": {"type": "boolean"},
         "call_flags": {"type": "integer", "minimum": 0, "maximum": 255},

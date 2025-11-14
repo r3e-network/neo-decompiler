@@ -19,8 +19,8 @@
     "compiler": {"type": "string"},
     "source": {"type": ["string", "null"]},
     "script_length": {"type": "integer", "minimum": 0},
-    "script_hash_le": {"type": "string", "pattern": "^[0-9A-F]+$"},
-    "script_hash_be": {"type": "string", "pattern": "^[0-9A-F]+$"},
+    "script_hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
+    "script_hash_be": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
     "checksum": {"type": "string", "pattern": "^0x[0-9A-F]{8}$"},
     "method_tokens": {
       "type": "array",
@@ -51,8 +51,8 @@
       ],
       "properties": {
         "method": {"type": "string"},
-        "hash_le": {"type": "string", "pattern": "^[0-9A-F]+$"},
-        "hash_be": {"type": "string", "pattern": "^[0-9A-F]+$"},
+        "hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
+        "hash_be": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
         "parameters": {"type": "integer", "minimum": 0},
         "returns": {"type": "boolean"},
         "call_flags": {"type": "integer", "minimum": 0, "maximum": 255},
