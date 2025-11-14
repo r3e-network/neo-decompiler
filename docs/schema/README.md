@@ -23,7 +23,8 @@ documents that describe the machine-readable output of the CLI commands:
   for machine-readable listings, and print one via
   `neo-decompiler schema <info|disasm|decompile|tokens>`. Combine `--json-compact`
   to strip whitespace or `--output schema.json` to persist the file, ensuring
-  deterministic access without cloning the repository.
+  deterministic access without cloning the repository. Add `--validate path/to.json`
+  to verify that a JSON report matches the selected schema.
 
 ## Validating output
 

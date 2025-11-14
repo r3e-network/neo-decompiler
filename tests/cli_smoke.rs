@@ -471,6 +471,40 @@ fn schema_command_outputs_embedded_schema() {
         persisted["title"],
         Value::String("neo-decompiler info report".into())
     );
+
+    let nef_path = dir.path().join("validation.nef");
+    let manifest_path = dir.path().join("validation.manifest.json");
+    let info_json_path = dir.path().join("info.json");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(&manifest_path, SAMPLE_MANIFEST).unwrap();
+    let info_json = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("info")
+        .arg("--format")
+        .arg("json")
+        .arg(&nef_path)
+        .output()
+        .expect("info json output");
+    assert!(info_json.status.success());
+    std::fs::write(&info_json_path, &info_json.stdout).unwrap();
+
+    let validation = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("schema")
+        .arg("info")
+        .arg("--validate")
+        .arg(&info_json_path)
+        .output()
+        .expect("schema validation");
+    if !validation.status.success() {
+        panic!(
+            "schema validation stderr: {}",
+            String::from_utf8_lossy(&validation.stderr)
+        );
+    }
+    assert!(String::from_utf8_lossy(&validation.stdout).contains("Validation succeeded"));
 }
 
 const SAMPLE_MANIFEST: &str = r#"

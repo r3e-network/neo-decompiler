@@ -1,7 +1,9 @@
+use std::fmt::Write as _;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use jsonschema::JSONSchema;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -106,11 +108,11 @@ enum TokensFormat {
 #[derive(Debug, Args)]
 struct SchemaArgs {
     /// List available schemas
-    #[arg(long, conflicts_with_all = ["schema", "output", "list_json"])]
+    #[arg(long, conflicts_with_all = ["schema", "output", "list_json", "validate"])]
     list: bool,
 
     /// List schemas as a JSON array
-    #[arg(long, conflicts_with_all = ["schema", "output", "list"])]
+    #[arg(long, conflicts_with_all = ["schema", "output", "list", "validate"])]
     list_json: bool,
 
     /// Schema to print
@@ -120,6 +122,10 @@ struct SchemaArgs {
     /// Write the schema to a file instead of stdout
     #[arg(long, requires = "schema")]
     output: Option<PathBuf>,
+
+    /// Validate a JSON file against the specified schema
+    #[arg(long, requires = "schema", conflicts_with_all = ["list", "list_json"])]
+    validate: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
@@ -166,8 +172,16 @@ impl SchemaKind {
             SchemaKind::Tokens => "tokens",
         }
     }
+
+    fn metadata(self) -> SchemaMetadata {
+        *Self::ALL
+            .iter()
+            .find(|entry| entry.kind == self)
+            .expect("schema metadata available")
+    }
 }
 
+#[derive(Clone, Copy)]
 struct SchemaMetadata {
     kind: SchemaKind,
     version: &'static str,
@@ -188,10 +202,6 @@ impl SchemaMetadata {
             contents,
             description,
         }
-    }
-
-    fn matches(&self, kind: SchemaKind) -> bool {
-        self.kind == kind
     }
 
     fn report(&self) -> SchemaReport<'_> {
@@ -519,17 +529,47 @@ impl Cli {
         let schema = args
             .schema
             .expect("--schema <name> is required unless --list/--list-json is set");
-        let entry = SchemaKind::ALL
-            .iter()
-            .find(|entry| entry.matches(schema))
-            .expect("schema metadata available");
+        let entry = schema.metadata();
         let value: Value = serde_json::from_str(entry.contents)
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        if let Some(target) = args.validate.as_ref() {
+            self.validate_against_schema(entry.kind.as_str(), &value, target)?;
+        }
         let json = self.render_json(&value)?;
         println!("{json}");
         if let Some(path) = args.output.as_ref() {
-            std::fs::write(path, json)?;
+            std::fs::write(path, &json)?;
         }
+        Ok(())
+    }
+
+    fn validate_against_schema(
+        &self,
+        schema_name: &str,
+        schema_value: &Value,
+        path: &Path,
+    ) -> Result<()> {
+        let compiled = JSONSchema::compile(schema_value)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+        let data = std::fs::read_to_string(path)?;
+        let instance: Value = serde_json::from_str(&data)
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
+        if let Err(errors) = compiled.validate(&instance) {
+            let mut buffer = String::from("schema validation failed:\n");
+            for error in errors {
+                let mut path = error.instance_path.to_string();
+                if path.is_empty() {
+                    path.push_str("<root>");
+                }
+                let _ = writeln!(&mut buffer, "- {path}: {error}");
+            }
+            return Err(io::Error::new(io::ErrorKind::InvalidData, buffer).into());
+        }
+        println!(
+            "Validation succeeded for {} against {} schema",
+            path.display(),
+            schema_name
+        );
         Ok(())
     }
 

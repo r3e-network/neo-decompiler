@@ -45,6 +45,6 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Ship the JSON schema documents inside the binary (`neo-decompiler schema …`)
   so automation can fetch canonical schemas without cloning the repo, while the
   command now honours `--json-compact`, lists schemas (with versions) via text
-  or JSON, and can persist files via `--output`.
+  or JSON, supports `--validate path.json`, and can persist files via `--output`.
 - Aggregate native-contract warnings into a top-level `warnings` array in every
   JSON report so scripting environments no longer need to parse free text.

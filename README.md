@@ -252,6 +252,13 @@ and description) or `--list-json` for machine-readable listings, and
 `--json-compact` or `--output schema.json`) to print or persist them without
 cloning the repository.
 
+To validate an existing JSON report:
+
+```bash
+neo-decompiler info --format json contract.nef > info.json
+neo-decompiler schema --schema info --validate info.json
+```
+
 ## Development
 ```bash
 cargo fmt
