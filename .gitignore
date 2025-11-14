@@ -1,6 +1,7 @@
 # Rust build artifacts
 /target/
 Cargo.lock
+TestingArtifacts/decompiled/
 
 # IDE files
 .vscode/

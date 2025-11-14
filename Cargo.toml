@@ -27,6 +27,7 @@ jsonschema = { version = "0.17", default-features = false }
 assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.10"
+base64 = "0.21"
 
 [features]
 default = []
