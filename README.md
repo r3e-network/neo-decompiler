@@ -163,9 +163,9 @@ The disassembler prints informative comments for opcodes that are not yet transl
 `tools/generate_opcodes.py` (which regenerates `src/opcodes_generated.rs`) and add
 handling in `src/decompiler.rs`/`src/cli.rs` for any new instructions.
 
--## Scope and limitations
+## Scope and limitations
 - NEF checksums are verified using the same double-SHA256 calculation employed
-  by the official toolchain.  Files with mismatching checksums are rejected.
+  by the official toolchain. Files with mismatching checksums are rejected.
 - The disassembler covers the opcodes exercised by our tests (including the
   various `PUSH*` forms, short/long jumps, calls, and `SYSCALL`). Unrecognised
   opcodes still produce informative comments so you can decide how to extend the

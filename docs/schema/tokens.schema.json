@@ -15,13 +15,43 @@
   "definitions": {
     "methodToken": {
       "type": "object",
+      "required": [
+        "method",
+        "hash_le",
+        "hash_be",
+        "parameters",
+        "returns",
+        "call_flags",
+        "call_flag_labels"
+      ],
       "properties": {
         "method": {"type": "string"},
-        "hash_le": {"type": "string"},
-        "hash_be": {"type": "string"},
+        "hash_le": {"type": "string", "pattern": "^[0-9A-F]+$"},
+        "hash_be": {"type": "string", "pattern": "^[0-9A-F]+$"},
+        "parameters": {"type": "integer", "minimum": 0},
+        "returns": {"type": "boolean"},
+        "call_flags": {"type": "integer", "minimum": 0, "maximum": 255},
+        "call_flag_labels": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "native_contract": {
+          "oneOf": [
+            {"$ref": "#/definitions/nativeContract"},
+            {"type": "null"}
+          ]
+        },
         "warning": {"type": ["string", "null"]}
-      },
-      "required": ["method", "hash_le", "hash_be"]
+      }
+    },
+    "nativeContract": {
+      "type": "object",
+      "required": ["contract", "label"],
+      "properties": {
+        "contract": {"type": "string"},
+        "method": {"type": ["string", "null"]},
+        "label": {"type": "string"}
+      }
     }
   }
 }

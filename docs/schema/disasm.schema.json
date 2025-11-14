@@ -9,17 +9,53 @@
     "warnings": {"type": "array", "items": {"type": "string"}},
     "instructions": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "offset": {"type": "integer"},
-          "opcode": {"type": "string"},
-          "operand": {"type": ["string", "null"]},
-          "operand_kind": {"type": ["string", "null"]},
-          "operand_value": {"type": ["object", "null"]}
-        },
-        "required": ["offset", "opcode"]
+      "items": {"$ref": "#/definitions/instruction"}
+    }
+  },
+  "definitions": {
+    "instruction": {
+      "type": "object",
+      "required": ["offset", "opcode"],
+      "properties": {
+        "offset": {"type": "integer", "minimum": 0},
+        "opcode": {"type": "string"},
+        "operand": {"type": ["string", "null"]},
+        "operand_kind": {"type": ["string", "null"]},
+        "operand_value": {
+          "oneOf": [
+            {"$ref": "#/definitions/operandValue"},
+            {"type": "null"}
+          ]
+        }
       }
+    },
+    "operandValue": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "I8",
+            "I16",
+            "I32",
+            "I64",
+            "U8",
+            "U16",
+            "U32",
+            "Bool",
+            "Bytes",
+            "Jump",
+            "Jump32",
+            "Syscall",
+            "Null"
+          ]
+        },
+        "value": {
+          "type": ["integer", "string", "boolean"]
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

@@ -3,29 +3,93 @@
   "$id": "https://github.com/r3e-network/neo-decompiler/docs/schema/info.schema.json",
   "title": "neo-decompiler info report",
   "type": "object",
-  "required": ["file", "method_tokens", "warnings"],
+  "required": [
+    "file",
+    "compiler",
+    "script_length",
+    "script_hash_le",
+    "script_hash_be",
+    "checksum",
+    "method_tokens",
+    "warnings"
+  ],
   "properties": {
     "file": {"type": "string"},
     "manifest_path": {"type": ["string", "null"]},
-    "compiler": {"type": ["string", "null"]},
+    "compiler": {"type": "string"},
     "source": {"type": ["string", "null"]},
-    "script_length": {"type": "integer"},
+    "script_length": {"type": "integer", "minimum": 0},
     "script_hash_le": {"type": "string", "pattern": "^[0-9A-F]+$"},
     "script_hash_be": {"type": "string", "pattern": "^[0-9A-F]+$"},
-    "checksum": {"type": "string"},
+    "checksum": {"type": "string", "pattern": "^0x[0-9A-F]{8}$"},
     "method_tokens": {
       "type": "array",
       "items": {"$ref": "#/definitions/methodToken"}
     },
-    "manifest": {"$ref": "#/definitions/manifestSummary"},
+    "manifest": {
+      "oneOf": [
+        {"$ref": "#/definitions/manifestSummary"},
+        {"type": "null"}
+      ]
+    },
     "warnings": {
       "type": "array",
       "items": {"type": "string"}
     }
   },
   "definitions": {
+    "methodToken": {
+      "type": "object",
+      "required": [
+        "method",
+        "hash_le",
+        "hash_be",
+        "parameters",
+        "returns",
+        "call_flags",
+        "call_flag_labels"
+      ],
+      "properties": {
+        "method": {"type": "string"},
+        "hash_le": {"type": "string", "pattern": "^[0-9A-F]+$"},
+        "hash_be": {"type": "string", "pattern": "^[0-9A-F]+$"},
+        "parameters": {"type": "integer", "minimum": 0},
+        "returns": {"type": "boolean"},
+        "call_flags": {"type": "integer", "minimum": 0, "maximum": 255},
+        "call_flag_labels": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "native_contract": {
+          "oneOf": [
+            {"$ref": "#/definitions/nativeContract"},
+            {"type": "null"}
+          ]
+        },
+        "warning": {"type": ["string", "null"]}
+      }
+    },
+    "nativeContract": {
+      "type": "object",
+      "required": ["contract", "label"],
+      "properties": {
+        "contract": {"type": "string"},
+        "method": {"type": ["string", "null"]},
+        "label": {"type": "string"}
+      }
+    },
     "manifestSummary": {
-      "type": ["object", "null"],
+      "type": "object",
+      "required": [
+        "name",
+        "supported_standards",
+        "storage",
+        "payable",
+        "methods",
+        "events",
+        "permissions",
+        "abi"
+      ],
       "properties": {
         "name": {"type": "string"},
         "supported_standards": {
@@ -34,55 +98,124 @@
         },
         "storage": {"type": "boolean"},
         "payable": {"type": "boolean"},
+        "methods": {"type": "integer", "minimum": 0},
+        "events": {"type": "integer", "minimum": 0},
         "permissions": {
           "type": "array",
           "items": {"$ref": "#/definitions/permissionSummary"}
         },
-        "trusts": {"$ref": "#/definitions/trustSummary"},
-        "abi": {
-          "type": "object",
-          "properties": {
-            "methods": {"type": "array"},
-            "events": {"type": "array"}
-          }
-        }
+        "trusts": {
+          "oneOf": [
+            {"$ref": "#/definitions/trustSummary"},
+            {"type": "null"}
+          ]
+        },
+        "abi": {"$ref": "#/definitions/abiSummary"}
       }
     },
     "permissionSummary": {
       "type": "object",
+      "required": ["contract", "methods"],
       "properties": {
-        "contract": {
-          "type": "object",
-          "properties": {"type": {"type": "string"}, "value": {"type": ["string", "null"]}}
+        "contract": {"$ref": "#/definitions/permissionContract"},
+        "methods": {"$ref": "#/definitions/permissionMethods"}
+      }
+    },
+    "permissionContract": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["Wildcard", "Hash", "Group", "Other"]
         },
-        "methods": {
-          "type": "object",
-          "properties": {"type": {"type": "string"}, "value": {"type": ["array", "string", "null"]}}
+        "value": {
+          "type": ["string", "number", "boolean", "object", "array", "null"]
+        }
+      }
+    },
+    "permissionMethods": {
+      "type": "object",
+      "required": ["type", "value"],
+      "properties": {
+        "type": {"type": "string", "enum": ["Wildcard", "Methods"]},
+        "value": {
+          "oneOf": [
+            {"type": "string"},
+            {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          ]
         }
       }
     },
     "trustSummary": {
-      "type": ["object", "null"],
+      "type": "object",
+      "required": ["type"],
       "properties": {
-        "type": {"type": "string"},
-        "value": {"type": ["array", "string", "null"]}
+        "type": {
+          "type": "string",
+          "enum": ["Wildcard", "Contracts", "Other"]
+        },
+        "value": {
+          "oneOf": [
+            {"type": "string"},
+            {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            {"type": "object"},
+            {"type": "null"}
+          ]
+        }
       }
     },
-    "methodToken": {
+    "abiSummary": {
       "type": "object",
+      "required": ["methods", "events"],
       "properties": {
-        "method": {"type": "string"},
-        "hash_le": {"type": "string"},
-        "hash_be": {"type": "string"},
-        "parameters": {"type": "integer"},
-        "returns": {"type": "boolean"},
-        "call_flags": {"type": "integer"},
-        "call_flag_labels": {
+        "methods": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {"$ref": "#/definitions/abiMethod"}
         },
-        "native_contract": {"type": ["object", "null"]},
-        "warning": {"type": ["string", "null"]}
+        "events": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/abiEvent"}
+        }
+      }
+    },
+    "abiMethod": {
+      "type": "object",
+      "required": ["name", "parameters", "return_type", "safe"],
+      "properties": {
+        "name": {"type": "string"},
+        "parameters": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/abiParameter"}
+        },
+        "return_type": {"type": "string"},
+        "safe": {"type": "boolean"},
+        "offset": {"type": ["integer", "null"]}
+      }
+    },
+    "abiEvent": {
+      "type": "object",
+      "required": ["name", "parameters"],
+      "properties": {
+        "name": {"type": "string"},
+        "parameters": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/abiParameter"}
+        }
+      }
+    },
+    "abiParameter": {
+      "type": "object",
+      "required": ["name", "ty"],
+      "properties": {
+        "name": {"type": "string"},
+        "ty": {"type": "string"}
       }
     }
   }
