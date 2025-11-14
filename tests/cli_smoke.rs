@@ -407,17 +407,30 @@ fn info_command_loads_manifest_when_available() {
 
 #[test]
 fn schema_command_outputs_embedded_schema() {
-    let output = Command::cargo_bin("neo-decompiler")
+    let pretty = Command::cargo_bin("neo-decompiler")
         .unwrap()
         .arg("schema")
         .arg("info")
         .output()
         .expect("schema command");
-    assert!(output.status.success());
-    let schema: Value = serde_json::from_slice(&output.stdout).expect("valid schema json");
+    assert!(pretty.status.success());
+    let schema: Value = serde_json::from_slice(&pretty.stdout).expect("valid schema json");
     assert_eq!(
         schema["title"],
         Value::String("neo-decompiler info report".into())
+    );
+
+    let compact = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("--json-compact")
+        .arg("schema")
+        .arg("info")
+        .output()
+        .expect("compact schema command");
+    assert!(compact.status.success());
+    assert!(
+        compact.stdout.len() < pretty.stdout.len(),
+        "compact schema output should be smaller"
     );
 }
 

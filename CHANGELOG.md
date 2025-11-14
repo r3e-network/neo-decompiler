@@ -43,6 +43,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - Surface manifest groups (committee pubkeys/signatures) in both text and JSON
   outputs, plus document the new field in the README and schemas.
 - Ship the JSON schema documents inside the binary (`neo-decompiler schema …`)
-  so automation can fetch canonical schemas without cloning the repo.
+  so automation can fetch canonical schemas without cloning the repo, and let
+  the command honour `--json-compact` for whitespace-sensitive tooling.
 - Aggregate native-contract warnings into a top-level `warnings` array in every
   JSON report so scripting environments no longer need to parse free text.

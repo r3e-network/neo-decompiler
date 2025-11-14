@@ -18,8 +18,9 @@ documents that describe the machine-readable output of the CLI commands:
 - Consumers should pin to a specific commit or release tag to guarantee stability.
 - The Rust test suite (`tests/cli_smoke.rs`) validates the CLI output against the
   checked-in schemas so regressions are caught during CI.
-- The CLI can print any schema via `neo-decompiler schema <info|disasm|decompile|tokens>`,
-  which embeds the documents directly into the binary for deterministic access.
+- The CLI can print any schema via `neo-decompiler schema <info|disasm|decompile|tokens>`
+  (combine with `--json-compact` to strip whitespace), ensuring deterministic access
+  without cloning the repository.
 
 ## Validating output
 

@@ -413,8 +413,9 @@ impl Cli {
     }
 
     fn run_schema(&self, schema: SchemaKind) -> Result<()> {
-        println!("{}", schema.contents());
-        Ok(())
+        let value: Value = serde_json::from_str(schema.contents())
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        self.print_json(&value)
     }
 
     fn resolve_manifest_path(&self, nef_path: &Path) -> Option<PathBuf> {
