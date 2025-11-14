@@ -488,7 +488,8 @@ fn schema_command_outputs_embedded_schema() {
         .output()
         .expect("info json output");
     assert!(info_json.status.success());
-    std::fs::write(&info_json_path, &info_json.stdout).unwrap();
+    let info_json_bytes = info_json.stdout.clone();
+    std::fs::write(&info_json_path, &info_json_bytes).unwrap();
 
     let validation = Command::cargo_bin("neo-decompiler")
         .unwrap()
@@ -505,6 +506,23 @@ fn schema_command_outputs_embedded_schema() {
         );
     }
     assert!(String::from_utf8_lossy(&validation.stdout).contains("Validation succeeded"));
+
+    let stdin_validation = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("schema")
+        .arg("info")
+        .arg("--validate")
+        .arg("-")
+        .write_stdin(info_json_bytes.clone())
+        .output()
+        .expect("schema validation via stdin");
+    if !stdin_validation.status.success() {
+        panic!(
+            "schema validation (stdin) stderr: {}",
+            String::from_utf8_lossy(&stdin_validation.stderr)
+        );
+    }
+    assert!(String::from_utf8_lossy(&stdin_validation.stdout).contains("Validation succeeded"));
 }
 
 const SAMPLE_MANIFEST: &str = r#"

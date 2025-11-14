@@ -1,5 +1,5 @@
 use std::fmt::Write as _;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -551,7 +551,13 @@ impl Cli {
     ) -> Result<()> {
         let compiled = JSONSchema::compile(schema_value)
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
-        let data = std::fs::read_to_string(path)?;
+        let data = if path == Path::new("-") {
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf)?;
+            buf
+        } else {
+            std::fs::read_to_string(path)?
+        };
         let instance: Value = serde_json::from_str(&data)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
         if let Err(errors) = compiled.validate(&instance) {

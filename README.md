@@ -257,6 +257,8 @@ To validate an existing JSON report:
 ```bash
 neo-decompiler info --format json contract.nef > info.json
 neo-decompiler schema --schema info --validate info.json
+# or pipe via stdin
+neo-decompiler schema --schema info --validate - < info.json
 ```
 
 ## Development
