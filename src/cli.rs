@@ -68,6 +68,13 @@ enum Command {
         #[arg(long, value_enum, default_value_t = TokensFormat::Text)]
         format: TokensFormat,
     },
+
+    /// Print one of the bundled JSON schema documents
+    Schema {
+        /// Schema to print
+        #[arg(value_enum)]
+        schema: SchemaKind,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
@@ -100,6 +107,42 @@ enum TokensFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SchemaKind {
+    Info,
+    Disasm,
+    Decompile,
+    Tokens,
+}
+
+impl SchemaKind {
+    fn contents(self) -> &'static str {
+        match self {
+            SchemaKind::Info => INFO_SCHEMA,
+            SchemaKind::Disasm => DISASM_SCHEMA,
+            SchemaKind::Decompile => DECOMPILE_SCHEMA,
+            SchemaKind::Tokens => TOKENS_SCHEMA,
+        }
+    }
+}
+
+const INFO_SCHEMA: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/docs/schema/info.schema.json"
+));
+const DISASM_SCHEMA: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/docs/schema/disasm.schema.json"
+));
+const DECOMPILE_SCHEMA: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/docs/schema/decompile.schema.json"
+));
+const TOKENS_SCHEMA: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/docs/schema/tokens.schema.json"
+));
+
 impl Cli {
     pub fn run(&self) -> Result<()> {
         match &self.command {
@@ -107,6 +150,7 @@ impl Cli {
             Command::Disasm { path, format } => self.run_disasm(path, *format),
             Command::Decompile { path, format } => self.run_decompile(path, *format),
             Command::Tokens { path, format } => self.run_tokens(path, *format),
+            Command::Schema { schema } => self.run_schema(*schema),
         }
     }
 
@@ -365,6 +409,11 @@ impl Cli {
             }
         }
 
+        Ok(())
+    }
+
+    fn run_schema(&self, schema: SchemaKind) -> Result<()> {
+        println!("{}", schema.contents());
         Ok(())
     }
 

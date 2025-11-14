@@ -405,6 +405,22 @@ fn info_command_loads_manifest_when_available() {
         .stdout(contains("Trusts:"));
 }
 
+#[test]
+fn schema_command_outputs_embedded_schema() {
+    let output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("schema")
+        .arg("info")
+        .output()
+        .expect("schema command");
+    assert!(output.status.success());
+    let schema: Value = serde_json::from_slice(&output.stdout).expect("valid schema json");
+    assert_eq!(
+        schema["title"],
+        Value::String("neo-decompiler info report".into())
+    );
+}
+
 const SAMPLE_MANIFEST: &str = r#"
 {
     "name": "SampleToken",
