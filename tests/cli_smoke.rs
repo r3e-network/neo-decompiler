@@ -441,6 +441,17 @@ fn schema_command_outputs_embedded_schema() {
     assert!(listing.contains("info -"));
     assert!(listing.contains("disasm -"));
 
+    let json_list = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("schema")
+        .arg("--list-json")
+        .output()
+        .expect("json schema list");
+    assert!(json_list.status.success());
+    let entries: Value = serde_json::from_slice(&json_list.stdout).expect("json list");
+    assert!(entries.is_array());
+    assert_eq!(entries[0]["name"], Value::String("info".into()));
+
     let dir = tempdir().expect("schema dir");
     let schema_path = dir.path().join("info.schema.json");
     let file_output = Command::cargo_bin("neo-decompiler")

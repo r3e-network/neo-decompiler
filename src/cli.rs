@@ -106,11 +106,15 @@ enum TokensFormat {
 #[derive(Debug, Args)]
 struct SchemaArgs {
     /// List available schemas
-    #[arg(long, conflicts_with_all = ["schema", "output"])]
+    #[arg(long, conflicts_with_all = ["schema", "output", "list_json"])]
     list: bool,
 
+    /// List schemas as a JSON array
+    #[arg(long, conflicts_with_all = ["schema", "output", "list"])]
+    list_json: bool,
+
     /// Schema to print
-    #[arg(value_enum, required_unless_present = "list")]
+    #[arg(value_enum)]
     schema: Option<SchemaKind>,
 
     /// Write the schema to a file instead of stdout
@@ -127,21 +131,28 @@ enum SchemaKind {
 }
 
 impl SchemaKind {
-    const ALL: [SchemaKind; 4] = [
-        SchemaKind::Info,
-        SchemaKind::Disasm,
-        SchemaKind::Decompile,
-        SchemaKind::Tokens,
+    const ALL: [SchemaMetadata; 4] = [
+        SchemaMetadata::new(
+            SchemaKind::Info,
+            INFO_SCHEMA,
+            "NEF metadata, manifest summary, method tokens, warnings",
+        ),
+        SchemaMetadata::new(
+            SchemaKind::Disasm,
+            DISASM_SCHEMA,
+            "Instruction stream with operand metadata",
+        ),
+        SchemaMetadata::new(
+            SchemaKind::Decompile,
+            DECOMPILE_SCHEMA,
+            "High-level output + pseudocode + disassembly",
+        ),
+        SchemaMetadata::new(
+            SchemaKind::Tokens,
+            TOKENS_SCHEMA,
+            "Standalone method-token listing",
+        ),
     ];
-
-    fn contents(self) -> &'static str {
-        match self {
-            SchemaKind::Info => INFO_SCHEMA,
-            SchemaKind::Disasm => DISASM_SCHEMA,
-            SchemaKind::Decompile => DECOMPILE_SCHEMA,
-            SchemaKind::Tokens => TOKENS_SCHEMA,
-        }
-    }
 
     fn as_str(self) -> &'static str {
         match self {
@@ -151,15 +162,39 @@ impl SchemaKind {
             SchemaKind::Tokens => "tokens",
         }
     }
+}
 
-    fn description(self) -> &'static str {
-        match self {
-            SchemaKind::Info => "NEF metadata, manifest summary, method tokens, warnings",
-            SchemaKind::Disasm => "Instruction stream with operand metadata",
-            SchemaKind::Decompile => "High-level output + pseudocode + disassembly",
-            SchemaKind::Tokens => "Standalone method-token listing",
+struct SchemaMetadata {
+    kind: SchemaKind,
+    contents: &'static str,
+    description: &'static str,
+}
+
+impl SchemaMetadata {
+    const fn new(kind: SchemaKind, contents: &'static str, description: &'static str) -> Self {
+        Self {
+            kind,
+            contents,
+            description,
         }
     }
+
+    fn matches(&self, kind: SchemaKind) -> bool {
+        self.kind as u8 == kind as u8
+    }
+
+    fn report(&self) -> SchemaReport<'_> {
+        SchemaReport {
+            name: self.kind.as_str(),
+            description: self.description,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct SchemaReport<'a> {
+    name: &'a str,
+    description: &'a str,
 }
 
 const INFO_SCHEMA: &str = include_str!(concat!(
@@ -449,17 +484,26 @@ impl Cli {
     }
 
     fn run_schema(&self, args: &SchemaArgs) -> Result<()> {
-        if args.list {
-            for kind in SchemaKind::ALL {
-                println!("{} - {}", kind.as_str(), kind.description());
+        if args.list || args.list_json {
+            if args.list_json {
+                let listing: Vec<_> = SchemaKind::ALL.iter().map(SchemaMetadata::report).collect();
+                self.print_json(&listing)?;
+            } else {
+                for entry in SchemaKind::ALL {
+                    println!("{} - {}", entry.kind.as_str(), entry.description);
+                }
             }
             return Ok(());
         }
 
         let schema = args
             .schema
-            .expect("--schema <name> is required unless --list is set");
-        let value: Value = serde_json::from_str(schema.contents())
+            .expect("--schema <name> is required unless --list/--list-json is set");
+        let entry = SchemaKind::ALL
+            .iter()
+            .find(|entry| entry.matches(schema))
+            .expect("schema metadata available");
+        let value: Value = serde_json::from_str(entry.contents)
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         let json = self.render_json(&value)?;
         println!("{json}");
