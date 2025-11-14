@@ -145,24 +145,28 @@ impl SchemaKind {
         SchemaMetadata::new(
             SchemaKind::Info,
             SCHEMA_VERSION,
+            SCHEMA_INFO_PATH,
             INFO_SCHEMA,
             "NEF metadata, manifest summary, method tokens, warnings",
         ),
         SchemaMetadata::new(
             SchemaKind::Disasm,
             SCHEMA_VERSION,
+            SCHEMA_DISASM_PATH,
             DISASM_SCHEMA,
             "Instruction stream with operand metadata",
         ),
         SchemaMetadata::new(
             SchemaKind::Decompile,
             SCHEMA_VERSION,
+            SCHEMA_DECOMPILE_PATH,
             DECOMPILE_SCHEMA,
             "High-level output + pseudocode + disassembly",
         ),
         SchemaMetadata::new(
             SchemaKind::Tokens,
             SCHEMA_VERSION,
+            SCHEMA_TOKENS_PATH,
             TOKENS_SCHEMA,
             "Standalone method-token listing",
         ),
@@ -189,6 +193,7 @@ impl SchemaKind {
 struct SchemaMetadata {
     kind: SchemaKind,
     version: &'static str,
+    path: &'static str,
     contents: &'static str,
     description: &'static str,
 }
@@ -197,12 +202,14 @@ impl SchemaMetadata {
     const fn new(
         kind: SchemaKind,
         version: &'static str,
+        path: &'static str,
         contents: &'static str,
         description: &'static str,
     ) -> Self {
         Self {
             kind,
             version,
+            path,
             contents,
             description,
         }
@@ -212,6 +219,7 @@ impl SchemaMetadata {
         SchemaReport {
             name: self.kind.as_str(),
             version: self.version,
+            path: self.path,
             description: self.description,
         }
     }
@@ -221,10 +229,16 @@ impl SchemaMetadata {
 struct SchemaReport<'a> {
     name: &'a str,
     version: &'a str,
+    path: &'a str,
     description: &'a str,
 }
 
 const SCHEMA_VERSION: &str = "1.0.0";
+
+const SCHEMA_INFO_PATH: &str = "docs/schema/info.schema.json";
+const SCHEMA_DISASM_PATH: &str = "docs/schema/disasm.schema.json";
+const SCHEMA_DECOMPILE_PATH: &str = "docs/schema/decompile.schema.json";
+const SCHEMA_TOKENS_PATH: &str = "docs/schema/tokens.schema.json";
 
 const INFO_SCHEMA: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),

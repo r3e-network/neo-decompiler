@@ -452,6 +452,10 @@ fn schema_command_outputs_embedded_schema() {
     assert!(entries.is_array());
     assert_eq!(entries[0]["name"], Value::String("info".into()));
     assert_eq!(entries[0]["version"], Value::String("1.0.0".into()));
+    assert_eq!(
+        entries[0]["path"],
+        Value::String("docs/schema/info.schema.json".into())
+    );
 
     let dir = tempdir().expect("schema dir");
     let schema_path = dir.path().join("info.schema.json");
