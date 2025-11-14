@@ -1,4 +1,5 @@
 use crate::error::{NefError, Result};
+use crate::util;
 
 use sha2::{Digest, Sha256};
 
@@ -8,7 +9,12 @@ const MAGIC: [u8; 4] = *b"NEF3";
 const MAX_SOURCE_LEN: usize = 256;
 const MAX_METHOD_TOKENS: usize = 128;
 const MAX_SCRIPT_LEN: usize = 1_048_576; // ExecutionEngineLimits.Default.MaxItemSize
-const CALL_FLAGS_ALLOWED_MASK: u8 = 0x0F; // CallFlags::All in Neo runtime
+const CALL_FLAG_READ_STATES: u8 = 0x01;
+const CALL_FLAG_WRITE_STATES: u8 = 0x02;
+const CALL_FLAG_ALLOW_CALL: u8 = 0x04;
+const CALL_FLAG_ALLOW_NOTIFY: u8 = 0x08;
+const CALL_FLAGS_ALLOWED_MASK: u8 =
+    CALL_FLAG_READ_STATES | CALL_FLAG_WRITE_STATES | CALL_FLAG_ALLOW_CALL | CALL_FLAG_ALLOW_NOTIFY;
 
 /// Parsed NEF header information.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +54,44 @@ impl NefFile {
 
         fixed_header_len + source_len + 1 + tokens_len + 2 + script_len
     }
+
+    /// Hash160 of the script (little-endian) as used for the contract script hash.
+    pub fn script_hash(&self) -> [u8; 20] {
+        util::hash160(&self.script)
+    }
+
+    /// Script hash in big-endian form (for explorer comparisons).
+    pub fn script_hash_be(&self) -> [u8; 20] {
+        let mut hash = self.script_hash();
+        hash.reverse();
+        hash
+    }
+}
+
+/// Return the individual call flag labels set on the provided mask.
+pub fn call_flag_labels(flags: u8) -> Vec<&'static str> {
+    let mut labels = Vec::new();
+    if flags & CALL_FLAG_READ_STATES != 0 {
+        labels.push("ReadStates");
+    }
+    if flags & CALL_FLAG_WRITE_STATES != 0 {
+        labels.push("WriteStates");
+    }
+    if flags & CALL_FLAG_ALLOW_CALL != 0 {
+        labels.push("AllowCall");
+    }
+    if flags & CALL_FLAG_ALLOW_NOTIFY != 0 {
+        labels.push("AllowNotify");
+    }
+    labels
+}
+
+/// Return a human-readable list of call flag names for displaying method tokens.
+pub fn describe_call_flags(flags: u8) -> String {
+    if flags == 0 {
+        return "None".into();
+    }
+    call_flag_labels(flags).join("|")
 }
 
 /// Parser for the Neo N3 NEF format.
@@ -400,6 +444,10 @@ mod tests {
         assert!(nef.header.source.is_empty());
         assert_eq!(nef.script, script);
         assert!(nef.method_tokens.is_empty());
+        assert_eq!(
+            util::format_hash(&nef.script_hash()),
+            util::format_hash(&util::hash160(&[0x10, 0x11, 0x40]))
+        );
     }
 
     #[test]
@@ -482,7 +530,7 @@ mod tests {
         data.extend_from_slice(b"_x");
         data.extend_from_slice(&0u16.to_le_bytes());
         data.push(0); // no return
-        data.push(0x01); // call flags
+        data.push(0x10); // call flags (AllowNotify)
         data.extend_from_slice(&0u16.to_le_bytes());
         write_varint(&mut data, script.len() as u32);
         data.extend_from_slice(&script);
@@ -606,5 +654,25 @@ mod tests {
             err,
             crate::error::Error::Nef(NefError::TrailingData { extra: 1 })
         ));
+    }
+
+    #[test]
+    fn describes_call_flags() {
+        assert_eq!(describe_call_flags(0x00), "None");
+        assert_eq!(describe_call_flags(CALL_FLAG_READ_STATES), "ReadStates");
+        assert_eq!(
+            describe_call_flags(CALL_FLAG_READ_STATES | CALL_FLAG_ALLOW_CALL),
+            "ReadStates|AllowCall"
+        );
+        assert_eq!(
+            describe_call_flags(CALL_FLAGS_ALLOWED_MASK),
+            "ReadStates|WriteStates|AllowCall|AllowNotify"
+        );
+    }
+
+    #[test]
+    fn call_flag_labels_report_individual_bits() {
+        let labels = call_flag_labels(CALL_FLAG_READ_STATES | CALL_FLAG_ALLOW_NOTIFY);
+        assert_eq!(labels, vec!["ReadStates", "AllowNotify"]);
     }
 }
