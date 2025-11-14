@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/r3e-network/neo-decompiler/docs/schema/decompile.schema.json",
+  "title": "neo-decompiler decompile report",
+  "type": "object",
+  "required": ["file", "instructions", "method_tokens", "warnings"],
+  "properties": {
+    "file": {"type": "string"},
+    "manifest_path": {"type": ["string", "null"]},
+    "script_hash_le": {"type": "string"},
+    "script_hash_be": {"type": "string"},
+    "high_level": {"type": "string"},
+    "pseudocode": {"type": "string"},
+    "instructions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "offset": {"type": "integer"},
+          "opcode": {"type": "string"},
+          "operand": {"type": ["string", "null"]},
+          "operand_kind": {"type": ["string", "null"]},
+          "operand_value": {"type": ["object", "null"]}
+        },
+        "required": ["offset", "opcode"]
+      }
+    },
+    "method_tokens": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/methodToken"}
+    },
+    "manifest": {"type": ["object", "null"]},
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "definitions": {
+    "methodToken": {
+      "type": "object",
+      "properties": {
+        "method": {"type": "string"}
+      }
+    }
+  }
+}

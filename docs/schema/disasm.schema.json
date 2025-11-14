@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/r3e-network/neo-decompiler/docs/schema/disasm.schema.json",
+  "title": "neo-decompiler disassembly report",
+  "type": "object",
+  "required": ["file", "instructions", "warnings"],
+  "properties": {
+    "file": {"type": "string"},
+    "warnings": {"type": "array", "items": {"type": "string"}},
+    "instructions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "offset": {"type": "integer"},
+          "opcode": {"type": "string"},
+          "operand": {"type": ["string", "null"]},
+          "operand_kind": {"type": ["string", "null"]},
+          "operand_value": {"type": ["object", "null"]}
+        },
+        "required": ["offset", "opcode"]
+      }
+    }
+  }
+}

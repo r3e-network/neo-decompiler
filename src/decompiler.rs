@@ -5,9 +5,9 @@ use std::path::Path;
 use crate::disassembler::Disassembler;
 use crate::error::Result;
 use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
-use crate::manifest::ContractManifest;
+use crate::manifest::{ContractManifest, ManifestPermission};
 use crate::native_contracts;
-use crate::nef::{NefFile, NefParser};
+use crate::nef::{describe_call_flags, NefFile, NefParser};
 use crate::util;
 
 /// Main entry point used by the CLI and tests.
@@ -119,6 +119,19 @@ fn render_high_level(
         .unwrap_or("NeoContract");
 
     writeln!(output, "contract {contract_name} {{").unwrap();
+    let script_hash = nef.script_hash();
+    writeln!(
+        output,
+        "    // script hash (little-endian): {}",
+        util::format_hash(&script_hash)
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    // script hash (big-endian): {}",
+        util::format_hash_be(&script_hash)
+    )
+    .unwrap();
 
     if let Some(manifest) = manifest {
         if !manifest.supported_standards.is_empty() {
@@ -140,6 +153,18 @@ fn render_high_level(
                 writeln!(output, "        payable = true;").unwrap();
             }
             writeln!(output, "    }}").unwrap();
+        }
+
+        if !manifest.permissions.is_empty() {
+            writeln!(output, "    permissions {{").unwrap();
+            for permission in &manifest.permissions {
+                writeln!(output, "        {}", format_permission_entry(permission)).unwrap();
+            }
+            writeln!(output, "    }}").unwrap();
+        }
+
+        if let Some(trusts) = manifest.trusts.as_ref() {
+            writeln!(output, "    trusts = {};", trusts.describe()).unwrap();
         }
 
         if !manifest.abi.methods.is_empty() {
@@ -192,20 +217,33 @@ fn render_high_level(
     if !nef.method_tokens.is_empty() {
         writeln!(output, "    // method tokens declared in NEF").unwrap();
         for token in &nef.method_tokens {
-            let contract_note = native_contracts::lookup(&token.hash)
-                .map(|info| format!(" ({})", info.name))
+            let hint = native_contracts::describe_method_token(&token.hash, &token.method);
+            let contract_note = hint
+                .as_ref()
+                .map(|h| format!(" ({})", h.formatted_label(&token.method)))
                 .unwrap_or_default();
             writeln!(
                 output,
-                "    // {}{} hash={} params={} returns={} flags=0x{:02X}",
+                "    // {}{} hash={} params={} returns={} flags=0x{:02X} ({})",
                 token.method,
                 contract_note,
                 util::format_hash(&token.hash),
                 token.parameters_count,
                 token.has_return_value,
-                token.call_flags
+                token.call_flags,
+                describe_call_flags(token.call_flags)
             )
             .unwrap();
+            if let Some(hint) = hint {
+                if !hint.has_exact_method() {
+                    writeln!(
+                        output,
+                        "    // warning: native contract {} does not expose method {}",
+                        hint.contract, token.method
+                    )
+                    .unwrap();
+                }
+            }
         }
     }
 
@@ -252,6 +290,14 @@ fn format_manifest_type(kind: &str) -> String {
         "any" => "any".into(),
         other => other.to_string(),
     }
+}
+
+fn format_permission_entry(permission: &ManifestPermission) -> String {
+    format!(
+        "contract={} methods={}",
+        permission.contract.describe(),
+        permission.methods.describe()
+    )
 }
 
 #[derive(Debug, Default)]

@@ -1,6 +1,12 @@
 use assert_cmd::Command;
 use predicates::str::contains;
+use serde_json::Value;
 use tempfile::tempdir;
+
+const GAS_TOKEN_HASH: [u8; 20] = [
+    0xCF, 0x76, 0xE2, 0x8B, 0xD0, 0x06, 0x2C, 0x4A, 0x47, 0x8E, 0xE3, 0x55, 0x61, 0x01, 0x13, 0x19,
+    0xF3, 0xCF, 0xA4, 0xD2,
+];
 
 fn write_varint(buf: &mut Vec<u8>, value: u32) {
     match value {
@@ -27,12 +33,12 @@ fn build_sample_nef() -> Vec<u8> {
     data.push(0); // reserved byte
                   // single method token
     data.push(1);
-    data.extend_from_slice(&[0x11; 20]);
-    write_varint(&mut data, 3);
-    data.extend_from_slice(b"foo");
+    data.extend_from_slice(&GAS_TOKEN_HASH);
+    write_varint(&mut data, 8);
+    data.extend_from_slice(b"Transfer");
     data.extend_from_slice(&2u16.to_le_bytes()); // params
     data.push(1); // has return value
-    data.push(0x0F); // call flags
+    data.push(0x0F); // call flags (CallFlags::All)
     data.extend_from_slice(&0u16.to_le_bytes()); // reserved word
     write_varint(&mut data, script.len() as u32);
     data.extend_from_slice(&script);
@@ -71,7 +77,87 @@ fn info_command_prints_header() {
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(contains("Method tokens: 1"));
+        .stdout(contains("Method tokens: 1"))
+        .stdout(contains("#0: hash="))
+        .stdout(contains("(GasToken::Transfer)"))
+        .stdout(contains(
+            "Script hash (LE): 9DE87DC65A6A581E502CAE845C6F13645B10C5EA",
+        ))
+        .stdout(contains(
+            "Script hash (BE): EAC5105B64136F5C84AE2C501E586A5AC67DE89D",
+        ))
+        .stdout(contains(
+            "flags=0x0F (ReadStates|WriteStates|AllowCall|AllowNotify)",
+        ));
+}
+
+#[test]
+fn info_command_supports_json_output() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    let manifest_path = dir.path().join("contract.manifest.json");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(&manifest_path, SAMPLE_MANIFEST).unwrap();
+
+    let output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("info")
+        .arg("--format")
+        .arg("json")
+        .arg(&nef_path)
+        .output()
+        .expect("json output");
+
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).expect("valid json");
+    assert_eq!(
+        value["script_hash_le"],
+        Value::String("9DE87DC65A6A581E502CAE845C6F13645B10C5EA".into())
+    );
+    let tokens = value["method_tokens"].as_array().expect("tokens array");
+    assert!(!tokens.is_empty());
+    assert_eq!(
+        value["manifest"]["abi"]["methods"][0]["name"],
+        Value::String("symbol".into())
+    );
+    assert_eq!(
+        value["manifest"]["permissions"][0]["contract"]["type"],
+        Value::String("Hash".into())
+    );
+    assert_eq!(
+        value["manifest"]["trusts"]["type"],
+        Value::String("Contracts".into())
+    );
+    assert_eq!(
+        value["manifest_path"],
+        Value::String(manifest_path.display().to_string())
+    );
+    assert!(value["warnings"].is_array());
+    assert_eq!(
+        value["manifest"]["permissions"][1]["contract"]["type"],
+        Value::String("Group".into())
+    );
+    assert_eq!(
+        value["manifest"]["permissions"][1]["contract"]["value"],
+        Value::String("03ABCD".into())
+    );
+
+    let compact = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("info")
+        .arg("--format")
+        .arg("json")
+        .arg("--json-compact")
+        .arg(&nef_path)
+        .output()
+        .expect("compact json output");
+    assert!(compact.status.success());
+    assert!(
+        compact.stdout.len() < output.stdout.len(),
+        "compact json should be shorter"
+    );
+    let compact_value: Value = serde_json::from_slice(&compact.stdout).expect("compact json parse");
+    assert_eq!(value, compact_value);
 }
 
 #[test]
@@ -80,13 +166,37 @@ fn disasm_command_outputs_instructions() {
     let nef_path = dir.path().join("contract.nef");
     std::fs::write(&nef_path, build_sample_nef()).unwrap();
 
-    Command::cargo_bin("neo-decompiler")
+    let output = Command::cargo_bin("neo-decompiler")
         .unwrap()
         .arg("disasm")
         .arg(&nef_path)
-        .assert()
-        .success()
-        .stdout(contains("0000: PUSH0"));
+        .output()
+        .expect("disasm output");
+    assert!(output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("0000: PUSH0"));
+
+    let json_output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("disasm")
+        .arg("--format")
+        .arg("json")
+        .arg(&nef_path)
+        .output()
+        .expect("json disasm");
+    assert!(json_output.status.success());
+    let value: Value = serde_json::from_slice(&json_output.stdout).expect("json parse");
+    let instructions = value["instructions"].as_array().expect("array");
+    assert_eq!(instructions[0]["opcode"], "PUSH0");
+    assert_eq!(instructions[0]["offset"], 0);
+    assert_eq!(instructions[0]["operand_kind"], Value::String("I32".into()));
+    assert_eq!(
+        instructions[0]["operand_value"]["type"],
+        Value::String("I32".into())
+    );
+    assert_eq!(instructions[0]["operand_value"]["value"], Value::from(0));
+    assert_eq!(instructions[1]["operand_kind"], Value::String("I32".into()));
+    assert_eq!(instructions[1]["operand_value"]["value"], Value::from(1));
+    assert!(value["warnings"].is_array());
 }
 
 #[test]
@@ -101,7 +211,8 @@ fn decompile_command_outputs_high_level_by_default() {
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(contains("contract NeoContract"));
+        .stdout(contains("contract NeoContract"))
+        .stdout(contains("GasToken::Transfer"));
 }
 
 #[test]
@@ -122,6 +233,58 @@ fn decompile_command_supports_pseudocode_format() {
 }
 
 #[test]
+fn decompile_command_supports_json_format() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    let manifest_path = dir.path().join("contract.manifest.json");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(&manifest_path, SAMPLE_MANIFEST).unwrap();
+
+    let output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("decompile")
+        .arg("--format")
+        .arg("json")
+        .arg(&nef_path)
+        .output()
+        .expect("json decompile");
+    assert!(output.status.success());
+
+    let value: Value = serde_json::from_slice(&output.stdout).expect("json parse");
+    assert!(value["high_level"]
+        .as_str()
+        .expect("string")
+        .contains("contract SampleToken"));
+    assert_eq!(
+        value["manifest_path"],
+        Value::String(manifest_path.display().to_string())
+    );
+    assert_eq!(
+        value["manifest"]["abi"]["methods"][0]["name"],
+        Value::String("symbol".into())
+    );
+    assert_eq!(
+        value["instructions"][0]["opcode"],
+        Value::String("PUSH0".into())
+    );
+    assert_eq!(
+        value["instructions"][0]["operand_value"]["value"],
+        Value::from(0)
+    );
+    assert_eq!(
+        value["manifest"]["permissions"][0]["contract"]["type"],
+        Value::String("Hash".into())
+    );
+    assert_eq!(
+        value["manifest"]["trusts"]["type"],
+        Value::String("Contracts".into())
+    );
+    assert!(value["warnings"].is_array());
+}
+
+#[test]
 fn decompile_command_uses_manifest_when_provided() {
     let dir = tempdir().expect("tempdir");
     let nef_path = dir.path().join("contract.nef");
@@ -138,7 +301,9 @@ fn decompile_command_uses_manifest_when_provided() {
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(contains("contract SampleToken"));
+        .stdout(contains("contract SampleToken"))
+        .stdout(contains("permissions {"))
+        .stdout(contains("trusts = ["));
 }
 
 #[test]
@@ -153,7 +318,32 @@ fn tokens_command_lists_entries() {
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(contains("method=foo"));
+        .stdout(contains("method=Transfer"))
+        .stdout(contains("GasToken::Transfer"))
+        .stdout(contains("AllowCall"));
+}
+
+#[test]
+fn tokens_command_supports_json_output() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+
+    let output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("tokens")
+        .arg("--format")
+        .arg("json")
+        .arg(&nef_path)
+        .output()
+        .expect("json output");
+    assert!(output.status.success());
+
+    let value: Value = serde_json::from_slice(&output.stdout).expect("json parse");
+    let tokens = value["method_tokens"].as_array().expect("array");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0]["native_contract"]["label"], "GasToken::Transfer");
+    assert!(value["warnings"].is_array());
 }
 
 #[test]
@@ -186,7 +376,9 @@ fn info_command_loads_manifest_when_available() {
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(contains("Manifest contract: SampleToken"));
+        .stdout(contains("Manifest contract: SampleToken"))
+        .stdout(contains("Permissions:"))
+        .stdout(contains("Trusts:"));
 }
 
 const SAMPLE_MANIFEST: &str = r#"
@@ -206,7 +398,16 @@ const SAMPLE_MANIFEST: &str = r#"
         ],
         "events": []
     },
-    "permissions": [],
-    "trusts": "*"
+    "permissions": [
+        {
+            "contract": { "hash": "0x0123456789ABCDEFFEDCBA987654321001234567" },
+            "methods": ["symbol"]
+        },
+        {
+            "contract": { "group": "03ABCD" },
+            "methods": "*"
+        }
+    ],
+    "trusts": ["0x89ABCDEF0123456789ABCDEF0123456789ABCDEF"]
 }
 "#;

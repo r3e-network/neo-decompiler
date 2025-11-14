@@ -163,6 +163,54 @@ pub enum ManifestTrusts {
     Other(Value),
 }
 
+impl ManifestPermissionContract {
+    pub fn describe(&self) -> String {
+        match self {
+            ManifestPermissionContract::Wildcard(value) => value.clone(),
+            ManifestPermissionContract::Hash { hash } => format!("hash:{hash}"),
+            ManifestPermissionContract::Group { group } => format!("group:{group}"),
+            ManifestPermissionContract::Other(value) => value.to_string(),
+        }
+    }
+}
+
+impl ManifestPermissionMethods {
+    pub fn describe(&self) -> String {
+        match self {
+            ManifestPermissionMethods::Wildcard(value) => value.clone(),
+            ManifestPermissionMethods::Methods(methods) => {
+                if methods.is_empty() {
+                    "[]".into()
+                } else {
+                    let labelled: Vec<String> = methods
+                        .iter()
+                        .map(|method| format!("\"{method}\""))
+                        .collect();
+                    format!("[{}]", labelled.join(", "))
+                }
+            }
+        }
+    }
+}
+
+impl ManifestTrusts {
+    pub fn describe(&self) -> String {
+        match self {
+            ManifestTrusts::Wildcard(value) => value.clone(),
+            ManifestTrusts::Contracts(values) => {
+                if values.is_empty() {
+                    "[]".into()
+                } else {
+                    let labelled: Vec<String> =
+                        values.iter().map(|value| format!("\"{value}\"")).collect();
+                    format!("[{}]", labelled.join(", "))
+                }
+            }
+            ManifestTrusts::Other(value) => value.to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

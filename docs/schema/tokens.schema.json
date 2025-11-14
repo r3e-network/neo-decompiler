@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/r3e-network/neo-decompiler/docs/schema/tokens.schema.json",
+  "title": "neo-decompiler tokens report",
+  "type": "object",
+  "required": ["file", "method_tokens", "warnings"],
+  "properties": {
+    "file": {"type": "string"},
+    "method_tokens": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/methodToken"}
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "definitions": {
+    "methodToken": {
+      "type": "object",
+      "properties": {
+        "method": {"type": "string"},
+        "hash_le": {"type": "string"},
+        "hash_be": {"type": "string"},
+        "warning": {"type": ["string", "null"]}
+      },
+      "required": ["method", "hash_le", "hash_be"]
+    }
+  }
+}
