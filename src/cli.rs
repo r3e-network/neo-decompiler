@@ -123,8 +123,8 @@ struct SchemaArgs {
     #[arg(long, requires = "schema")]
     output: Option<PathBuf>,
 
-    /// Skip printing the schema when validating
-    #[arg(long, requires = "validate")]
+    /// Skip printing the schema when validating (alias for --quiet)
+    #[arg(long, requires = "validate", alias = "quiet")]
     no_print: bool,
 
     /// Validate a JSON file against the specified schema
