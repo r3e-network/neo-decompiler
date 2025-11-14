@@ -1,7 +1,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -70,11 +70,7 @@ enum Command {
     },
 
     /// Print one of the bundled JSON schema documents
-    Schema {
-        /// Schema to print
-        #[arg(value_enum)]
-        schema: SchemaKind,
-    },
+    Schema(SchemaArgs),
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
@@ -107,6 +103,17 @@ enum TokensFormat {
     Json,
 }
 
+#[derive(Debug, Args)]
+struct SchemaArgs {
+    /// List available schemas
+    #[arg(long)]
+    list: bool,
+
+    /// Schema to print
+    #[arg(value_enum, required_unless_present = "list")]
+    schema: Option<SchemaKind>,
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum SchemaKind {
     Info,
@@ -116,12 +123,28 @@ enum SchemaKind {
 }
 
 impl SchemaKind {
+    const ALL: [SchemaKind; 4] = [
+        SchemaKind::Info,
+        SchemaKind::Disasm,
+        SchemaKind::Decompile,
+        SchemaKind::Tokens,
+    ];
+
     fn contents(self) -> &'static str {
         match self {
             SchemaKind::Info => INFO_SCHEMA,
             SchemaKind::Disasm => DISASM_SCHEMA,
             SchemaKind::Decompile => DECOMPILE_SCHEMA,
             SchemaKind::Tokens => TOKENS_SCHEMA,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            SchemaKind::Info => "info",
+            SchemaKind::Disasm => "disasm",
+            SchemaKind::Decompile => "decompile",
+            SchemaKind::Tokens => "tokens",
         }
     }
 }
@@ -150,7 +173,7 @@ impl Cli {
             Command::Disasm { path, format } => self.run_disasm(path, *format),
             Command::Decompile { path, format } => self.run_decompile(path, *format),
             Command::Tokens { path, format } => self.run_tokens(path, *format),
-            Command::Schema { schema } => self.run_schema(*schema),
+            Command::Schema(args) => self.run_schema(args),
         }
     }
 
@@ -412,7 +435,17 @@ impl Cli {
         Ok(())
     }
 
-    fn run_schema(&self, schema: SchemaKind) -> Result<()> {
+    fn run_schema(&self, args: &SchemaArgs) -> Result<()> {
+        if args.list {
+            for kind in SchemaKind::ALL {
+                println!("{}", kind.as_str());
+            }
+            return Ok(());
+        }
+
+        let schema = args
+            .schema
+            .expect("--schema <name> is required unless --list is set");
         let value: Value = serde_json::from_str(schema.contents())
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         self.print_json(&value)

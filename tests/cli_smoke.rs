@@ -428,10 +428,18 @@ fn schema_command_outputs_embedded_schema() {
         .output()
         .expect("compact schema command");
     assert!(compact.status.success());
-    assert!(
-        compact.stdout.len() < pretty.stdout.len(),
-        "compact schema output should be smaller"
-    );
+    assert!(compact.stdout.len() < pretty.stdout.len());
+
+    let list = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("schema")
+        .arg("--list")
+        .output()
+        .expect("list schemas");
+    assert!(list.status.success());
+    let listing = String::from_utf8_lossy(&list.stdout);
+    assert!(listing.contains("info"));
+    assert!(listing.contains("disasm"));
 }
 
 const SAMPLE_MANIFEST: &str = r#"

@@ -245,9 +245,10 @@ Example (excerpt from `info --format json`):
 Formal schema files live under [`docs/schema`](docs/schema) for every JSON command
 (`info.schema.json`, `disasm.schema.json`, `decompile.schema.json`, `tokens.schema.json`).
 See [`docs/schema/README.md`](docs/schema/README.md) for versioning guarantees,
-validation instructions, and per-command details. You can print any bundled schema
-via `neo-decompiler schema <info|disasm|decompile|tokens>` (add `--json-compact`
-to minimise whitespace).
+validation instructions, and per-command details. Use
+`neo-decompiler schema --list` to discover the available schemas, and
+`neo-decompiler schema <info|disasm|decompile|tokens>` (optionally with
+`--json-compact`) to print them without cloning the repository.
 
 ## Development
 ```bash
