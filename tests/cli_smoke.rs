@@ -438,8 +438,8 @@ fn schema_command_outputs_embedded_schema() {
         .expect("list schemas");
     assert!(list.status.success());
     let listing = String::from_utf8_lossy(&list.stdout);
-    assert!(listing.contains("info"));
-    assert!(listing.contains("disasm"));
+    assert!(listing.contains("info -"));
+    assert!(listing.contains("disasm -"));
 
     let dir = tempdir().expect("schema dir");
     let schema_path = dir.path().join("info.schema.json");

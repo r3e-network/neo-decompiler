@@ -151,6 +151,15 @@ impl SchemaKind {
             SchemaKind::Tokens => "tokens",
         }
     }
+
+    fn description(self) -> &'static str {
+        match self {
+            SchemaKind::Info => "NEF metadata, manifest summary, method tokens, warnings",
+            SchemaKind::Disasm => "Instruction stream with operand metadata",
+            SchemaKind::Decompile => "High-level output + pseudocode + disassembly",
+            SchemaKind::Tokens => "Standalone method-token listing",
+        }
+    }
 }
 
 const INFO_SCHEMA: &str = include_str!(concat!(
@@ -442,7 +451,7 @@ impl Cli {
     fn run_schema(&self, args: &SchemaArgs) -> Result<()> {
         if args.list {
             for kind in SchemaKind::ALL {
-                println!("{}", kind.as_str());
+                println!("{} - {}", kind.as_str(), kind.description());
             }
             return Ok(());
         }
