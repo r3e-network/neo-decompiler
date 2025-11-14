@@ -29,8 +29,8 @@ impl Disassembler {
             .get(offset)
             .ok_or(DisassemblyError::UnexpectedEof { offset })?;
         let opcode = OpCode::from_byte(opcode_byte);
-        if let OpCode::Unknown(op) = opcode {
-            return Err(DisassemblyError::UnknownOpcode { opcode: op, offset }.into());
+        if let OpCode::Unknown(_) = opcode {
+            return Ok((Instruction::new(offset, opcode, None), 1));
         }
 
         let (operand, consumed) = self.read_operand(opcode, bytecode, offset)?;
@@ -180,13 +180,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_opcode() {
+    fn records_unknown_opcode() {
         let bytecode = [0xFF];
-        let err = Disassembler::new().disassemble(&bytecode).unwrap_err();
-        assert!(matches!(
-            err,
-            crate::error::Error::Disassembly(DisassemblyError::UnknownOpcode { opcode: 0xFF, .. })
-        ));
+        let instructions = Disassembler::new()
+            .disassemble(&bytecode)
+            .expect("disassembly succeeds");
+        assert_eq!(instructions.len(), 1);
+        assert!(matches!(instructions[0].opcode, OpCode::Unknown(0xFF)));
     }
 
     #[test]
