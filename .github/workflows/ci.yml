@@ -90,7 +90,7 @@ jobs:
     - name: Build
       run: cargo build --release --verbose
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: neo-decompiler-${{ matrix.os }}
         path: target/release/neo-decompiler*
