@@ -38,5 +38,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   high-level outputs so ABI metadata matches README claims.
 - Emit JSON schema files (docs/schema) and reference them in the README so
   integrations can validate payloads.
+- Document schema versioning/validation steps and extend tests so every JSON
+  command is validated against the published schemas.
+- Surface manifest groups (committee pubkeys/signatures) in both text and JSON
+  outputs, plus document the new field in the README and schemas.
 - Aggregate native-contract warnings into a top-level `warnings` array in every
   JSON report so scripting environments no longer need to parse free text.

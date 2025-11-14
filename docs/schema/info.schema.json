@@ -85,6 +85,7 @@
         "supported_standards",
         "storage",
         "payable",
+        "groups",
         "methods",
         "events",
         "permissions",
@@ -98,6 +99,10 @@
         },
         "storage": {"type": "boolean"},
         "payable": {"type": "boolean"},
+        "groups": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/groupSummary"}
+        },
         "methods": {"type": "integer", "minimum": 0},
         "events": {"type": "integer", "minimum": 0},
         "permissions": {
@@ -119,6 +124,14 @@
       "properties": {
         "contract": {"$ref": "#/definitions/permissionContract"},
         "methods": {"$ref": "#/definitions/permissionMethods"}
+      }
+    },
+    "groupSummary": {
+      "type": "object",
+      "required": ["pubkey", "signature"],
+      "properties": {
+        "pubkey": {"type": "string"},
+        "signature": {"type": "string"}
       }
     },
     "permissionContract": {

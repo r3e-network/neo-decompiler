@@ -145,6 +145,14 @@ fn info_command_supports_json_output() {
         value["manifest"]["permissions"][1]["contract"]["value"],
         Value::String("03ABCD".into())
     );
+    assert_eq!(
+        value["manifest"]["groups"][0]["pubkey"],
+        Value::String("039999999999999999999999999999999999999999999999999999999999999999".into())
+    );
+    assert_eq!(
+        value["manifest"]["groups"][0]["signature"],
+        Value::String("deadbeef".into())
+    );
     assert_schema(SchemaKind::Info, &value);
 
     let compact = Command::cargo_bin("neo-decompiler")
@@ -288,6 +296,10 @@ fn decompile_command_supports_json_format() {
         Value::String("Contracts".into())
     );
     assert!(value["warnings"].is_array());
+    assert_eq!(
+        value["manifest"]["groups"][0]["pubkey"],
+        Value::String("039999999999999999999999999999999999999999999999999999999999999999".into())
+    );
     assert_schema(SchemaKind::Decompile, &value);
 }
 
@@ -385,6 +397,10 @@ fn info_command_loads_manifest_when_available() {
         .assert()
         .success()
         .stdout(contains("Manifest contract: SampleToken"))
+        .stdout(contains("Groups:"))
+        .stdout(contains(
+            "pubkey=039999999999999999999999999999999999999999999999999999999999999999",
+        ))
         .stdout(contains("Permissions:"))
         .stdout(contains("Trusts:"));
 }
@@ -392,6 +408,12 @@ fn info_command_loads_manifest_when_available() {
 const SAMPLE_MANIFEST: &str = r#"
 {
     "name": "SampleToken",
+    "groups": [
+        {
+            "pubkey": "039999999999999999999999999999999999999999999999999999999999999999",
+            "signature": "deadbeef"
+        }
+    ],
     "supportedstandards": ["NEP-17"],
     "features": { "storage": true, "payable": false },
     "abi": {

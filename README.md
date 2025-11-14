@@ -17,7 +17,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 - Opcode metadata generated from the upstream Neo VM source (unknown mnemonics
   fall back to informative comments, and new opcodes can be added via
   `tools/generate_opcodes.py`)
-- Manifest parsing (`.manifest.json`) with ABI, feature, permission, and trust details that surface in both text and JSON outputs
+- Manifest parsing (`.manifest.json`) with ABI, feature, group, permission, and trust details that surface in both text and JSON outputs
 - Disassembly for common opcodes such as `PUSH*`, arithmetic operations, jumps,
   calls, and `SYSCALL`
 - Syscall metadata resolution with human-readable names and call flags
@@ -218,6 +218,12 @@ Example (excerpt from `info --format json`):
   "file": "path/to/contract.nef",
   "manifest_path": "path/to/contract.manifest.json",
   "manifest": {
+    "groups": [
+      {
+        "pubkey": "03ab...ef",
+        "signature": "00ff..."
+      }
+    ],
     "permissions": [
       {
         "contract": { "type": "Hash", "value": "0x0123..." },
@@ -238,8 +244,8 @@ Example (excerpt from `info --format json`):
 
 Formal schema files live under [`docs/schema`](docs/schema) for every JSON command
 (`info.schema.json`, `disasm.schema.json`, `decompile.schema.json`, `tokens.schema.json`).
-Schemas follow semantic versioning (breaking changes bump the major version); consumers
-should pin to a known commit/tag when validating automation pipelines.
+See [`docs/schema/README.md`](docs/schema/README.md) for versioning guarantees,
+validation instructions, and per-command details.
 
 ## Development
 ```bash

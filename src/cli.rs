@@ -171,6 +171,15 @@ impl Cli {
                 "Features: storage={} payable={}",
                 manifest.features.storage, manifest.features.payable
             );
+            if !manifest.groups.is_empty() {
+                println!("Groups:");
+                for group in &manifest.groups {
+                    println!(
+                        "    - pubkey={} signature={}",
+                        group.pubkey, group.signature
+                    );
+                }
+            }
             if !manifest.permissions.is_empty() {
                 println!("Permissions:");
                 for permission in &manifest.permissions {
@@ -454,6 +463,14 @@ fn summarize_manifest(manifest: &ContractManifest) -> ManifestSummary {
         supported_standards: manifest.supported_standards.clone(),
         storage: manifest.features.storage,
         payable: manifest.features.payable,
+        groups: manifest
+            .groups
+            .iter()
+            .map(|group| GroupSummary {
+                pubkey: group.pubkey.clone(),
+                signature: group.signature.clone(),
+            })
+            .collect(),
         methods: manifest.abi.methods.len(),
         events: manifest.abi.events.len(),
         permissions: manifest
@@ -546,11 +563,18 @@ struct ManifestSummary {
     supported_standards: Vec<String>,
     storage: bool,
     payable: bool,
+    groups: Vec<GroupSummary>,
     methods: usize,
     events: usize,
     permissions: Vec<PermissionSummary>,
     trusts: Option<TrustSummary>,
     abi: AbiSummary,
+}
+
+#[derive(Serialize)]
+struct GroupSummary {
+    pubkey: String,
+    signature: String,
 }
 
 #[derive(Serialize)]
