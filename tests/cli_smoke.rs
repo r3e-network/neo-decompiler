@@ -472,6 +472,30 @@ fn schema_command_outputs_embedded_schema() {
         Value::String("neo-decompiler info report".into())
     );
 
+    let quiet_schema_path = dir.path().join("info-quiet.schema.json");
+    let quiet_output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("schema")
+        .arg("info")
+        .arg("--json-compact")
+        .arg("--output")
+        .arg(&quiet_schema_path)
+        .arg("--quiet")
+        .output()
+        .expect("schema output to file (quiet)");
+    assert!(quiet_output.status.success());
+    assert!(
+        quiet_output.stdout.is_empty(),
+        "quiet schema output should suppress stdout"
+    );
+    let quiet_contents =
+        std::fs::read_to_string(&quiet_schema_path).expect("quiet schema written to disk");
+    let quiet_value: Value = serde_json::from_str(&quiet_contents).expect("quiet schema valid");
+    assert_eq!(
+        quiet_value["title"],
+        Value::String("neo-decompiler info report".into())
+    );
+
     let nef_path = dir.path().join("validation.nef");
     let manifest_path = dir.path().join("validation.manifest.json");
     let info_json_path = dir.path().join("info.json");

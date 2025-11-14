@@ -123,8 +123,8 @@ struct SchemaArgs {
     #[arg(long, requires = "schema")]
     output: Option<PathBuf>,
 
-    /// Skip printing the schema when validating (alias for --quiet)
-    #[arg(long, requires = "validate", alias = "quiet")]
+    /// Skip printing the schema body (shorthand: --quiet)
+    #[arg(long, alias = "quiet")]
     no_print: bool,
 
     /// Validate a JSON file against the specified schema
@@ -579,7 +579,11 @@ impl Cli {
         }
         println!(
             "Validation succeeded for {} against {} schema",
-            path.display(),
+            if path == Path::new("-") {
+                "stdin".into()
+            } else {
+                path.display().to_string()
+            },
             schema_name
         );
         Ok(())

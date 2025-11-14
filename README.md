@@ -249,15 +249,15 @@ validation instructions, and per-command details. Use
 `neo-decompiler schema --list` to discover the available schemas (with version
 and description) or `--list-json` for machine-readable listings, and
 `neo-decompiler schema <info|disasm|decompile|tokens>` (optionally with
-`--json-compact` or `--output schema.json`) to print or persist them without
-cloning the repository.
+`--json-compact`, `--output schema.json`, or `--quiet`) to print or persist
+them without cloning the repository.
 
 To validate an existing JSON report:
 
 ```bash
 neo-decompiler info --format json contract.nef > info.json
 neo-decompiler schema --schema info --validate info.json
-# or pipe via stdin
+# or pipe via stdin (suppress schema body with --quiet / --no-print)
 neo-decompiler schema --schema info --validate - --quiet < info.json
 ```
 
