@@ -1,6 +1,10 @@
 use assert_cmd::Command;
+use jsonschema::JSONSchema;
 use predicates::str::contains;
 use serde_json::Value;
+use std::fmt::Write;
+use std::path::Path;
+use std::sync::OnceLock;
 use tempfile::tempdir;
 
 const GAS_TOKEN_HASH: [u8; 20] = [
@@ -141,6 +145,7 @@ fn info_command_supports_json_output() {
         value["manifest"]["permissions"][1]["contract"]["value"],
         Value::String("03ABCD".into())
     );
+    assert_schema(SchemaKind::Info, &value);
 
     let compact = Command::cargo_bin("neo-decompiler")
         .unwrap()
@@ -197,6 +202,7 @@ fn disasm_command_outputs_instructions() {
     assert_eq!(instructions[1]["operand_kind"], Value::String("I32".into()));
     assert_eq!(instructions[1]["operand_value"]["value"], Value::from(1));
     assert!(value["warnings"].is_array());
+    assert_schema(SchemaKind::Disasm, &value);
 }
 
 #[test]
@@ -282,6 +288,7 @@ fn decompile_command_supports_json_format() {
         Value::String("Contracts".into())
     );
     assert!(value["warnings"].is_array());
+    assert_schema(SchemaKind::Decompile, &value);
 }
 
 #[test]
@@ -344,6 +351,7 @@ fn tokens_command_supports_json_output() {
     assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0]["native_contract"]["label"], "GasToken::Transfer");
     assert!(value["warnings"].is_array());
+    assert_schema(SchemaKind::Tokens, &value);
 }
 
 #[test]
@@ -411,3 +419,50 @@ const SAMPLE_MANIFEST: &str = r#"
     "trusts": ["0x89ABCDEF0123456789ABCDEF0123456789ABCDEF"]
 }
 "#;
+
+#[derive(Debug, Clone, Copy)]
+enum SchemaKind {
+    Info,
+    Disasm,
+    Decompile,
+    Tokens,
+}
+
+fn assert_schema(kind: SchemaKind, payload: &Value) {
+    if let Err(errors) = schema(kind).validate(payload) {
+        let mut message = String::new();
+        let _ = writeln!(&mut message, "Schema validation failed for {kind:?}:");
+        for error in errors {
+            let _ = writeln!(&mut message, "- {error}");
+        }
+        panic!("{message}");
+    }
+}
+
+fn schema(kind: SchemaKind) -> &'static JSONSchema {
+    static INFO_SCHEMA: OnceLock<JSONSchema> = OnceLock::new();
+    static DISASM_SCHEMA: OnceLock<JSONSchema> = OnceLock::new();
+    static DECOMPILE_SCHEMA: OnceLock<JSONSchema> = OnceLock::new();
+    static TOKENS_SCHEMA: OnceLock<JSONSchema> = OnceLock::new();
+
+    match kind {
+        SchemaKind::Info => INFO_SCHEMA.get_or_init(|| load_schema("info")),
+        SchemaKind::Disasm => DISASM_SCHEMA.get_or_init(|| load_schema("disasm")),
+        SchemaKind::Decompile => DECOMPILE_SCHEMA.get_or_init(|| load_schema("decompile")),
+        SchemaKind::Tokens => TOKENS_SCHEMA.get_or_init(|| load_schema("tokens")),
+    }
+}
+
+fn load_schema(name: &str) -> JSONSchema {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = manifest_dir
+        .join("docs")
+        .join("schema")
+        .join(format!("{name}.schema.json"));
+    let raw = std::fs::read_to_string(&path)
+        .unwrap_or_else(|err| panic!("failed to read schema {}: {err}", path.display()));
+    let schema_json: Value = serde_json::from_str(&raw)
+        .unwrap_or_else(|err| panic!("failed to parse schema {}: {err}", path.display()));
+    JSONSchema::compile(&schema_json)
+        .unwrap_or_else(|err| panic!("failed to compile schema {}: {err}", path.display()))
+}
