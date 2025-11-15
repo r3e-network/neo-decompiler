@@ -90,6 +90,23 @@ pub enum OperandEncoding {
 
 include!("opcodes_generated.rs");
 
+impl OpCode {
+    /// Return every opcode variant known to the generated table ordered by opcode byte.
+    pub fn all_known() -> Vec<OpCode> {
+        let mut entries = Vec::new();
+        for byte in u8::MIN..=u8::MAX {
+            let opcode = OpCode::from_byte(byte);
+            if matches!(opcode, OpCode::Unknown(_)) {
+                continue;
+            }
+            if !entries.contains(&opcode) {
+                entries.push(opcode);
+            }
+        }
+        entries
+    }
+}
+
 impl fmt::Display for OpCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.mnemonic())

@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::disassembler::Disassembler;
 use crate::error::Result;
 use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
-use crate::manifest::{ContractManifest, ManifestPermission};
+use crate::manifest::{ContractManifest, ManifestMethod, ManifestParameter, ManifestPermission};
 use crate::native_contracts;
 use crate::nef::{describe_call_flags, NefFile, NefParser};
 use crate::util;
@@ -167,20 +167,15 @@ fn render_high_level(
             writeln!(output, "    trusts = {};", trusts.describe()).unwrap();
         }
 
-        if !manifest.abi.methods.is_empty() {
-            writeln!(output, "    // ABI methods").unwrap();
-            for method in &manifest.abi.methods {
-                let params = method
-                    .parameters
-                    .iter()
-                    .map(|param| format!("{}: {}", param.name, format_manifest_type(&param.kind)))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let return_type = format_manifest_type(&method.return_type);
-                let mut meta = Vec::new();
-                if method.safe {
-                    meta.push("safe".to_string());
-                }
+    if !manifest.abi.methods.is_empty() {
+        writeln!(output, "    // ABI methods").unwrap();
+        for method in &manifest.abi.methods {
+            let params = format_manifest_parameters(&method.parameters);
+            let return_type = format_manifest_type(&method.return_type);
+            let mut meta = Vec::new();
+            if method.safe {
+                meta.push("safe".to_string());
+            }
                 if let Some(offset) = method.offset {
                     meta.push(format!("offset {}", offset));
                 }
@@ -248,9 +243,37 @@ fn render_high_level(
     }
 
     writeln!(output).unwrap();
-    writeln!(output, "    fn script_entry() {{").unwrap();
+    let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
+    let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
+    let entry_param_labels = entry_method.as_ref().map(|method| {
+        method
+            .parameters
+            .iter()
+            .map(|param| param.name.clone())
+            .collect::<Vec<_>>()
+    });
+    let entry_name = entry_method
+        .as_ref()
+        .map(|method| method.name.as_str())
+        .unwrap_or("script_entry");
+    let entry_params = entry_method
+        .as_ref()
+        .map(|method| format_manifest_parameters(&method.parameters))
+        .unwrap_or_default();
+    let entry_return = entry_method
+        .as_ref()
+        .map(|method| format_manifest_type(&method.return_type))
+        .filter(|ty| ty != "void");
+    let signature = match entry_return {
+        Some(ret) => format!("fn {entry_name}({entry_params}) -> {ret}"),
+        None => format!("fn {entry_name}({entry_params})"),
+    };
+    writeln!(output, "    {signature} {{").unwrap();
 
     let mut emitter = HighLevelEmitter::with_program(instructions);
+    if let Some(labels) = entry_param_labels.as_ref() {
+        emitter.set_argument_labels(labels);
+    }
     for instruction in instructions {
         emitter.advance_to(instruction.offset);
         emitter.emit_instruction(instruction);
@@ -292,6 +315,25 @@ fn format_manifest_type(kind: &str) -> String {
     }
 }
 
+fn format_manifest_parameters(parameters: &[ManifestParameter]) -> String {
+    parameters
+        .iter()
+        .map(|param| format!("{}: {}", param.name, format_manifest_type(&param.kind)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn find_manifest_entry_method<'a>(
+    manifest: &'a ContractManifest,
+    entry_offset: usize,
+) -> Option<&'a ManifestMethod> {
+    manifest
+        .abi
+        .methods
+        .iter()
+        .find(|method| method.offset.map(|value| value as usize) == Some(entry_offset))
+}
+
 fn format_permission_entry(permission: &ManifestPermission) -> String {
     format!(
         "contract={} methods={}",
@@ -310,6 +352,37 @@ struct HighLevelEmitter {
     skip_jumps: BTreeSet<usize>,
     program: Vec<Instruction>,
     index_by_offset: BTreeMap<usize, usize>,
+    do_while_headers: BTreeMap<usize, Vec<DoWhileLoop>>,
+    active_do_while_tails: BTreeSet<usize>,
+    loop_stack: Vec<LoopContext>,
+    initialized_locals: BTreeSet<usize>,
+    initialized_statics: BTreeSet<usize>,
+    argument_labels: BTreeMap<usize, String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SlotKind {
+    Local,
+    Argument,
+    Static,
+}
+
+#[derive(Clone, Debug)]
+struct LoopContext {
+    break_offset: usize,
+    continue_offset: usize,
+}
+
+#[derive(Clone, Debug)]
+struct DoWhileLoop {
+    tail_offset: usize,
+    break_offset: usize,
+}
+
+#[derive(Clone, Debug)]
+struct LoopJump {
+    jump_offset: usize,
+    target: usize,
 }
 
 impl HighLevelEmitter {
@@ -321,7 +394,14 @@ impl HighLevelEmitter {
         for (index, instruction) in instructions.iter().enumerate() {
             emitter.index_by_offset.insert(instruction.offset, index);
         }
+        emitter.analyze_do_while_loops();
         emitter
+    }
+
+    fn set_argument_labels(&mut self, labels: &[String]) {
+        for (index, name) in labels.iter().enumerate() {
+            self.argument_labels.insert(index, name.clone());
+        }
     }
 
     fn advance_to(&mut self, offset: usize) {
@@ -331,9 +411,22 @@ impl HighLevelEmitter {
             }
         }
 
+        self.close_loops_at(offset);
+
         if let Some(count) = self.else_targets.remove(&offset) {
             for _ in 0..count {
                 self.statements.push("else {".into());
+            }
+        }
+
+        if let Some(entries) = self.do_while_headers.remove(&offset) {
+            for entry in entries {
+                self.statements.push("do {".into());
+                self.active_do_while_tails.insert(entry.tail_offset);
+                self.loop_stack.push(LoopContext {
+                    break_offset: entry.break_offset,
+                    continue_offset: entry.tail_offset,
+                });
             }
         }
     }
@@ -388,8 +481,16 @@ impl HighLevelEmitter {
             Ret => self.emit_return(instruction),
             Jmp => self.emit_jump(instruction, 2),
             Jmp_L => self.emit_jump(instruction, 5),
-            Jmpif => self.emit_relative(instruction, 2, "jump-if"),
-            Jmpif_L => self.emit_relative(instruction, 5, "jump-if"),
+            Jmpif => {
+                if !self.try_emit_do_while_tail(instruction) {
+                    self.emit_relative(instruction, 2, "jump-if");
+                }
+            }
+            Jmpif_L => {
+                if !self.try_emit_do_while_tail(instruction) {
+                    self.emit_relative(instruction, 5, "jump-if");
+                }
+            }
             Jmpifnot => self.emit_if_block(instruction),
             Jmpifnot_L => self.emit_if_block(instruction),
             JmpEq => self.emit_relative(instruction, 2, "jump-if-eq"),
@@ -410,6 +511,56 @@ impl HighLevelEmitter {
             Call_L => self.emit_relative(instruction, 5, "call"),
             CallA => self.emit_indirect_call(instruction, "calla"),
             CallT => self.emit_indirect_call(instruction, "callt"),
+            Initsslot => self.emit_init_static_slots(instruction),
+            Initslot => self.emit_init_slots(instruction),
+            Ldsfld0 => self.emit_load_slot(instruction, SlotKind::Static, 0),
+            Ldsfld1 => self.emit_load_slot(instruction, SlotKind::Static, 1),
+            Ldsfld2 => self.emit_load_slot(instruction, SlotKind::Static, 2),
+            Ldsfld3 => self.emit_load_slot(instruction, SlotKind::Static, 3),
+            Ldsfld4 => self.emit_load_slot(instruction, SlotKind::Static, 4),
+            Ldsfld5 => self.emit_load_slot(instruction, SlotKind::Static, 5),
+            Ldsfld6 => self.emit_load_slot(instruction, SlotKind::Static, 6),
+            Ldsfld => self.emit_load_slot_from_operand(instruction, SlotKind::Static),
+            Stsfld0 => self.emit_store_slot(instruction, SlotKind::Static, 0),
+            Stsfld1 => self.emit_store_slot(instruction, SlotKind::Static, 1),
+            Stsfld2 => self.emit_store_slot(instruction, SlotKind::Static, 2),
+            Stsfld3 => self.emit_store_slot(instruction, SlotKind::Static, 3),
+            Stsfld4 => self.emit_store_slot(instruction, SlotKind::Static, 4),
+            Stsfld5 => self.emit_store_slot(instruction, SlotKind::Static, 5),
+            Stsfld6 => self.emit_store_slot(instruction, SlotKind::Static, 6),
+            Stsfld => self.emit_store_slot_from_operand(instruction, SlotKind::Static),
+            Ldloc0 => self.emit_load_slot(instruction, SlotKind::Local, 0),
+            Ldloc1 => self.emit_load_slot(instruction, SlotKind::Local, 1),
+            Ldloc2 => self.emit_load_slot(instruction, SlotKind::Local, 2),
+            Ldloc3 => self.emit_load_slot(instruction, SlotKind::Local, 3),
+            Ldloc4 => self.emit_load_slot(instruction, SlotKind::Local, 4),
+            Ldloc5 => self.emit_load_slot(instruction, SlotKind::Local, 5),
+            Ldloc6 => self.emit_load_slot(instruction, SlotKind::Local, 6),
+            Ldloc => self.emit_load_slot_from_operand(instruction, SlotKind::Local),
+            Stloc0 => self.emit_store_slot(instruction, SlotKind::Local, 0),
+            Stloc1 => self.emit_store_slot(instruction, SlotKind::Local, 1),
+            Stloc2 => self.emit_store_slot(instruction, SlotKind::Local, 2),
+            Stloc3 => self.emit_store_slot(instruction, SlotKind::Local, 3),
+            Stloc4 => self.emit_store_slot(instruction, SlotKind::Local, 4),
+            Stloc5 => self.emit_store_slot(instruction, SlotKind::Local, 5),
+            Stloc6 => self.emit_store_slot(instruction, SlotKind::Local, 6),
+            Stloc => self.emit_store_slot_from_operand(instruction, SlotKind::Local),
+            Ldarg0 => self.emit_load_slot(instruction, SlotKind::Argument, 0),
+            Ldarg1 => self.emit_load_slot(instruction, SlotKind::Argument, 1),
+            Ldarg2 => self.emit_load_slot(instruction, SlotKind::Argument, 2),
+            Ldarg3 => self.emit_load_slot(instruction, SlotKind::Argument, 3),
+            Ldarg4 => self.emit_load_slot(instruction, SlotKind::Argument, 4),
+            Ldarg5 => self.emit_load_slot(instruction, SlotKind::Argument, 5),
+            Ldarg6 => self.emit_load_slot(instruction, SlotKind::Argument, 6),
+            Ldarg => self.emit_load_slot_from_operand(instruction, SlotKind::Argument),
+            Starg0 => self.emit_store_slot(instruction, SlotKind::Argument, 0),
+            Starg1 => self.emit_store_slot(instruction, SlotKind::Argument, 1),
+            Starg2 => self.emit_store_slot(instruction, SlotKind::Argument, 2),
+            Starg3 => self.emit_store_slot(instruction, SlotKind::Argument, 3),
+            Starg4 => self.emit_store_slot(instruction, SlotKind::Argument, 4),
+            Starg5 => self.emit_store_slot(instruction, SlotKind::Argument, 5),
+            Starg6 => self.emit_store_slot(instruction, SlotKind::Argument, 6),
+            Starg => self.emit_store_slot_from_operand(instruction, SlotKind::Argument),
             Try | TryL => self.note(instruction, "try block (not yet lifted)"),
             Endfinally => self.note(instruction, "endfinally (not yet lifted)"),
             Nop => self.note(instruction, "noop"),
@@ -430,6 +581,7 @@ impl HighLevelEmitter {
                 }
             }
         }
+        Self::rewrite_for_loops(&mut self.statements);
         self.statements
     }
 
@@ -559,6 +711,82 @@ impl HighLevelEmitter {
         }
     }
 
+    fn emit_init_static_slots(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        match instruction.operand {
+            Some(Operand::U8(count)) => {
+                self.statements
+                    .push(format!("// declare {count} static slots"));
+            }
+            _ => self
+                .statements
+                .push("// missing INITSSLOT operand".into()),
+        }
+    }
+
+    fn emit_init_slots(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        match &instruction.operand {
+            Some(Operand::Bytes(bytes)) if bytes.len() >= 2 => {
+                let locals = bytes[0];
+                let args = bytes[1];
+                self.statements.push(format!(
+                    "// declare {locals} locals, {args} arguments"
+                ));
+            }
+            _ => self
+                .statements
+                .push("// missing INITSLOT operand".into()),
+        }
+    }
+
+    fn emit_load_slot(&mut self, instruction: &Instruction, kind: SlotKind, index: usize) {
+        self.push_comment(instruction);
+        let name = self.slot_label(kind, index);
+        self.stack.push(name);
+    }
+
+    fn emit_load_slot_from_operand(&mut self, instruction: &Instruction, kind: SlotKind) {
+        let Some(index) = Self::slot_index_from_operand(instruction) else {
+            self.note(
+                instruction,
+                &format!("{} missing operand", instruction.opcode.mnemonic()),
+            );
+            return;
+        };
+        self.emit_load_slot(instruction, kind, index);
+    }
+
+    fn emit_store_slot(&mut self, instruction: &Instruction, kind: SlotKind, index: usize) {
+        self.push_comment(instruction);
+        if let Some(value) = self.stack.pop() {
+            let name = self.slot_label(kind, index);
+            let use_let = match kind {
+                SlotKind::Local => self.initialized_locals.insert(index),
+                SlotKind::Static => self.initialized_statics.insert(index),
+                SlotKind::Argument => false,
+            };
+            if use_let {
+                self.statements.push(format!("let {name} = {value};"));
+            } else {
+                self.statements.push(format!("{name} = {value};"));
+            }
+        } else {
+            self.stack_underflow(instruction, 1);
+        }
+    }
+
+    fn emit_store_slot_from_operand(&mut self, instruction: &Instruction, kind: SlotKind) {
+        let Some(index) = Self::slot_index_from_operand(instruction) else {
+            self.note(
+                instruction,
+                &format!("{} missing operand", instruction.opcode.mnemonic()),
+            );
+            return;
+        };
+        self.emit_store_slot(instruction, kind, index);
+    }
+
     fn emit_if_block(&mut self, instruction: &Instruction) {
         let width = Self::branch_width(instruction.opcode);
         let delta = match instruction.operand {
@@ -583,36 +811,46 @@ impl HighLevelEmitter {
             }
         };
         self.push_comment(instruction);
-        self.statements.push(format!("if {condition} {{"));
-        let closer_entry = self.pending_closers.entry(target as usize).or_insert(0);
+        let false_target = target as usize;
+        let loop_jump = self.detect_loop_back(false_target, instruction.offset);
+        if let Some(loop_jump) = loop_jump.as_ref() {
+            self.statements.push(format!("while {condition} {{"));
+            self.skip_jumps.insert(loop_jump.jump_offset);
+            self.loop_stack.push(LoopContext {
+                break_offset: false_target,
+                continue_offset: loop_jump.target,
+            });
+        } else {
+            self.statements.push(format!("if {condition} {{"));
+        }
+        let closer_entry = self.pending_closers.entry(false_target).or_insert(0);
         *closer_entry += 1;
 
-        if let Some((jump_offset, jump_target)) = self.detect_else(target as usize) {
-            self.skip_jumps.insert(jump_offset);
-            let else_entry = self.else_targets.entry(target as usize).or_insert(0);
-            *else_entry += 1;
-            let closer = self.pending_closers.entry(jump_target).or_insert(0);
-            *closer += 1;
+        if loop_jump.is_none() {
+            if let Some((jump_offset, jump_target)) = self.detect_else(false_target) {
+                if !self.is_loop_control_target(jump_target) {
+                    self.skip_jumps.insert(jump_offset);
+                    let else_entry = self.else_targets.entry(false_target).or_insert(0);
+                    *else_entry += 1;
+                    let closer = self.pending_closers.entry(jump_target).or_insert(0);
+                    *closer += 1;
+                }
+            }
         }
     }
 
     fn emit_relative(&mut self, instruction: &Instruction, width: isize, label: &str) {
-        let delta = match instruction.operand {
-            Some(Operand::Jump(value)) => value as isize,
-            Some(Operand::Jump32(value)) => value as isize,
-            _ => {
-                self.note(
-                    instruction,
-                    &format!("{label} with unsupported operand (skipping)"),
-                );
-                return;
-            }
-        };
-        let target = instruction.offset as isize + width + delta;
-        self.note(
-            instruction,
-            &format!("{label} -> 0x{target:04X} (control flow not yet lifted)"),
-        );
+        if let Some(target) = self.jump_target(instruction, width) {
+            self.note(
+                instruction,
+                &format!("{label} -> 0x{target:04X} (control flow not yet lifted)"),
+            );
+        } else {
+            self.note(
+                instruction,
+                &format!("{label} with unsupported operand (skipping)"),
+            );
+        }
     }
 
     fn emit_indirect_call(&mut self, instruction: &Instruction, label: &str) {
@@ -628,7 +866,21 @@ impl HighLevelEmitter {
             // jump consumed by structured if/else handling
             return;
         }
-        self.emit_relative(instruction, width, "jump");
+        match self.jump_target(instruction, width) {
+            Some(target) => {
+                if self.try_emit_loop_jump(instruction, target) {
+                    return;
+                }
+                self.note(
+                    instruction,
+                    &format!("jump -> 0x{target:04X} (control flow not yet lifted)"),
+                );
+            }
+            None => self.note(
+                instruction,
+                "jump with unsupported operand (skipping)",
+            ),
+        }
     }
 
     fn note(&mut self, instruction: &Instruction, message: &str) {
@@ -656,6 +908,95 @@ impl HighLevelEmitter {
         let name = format!("t{}", self.next_temp);
         self.next_temp += 1;
         name
+    }
+
+    fn slot_label(&self, kind: SlotKind, index: usize) -> String {
+        match kind {
+            SlotKind::Local => format!("loc{index}"),
+            SlotKind::Argument => self
+                .argument_labels
+                .get(&index)
+                .cloned()
+                .unwrap_or_else(|| format!("arg{index}")),
+            SlotKind::Static => format!("static{index}"),
+        }
+    }
+
+    fn slot_index_from_operand(instruction: &Instruction) -> Option<usize> {
+        match instruction.operand {
+            Some(Operand::U8(value)) => Some(value as usize),
+            _ => None,
+        }
+    }
+
+    fn analyze_do_while_loops(&mut self) {
+        for instruction in &self.program {
+            if !matches!(instruction.opcode, OpCode::Jmpif | OpCode::Jmpif_L) {
+                continue;
+            }
+            let width = Self::branch_width(instruction.opcode);
+            if let Some(target) = self.forward_jump_target(instruction, width) {
+                if target < instruction.offset {
+                    let break_offset = instruction.offset as isize + width;
+                    if break_offset >= 0 {
+                        self.do_while_headers
+                            .entry(target)
+                            .or_default()
+                            .push(DoWhileLoop {
+                                tail_offset: instruction.offset,
+                                break_offset: break_offset as usize,
+                            });
+                    }
+                }
+            }
+        }
+    }
+
+    fn try_emit_do_while_tail(&mut self, instruction: &Instruction) -> bool {
+        if !self.active_do_while_tails.remove(&instruction.offset) {
+            return false;
+        }
+        let Some(condition) = self.stack.pop() else {
+            self.push_comment(instruction);
+            self.stack_underflow(instruction, 1);
+            return true;
+        };
+        self.push_comment(instruction);
+        self.statements.push(format!("}} while ({condition});"));
+        self.pop_loops_with_continue(instruction.offset);
+        true
+    }
+
+    fn detect_loop_back(
+        &self,
+        false_offset: usize,
+        condition_offset: usize,
+    ) -> Option<LoopJump> {
+        let (_, &index) = self.index_by_offset.range(..false_offset).next_back()?;
+        let jump_instruction = self.program.get(index)?;
+        match jump_instruction.opcode {
+            OpCode::Jmp | OpCode::Jmp_L => {
+                let width = Self::branch_width(jump_instruction.opcode);
+                let Some(target) =
+                    self.forward_jump_target(jump_instruction, width)
+                else {
+                    return None;
+                };
+                if target <= condition_offset
+                    && !self
+                        .loop_stack
+                        .iter()
+                        .any(|ctx| ctx.continue_offset == target)
+                {
+                    return Some(LoopJump {
+                        jump_offset: jump_instruction.offset,
+                        target,
+                    });
+                }
+            }
+            _ => {}
+        }
+        None
     }
 
     fn detect_else(&self, false_offset: usize) -> Option<(usize, usize)> {
@@ -692,6 +1033,253 @@ impl HighLevelEmitter {
             _ => 1,
         }
     }
+
+    fn jump_target(&self, instruction: &Instruction, width: isize) -> Option<usize> {
+        let delta = match instruction.operand {
+            Some(Operand::Jump(value)) => value as isize,
+            Some(Operand::Jump32(value)) => value as isize,
+            _ => return None,
+        };
+        let target = instruction.offset as isize + width + delta;
+        if target < 0 {
+            return None;
+        }
+        Some(target as usize)
+    }
+
+    fn try_emit_loop_jump(&mut self, instruction: &Instruction, target: usize) -> bool {
+        if self
+            .loop_stack
+            .iter()
+            .rev()
+            .any(|ctx| ctx.break_offset == target)
+        {
+            self.push_comment(instruction);
+            self.statements.push("break;".into());
+            self.stack.clear();
+            return true;
+        }
+        if self
+            .loop_stack
+            .iter()
+            .rev()
+            .any(|ctx| ctx.continue_offset == target)
+        {
+            self.push_comment(instruction);
+            self.statements.push("continue;".into());
+            self.stack.clear();
+            return true;
+        }
+        false
+    }
+
+    fn close_loops_at(&mut self, offset: usize) {
+        while self
+            .loop_stack
+            .last()
+            .map(|ctx| ctx.break_offset == offset)
+            .unwrap_or(false)
+        {
+            self.loop_stack.pop();
+        }
+    }
+
+    fn pop_loops_with_continue(&mut self, continue_offset: usize) {
+        while self
+            .loop_stack
+            .last()
+            .map(|ctx| ctx.continue_offset == continue_offset)
+            .unwrap_or(false)
+        {
+            self.loop_stack.pop();
+        }
+    }
+
+    fn is_loop_control_target(&self, target: usize) -> bool {
+        self
+            .loop_stack
+            .iter()
+            .any(|ctx| ctx.break_offset == target || ctx.continue_offset == target)
+    }
+
+    fn rewrite_for_loops(statements: &mut Vec<String>) {
+        let mut index = 0;
+        while index < statements.len() {
+            let Some(condition) = Self::extract_while_condition(&statements[index]) else {
+                index += 1;
+                continue;
+            };
+            let Some(end) = Self::find_block_end(statements, index) else {
+                index += 1;
+                continue;
+            };
+            let Some(init_idx) = Self::find_initializer_index(statements, index) else {
+                index += 1;
+                continue;
+            };
+            let Some(init_assignment) = Self::parse_assignment(&statements[init_idx]) else {
+                index += 1;
+                continue;
+            };
+            let Some((increment_idx, temp_idx, increment_expr)) = Self::find_increment_assignment(
+                statements,
+                index,
+                end,
+                &init_assignment.lhs,
+            ) else {
+                index += 1;
+                continue;
+            };
+
+            statements[index] = format!(
+                "for ({}; {}; {}) {{",
+                init_assignment.full, condition, increment_expr
+            );
+            statements[init_idx].clear();
+            statements[increment_idx].clear();
+            if let Some(temp_idx) = temp_idx {
+                statements[temp_idx].clear();
+            }
+            index += 1;
+        }
+    }
+
+    fn extract_while_condition(line: &str) -> Option<String> {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("while ") {
+            return None;
+        }
+        let rest = trimmed.strip_prefix("while ")?;
+        let condition = rest.strip_suffix(" {")?.trim();
+        if condition.is_empty() {
+            None
+        } else {
+            Some(condition.to_string())
+        }
+    }
+
+    fn find_block_end(statements: &[String], start: usize) -> Option<usize> {
+        let mut depth = Self::brace_delta(&statements[start]);
+        let mut index = start + 1;
+        while index < statements.len() {
+            depth += Self::brace_delta(&statements[index]);
+            if depth == 0 {
+                return Some(index);
+            }
+            index += 1;
+        }
+        None
+    }
+
+    fn brace_delta(line: &str) -> isize {
+        let openings = line.matches('{').count() as isize;
+        let closings = line.matches('}').count() as isize;
+        openings - closings
+    }
+
+    fn find_initializer_index(statements: &[String], start: usize) -> Option<usize> {
+        let mut index = start;
+        while index > 0 {
+            index -= 1;
+            let line = statements[index].trim();
+            if line.is_empty() || line.starts_with("//") {
+                continue;
+            }
+            if line == "}" || line.ends_with("{") {
+                break;
+            }
+            if line.contains('=') && line.ends_with(';') {
+                if let Some(assign) = Self::parse_assignment(line) {
+                    if assign.lhs.starts_with("loc")
+                        || assign.lhs.starts_with("arg")
+                        || assign.lhs.starts_with("static")
+                    {
+                        return Some(index);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn find_increment_assignment(
+        statements: &[String],
+        start: usize,
+        end: usize,
+        var: &str,
+    ) -> Option<(usize, Option<usize>, String)> {
+        let mut index = end;
+        while index > start {
+            index -= 1;
+            let line = statements[index].trim();
+            if line.is_empty() || line.starts_with("//") || line == "}" {
+                continue;
+            }
+            let Some(assign) = Self::parse_assignment(line) else {
+                return None;
+            };
+            if assign.lhs != var {
+                return None;
+            }
+            if assign.rhs.starts_with(var) {
+                return Some((index, None, assign.full));
+            }
+            if let Some(prev_idx) = Self::previous_code_line(statements, index) {
+                let Some(prev_assign) = Self::parse_assignment(&statements[prev_idx]) else {
+                    return None;
+                };
+                if prev_assign.lhs == assign.rhs {
+                    let expr = format!("{} = {}", var, prev_assign.rhs);
+                    return Some((index, Some(prev_idx), expr));
+                }
+            }
+            return None;
+        }
+        None
+    }
+
+    fn previous_code_line(statements: &[String], mut index: usize) -> Option<usize> {
+        while index > 0 {
+            index -= 1;
+            let line = statements[index].trim();
+            if line.is_empty() || line.starts_with("//") || line == "}" {
+                continue;
+            }
+            return Some(index);
+        }
+        None
+    }
+
+    fn parse_assignment(line: &str) -> Option<Assignment> {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || !trimmed.ends_with(';') {
+            return None;
+        }
+        let body = trimmed.trim_end_matches(';').trim();
+        let mut parts = body.splitn(2, '=');
+        let lhs_raw = parts.next()?.trim();
+        let rhs = parts.next()?.trim().to_string();
+        if lhs_raw.is_empty() || rhs.is_empty() {
+            return None;
+        }
+        let lhs = if let Some(stripped) = lhs_raw.strip_prefix("let ") {
+            stripped.trim().to_string()
+        } else {
+            lhs_raw.to_string()
+        };
+        Some(Assignment {
+            full: body.to_string(),
+            lhs,
+            rhs,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+struct Assignment {
+    full: String,
+    lhs: String,
+    rhs: String,
 }
 
 #[cfg(test)]
@@ -785,7 +1373,43 @@ mod tests {
         assert!(decompilation
             .high_level
             .contains("contract ExampleContract"));
-        assert!(decompilation.high_level.contains("fn main() -> int;"));
+        assert!(decompilation.high_level.contains("fn main() -> int {"));
+    }
+
+    #[test]
+    fn renames_script_entry_using_manifest_signature() {
+        let nef_bytes = sample_nef();
+        let manifest = ContractManifest::from_json_str(
+            r#"
+            {
+                "name": "Parametrized",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "deploy",
+                            "parameters": [
+                                {"name": "owner", "type": "Hash160"},
+                                {"name": "amount", "type": "Integer"}
+                            ],
+                            "returntype": "Void",
+                            "offset": 0
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+        )
+        .expect("manifest parsed");
+        let decompilation = Decompiler::new()
+            .decompile_bytes_with_manifest(&nef_bytes, Some(manifest))
+            .expect("decompile succeeds with manifest signature");
+
+        assert!(decompilation
+            .high_level
+            .contains("fn deploy(owner: hash160, amount: int) {"));
     }
 
     #[test]
@@ -873,5 +1497,89 @@ mod tests {
         assert!(high_level.contains("else {"));
         assert!(high_level.contains("let t1 = 2;"));
         assert!(high_level.contains("let t2 = 3;"));
+    }
+
+    #[test]
+    fn high_level_lifts_simple_while_loop() {
+        // Script: PUSH1, JMPIFNOT +3 (to RET), NOP, JMP -6 (to PUSH1), RET
+        let script = [0x11, 0x26, 0x03, 0x21, 0x22, 0xFA, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        let high_level = &decompilation.high_level;
+        assert!(high_level.contains("while t0 {"), "missing while block: {high_level}");
+        assert!(
+            !high_level.contains("jump ->"),
+            "loop back-edge should be lifted: {high_level}"
+        );
+    }
+
+    #[test]
+    fn high_level_lifts_do_while_loop() {
+        // Script: body; PUSH1; JMPIF -5; RET
+        let script = [0x11, 0x21, 0x11, 0x24, 0xFB, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        let high_level = &decompilation.high_level;
+        assert!(high_level.contains("do {"), "missing do/while header: {high_level}");
+        assert!(
+            high_level.contains("} while ("),
+            "missing do/while tail: {high_level}"
+        );
+    }
+
+    #[test]
+    fn high_level_lifts_local_slots() {
+        // Script: INITSLOT 1,0; PUSH1; STLOC0; LDLOC0; RET
+        let script = [0x57, 0x01, 0x00, 0x11, 0x70, 0x68, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        let high_level = &decompilation.high_level;
+        assert!(high_level.contains("// declare 1 locals, 0 arguments"));
+        assert!(high_level.contains("let loc0 = t0;"));
+        assert!(high_level.contains("return loc0;"));
+    }
+
+    #[test]
+    fn high_level_lifts_for_loop() {
+        // Script models: for (loc0 = 0; loc0 < 3; loc0++) {}
+        let script = [
+            0x57, 0x01, 0x00, 0x10, 0x70, 0x68, 0x13, 0xB5, 0x26, 0x07, 0x21, 0x68, 0x11, 0x9E,
+            0x70, 0x22, 0xF4, 0x40,
+        ];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        let high_level = &decompilation.high_level;
+        assert!(high_level.contains("for (let loc0 = t0;"), "missing for-loop header: {high_level}");
+        assert!(high_level.contains("loc0 = loc0 +"), "increment not surfaced: {high_level}");
+    }
+
+    #[test]
+    fn high_level_emits_break_and_continue() {
+        // Script demonstrating break/continue inside a while loop
+        let script = [
+            0x57, 0x01, 0x00, 0x10, 0x70, 0x68, 0x13, 0xB5, 0x26, 0x18, 0x68, 0x11, 0xB3, 0x26,
+            0x06, 0x68, 0x11, 0x9E, 0x70, 0x22, 0xF0, 0x68, 0x12, 0xB3, 0x26, 0x02, 0x22, 0x06,
+            0x68, 0x11, 0x9E, 0x70, 0x22, 0xE3, 0x40,
+        ];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        let high_level = &decompilation.high_level;
+        assert!(high_level.contains("break;"), "missing break statement: {high_level}");
+        assert!(high_level.contains("continue;"), "missing continue statement: {high_level}");
     }
 }

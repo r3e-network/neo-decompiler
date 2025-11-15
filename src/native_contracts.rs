@@ -14,6 +14,11 @@ pub fn lookup(hash: &[u8; 20]) -> Option<&'static NativeContractInfo> {
         .find(|info| info.script_hash == *hash)
 }
 
+/// Return the full list of bundled native contracts.
+pub fn all() -> &'static [NativeContractInfo] {
+    generated::NATIVE_CONTRACTS
+}
+
 /// Additional metadata explaining how a method token maps to a native contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeMethodHint {

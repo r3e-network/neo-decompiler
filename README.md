@@ -22,8 +22,11 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   calls, and `SYSCALL`
 - Syscall metadata resolution with human-readable names and call flags
 - Native contract lookup so method tokens can be paired with contract names
-- High-level contract view that surfaces manifest ABI data and lifts stack
-  operations into readable statements
+- High-level contract view that surfaces manifest ABI data, names locals/args
+  via slot instructions (including manifest parameter names), and lifts stack
+  operations into readable statements with structured `if`/`else`, `for`,
+  `while`, and `do { } while` blocks plus emitted `break`/`continue`
+  statements and manifest-derived entry signatures
 - A simple pseudocode view mirroring the decoded instruction stream
 - A single binary (`neo-decompiler`) and a reusable library (`neo_decompiler`)
 
@@ -157,6 +160,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 and `Wildcard` when `*` is specified. `methods.type` mirrors the same wildcard vs list
 semantics (e.g., `Methods` with `value: ["symbol"]`).
 
+### Built-in metadata coverage
+All published Neo N3 opcodes, syscalls, and native contracts are bundled with the
+crate so there is no network or tooling dependency at runtime:
+
+- `src/opcodes_generated.rs` is produced by `tools/generate_opcodes.py`, which
+  scrapes the upstream `OpCode.cs` file and emits every mnemonic alongside its
+  byte value and operand encoding.
+- `src/syscalls_generated.rs` originates from `tools/data/syscalls.json` and
+  lists each syscall hash, its friendly name, handler, price, and call-flag
+  mask. `crate::syscalls::lookup` wires this table into the disassembler and
+  high-level view so every `SYSCALL` shows human-readable context.
+- `src/native_contracts_generated.rs` is generated from
+  `tools/data/native_contracts.json` and enumerates every native contract hash
+  plus its publicly-exposed methods, ensuring method tokens are annotated with
+  canonical names when possible.
+
+Re-run the scripts in `tools/` whenever Neo introduces new entries. Each script
+overwrites the corresponding generated Rust file, so `git status` immediately
+highlights the delta and the expanded coverage is propagated to the CLI and
+library APIs.
+
+Use the CLI to browse these tables directly:
+
+```
+# List all syscalls with hashes, handlers, and call flags
+neo-decompiler catalog syscalls
+
+# Machine-readable native-contract catalog
+neo-decompiler catalog native-contracts --format json
+
+# Enumerate every opcode and operand encoding
+neo-decompiler catalog opcodes
+```
+
 ### Extending opcode coverage
 The disassembler prints informative comments for opcodes that are not yet translated
 (`// XXXX: <MNEMONIC> (not yet translated)`). To extend support, update
@@ -171,9 +208,11 @@ handling in `src/decompiler.rs`/`src/cli.rs` for any new instructions.
   opcodes still produce informative comments so you can decide how to extend the
   decoder.
 - The high-level contract view performs lightweight stack lifting (constants,
-  arithmetic, simple returns, and syscalls) and annotates unsupported control
-  flow. Complex reconstruction such as control-flow graphs or type inference is
-  intentionally out of scope.
+  arithmetic, simple returns, syscalls) and recognises structured control flow
+  such as `if`/`else`, `for`, `while`, and `do { } while` loops (including
+  `break`/`continue` branches). Complex reconstruction
+  such as full control-flow graphs or type inference is intentionally out of
+  scope.
 
 ## Troubleshooting
 - **"manifest not provided" in JSON/text output** – ensure the `.manifest.json`

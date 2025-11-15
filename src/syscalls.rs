@@ -11,3 +11,8 @@ pub use generated::SyscallInfo;
 pub fn lookup(hash: u32) -> Option<&'static SyscallInfo> {
     generated::SYSCALLS.iter().find(|info| info.hash == hash)
 }
+
+/// Return the complete table of known syscalls.
+pub fn all() -> &'static [SyscallInfo] {
+    generated::SYSCALLS
+}

@@ -304,6 +304,39 @@ fn decompile_command_supports_json_format() {
 }
 
 #[test]
+fn catalog_command_lists_syscalls() {
+    let output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("catalog")
+        .arg("syscalls")
+        .output()
+        .expect("catalog syscalls");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("System.Runtime.Platform"));
+    assert!(stdout.contains("call_flags"));
+}
+
+#[test]
+fn catalog_command_supports_json_output() {
+    let output = Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("catalog")
+        .arg("native-contracts")
+        .arg("--format")
+        .arg("json")
+        .output()
+        .expect("catalog native contracts json");
+    assert!(output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).expect("json parse");
+    assert_eq!(value["kind"], Value::String("native-contracts".into()));
+    assert!(value["count"].as_u64().unwrap_or(0) > 0);
+    let entries = value["entries"].as_array().expect("entries array");
+    assert!(!entries.is_empty());
+    assert!(entries[0]["methods"].is_array());
+}
+
+#[test]
 fn decompile_command_uses_manifest_when_provided() {
     let dir = tempdir().expect("tempdir");
     let nef_path = dir.path().join("contract.nef");

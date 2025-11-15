@@ -9,12 +9,13 @@ use serde_json::Value;
 
 use crate::decompiler::Decompiler;
 use crate::error::Result;
-use crate::instruction::{Instruction, Operand};
+use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::{
     ContractManifest, ManifestPermissionContract, ManifestPermissionMethods, ManifestTrusts,
 };
 use crate::native_contracts;
 use crate::nef::{call_flag_labels, describe_call_flags, MethodToken, NefParser};
+use crate::syscalls;
 use crate::util;
 
 /// Command line interface for the minimal Neo N3 decompiler.
@@ -71,6 +72,9 @@ enum Command {
         format: TokensFormat,
     },
 
+    /// List the bundled opcode/syscall/native metadata
+    Catalog(CatalogArgs),
+
     /// Print one of the bundled JSON schema documents
     Schema(SchemaArgs),
 }
@@ -100,6 +104,41 @@ enum DisasmFormat {
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 enum TokensFormat {
+    #[default]
+    Text,
+    Json,
+}
+
+#[derive(Debug, Args)]
+struct CatalogArgs {
+    /// Which metadata table to print
+    #[arg(value_enum)]
+    kind: CatalogKind,
+
+    /// Choose the output view
+    #[arg(long, value_enum, default_value_t = CatalogFormat::Text)]
+    format: CatalogFormat,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CatalogKind {
+    Syscalls,
+    NativeContracts,
+    Opcodes,
+}
+
+impl CatalogKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            CatalogKind::Syscalls => "syscalls",
+            CatalogKind::NativeContracts => "native-contracts",
+            CatalogKind::Opcodes => "opcodes",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum, Default)]
+enum CatalogFormat {
     #[default]
     Text,
     Json,
@@ -264,6 +303,7 @@ impl Cli {
             Command::Disasm { path, format } => self.run_disasm(path, *format),
             Command::Decompile { path, format } => self.run_decompile(path, *format),
             Command::Tokens { path, format } => self.run_tokens(path, *format),
+            Command::Catalog(args) => self.run_catalog(args),
             Command::Schema(args) => self.run_schema(args),
         }
     }
@@ -526,6 +566,78 @@ impl Cli {
         Ok(())
     }
 
+    fn run_catalog(&self, args: &CatalogArgs) -> Result<()> {
+        match args.kind {
+            CatalogKind::Syscalls => self.print_syscall_catalog(args.format),
+            CatalogKind::NativeContracts => self.print_native_contract_catalog(args.format),
+            CatalogKind::Opcodes => self.print_opcode_catalog(args.format),
+        }
+    }
+
+    fn print_syscall_catalog(&self, format: CatalogFormat) -> Result<()> {
+        let entries = build_syscall_catalog_entries();
+        match format {
+            CatalogFormat::Text => {
+                println!("{} syscalls bundled", entries.len());
+                println!();
+                for entry in &entries {
+                    println!("{} ({})", entry.name, entry.hash);
+                    println!("    handler: {}", entry.handler);
+                    println!("    price: {}", entry.price);
+                    println!("    call_flags: {}", entry.call_flags);
+                    println!();
+                }
+            }
+            CatalogFormat::Json => {
+                self.print_catalog_json(CatalogKind::Syscalls, entries)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn print_native_contract_catalog(&self, format: CatalogFormat) -> Result<()> {
+        let entries = build_native_contract_catalog_entries();
+        match format {
+            CatalogFormat::Text => {
+                println!("{} native contracts bundled", entries.len());
+                println!();
+                for entry in &entries {
+                    println!("{} ({})", entry.name, entry.script_hash_le);
+                    println!("    script hash (BE): {}", entry.script_hash_be);
+                    if entry.methods.is_empty() {
+                        println!("    methods: (none)");
+                    } else {
+                        println!("    methods: {}", entry.methods.join(", "));
+                    }
+                    println!();
+                }
+            }
+            CatalogFormat::Json => {
+                self.print_catalog_json(CatalogKind::NativeContracts, entries)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn print_opcode_catalog(&self, format: CatalogFormat) -> Result<()> {
+        let entries = build_opcode_catalog_entries();
+        match format {
+            CatalogFormat::Text => {
+                println!("{} opcodes bundled", entries.len());
+                println!();
+                for entry in &entries {
+                    println!("{} ({})", entry.mnemonic, entry.byte);
+                    println!("    operand: {}", entry.operand_encoding);
+                    println!();
+                }
+            }
+            CatalogFormat::Json => {
+                self.print_catalog_json(CatalogKind::Opcodes, entries)?;
+            }
+        }
+        Ok(())
+    }
+
     fn run_schema(&self, args: &SchemaArgs) -> Result<()> {
         if args.list || args.list_json {
             if args.list_json {
@@ -630,6 +742,15 @@ impl Cli {
         let json = self.render_json(value)?;
         println!("{json}");
         Ok(())
+    }
+
+    fn print_catalog_json<T: Serialize>(&self, kind: CatalogKind, entries: Vec<T>) -> Result<()> {
+        let report = CatalogReport {
+            kind: kind.as_str(),
+            count: entries.len(),
+            entries,
+        };
+        self.print_json(&report)
     }
 
     fn format_method_token_line(index: usize, token: &MethodToken) -> String {
@@ -979,6 +1100,75 @@ struct EventSummary {
 struct ParameterSummary {
     name: String,
     ty: String,
+}
+
+#[derive(Serialize)]
+struct CatalogReport<T> {
+    kind: &'static str,
+    count: usize,
+    entries: Vec<T>,
+}
+
+#[derive(Serialize)]
+struct SyscallCatalogEntry {
+    name: String,
+    hash: String,
+    handler: String,
+    price: String,
+    call_flags: String,
+}
+
+#[derive(Serialize)]
+struct NativeContractCatalogEntry {
+    name: String,
+    script_hash_le: String,
+    script_hash_be: String,
+    methods: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct OpcodeCatalogEntry {
+    mnemonic: String,
+    byte: String,
+    operand_encoding: String,
+}
+
+fn build_syscall_catalog_entries() -> Vec<SyscallCatalogEntry> {
+    syscalls::all()
+        .iter()
+        .map(|info| SyscallCatalogEntry {
+            name: info.name.to_string(),
+            hash: format!("0x{:08X}", info.hash),
+            handler: info.handler.to_string(),
+            price: info.price.to_string(),
+            call_flags: info.call_flags.to_string(),
+        })
+        .collect()
+}
+
+fn build_native_contract_catalog_entries() -> Vec<NativeContractCatalogEntry> {
+    native_contracts::all()
+        .iter()
+        .map(|info| NativeContractCatalogEntry {
+            name: info.name.to_string(),
+            script_hash_le: util::format_hash(&info.script_hash),
+            script_hash_be: util::format_hash_be(&info.script_hash),
+            methods: info.methods.iter().map(|method| (*method).to_string()).collect(),
+        })
+        .collect()
+}
+
+fn build_opcode_catalog_entries() -> Vec<OpcodeCatalogEntry> {
+    let mut opcodes = OpCode::all_known();
+    opcodes.sort_by_key(|opcode| opcode.byte());
+    opcodes
+        .into_iter()
+        .map(|opcode| OpcodeCatalogEntry {
+            mnemonic: opcode.mnemonic(),
+            byte: format!("0x{:02X}", opcode.byte()),
+            operand_encoding: format!("{:?}", opcode.operand_encoding()),
+        })
+        .collect()
 }
 
 impl From<&ManifestPermissionContract> for PermissionContractSummary {
