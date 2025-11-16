@@ -1,0 +1,171 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{booktabs}
+
+\title{Neo Decompiler Specification}
+\author{Neo Decompiler Project}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Scope and Purpose}
+This specification defines the behaviour, inputs, outputs, and guarantees of the
+\texttt{neo-decompiler} tool and library. It applies to the following deliverables:
+\begin{itemize}[nosep]
+    \item The Rust library \texttt{neo\_decompiler}.
+    \item The CLI binary \texttt{neo-decompiler}.
+    \item The generated metadata tables for opcodes, syscalls, and native contracts.
+    \item The human-readable views (pseudocode, high-level, C\# skeleton) and
+    JSON reports emitted by the CLI.
+\end{itemize}
+
+Implementations shall conform to the functional requirements in
+Sections~\ref{sec:inputs}--\ref{sec:limits}. Non-normative notes are marked as
+``(informative)''.
+
+\section{Inputs and Dependencies}\label{sec:inputs}
+\begin{itemize}[nosep]
+    \item \textbf{NEF input:} A valid Neo N3 NEF file. The parser shall reject
+    files with incorrect magic, checksum, or malformed fields.
+    \item \textbf{Manifest input (optional):} A JSON manifest matching the NEF
+    script. When present, manifest data shall be used to annotate outputs and
+    drive entry-point naming.
+    \item \textbf{Generated metadata:} The tool shall include the complete
+    opcode table (from \texttt{src/opcodes\_generated.rs}), syscall table
+    (\texttt{src/syscalls\_generated.rs}), and native contract table
+    (\texttt{src/native\_contracts\_generated.rs}) without requiring network
+    access at runtime.
+\end{itemize}
+
+\section{Functional Requirements}
+\subsection{Disassembly}
+\begin{itemize}[nosep]
+    \item The disassembler shall decode all opcodes defined in the generated
+    metadata and preserve byte offsets.
+    \item Unsupported or unknown opcodes shall be represented with mnemonic
+    placeholders but may not cause failure of the entire disassembly.
+    \item Operands shall be parsed according to the operand encoding declared by
+    each opcode.
+\end{itemize}
+
+\subsection{Higher-Level Views}
+\begin{itemize}[nosep]
+    \item The pseudocode view shall mirror the instruction stream with offsets
+    and resolved syscall/native labels.
+    \item The high-level view shall lift stack operations into readable
+    statements and reconstruct structured control flow including \texttt{if},
+    \texttt{else}, \texttt{while}, \texttt{do--while}, counted loops rewritten
+    as \texttt{for}, and intra-loop \texttt{break}/\texttt{continue}.
+    \item When a manifest is provided, the entry function name and parameters
+    in the high-level view shall match the ABI method at the corresponding
+    offset. Argument slot names shall align with manifest parameter names.
+    \item The C\# view shall build a compilable skeleton that mirrors the
+    manifest ABI, includes manifest extras (\texttt{Author}, \texttt{Email}) as
+    \texttt{[ManifestExtra]} attributes, and preserves the same control-flow
+    lifting as the high-level view.
+\end{itemize}
+
+\subsection{CLI Behaviour}
+\begin{itemize}[nosep]
+    \item The CLI shall expose subcommands \texttt{info}, \texttt{disasm},
+    \texttt{decompile}, \texttt{tokens}, and \texttt{catalog}.
+    \item Each subcommand shall support text and JSON formats; the
+    \texttt{decompile} subcommand shall additionally support pseudocode,
+    high-level, and C\# outputs.
+    \item When a manifest is not provided explicitly, the CLI shall attempt to
+    locate a sibling \texttt{.manifest.json} file.
+\end{itemize}
+
+\section{Outputs}\label{sec:outputs}
+\subsection{Text Outputs}
+\begin{itemize}[nosep]
+    \item \textbf{info:} Header fields, script hashes, checksum, manifest
+    summary, and method tokens with native annotations.
+    \item \textbf{disasm:} Instruction listing with offsets and operands.
+    \item \textbf{decompile:} One of pseudocode, high-level, C\#, or all views
+    depending on \texttt{--format}.
+    \item \textbf{tokens:} Method tokens with call flags and native hints.
+    \item \textbf{catalog:} Syscalls, native contracts, or opcodes in tabular
+    form.
+\end{itemize}
+
+\subsection{JSON Outputs}
+JSON schemas reside in \texttt{docs/schema}. Table~\ref{tab:json-fields} lists
+the top-level fields for the \texttt{decompile} report.
+
+\begin{longtable}{@{}p{0.22\linewidth}p{0.72\linewidth}@{}}
+\caption{\texttt{decompile} JSON fields}\label{tab:json-fields}\\
+\toprule
+Field & Description \\
+\midrule
+file & Path to the NEF file consumed.\\
+manifest\_path & Path to the manifest, if supplied or discovered.\\
+script\_hash\_le / script\_hash\_be & Script hashes in little/big endian hex.\\
+high\_level & Lifted textual representation.\\
+pseudocode & Raw instruction listing with offsets.\\
+csharp & C\# skeleton derived from high-level view and manifest.\\
+instructions & Array of decoded instructions with operands.\\
+method\_tokens & Tokens with hashes, call flags, and native hints.\\
+manifest & Manifest summary (methods, events, permissions, trusts).\\
+warnings & Array of human-readable warnings (e.g., unknown native methods).\\
+\bottomrule
+\end{longtable}
+
+\section{Compliance Matrix}\label{sec:compliance}
+Table~\ref{tab:features} enumerates mandatory capabilities.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}p{0.3\linewidth}p{0.65\linewidth}@{}}
+\toprule
+Capability & Requirement \\
+\midrule
+Opcode coverage & All opcodes from \texttt{src/opcodes\_generated.rs} decoded.\\
+Syscall resolution & Syscalls mapped via \texttt{src/syscalls\_generated.rs} with names and call flags.\\
+Native contracts & Method tokens annotated using \texttt{src/native\_contracts\_generated.rs}.\\
+Control flow lifting & \texttt{if/else}, \texttt{while}, \texttt{do--while}, \texttt{for}, \texttt{break}/\texttt{continue}.\\
+Manifest integration & Entry signature, parameter names, extras (Author/Email) applied to outputs.\\
+Output formats & Text and JSON for all commands; pseudocode, high-level, C\# for \texttt{decompile}.\\
+\bottomrule
+\end{tabular}
+\caption{Mandatory capabilities}\label{tab:features}
+\end{table}
+
+\section{Figure (Informative)}
+Figure~\ref{fig:pipeline} illustrates the processing pipeline.
+
+\begin{figure}[h]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+NEF \& optional manifest & Disassembler \& metadata tables & Views \\
+\hline
+Input validation & Opcode/syscall/native lookup & Pseudocode / High-level / C\# / JSON \\
+\hline
+\end{tabular}
+\caption{Processing pipeline (informative)}\label{fig:pipeline}
+\end{figure}
+
+\section{Limitations}\label{sec:limits}
+\begin{itemize}[nosep]
+    \item Type inference beyond manifest-provided metadata is out-of-scope.
+    \item Complex control-flow graph recovery (e.g., switch lowering, try/finally
+    reconstruction) is not guaranteed.
+    \item Unknown opcodes beyond the generated table are rendered as
+    placeholders but not lifted.
+\end{itemize}
+
+\section{Versioning}
+This document SHALL be updated when any of the following occur:
+\begin{itemize}[nosep]
+    \item The opcode, syscall, or native contract tables change.
+    \item New output formats or structured control-flow constructs are added.
+    \item JSON schemas are modified.
+\end{itemize}
+
+\end{document}
