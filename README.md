@@ -55,7 +55,7 @@ cargo build --release
 # Emit the legacy pseudocode listing
 ./target/release/neo-decompiler decompile --format pseudocode path/to/contract.nef
 
-# Emit a C# contract skeleton
+# Emit a C# contract skeleton (includes manifest extras like Author/Email when present)
 ./target/release/neo-decompiler decompile --format csharp path/to/contract.nef
 
 # Machine-readable decompilation (high-level, pseudocode, manifest path, metadata)
@@ -253,7 +253,8 @@ Each `--format json` command emits a top-level object containing:
   - `disasm`: `instructions` array with `offset`, `opcode`, `operand_kind`, and
     structured `operand_value`.
   - `decompile`: combines the disassembly, `high_level` text, `csharp` view,
-    `pseudocode`, and `method_tokens` into one report.
+    `pseudocode`, and `method_tokens` into one report (C# view carries
+    manifest extras such as Author/Email when provided).
   - `tokens`: standalone `method_tokens` array for quick inspection.
 
 Example (excerpt from `info --format json`):
