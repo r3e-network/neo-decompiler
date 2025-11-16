@@ -85,6 +85,7 @@ enum DecompileFormat {
     #[default]
     HighLevel,
     Both,
+    Csharp,
     Json,
 }
 
@@ -490,6 +491,9 @@ impl Cli {
                 println!("// Pseudocode view");
                 print!("{}", result.pseudocode);
             }
+            DecompileFormat::Csharp => {
+                print!("{}", result.csharp);
+            }
             DecompileFormat::Json => {
                 let script_hash = result.nef.script_hash();
                 let method_tokens: Vec<MethodTokenReport> = result
@@ -506,6 +510,7 @@ impl Cli {
                         .map(|p| p.display().to_string()),
                     script_hash_le: util::format_hash(&script_hash),
                     script_hash_be: util::format_hash_be(&script_hash),
+                    csharp: result.csharp.clone(),
                     high_level: result.high_level.clone(),
                     pseudocode: result.pseudocode.clone(),
                     instructions: result
@@ -1067,6 +1072,7 @@ struct DecompileReport {
     manifest_path: Option<String>,
     script_hash_le: String,
     script_hash_be: String,
+    csharp: String,
     high_level: String,
     pseudocode: String,
     instructions: Vec<InstructionReport>,

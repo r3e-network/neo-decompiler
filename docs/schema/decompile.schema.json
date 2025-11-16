@@ -7,6 +7,7 @@
     "file",
     "script_hash_le",
     "script_hash_be",
+    "csharp",
     "high_level",
     "pseudocode",
     "instructions",
@@ -18,6 +19,7 @@
     "manifest_path": {"type": ["string", "null"]},
     "script_hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
     "script_hash_be": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
+    "csharp": {"type": "string"},
     "high_level": {"type": "string"},
     "pseudocode": {"type": "string"},
     "instructions": {

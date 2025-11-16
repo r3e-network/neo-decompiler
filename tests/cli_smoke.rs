@@ -247,6 +247,28 @@ fn decompile_command_supports_pseudocode_format() {
 }
 
 #[test]
+fn decompile_command_supports_csharp_format() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    let manifest_path = dir.path().join("contract.manifest.json");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(&manifest_path, SAMPLE_MANIFEST).unwrap();
+
+    Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("decompile")
+        .arg("--format")
+        .arg("csharp")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("namespace NeoDecompiler.Generated"))
+        .stdout(contains("public static string symbol()"));
+}
+
+#[test]
 fn decompile_command_supports_json_format() {
     let dir = tempdir().expect("tempdir");
     let nef_path = dir.path().join("contract.nef");
@@ -275,6 +297,14 @@ fn decompile_command_supports_json_format() {
         value["manifest_path"],
         Value::String(manifest_path.display().to_string())
     );
+    assert!(value["csharp"]
+        .as_str()
+        .expect("csharp string")
+        .contains("namespace NeoDecompiler.Generated"));
+    assert!(value["csharp"]
+        .as_str()
+        .expect("csharp string")
+        .contains("[ManifestExtra(\"Author\", \"Example Author\")]"));
     assert_eq!(
         value["manifest"]["abi"]["methods"][0]["name"],
         Value::String("symbol".into())
@@ -620,7 +650,11 @@ const SAMPLE_MANIFEST: &str = r#"
             "methods": "*"
         }
     ],
-    "trusts": ["0x89ABCDEF0123456789ABCDEF0123456789ABCDEF"]
+    "trusts": ["0x89ABCDEF0123456789ABCDEF0123456789ABCDEF"],
+    "extra": {
+        "Author": "Example Author",
+        "Email": "author@example.com"
+    }
 }
 "#;
 

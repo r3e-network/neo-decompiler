@@ -40,6 +40,7 @@ impl Decompiler {
         let instructions = self.disassembler.disassemble(&nef.script)?;
         let pseudocode = render_pseudocode(&instructions);
         let high_level = render_high_level(&nef, &instructions, manifest.as_ref());
+        let csharp = render_csharp(&nef, &instructions, manifest.as_ref());
 
         Ok(Decompilation {
             nef,
@@ -47,6 +48,7 @@ impl Decompiler {
             instructions,
             pseudocode,
             high_level,
+            csharp,
         })
     }
 
@@ -83,6 +85,7 @@ pub struct Decompilation {
     pub instructions: Vec<Instruction>,
     pub pseudocode: String,
     pub high_level: String,
+    pub csharp: String,
 }
 
 fn render_pseudocode(instructions: &[Instruction]) -> String {
@@ -166,9 +169,15 @@ fn render_high_level(
         if let Some(trusts) = manifest.trusts.as_ref() {
             writeln!(output, "    trusts = {};", trusts.describe()).unwrap();
         }
+        if let Some(author) = manifest_extra_string(manifest, "author") {
+            writeln!(output, "    // author: {author}").unwrap();
+        }
+        if let Some(email) = manifest_extra_string(manifest, "email") {
+            writeln!(output, "    // email: {email}").unwrap();
+        }
 
-    if !manifest.abi.methods.is_empty() {
-        writeln!(output, "    // ABI methods").unwrap();
+        if !manifest.abi.methods.is_empty() {
+            writeln!(output, "    // ABI methods").unwrap();
         for method in &manifest.abi.methods {
             let params = format_manifest_parameters(&method.parameters);
             let return_type = format_manifest_type(&method.return_type);
@@ -249,7 +258,7 @@ fn render_high_level(
         method
             .parameters
             .iter()
-            .map(|param| param.name.clone())
+            .map(|param| sanitize_identifier(&param.name))
             .collect::<Vec<_>>()
     });
     let entry_name = entry_method
@@ -297,6 +306,208 @@ fn render_high_level(
     output
 }
 
+fn render_csharp(
+    nef: &NefFile,
+    instructions: &[Instruction],
+    manifest: Option<&ContractManifest>,
+) -> String {
+    use std::fmt::Write;
+
+    let mut output = String::new();
+    writeln!(output, "using System;").unwrap();
+    writeln!(output, "using System.Numerics;").unwrap();
+    writeln!(output, "using Neo.SmartContract.Framework;").unwrap();
+    writeln!(output, "using Neo.SmartContract.Framework.Attributes;").unwrap();
+    writeln!(output, "using Neo.SmartContract.Framework.Services;").unwrap();
+    writeln!(output).unwrap();
+
+    let contract_name = manifest
+        .and_then(|m| {
+            let trimmed = m.name.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .map(|name| sanitize_identifier(name))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "NeoContract".to_string());
+
+    writeln!(output, "namespace NeoDecompiler.Generated {{").unwrap();
+    if let Some(manifest) = manifest {
+        if let Some(author) = manifest_extra_string(manifest, "author") {
+            writeln!(
+                output,
+                "    [ManifestExtra(\"Author\", \"{}\")]",
+                escape_csharp_string(&author)
+            )
+            .unwrap();
+        }
+        if let Some(email) = manifest_extra_string(manifest, "email") {
+            writeln!(
+                output,
+                "    [ManifestExtra(\"Email\", \"{}\")]",
+                escape_csharp_string(&email)
+            )
+            .unwrap();
+        }
+    }
+    writeln!(output, "    public class {contract_name} : SmartContract").unwrap();
+    writeln!(output, "    {{").unwrap();
+    let script_hash = nef.script_hash();
+    writeln!(
+        output,
+        "        // script hash (little-endian): {}",
+        util::format_hash(&script_hash)
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        // script hash (big-endian): {}",
+        util::format_hash_be(&script_hash)
+    )
+    .unwrap();
+
+    if let Some(manifest) = manifest {
+        if !manifest.supported_standards.is_empty() {
+            let standards = manifest.supported_standards.join(", ");
+            writeln!(output, "        // supported standards: {standards}").unwrap();
+        }
+        if manifest.features.storage || manifest.features.payable {
+            writeln!(output, "        // features:").unwrap();
+            if manifest.features.storage {
+                writeln!(output, "        //   storage = true").unwrap();
+            }
+            if manifest.features.payable {
+                writeln!(output, "        //   payable = true").unwrap();
+            }
+        }
+        if !manifest.permissions.is_empty() {
+            writeln!(output, "        // permissions:").unwrap();
+            for permission in &manifest.permissions {
+                writeln!(
+                    output,
+                    "        //   {}",
+                    format_permission_entry(permission)
+                )
+                .unwrap();
+            }
+        }
+        if let Some(trusts) = manifest.trusts.as_ref() {
+            writeln!(output, "        // trusts = {}", trusts.describe()).unwrap();
+        }
+    } else {
+        writeln!(output, "        // manifest not provided").unwrap();
+    }
+
+    writeln!(output).unwrap();
+
+    let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
+    let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
+    let entry_parameters = entry_method
+        .as_ref()
+        .map(|method| collect_csharp_parameters(&method.parameters));
+    let entry_param_labels = entry_parameters.as_ref().map(|params| {
+        params.iter().map(|param| param.name.clone()).collect::<Vec<_>>()
+    });
+    let entry_method_name = entry_method
+        .as_ref()
+        .map(|method| sanitize_identifier(&method.name))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "ScriptEntry".to_string());
+    let entry_return = entry_method
+        .as_ref()
+        .map(|method| format_manifest_type_csharp(&method.return_type))
+        .unwrap_or_else(|| "void".to_string());
+    let entry_param_signature = entry_parameters
+        .as_ref()
+        .map(|params| format_csharp_parameters(params))
+        .unwrap_or_default();
+    let entry_signature = format_method_signature(&entry_method_name, &entry_param_signature, &entry_return);
+
+    writeln!(output, "        {entry_signature}").unwrap();
+    writeln!(output, "        {{").unwrap();
+
+    let mut emitter = HighLevelEmitter::with_program(instructions);
+    if let Some(labels) = entry_param_labels.as_ref() {
+        emitter.set_argument_labels(labels);
+    }
+    for instruction in instructions {
+        emitter.advance_to(instruction.offset);
+        emitter.emit_instruction(instruction);
+    }
+    let statements = emitter.finish();
+    if statements.is_empty() {
+        writeln!(output, "            // no instructions decoded").unwrap();
+    } else {
+        for line in statements {
+            let converted = csharpize_statement(&line);
+            if converted.is_empty() {
+                writeln!(output).unwrap();
+            } else {
+                writeln!(output, "            {converted}").unwrap();
+            }
+        }
+    }
+    writeln!(output, "        }}").unwrap();
+
+    if let Some(manifest) = manifest {
+        for method in &manifest.abi.methods {
+            let is_entry = entry_method.as_ref().map_or(false, |entry| {
+                entry.name == method.name && entry.offset == method.offset
+            });
+            if is_entry {
+                continue;
+            }
+            let params = collect_csharp_parameters(&method.parameters);
+            let param_signature = format_csharp_parameters(&params);
+            let method_name = sanitize_identifier(&method.name);
+            let return_type = format_manifest_type_csharp(&method.return_type);
+            let signature = format_method_signature(&method_name, &param_signature, &return_type);
+            writeln!(output).unwrap();
+            writeln!(output, "        {signature}").unwrap();
+            writeln!(output, "        {{").unwrap();
+            writeln!(
+                output,
+                "            throw new System.NotImplementedException();"
+            )
+            .unwrap();
+            writeln!(output, "        }}").unwrap();
+        }
+    }
+
+    writeln!(output, "    }}").unwrap();
+    writeln!(output, "}}").unwrap();
+
+    output
+}
+
+fn sanitize_identifier(input: &str) -> String {
+    let mut ident = String::new();
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() {
+            ident.push(ch);
+        } else if ch == '_' {
+            ident.push('_');
+        } else if ch.is_whitespace() || ch == '-' {
+            if !ident.ends_with('_') {
+                ident.push('_');
+            }
+        }
+    }
+    while ident.ends_with('_') {
+        ident.pop();
+    }
+    if ident.is_empty() {
+        ident.push_str("param");
+    }
+    if ident.chars().next().map(|ch| ch.is_ascii_digit()).unwrap_or(false) {
+        ident.insert(0, '_');
+    }
+    ident
+}
+
 fn format_manifest_type(kind: &str) -> String {
     match kind.to_ascii_lowercase().as_str() {
         "void" => "void".into(),
@@ -315,12 +526,109 @@ fn format_manifest_type(kind: &str) -> String {
     }
 }
 
+#[derive(Clone)]
+struct CSharpParameter {
+    name: String,
+    ty: String,
+}
+
+fn collect_csharp_parameters(parameters: &[ManifestParameter]) -> Vec<CSharpParameter> {
+    parameters
+        .iter()
+        .map(|param| CSharpParameter {
+            name: sanitize_identifier(&param.name),
+            ty: format_manifest_type_csharp(&param.kind),
+        })
+        .collect()
+}
+
+fn format_csharp_parameters(params: &[CSharpParameter]) -> String {
+    params
+        .iter()
+        .map(|param| format!("{} {}", param.ty, param.name))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn format_manifest_type_csharp(kind: &str) -> String {
+    match kind.to_ascii_lowercase().as_str() {
+        "void" => "void".into(),
+        "boolean" | "bool" => "bool".into(),
+        "integer" | "int" => "BigInteger".into(),
+        "string" => "string".into(),
+        "hash160" => "UInt160".into(),
+        "hash256" => "UInt256".into(),
+        "bytearray" | "bytes" => "ByteString".into(),
+        "signature" => "ByteString".into(),
+        "array" => "object[]".into(),
+        "map" => "object".into(),
+        "interopinterface" => "object".into(),
+        "any" => "object".into(),
+        _ => "object".into(),
+    }
+}
+
+fn format_method_signature(name: &str, parameters: &str, return_type: &str) -> String {
+    if parameters.is_empty() {
+        format!("public static {return_type} {name}()")
+    } else {
+        format!("public static {return_type} {name}({parameters})")
+    }
+}
+
+fn csharpize_statement(line: &str) -> String {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    if trimmed.starts_with("//") {
+        return trimmed.to_string();
+    }
+    if trimmed.starts_with("let ") {
+        return format!("var {}", &trimmed[4..]);
+    }
+    if trimmed.starts_with("if ") && trimmed.ends_with(" {") {
+        let condition = trimmed[3..trimmed.len() - 2].trim();
+        return format!("if ({condition}) {{");
+    }
+    if trimmed.starts_with("while ") && trimmed.ends_with(" {") {
+        let condition = trimmed[6..trimmed.len() - 2].trim();
+        return format!("while ({condition}) {{");
+    }
+    if trimmed.starts_with("for (") && trimmed.ends_with(" {") {
+        let inner = &trimmed[4..trimmed.len() - 2];
+        let converted = inner.replacen("let ", "var ", 1);
+        return format!("for ({converted}) {{");
+    }
+    trimmed.to_string()
+}
+
+fn escape_csharp_string(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+}
+
 fn format_manifest_parameters(parameters: &[ManifestParameter]) -> String {
     parameters
         .iter()
         .map(|param| format!("{}: {}", param.name, format_manifest_type(&param.kind)))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn manifest_extra_string(manifest: &ContractManifest, key: &str) -> Option<String> {
+    let extra = manifest.extra.as_ref()?;
+    let map = match extra {
+        serde_json::Value::Object(map) => map,
+        _ => return None,
+    };
+    let target = key.to_ascii_lowercase();
+    map.iter()
+        .find(|(candidate, _)| candidate.to_ascii_lowercase() == target)
+        .and_then(|(_, value)| value.as_str().map(|s| s.to_string()))
 }
 
 fn find_manifest_entry_method<'a>(
@@ -399,8 +707,8 @@ impl HighLevelEmitter {
     }
 
     fn set_argument_labels(&mut self, labels: &[String]) {
-        for (index, name) in labels.iter().enumerate() {
-            self.argument_labels.insert(index, name.clone());
+        for (index, label) in labels.iter().enumerate() {
+            self.argument_labels.insert(index, label.clone());
         }
     }
 
@@ -1581,5 +1889,46 @@ mod tests {
         let high_level = &decompilation.high_level;
         assert!(high_level.contains("break;"), "missing break statement: {high_level}");
         assert!(high_level.contains("continue;"), "missing continue statement: {high_level}");
+    }
+
+    #[test]
+    fn csharp_view_respects_manifest_metadata_and_parameters() {
+        let nef_bytes = sample_nef();
+        let manifest = ContractManifest::from_json_str(
+            r#"
+            {
+                "name": "Demo",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "deploy-contract",
+                            "parameters": [
+                                {"name": "owner-name", "type": "Hash160"},
+                                {"name": "amount", "type": "Integer"}
+                            ],
+                            "returntype": "Void",
+                            "offset": 0
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*",
+                "extra": {"Author": "Jane Doe", "Email": "jane@example.com"}
+            }
+            "#,
+        )
+        .expect("manifest parsed");
+
+        let decompilation = Decompiler::new()
+            .decompile_bytes_with_manifest(&nef_bytes, Some(manifest))
+            .expect("decompile succeeds");
+
+        let csharp = &decompilation.csharp;
+        assert!(csharp.contains("[ManifestExtra(\"Author\", \"Jane Doe\")]"));
+        assert!(csharp.contains("[ManifestExtra(\"Email\", \"jane@example.com\")]"));
+        assert!(csharp.contains(
+            "public static void deploy_contract(UInt160 owner_name, BigInteger amount)"
+        ));
     }
 }

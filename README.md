@@ -28,6 +28,8 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   `while`, and `do { } while` blocks plus emitted `break`/`continue`
   statements and manifest-derived entry signatures
 - A simple pseudocode view mirroring the decoded instruction stream
+- A C# contract skeleton view (`--format csharp`) that mirrors the manifest
+  entry point and emits stubs for additional ABI methods
 - A single binary (`neo-decompiler`) and a reusable library (`neo_decompiler`)
 
 ## Quick start
@@ -52,6 +54,9 @@ cargo build --release
 
 # Emit the legacy pseudocode listing
 ./target/release/neo-decompiler decompile --format pseudocode path/to/contract.nef
+
+# Emit a C# contract skeleton
+./target/release/neo-decompiler decompile --format csharp path/to/contract.nef
 
 # Machine-readable decompilation (high-level, pseudocode, manifest path, metadata)
 ./target/release/neo-decompiler decompile --format json path/to/contract.nef
@@ -207,10 +212,10 @@ handling in `src/decompiler.rs`/`src/cli.rs` for any new instructions.
   various `PUSH*` forms, short/long jumps, calls, and `SYSCALL`). Unrecognised
   opcodes still produce informative comments so you can decide how to extend the
   decoder.
-- The high-level contract view performs lightweight stack lifting (constants,
-  arithmetic, simple returns, syscalls) and recognises structured control flow
-  such as `if`/`else`, `for`, `while`, and `do { } while` loops (including
-  `break`/`continue` branches). Complex reconstruction
+- The high-level contract view (and the derived C# skeleton) performs
+  lightweight stack lifting (constants, arithmetic, simple returns, syscalls)
+  and recognises structured control flow such as `if`/`else`, `for`, `while`,
+  and `do { } while` loops (including `break`/`continue` branches). Complex reconstruction
   such as full control-flow graphs or type inference is intentionally out of
   scope.
 
@@ -247,8 +252,8 @@ Each `--format json` command emits a top-level object containing:
     and `manifest` summaries (methods, events, permissions, trusts).
   - `disasm`: `instructions` array with `offset`, `opcode`, `operand_kind`, and
     structured `operand_value`.
-  - `decompile`: combines the disassembly, `high_level` text, `pseudocode`, and
-    `method_tokens` into one report.
+  - `decompile`: combines the disassembly, `high_level` text, `csharp` view,
+    `pseudocode`, and `method_tokens` into one report.
   - `tokens`: standalone `method_tokens` array for quick inspection.
 
 Example (excerpt from `info --format json`):
