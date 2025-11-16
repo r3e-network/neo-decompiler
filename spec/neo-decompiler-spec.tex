@@ -5,6 +5,7 @@
 \usepackage{array}
 \usepackage{enumitem}
 \usepackage{booktabs}
+\usepackage{csquotes}
 
 \title{Neo Decompiler Specification}
 \author{Neo Decompiler Project}
@@ -27,6 +28,17 @@ This specification defines the behaviour, inputs, outputs, and guarantees of the
 Implementations shall conform to the functional requirements in
 Sections~\ref{sec:inputs}--\ref{sec:limits}. Non-normative notes are marked as
 ``(informative)''.
+
+\section{Terminology and Conventions}
+\begin{itemize}[nosep]
+    \item \textbf{shall} denotes a mandatory requirement.
+    \item \textbf{should} denotes a recommendation that ought to be followed
+    unless a justification exists.
+    \item \textbf{may} denotes an optional behaviour.
+    \item \textbf{NEF} refers to a Neo N3 Executable Format blob.
+    \item \textbf{Manifest} refers to the companion \texttt{.manifest.json}
+    file describing ABI, permissions, and extras.
+\end{itemize}
 
 \section{Inputs and Dependencies}\label{sec:inputs}
 \begin{itemize}[nosep]
@@ -81,7 +93,28 @@ Sections~\ref{sec:inputs}--\ref{sec:limits}. Non-normative notes are marked as
     locate a sibling \texttt{.manifest.json} file.
 \end{itemize}
 
+Table~\ref{tab:commands} enumerates the CLI commands and supported formats.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{@{}p{0.22\linewidth}p{0.35\linewidth}p{0.33\linewidth}@{}}
+\toprule
+Command & Purpose & Formats \& Notes \\
+\midrule
+\texttt{info} & Header/manifest summary & Text, JSON (includes method tokens) \\
+\texttt{disasm} & Instruction listing & Text, JSON \\
+\texttt{decompile} & Pseudocode / High-level / C\# & Text (pseudocode/high-level/C\#), JSON \\
+\texttt{tokens} & Method tokens & Text, JSON \\
+\texttt{catalog} & Syscalls/native/opcodes tables & Text, JSON \\
+\texttt{schema} & Emit JSON schemas & Text (schema body), optional validation \\
+\bottomrule
+\end{tabular}
+\caption{CLI commands and formats}\label{tab:commands}
+\end{table}
+
 \section{Outputs}\label{sec:outputs}
+All outputs shall be deterministic with respect to the NEF, manifest, and
+generated metadata bundled in the release.
 \subsection{Text Outputs}
 \begin{itemize}[nosep]
     \item \textbf{info:} Header fields, script hashes, checksum, manifest
@@ -158,6 +191,18 @@ Input validation & Opcode/syscall/native lookup & Pseudocode / High-level / C\# 
     reconstruction) is not guaranteed.
     \item Unknown opcodes beyond the generated table are rendered as
     placeholders but not lifted.
+    \item The C\# view is a scaffold; method bodies beyond the entry point are
+    emitted as stubs and not semantically reconstructed.
+\end{itemize}
+
+\section{Testing and Validation}
+\begin{itemize}[nosep]
+    \item Implementations shall include automated tests covering NEF parsing,
+    manifest parsing, disassembly, lifting, CLI smoke tests, and artifact
+    decompilation (see \texttt{cargo test}).
+    \item JSON schema files in \texttt{docs/schema} shall validate the
+    corresponding JSON outputs via the \texttt{schema} subcommand and the
+    embedded validation routines.
 \end{itemize}
 
 \section{Versioning}
