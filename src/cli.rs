@@ -54,9 +54,9 @@ enum Command {
         #[arg(long, value_enum, default_value_t = DisasmFormat::Text)]
         format: DisasmFormat,
 
-        /// Continue disassembly even if an unknown opcode is encountered
+        /// Fail fast if an unknown opcode is encountered (default: tolerate and emit UNKNOWN_0x..)
         #[arg(long)]
-        allow_unknown_opcodes: bool,
+        fail_on_unknown_opcodes: bool,
     },
 
     /// Parse and pretty-print the bytecode
@@ -67,9 +67,9 @@ enum Command {
         #[arg(long, value_enum, default_value_t = DecompileFormat::HighLevel)]
         format: DecompileFormat,
 
-        /// Continue disassembly even if an unknown opcode is encountered
+        /// Fail fast if an unknown opcode is encountered (default: tolerate and emit UNKNOWN_0x..)
         #[arg(long)]
-        allow_unknown_opcodes: bool,
+        fail_on_unknown_opcodes: bool,
     },
 
     /// List method tokens embedded in the NEF file
@@ -313,13 +313,13 @@ impl Cli {
             Command::Disasm {
                 path,
                 format,
-                allow_unknown_opcodes,
-            } => self.run_disasm(path, *format, *allow_unknown_opcodes),
+                fail_on_unknown_opcodes,
+            } => self.run_disasm(path, *format, *fail_on_unknown_opcodes),
             Command::Decompile {
                 path,
                 format,
-                allow_unknown_opcodes,
-            } => self.run_decompile(path, *format, *allow_unknown_opcodes),
+                fail_on_unknown_opcodes,
+            } => self.run_decompile(path, *format, *fail_on_unknown_opcodes),
             Command::Tokens { path, format } => self.run_tokens(path, *format),
             Command::Catalog(args) => self.run_catalog(args),
             Command::Schema(args) => self.run_schema(args),
@@ -420,12 +420,12 @@ impl Cli {
         &self,
         path: &PathBuf,
         format: DisasmFormat,
-        allow_unknown_opcodes: bool,
+        fail_on_unknown_opcodes: bool,
     ) -> Result<()> {
-        let handling = if allow_unknown_opcodes {
-            UnknownHandling::Permit
-        } else {
+        let handling = if fail_on_unknown_opcodes {
             UnknownHandling::Error
+        } else {
+            UnknownHandling::Permit
         };
         let decompiler = Decompiler::with_unknown_handling(handling);
         let result = decompiler.decompile_file(path)?;
@@ -504,12 +504,12 @@ impl Cli {
         &self,
         path: &PathBuf,
         format: DecompileFormat,
-        allow_unknown_opcodes: bool,
+        fail_on_unknown_opcodes: bool,
     ) -> Result<()> {
-        let handling = if allow_unknown_opcodes {
-            UnknownHandling::Permit
-        } else {
+        let handling = if fail_on_unknown_opcodes {
             UnknownHandling::Error
+        } else {
+            UnknownHandling::Permit
         };
         let decompiler = Decompiler::with_unknown_handling(handling);
         let manifest_path = self.resolve_manifest_path(path);

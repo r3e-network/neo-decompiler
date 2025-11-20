@@ -19,7 +19,8 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   `tools/generate_opcodes.py`)
 - Manifest parsing (`.manifest.json`) with ABI, feature, group, permission, and trust details that surface in both text and JSON outputs
 - Disassembly for common opcodes such as `PUSH*`, arithmetic operations, jumps,
-  calls, and `SYSCALL` (fails fast on unknown opcodes to avoid drift)
+  calls, and `SYSCALL` (tolerant by default; optional fail-fast flag for unknown
+  opcodes)
 - Syscall metadata resolution with human-readable names, call flags, and return
   arity (void syscalls avoid phantom temporaries in the high-level view)
 - Native contract lookup so method tokens can be paired with contract names
@@ -49,17 +50,17 @@ cargo build --release
 # Decode instructions
 ./target/release/neo-decompiler disasm path/to/contract.nef
 
-# Allow unknown opcodes instead of failing fast
-./target/release/neo-decompiler disasm --allow-unknown-opcodes path/to/contract.nef
+# Fail fast on unknown opcodes (default is tolerant)
+./target/release/neo-decompiler disasm --fail-on-unknown-opcodes path/to/contract.nef
 
-# Machine-readable disassembly (use --allow-unknown-opcodes if you want best-effort parsing)
+# Machine-readable disassembly (tolerant by default)
 ./target/release/neo-decompiler disasm --format json path/to/contract.nef
 
 # Emit the high-level contract view (auto-detects `*.manifest.json` if present)
 ./target/release/neo-decompiler decompile path/to/contract.nef
 
-# Allow unknown opcodes during high-level reconstruction
-./target/release/neo-decompiler decompile --allow-unknown-opcodes path/to/contract.nef
+# Fail fast on unknown opcodes during high-level reconstruction
+./target/release/neo-decompiler decompile --fail-on-unknown-opcodes path/to/contract.nef
 
 # Emit the legacy pseudocode listing
 ./target/release/neo-decompiler decompile --format pseudocode path/to/contract.nef

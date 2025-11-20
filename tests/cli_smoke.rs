@@ -233,7 +233,7 @@ fn disasm_command_outputs_instructions() {
 }
 
 #[test]
-fn disasm_can_allow_unknown_opcodes() {
+fn disasm_can_fail_on_unknown_opcodes() {
     let dir = tempdir().expect("tempdir");
     let nef_path = dir.path().join("unknown.nef");
     std::fs::write(&nef_path, build_nef_with_unknown_opcode()).unwrap();
@@ -243,18 +243,18 @@ fn disasm_can_allow_unknown_opcodes() {
         .arg("disasm")
         .arg(&nef_path)
         .assert()
-        .failure()
-        .stderr(contains("unknown opcode 0xFF"));
+        .success()
+        .stdout(contains("UNKNOWN_0xFF"))
+        .stdout(contains("0001: RET"));
 
     Command::cargo_bin("neo-decompiler")
         .unwrap()
         .arg("disasm")
-        .arg("--allow-unknown-opcodes")
+        .arg("--fail-on-unknown-opcodes")
         .arg(&nef_path)
         .assert()
-        .success()
-        .stdout(contains("UNKNOWN_0xFF"))
-        .stdout(contains("0001: RET"));
+        .failure()
+        .stderr(contains("unknown opcode 0xFF"));
 }
 
 #[test]
