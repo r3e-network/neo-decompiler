@@ -330,7 +330,7 @@ fn render_csharp(
                 Some(trimmed)
             }
         })
-        .map(|name| sanitize_identifier(name))
+        .map(sanitize_identifier)
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "NeoContract".to_string());
 
@@ -488,12 +488,8 @@ fn sanitize_identifier(input: &str) -> String {
     for ch in input.chars() {
         if ch.is_ascii_alphanumeric() {
             ident.push(ch);
-        } else if ch == '_' {
+        } else if ch == '_' || (ch.is_whitespace() || ch == '-') && !ident.ends_with('_') {
             ident.push('_');
-        } else if ch.is_whitespace() || ch == '-' {
-            if !ident.ends_with('_') {
-                ident.push('_');
-            }
         }
     }
     while ident.ends_with('_') {
@@ -584,8 +580,8 @@ fn csharpize_statement(line: &str) -> String {
     if trimmed.starts_with("//") {
         return trimmed.to_string();
     }
-    if trimmed.starts_with("let ") {
-        return format!("var {}", &trimmed[4..]);
+    if let Some(stripped) = trimmed.strip_prefix("let ") {
+        return format!("var {stripped}");
     }
     if trimmed.starts_with("if ") && trimmed.ends_with(" {") {
         let condition = trimmed[3..trimmed.len() - 2].trim();
@@ -597,6 +593,8 @@ fn csharpize_statement(line: &str) -> String {
     }
     if trimmed.starts_with("for (") && trimmed.ends_with(" {") {
         let inner = &trimmed[4..trimmed.len() - 2];
+        let inner = inner.strip_prefix('(').unwrap_or(inner);
+        let inner = inner.strip_suffix(')').unwrap_or(inner);
         let converted = inner.replacen("let ", "var ", 1);
         return format!("for ({converted}) {{");
     }
@@ -631,10 +629,10 @@ fn manifest_extra_string(manifest: &ContractManifest, key: &str) -> Option<Strin
         .and_then(|(_, value)| value.as_str().map(|s| s.to_string()))
 }
 
-fn find_manifest_entry_method<'a>(
-    manifest: &'a ContractManifest,
+fn find_manifest_entry_method(
+    manifest: &ContractManifest,
     entry_offset: usize,
-) -> Option<&'a ManifestMethod> {
+) -> Option<&ManifestMethod> {
     manifest
         .abi
         .methods
@@ -1285,11 +1283,7 @@ impl HighLevelEmitter {
         match jump_instruction.opcode {
             OpCode::Jmp | OpCode::Jmp_L => {
                 let width = Self::branch_width(jump_instruction.opcode);
-                let Some(target) =
-                    self.forward_jump_target(jump_instruction, width)
-                else {
-                    return None;
-                };
+                let target = self.forward_jump_target(jump_instruction, width)?;
                 if target <= condition_offset
                     && !self
                         .loop_stack
@@ -1410,7 +1404,7 @@ impl HighLevelEmitter {
             .any(|ctx| ctx.break_offset == target || ctx.continue_offset == target)
     }
 
-    fn rewrite_for_loops(statements: &mut Vec<String>) {
+    fn rewrite_for_loops(statements: &mut [String]) {
         let mut index = 0;
         while index < statements.len() {
             let Some(condition) = Self::extract_while_condition(&statements[index]) else {
@@ -1523,23 +1517,18 @@ impl HighLevelEmitter {
             if line.is_empty() || line.starts_with("//") || line == "}" {
                 continue;
             }
-            let Some(assign) = Self::parse_assignment(line) else {
-                return None;
-            };
+            let assign = Self::parse_assignment(line)?;
             if assign.lhs != var {
                 return None;
             }
             if assign.rhs.starts_with(var) {
                 return Some((index, None, assign.full));
             }
-            if let Some(prev_idx) = Self::previous_code_line(statements, index) {
-                let Some(prev_assign) = Self::parse_assignment(&statements[prev_idx]) else {
-                    return None;
-                };
-                if prev_assign.lhs == assign.rhs {
-                    let expr = format!("{} = {}", var, prev_assign.rhs);
-                    return Some((index, Some(prev_idx), expr));
-                }
+            let prev_idx = Self::previous_code_line(statements, index)?;
+            let prev_assign = Self::parse_assignment(&statements[prev_idx])?;
+            if prev_assign.lhs == assign.rhs {
+                let expr = format!("{} = {}", var, prev_assign.rhs);
+                return Some((index, Some(prev_idx), expr));
             }
             return None;
         }
@@ -1930,5 +1919,69 @@ mod tests {
         assert!(csharp.contains(
             "public static void deploy_contract(UInt160 owner_name, BigInteger amount)"
         ));
+    }
+
+    #[test]
+    fn sanitize_identifier_handles_edge_cases() {
+        assert_eq!(
+            sanitize_identifier(" 123 hello-world__"),
+            "_123_hello_world"
+        );
+        assert_eq!(sanitize_identifier("9lives"), "_9lives");
+        assert_eq!(sanitize_identifier("!!!"), "param");
+    }
+
+    #[test]
+    fn csharpize_statement_converts_known_forms() {
+        assert_eq!(csharpize_statement("   "), "");
+        assert_eq!(csharpize_statement("// note"), "// note");
+        assert_eq!(csharpize_statement("let x = 1;"), "var x = 1;");
+        assert_eq!(csharpize_statement("if t0 {"), "if (t0) {");
+        assert_eq!(csharpize_statement("while t1 {"), "while (t1) {");
+        assert_eq!(
+            csharpize_statement("for (let i = 0; i < 3; i++) {"),
+            "for (var i = 0; i < 3; i++) {"
+        );
+    }
+
+    #[test]
+    fn rewrite_for_loops_handles_temp_increment_chain() {
+        let mut statements = vec![
+            "let loc0 = 0;".to_string(),
+            "while loc0 < 3 {".to_string(),
+            "    // work".to_string(),
+            "    temp1 = loc0 + 1;".to_string(),
+            "    loc0 = temp1;".to_string(),
+            "}".to_string(),
+        ];
+
+        HighLevelEmitter::rewrite_for_loops(&mut statements);
+
+        assert_eq!(
+            statements[1],
+            "for (let loc0 = 0; loc0 < 3; loc0 = loc0 + 1) {"
+        );
+        assert!(statements[0].is_empty(), "initializer should be removed");
+        assert!(statements[3].is_empty(), "temp increment should be removed");
+        assert!(statements[4].is_empty(), "final increment should be removed");
+    }
+
+    #[test]
+    fn rewrite_for_loops_handles_direct_increment() {
+        let mut statements = vec![
+            "let loc0 = t0;".to_string(),
+            "while loc0 < limit {".to_string(),
+            "    loc0 = loc0 + 1;".to_string(),
+            "}".to_string(),
+        ];
+
+        HighLevelEmitter::rewrite_for_loops(&mut statements);
+
+        assert_eq!(
+            statements[1],
+            "for (let loc0 = t0; loc0 < limit; loc0 = loc0 + 1) {"
+        );
+        assert!(statements[0].is_empty(), "initializer should be removed");
+        assert!(statements[2].is_empty(), "increment should be removed");
     }
 }

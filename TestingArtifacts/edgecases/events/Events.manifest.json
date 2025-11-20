@@ -1,0 +1,50 @@
+{
+    "name": "Events",
+    "groups": [],
+    "features": {
+        "storage": false,
+        "payable": false
+    },
+    "supportedstandards": [],
+    "abi": {
+        "methods": [
+            {
+                "name": "main",
+                "parameters": [],
+                "returntype": "Integer",
+                "offset": 0,
+                "safe": false
+            }
+        ],
+        "events": [
+            {
+                "name": "Transfer",
+                "parameters": [
+                    {
+                        "name": "from",
+                        "type": "Hash160"
+                    },
+                    {
+                        "name": "to",
+                        "type": "Hash160"
+                    },
+                    {
+                        "name": "amount",
+                        "type": "Integer"
+                    }
+                ]
+            },
+            {
+                "name": "Notify",
+                "parameters": [
+                    {
+                        "name": "payload",
+                        "type": "Any"
+                    }
+                ]
+            }
+        ]
+    },
+    "permissions": [],
+    "trusts": "*"
+}

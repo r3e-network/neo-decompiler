@@ -199,6 +199,14 @@ neo-decompiler catalog native-contracts --format json
 neo-decompiler catalog opcodes
 ```
 
+## Testing artifacts
+- Drop real contracts anywhere under `TestingArtifacts/` to extend coverage:
+  - C# source with embedded manifest/NEF blobs (`*.cs`) are parsed and rewritten into `TestingArtifacts/decompiled/<relative>/`.
+  - Paired files (`Example.nef` + `Example.manifest.json`) are also picked up automatically (recursively).
+- Known limitations can be listed in `TestingArtifacts/known_unsupported.txt` (one name per line, `#` for comments, optional `path:expected substring` to assert the error text); matching artifacts are allowed to fail and are copied to `*.error.txt`.
+- Outputs mirror the artifact layout under `TestingArtifacts/decompiled/`, which is git-ignored by default. Known-unsupported entries are still processed and must emit a non-empty `*.error.txt` to document the failure reason.
+- Current samples ship under `TestingArtifacts/edgecases/` (loop lifting, method tokens, manifest metadata, permissions/trusts, call-flag failure, events) and `TestingArtifacts/embedded/` (compiler-style C# with embedded manifest/NEF).
+
 ### Extending opcode coverage
 The disassembler prints informative comments for opcodes that are not yet translated
 (`// XXXX: <MNEMONIC> (not yet translated)`). To extend support, update

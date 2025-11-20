@@ -1,0 +1,45 @@
+{
+    "name": "Permissions",
+    "groups": [],
+    "features": {
+        "storage": false,
+        "payable": false
+    },
+    "supportedstandards": [
+        "Test-1"
+    ],
+    "abi": {
+        "methods": [
+            {
+                "name": "main",
+                "parameters": [],
+                "returntype": "Void",
+                "offset": 0,
+                "safe": false
+            }
+        ],
+        "events": []
+    },
+    "permissions": [
+        {
+            "contract": {
+                "hash": "0x0123456789abcdef0123456789abcdef01234567"
+            },
+            "methods": [
+                "symbol",
+                "decimals"
+            ]
+        },
+        {
+            "contract": {
+                "group": "02abcdef"
+            },
+            "methods": "*"
+        }
+    ],
+    "trusts": {
+        "groups": [
+            "02abcdef"
+        ]
+    }
+}

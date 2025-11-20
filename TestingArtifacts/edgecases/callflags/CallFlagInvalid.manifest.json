@@ -1,0 +1,23 @@
+{
+    "name": "CallFlagInvalid",
+    "groups": [],
+    "features": {
+        "storage": false,
+        "payable": false
+    },
+    "supportedstandards": [],
+    "abi": {
+        "methods": [
+            {
+                "name": "main",
+                "parameters": [],
+                "returntype": "Integer",
+                "offset": 0,
+                "safe": false
+            }
+        ],
+        "events": []
+    },
+    "permissions": [],
+    "trusts": "*"
+}
