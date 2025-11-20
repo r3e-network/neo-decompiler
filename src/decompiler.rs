@@ -19,7 +19,7 @@ pub struct Decompiler {
 
 impl Decompiler {
     pub fn new() -> Self {
-        Self::with_unknown_handling(crate::disassembler::UnknownHandling::Error)
+        Self::with_unknown_handling(crate::disassembler::UnknownHandling::Permit)
     }
 
     pub fn with_unknown_handling(handling: crate::disassembler::UnknownHandling) -> Self {

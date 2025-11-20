@@ -25,7 +25,7 @@ impl Default for Disassembler {
 impl Disassembler {
     pub fn new() -> Self {
         Self {
-            unknown: UnknownHandling::Error,
+            unknown: UnknownHandling::Permit,
         }
     }
 
@@ -212,7 +212,9 @@ mod tests {
     #[test]
     fn errors_on_unknown_opcode() {
         let bytecode = [0xFF];
-        let err = Disassembler::new().disassemble(&bytecode).unwrap_err();
+        let err = Disassembler::with_unknown_handling(UnknownHandling::Error)
+            .disassemble(&bytecode)
+            .unwrap_err();
         assert!(matches!(
             err,
             crate::error::Error::Disassembly(DisassemblyError::UnknownOpcode {
