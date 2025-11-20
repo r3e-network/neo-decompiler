@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::decompiler::Decompiler;
+use crate::disassembler::UnknownHandling;
 use crate::error::Result;
 use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::{
@@ -52,6 +53,10 @@ enum Command {
         /// Choose the output format
         #[arg(long, value_enum, default_value_t = DisasmFormat::Text)]
         format: DisasmFormat,
+
+        /// Continue disassembly even if an unknown opcode is encountered
+        #[arg(long)]
+        allow_unknown_opcodes: bool,
     },
 
     /// Parse and pretty-print the bytecode
@@ -61,6 +66,10 @@ enum Command {
         /// Choose the output view
         #[arg(long, value_enum, default_value_t = DecompileFormat::HighLevel)]
         format: DecompileFormat,
+
+        /// Continue disassembly even if an unknown opcode is encountered
+        #[arg(long)]
+        allow_unknown_opcodes: bool,
     },
 
     /// List method tokens embedded in the NEF file
@@ -301,8 +310,16 @@ impl Cli {
     pub fn run(&self) -> Result<()> {
         match &self.command {
             Command::Info { path, format } => self.run_info(path, *format),
-            Command::Disasm { path, format } => self.run_disasm(path, *format),
-            Command::Decompile { path, format } => self.run_decompile(path, *format),
+            Command::Disasm {
+                path,
+                format,
+                allow_unknown_opcodes,
+            } => self.run_disasm(path, *format, *allow_unknown_opcodes),
+            Command::Decompile {
+                path,
+                format,
+                allow_unknown_opcodes,
+            } => self.run_decompile(path, *format, *allow_unknown_opcodes),
             Command::Tokens { path, format } => self.run_tokens(path, *format),
             Command::Catalog(args) => self.run_catalog(args),
             Command::Schema(args) => self.run_schema(args),
@@ -399,8 +416,18 @@ impl Cli {
         Ok(())
     }
 
-    fn run_disasm(&self, path: &PathBuf, format: DisasmFormat) -> Result<()> {
-        let decompiler = Decompiler::new();
+    fn run_disasm(
+        &self,
+        path: &PathBuf,
+        format: DisasmFormat,
+        allow_unknown_opcodes: bool,
+    ) -> Result<()> {
+        let handling = if allow_unknown_opcodes {
+            UnknownHandling::Permit
+        } else {
+            UnknownHandling::Error
+        };
+        let decompiler = Decompiler::with_unknown_handling(handling);
         let result = decompiler.decompile_file(path)?;
         match format {
             DisasmFormat::Text => {
@@ -473,8 +500,18 @@ impl Cli {
         self.print_json(&report)
     }
 
-    fn run_decompile(&self, path: &PathBuf, format: DecompileFormat) -> Result<()> {
-        let decompiler = Decompiler::new();
+    fn run_decompile(
+        &self,
+        path: &PathBuf,
+        format: DecompileFormat,
+        allow_unknown_opcodes: bool,
+    ) -> Result<()> {
+        let handling = if allow_unknown_opcodes {
+            UnknownHandling::Permit
+        } else {
+            UnknownHandling::Error
+        };
+        let decompiler = Decompiler::with_unknown_handling(handling);
         let manifest_path = self.resolve_manifest_path(path);
         let result = decompiler.decompile_file_with_manifest(path, manifest_path.as_ref())?;
 
@@ -590,6 +627,7 @@ impl Cli {
                     println!("    handler: {}", entry.handler);
                     println!("    price: {}", entry.price);
                     println!("    call_flags: {}", entry.call_flags);
+                    println!("    returns_value: {}", entry.returns_value);
                     println!();
                 }
             }
@@ -809,6 +847,7 @@ impl Cli {
             returns: token.has_return_value,
             call_flags: token.call_flags,
             call_flag_labels: call_flag_labels(token.call_flags),
+            returns_value: token.has_return_value,
             native_contract,
             warning,
         }
@@ -911,6 +950,7 @@ struct MethodTokenReport {
     returns: bool,
     call_flags: u8,
     call_flag_labels: Vec<&'static str>,
+    returns_value: bool,
     native_contract: Option<NativeContractReport>,
     warning: Option<String>,
 }
@@ -993,6 +1033,7 @@ struct InstructionReport {
     operand: Option<String>,
     operand_kind: Option<String>,
     operand_value: Option<OperandValueReport>,
+    returns_value: Option<bool>,
 }
 
 impl From<&Instruction> for InstructionReport {
@@ -1006,6 +1047,7 @@ impl From<&Instruction> for InstructionReport {
                 .as_ref()
                 .map(|op| operand_kind_name(op).to_string()),
             operand_value: instruction.operand.as_ref().map(operand_value_report),
+            returns_value: returns_value_for_instruction(instruction),
         }
     }
 }
@@ -1066,6 +1108,15 @@ fn operand_value_report(operand: &Operand) -> OperandValueReport {
     }
 }
 
+fn returns_value_for_instruction(instruction: &Instruction) -> Option<bool> {
+    if let OpCode::Syscall = instruction.opcode {
+        if let Some(Operand::Syscall(hash)) = instruction.operand {
+            return crate::syscalls::lookup(hash).map(|info| info.returns_value);
+        }
+    }
+    None
+}
+
 #[derive(Serialize)]
 struct DecompileReport {
     file: String,
@@ -1122,6 +1173,7 @@ struct SyscallCatalogEntry {
     handler: String,
     price: String,
     call_flags: String,
+    returns_value: bool,
 }
 
 #[derive(Serialize)]
@@ -1148,6 +1200,7 @@ fn build_syscall_catalog_entries() -> Vec<SyscallCatalogEntry> {
             handler: info.handler.to_string(),
             price: info.price.to_string(),
             call_flags: info.call_flags.to_string(),
+            returns_value: info.returns_value,
         })
         .collect()
 }
@@ -1159,7 +1212,11 @@ fn build_native_contract_catalog_entries() -> Vec<NativeContractCatalogEntry> {
             name: info.name.to_string(),
             script_hash_le: util::format_hash(&info.script_hash),
             script_hash_be: util::format_hash_be(&info.script_hash),
-            methods: info.methods.iter().map(|method| (*method).to_string()).collect(),
+            methods: info
+                .methods
+                .iter()
+                .map(|method| (*method).to_string())
+                .collect(),
         })
         .collect()
 }

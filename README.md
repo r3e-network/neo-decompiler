@@ -19,14 +19,17 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   `tools/generate_opcodes.py`)
 - Manifest parsing (`.manifest.json`) with ABI, feature, group, permission, and trust details that surface in both text and JSON outputs
 - Disassembly for common opcodes such as `PUSH*`, arithmetic operations, jumps,
-  calls, and `SYSCALL`
-- Syscall metadata resolution with human-readable names and call flags
+  calls, and `SYSCALL` (fails fast on unknown opcodes to avoid drift)
+- Syscall metadata resolution with human-readable names, call flags, and return
+  arity (void syscalls avoid phantom temporaries in the high-level view)
 - Native contract lookup so method tokens can be paired with contract names
 - High-level contract view that surfaces manifest ABI data, names locals/args
   via slot instructions (including manifest parameter names), and lifts stack
   operations into readable statements with structured `if`/`else`, `for`,
   `while`, and `do { } while` blocks plus emitted `break`/`continue`
   statements and manifest-derived entry signatures
+- Syscall lifting that resolves human-readable names and suppresses phantom
+  temporaries for known void syscalls (e.g., Runtime.Notify, Storage.Put)
 - A simple pseudocode view mirroring the decoded instruction stream
 - A C# contract skeleton view (`--format csharp`) that mirrors the manifest
   entry point and emits stubs for additional ABI methods
@@ -46,11 +49,17 @@ cargo build --release
 # Decode instructions
 ./target/release/neo-decompiler disasm path/to/contract.nef
 
-# Machine-readable disassembly
+# Allow unknown opcodes instead of failing fast
+./target/release/neo-decompiler disasm --allow-unknown-opcodes path/to/contract.nef
+
+# Machine-readable disassembly (use --allow-unknown-opcodes if you want best-effort parsing)
 ./target/release/neo-decompiler disasm --format json path/to/contract.nef
 
 # Emit the high-level contract view (auto-detects `*.manifest.json` if present)
 ./target/release/neo-decompiler decompile path/to/contract.nef
+
+# Allow unknown opcodes during high-level reconstruction
+./target/release/neo-decompiler decompile --allow-unknown-opcodes path/to/contract.nef
 
 # Emit the legacy pseudocode listing
 ./target/release/neo-decompiler decompile --format pseudocode path/to/contract.nef

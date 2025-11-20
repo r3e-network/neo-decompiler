@@ -4,258 +4,295 @@
     "handler": "CreateStandardAccount",
     "price": "0",
     "call_flags": "CallFlags.None",
-    "hash": 42441167
+    "hash": 42441167,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetTime",
     "handler": "GetTime",
     "price": "1 << 3",
     "call_flags": "CallFlags.None",
-    "hash": 59294647
+    "hash": 59294647,
+    "returns_value": true
   },
   {
     "name": "System.Contract.CreateMultisigAccount",
     "handler": "CreateMultisigAccount",
     "price": "0",
     "call_flags": "CallFlags.None",
-    "hash": 166277994
+    "hash": 166277994,
+    "returns_value": true
   },
   {
     "name": "System.Contract.NativePostPersist",
     "handler": "NativePostPersistAsync",
     "price": "0",
     "call_flags": "CallFlags.States",
-    "hash": 375234884
+    "hash": 375234884,
+    "returns_value": false
   },
   {
     "name": "System.Iterator.Value",
     "handler": "IteratorValue",
     "price": "1 << 4",
     "call_flags": "CallFlags.None",
-    "hash": 499078387
+    "hash": 499078387,
+    "returns_value": true
   },
   {
     "name": "System.Crypto.CheckSig",
     "handler": "CheckSig",
     "price": "CheckSigPrice",
     "call_flags": "CallFlags.None",
-    "hash": 666101590
+    "hash": 666101590,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetRandom",
     "handler": "GetRandom",
     "price": "0",
     "call_flags": "CallFlags.None",
-    "hash": 682221163
+    "hash": 682221163,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetScriptContainer",
     "handler": "GetScriptContainer",
     "price": "1 << 3",
     "call_flags": "CallFlags.None",
-    "hash": 805851437
+    "hash": 805851437,
+    "returns_value": true
   },
   {
     "name": "System.Storage.Get",
     "handler": "Get",
     "price": "1 << 15",
     "call_flags": "CallFlags.ReadStates",
-    "hash": 837311890
+    "hash": 837311890,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetEntryScriptHash",
     "handler": "EntryScriptHash",
     "price": "1 << 4",
     "call_flags": "CallFlags.None",
-    "hash": 954381561
+    "hash": 954381561,
+    "returns_value": true
   },
   {
     "name": "System.Crypto.CheckMultisig",
     "handler": "CheckMultisig",
     "price": "0",
     "call_flags": "CallFlags.None",
-    "hash": 987549854
+    "hash": 987549854,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetCallingScriptHash",
     "handler": "CallingScriptHash",
     "price": "1 << 4",
     "call_flags": "CallFlags.None",
-    "hash": 1013863225
+    "hash": 1013863225,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetInvocationCounter",
     "handler": "GetInvocationCounter",
     "price": "1 << 4",
     "call_flags": "CallFlags.None",
-    "hash": 1125197700
+    "hash": 1125197700,
+    "returns_value": true
   },
   {
     "name": "System.Contract.Call",
     "handler": "CallContract",
     "price": "1 << 15",
     "call_flags": "CallFlags.ReadStates | CallFlags.AllowCall",
-    "hash": 1381727586
+    "hash": 1381727586,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.Notify",
     "handler": "RuntimeNotify",
     "price": "1 << 15",
     "call_flags": "CallFlags.AllowNotify",
-    "hash": 1634664853
+    "hash": 1634664853,
+    "returns_value": false
   },
   {
     "name": "System.Contract.CallNative",
     "handler": "CallNativeContract",
     "price": "0",
     "call_flags": "CallFlags.None",
-    "hash": 1736177434
+    "hash": 1736177434,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetExecutingScriptHash",
     "handler": "CurrentScriptHash",
     "price": "1 << 4",
     "call_flags": "CallFlags.None",
-    "hash": 1957232347
+    "hash": 1957232347,
+    "returns_value": true
   },
   {
     "name": "System.Contract.GetCallFlags",
     "handler": "GetCallFlags",
     "price": "1 << 10",
     "call_flags": "CallFlags.None",
-    "hash": 2168117909
+    "hash": 2168117909,
+    "returns_value": true
   },
   {
     "name": "System.Storage.Put",
     "handler": "Put",
     "price": "1 << 15",
     "call_flags": "CallFlags.WriteStates",
-    "hash": 2216181734
+    "hash": 2216181734,
+    "returns_value": false
   },
   {
     "name": "System.Runtime.CurrentSigners",
     "handler": "GetCurrentSigners",
     "price": "1 << 4",
     "call_flags": "CallFlags.None",
-    "hash": 2333667756
+    "hash": 2333667756,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.CheckWitness",
     "handler": "CheckWitness",
     "price": "1 << 10",
     "call_flags": "CallFlags.None",
-    "hash": 2364286968
+    "hash": 2364286968,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.LoadScript",
     "handler": "RuntimeLoadScript",
     "price": "1 << 15",
     "call_flags": "CallFlags.AllowCall",
-    "hash": 2407533747
+    "hash": 2407533747,
+    "returns_value": true
   },
   {
     "name": "System.Contract.NativeOnPersist",
     "handler": "NativeOnPersistAsync",
     "price": "0",
     "call_flags": "CallFlags.States",
-    "hash": 2478627630
+    "hash": 2478627630,
+    "returns_value": false
   },
   {
     "name": "System.Runtime.Log",
     "handler": "RuntimeLog",
     "price": "1 << 15",
     "call_flags": "CallFlags.AllowNotify",
-    "hash": 2521294799
+    "hash": 2521294799,
+    "returns_value": false
   },
   {
     "name": "System.Storage.Find",
     "handler": "Find",
     "price": "1 << 15",
     "call_flags": "CallFlags.ReadStates",
-    "hash": 2595762399
+    "hash": 2595762399,
+    "returns_value": true
   },
   {
     "name": "System.Iterator.Next",
     "handler": "IteratorNext",
     "price": "1 << 15",
     "call_flags": "CallFlags.None",
-    "hash": 2632779932
+    "hash": 2632779932,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetTrigger",
     "handler": "Trigger",
     "price": "1 << 3",
     "call_flags": "CallFlags.None",
-    "hash": 2688056809
+    "hash": 2688056809,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.BurnGas",
     "handler": "BurnGas",
     "price": "1 << 4",
     "call_flags": "CallFlags.None",
-    "hash": 3163314883
+    "hash": 3163314883,
+    "returns_value": false
   },
   {
     "name": "System.Storage.GetContext",
     "handler": "GetStorageContext",
     "price": "1 << 4",
     "call_flags": "CallFlags.ReadStates",
-    "hash": 3462919835
+    "hash": 3462919835,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GasLeft",
     "handler": "GasLeft",
     "price": "1 << 4",
     "call_flags": "CallFlags.None",
-    "hash": 3470297108
+    "hash": 3470297108,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetAddressVersion",
     "handler": "GetAddressVersion",
     "price": "1 << 3",
     "call_flags": "CallFlags.None",
-    "hash": 3700574540
+    "hash": 3700574540,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.GetNetwork",
     "handler": "GetNetwork",
     "price": "1 << 3",
     "call_flags": "CallFlags.None",
-    "hash": 3768646597
+    "hash": 3768646597,
+    "returns_value": true
   },
   {
     "name": "System.Storage.GetReadOnlyContext",
     "handler": "GetReadOnlyContext",
     "price": "1 << 4",
     "call_flags": "CallFlags.ReadStates",
-    "hash": 3798709494
+    "hash": 3798709494,
+    "returns_value": true
   },
   {
     "name": "System.Storage.AsReadOnly",
     "handler": "AsReadOnly",
     "price": "1 << 4",
     "call_flags": "CallFlags.ReadStates",
-    "hash": 3921628278
+    "hash": 3921628278,
+    "returns_value": true
   },
   {
     "name": "System.Storage.Delete",
     "handler": "Delete",
     "price": "1 << 15",
     "call_flags": "CallFlags.WriteStates",
-    "hash": 3989133359
+    "hash": 3989133359,
+    "returns_value": false
   },
   {
     "name": "System.Runtime.GetNotifications",
     "handler": "GetNotifications",
     "price": "1 << 12",
     "call_flags": "CallFlags.None",
-    "hash": 4046799655
+    "hash": 4046799655,
+    "returns_value": true
   },
   {
     "name": "System.Runtime.Platform",
     "handler": "GetPlatform",
     "price": "1 << 3",
     "call_flags": "CallFlags.None",
-    "hash": 4143741362
+    "hash": 4143741362,
+    "returns_value": true
   }
 ]

@@ -40,15 +40,7 @@
   "definitions": {
     "methodToken": {
       "type": "object",
-      "required": [
-        "method",
-        "hash_le",
-        "hash_be",
-        "parameters",
-        "returns",
-        "call_flags",
-        "call_flag_labels"
-      ],
+      "required": ["method", "hash_le", "hash_be", "parameters", "returns", "call_flags", "call_flag_labels", "returns_value"],
       "properties": {
         "method": {"type": "string"},
         "hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
@@ -60,6 +52,7 @@
           "type": "array",
           "items": {"type": "string"}
         },
+        "returns_value": {"type": "boolean"},
         "native_contract": {
           "oneOf": [
             {"$ref": "#/definitions/nativeContract"},

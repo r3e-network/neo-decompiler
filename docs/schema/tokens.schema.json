@@ -22,7 +22,8 @@
         "parameters",
         "returns",
         "call_flags",
-        "call_flag_labels"
+        "call_flag_labels",
+        "returns_value"
       ],
       "properties": {
         "method": {"type": "string"},
@@ -35,6 +36,7 @@
           "type": "array",
           "items": {"type": "string"}
         },
+        "returns_value": {"type": "boolean"},
         "native_contract": {
           "oneOf": [
             {"$ref": "#/definitions/nativeContract"},

@@ -1,13 +1,36 @@
 use crate::error::{DisassemblyError, Result};
 use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
 
+/// How to handle unknown opcode bytes encountered during disassembly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnknownHandling {
+    /// Surface an error as soon as an unknown opcode is encountered.
+    Error,
+    /// Emit an `Unknown` instruction and continue disassembling subsequent bytes.
+    Permit,
+}
+
 /// Stateless helper that decodes Neo VM bytecode into structured instructions.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct Disassembler;
+#[derive(Debug, Clone, Copy)]
+pub struct Disassembler {
+    unknown: UnknownHandling,
+}
+
+impl Default for Disassembler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Disassembler {
     pub fn new() -> Self {
-        Self
+        Self {
+            unknown: UnknownHandling::Error,
+        }
+    }
+
+    pub fn with_unknown_handling(unknown: UnknownHandling) -> Self {
+        Self { unknown }
     }
 
     /// Disassemble an entire bytecode buffer.
@@ -30,7 +53,14 @@ impl Disassembler {
             .ok_or(DisassemblyError::UnexpectedEof { offset })?;
         let opcode = OpCode::from_byte(opcode_byte);
         if let OpCode::Unknown(_) = opcode {
-            return Ok((Instruction::new(offset, opcode, None), 1));
+            return match self.unknown {
+                UnknownHandling::Permit => Ok((Instruction::new(offset, opcode, None), 1)),
+                UnknownHandling::Error => Err(DisassemblyError::UnknownOpcode {
+                    opcode: opcode_byte,
+                    offset,
+                }
+                .into()),
+            };
         }
 
         let (operand, consumed) = self.read_operand(opcode, bytecode, offset)?;
@@ -180,13 +210,28 @@ mod tests {
     }
 
     #[test]
-    fn records_unknown_opcode() {
+    fn errors_on_unknown_opcode() {
         let bytecode = [0xFF];
-        let instructions = Disassembler::new()
+        let err = Disassembler::new().disassemble(&bytecode).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::Error::Disassembly(DisassemblyError::UnknownOpcode {
+                opcode: 0xFF,
+                offset: 0
+            })
+        ));
+    }
+
+    #[test]
+    fn permits_unknown_opcode_when_configured() {
+        let bytecode = [0xFF, 0x40];
+        let instructions = Disassembler::with_unknown_handling(UnknownHandling::Permit)
             .disassemble(&bytecode)
-            .expect("disassembly succeeds");
-        assert_eq!(instructions.len(), 1);
+            .expect("disassembly succeeds in tolerant mode");
+
+        assert_eq!(instructions.len(), 2);
         assert!(matches!(instructions[0].opcode, OpCode::Unknown(0xFF)));
+        assert_eq!(instructions[1].opcode, OpCode::Ret);
     }
 
     #[test]

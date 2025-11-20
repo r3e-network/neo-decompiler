@@ -31,6 +31,7 @@ class Syscall:
     handler: str
     price: str
     call_flags: str
+    returns_value: bool
 
     @property
     def hash_value(self) -> int:
@@ -44,6 +45,7 @@ class Syscall:
             "price": self.price,
             "call_flags": self.call_flags,
             "hash": self.hash_value,
+            "returns_value": self.returns_value,
         }
 
 
@@ -80,7 +82,14 @@ def parse_registers(text: str) -> Iterable[Syscall]:
         handler = match.group("handler")
         price = " ".join(match.group("price").split())
         flags = " ".join(match.group("flags").split())
-        yield Syscall(name=name, handler=handler, price=price, call_flags=flags)
+        returns_value = not returns_void(name)
+        yield Syscall(
+            name=name,
+            handler=handler,
+            price=price,
+            call_flags=flags,
+            returns_value=returns_value,
+        )
 
 
 def collect_syscalls() -> list[Syscall]:
@@ -103,6 +112,7 @@ pub struct SyscallInfo {{
     pub handler: &'static str,
     pub price: &'static str,
     pub call_flags: &'static str,
+    pub returns_value: bool,
 }}
 
 pub const SYSCALLS: &[SyscallInfo] = &[
@@ -117,8 +127,22 @@ def render_entry(syscall: Syscall) -> str:
         f"name: \"{syscall.name}\", "
         f"handler: \"{syscall.handler}\", "
         f"price: \"{syscall.price}\", "
-        f"call_flags: \"{syscall.call_flags}\" }},"
+        f"call_flags: \"{syscall.call_flags}\", "
+        f"returns_value: {str(syscall.returns_value).lower()} }},"
     )
+
+
+def returns_void(name: str) -> bool:
+    # Minimal allowlist; expand as upstream adds metadata.
+    return name in {
+        "System.Runtime.Notify",
+        "System.Runtime.Log",
+        "System.Runtime.BurnGas",
+        "System.Storage.Put",
+        "System.Storage.Delete",
+        "System.Contract.NativePostPersist",
+        "System.Contract.NativeOnPersist",
+    }
 
 
 def main() -> None:

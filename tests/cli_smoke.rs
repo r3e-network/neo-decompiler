@@ -69,6 +69,24 @@ fn build_nef_with_no_tokens() -> Vec<u8> {
     data
 }
 
+fn build_nef_with_unknown_opcode() -> Vec<u8> {
+    let script = [0xFF, 0x40]; // UNKNOWN, RET
+    let mut data = Vec::new();
+    data.extend_from_slice(b"NEF3");
+    let mut compiler = [0u8; 64];
+    compiler[..4].copy_from_slice(b"test");
+    data.extend_from_slice(&compiler);
+    data.push(0); // source
+    data.push(0); // reserved byte
+    data.push(0); // zero tokens
+    data.extend_from_slice(&0u16.to_le_bytes()); // reserved word
+    write_varint(&mut data, script.len() as u32);
+    data.extend_from_slice(&script);
+    let checksum = neo_decompiler::nef::NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+    data
+}
+
 #[test]
 fn info_command_prints_header() {
     let dir = tempdir().expect("tempdir");
@@ -153,6 +171,7 @@ fn info_command_supports_json_output() {
         value["manifest"]["groups"][0]["signature"],
         Value::String("deadbeef".into())
     );
+    assert_eq!(tokens[0]["returns_value"], Value::Bool(true));
     assert_schema(SchemaKind::Info, &value);
 
     let compact = Command::cargo_bin("neo-decompiler")
@@ -211,6 +230,31 @@ fn disasm_command_outputs_instructions() {
     assert_eq!(instructions[1]["operand_value"]["value"], Value::from(1));
     assert!(value["warnings"].is_array());
     assert_schema(SchemaKind::Disasm, &value);
+}
+
+#[test]
+fn disasm_can_allow_unknown_opcodes() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("unknown.nef");
+    std::fs::write(&nef_path, build_nef_with_unknown_opcode()).unwrap();
+
+    Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("disasm")
+        .arg(&nef_path)
+        .assert()
+        .failure()
+        .stderr(contains("unknown opcode 0xFF"));
+
+    Command::cargo_bin("neo-decompiler")
+        .unwrap()
+        .arg("disasm")
+        .arg("--allow-unknown-opcodes")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("UNKNOWN_0xFF"))
+        .stdout(contains("0001: RET"));
 }
 
 #[test]
@@ -326,6 +370,8 @@ fn decompile_command_supports_json_format() {
         Value::String("Contracts".into())
     );
     assert!(value["warnings"].is_array());
+    let tokens = value["method_tokens"].as_array().expect("tokens array");
+    assert_eq!(tokens[0]["returns_value"], Value::Bool(true));
     assert_eq!(
         value["manifest"]["groups"][0]["pubkey"],
         Value::String("039999999999999999999999999999999999999999999999999999999999999999".into())
@@ -345,6 +391,7 @@ fn catalog_command_lists_syscalls() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("System.Runtime.Platform"));
     assert!(stdout.contains("call_flags"));
+    assert!(stdout.contains("returns_value"));
 }
 
 #[test]

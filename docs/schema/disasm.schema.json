@@ -26,7 +26,8 @@
             {"$ref": "#/definitions/operandValue"},
             {"type": "null"}
           ]
-        }
+        },
+        "returns_value": {"type": ["boolean", "null"]}
       }
     },
     "operandValue": {

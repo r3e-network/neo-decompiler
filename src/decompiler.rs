@@ -19,9 +19,13 @@ pub struct Decompiler {
 
 impl Decompiler {
     pub fn new() -> Self {
+        Self::with_unknown_handling(crate::disassembler::UnknownHandling::Error)
+    }
+
+    pub fn with_unknown_handling(handling: crate::disassembler::UnknownHandling) -> Self {
         Self {
             parser: NefParser::new(),
-            disassembler: Disassembler::new(),
+            disassembler: Disassembler::with_unknown_handling(handling),
         }
     }
 
@@ -119,7 +123,9 @@ fn render_high_level(
                 Some(trimmed)
             }
         })
-        .unwrap_or("NeoContract");
+        .map(sanitize_identifier)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "NeoContract".to_string());
 
     writeln!(output, "contract {contract_name} {{").unwrap();
     let script_hash = nef.script_hash();
@@ -178,13 +184,13 @@ fn render_high_level(
 
         if !manifest.abi.methods.is_empty() {
             writeln!(output, "    // ABI methods").unwrap();
-        for method in &manifest.abi.methods {
-            let params = format_manifest_parameters(&method.parameters);
-            let return_type = format_manifest_type(&method.return_type);
-            let mut meta = Vec::new();
-            if method.safe {
-                meta.push("safe".to_string());
-            }
+            for method in &manifest.abi.methods {
+                let params = format_manifest_parameters(&method.parameters);
+                let return_type = format_manifest_type(&method.return_type);
+                let mut meta = Vec::new();
+                if method.safe {
+                    meta.push("safe".to_string());
+                }
                 if let Some(offset) = method.offset {
                     meta.push(format!("offset {}", offset));
                 }
@@ -254,7 +260,7 @@ fn render_high_level(
     writeln!(output).unwrap();
     let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
     let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
-    let entry_param_labels = entry_method.as_ref().map(|method| {
+    let entry_param_labels = entry_method.as_ref().map(|(method, _)| {
         method
             .parameters
             .iter()
@@ -263,20 +269,31 @@ fn render_high_level(
     });
     let entry_name = entry_method
         .as_ref()
-        .map(|method| method.name.as_str())
+        .map(|(method, _)| method.name.as_str())
         .unwrap_or("script_entry");
     let entry_params = entry_method
         .as_ref()
-        .map(|method| format_manifest_parameters(&method.parameters))
+        .map(|(method, _)| format_manifest_parameters(&method.parameters))
         .unwrap_or_default();
     let entry_return = entry_method
         .as_ref()
-        .map(|method| format_manifest_type(&method.return_type))
+        .map(|(method, _)| format_manifest_type(&method.return_type))
         .filter(|ty| ty != "void");
     let signature = match entry_return {
         Some(ret) => format!("fn {entry_name}({entry_params}) -> {ret}"),
         None => format!("fn {entry_name}({entry_params})"),
     };
+    if let Some((method, matched)) = entry_method.as_ref() {
+        if !matched {
+            writeln!(
+                output,
+                "    // warning: manifest entry offset {} did not match script entry at 0x{:04X}; using first ABI method",
+                method.offset.unwrap_or_default(),
+                entry_offset
+            )
+            .unwrap();
+        }
+    }
     writeln!(output, "    {signature} {{").unwrap();
 
     let mut emitter = HighLevelEmitter::with_program(instructions);
@@ -407,24 +424,39 @@ fn render_csharp(
     let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
     let entry_parameters = entry_method
         .as_ref()
-        .map(|method| collect_csharp_parameters(&method.parameters));
+        .map(|(method, _)| collect_csharp_parameters(&method.parameters));
     let entry_param_labels = entry_parameters.as_ref().map(|params| {
-        params.iter().map(|param| param.name.clone()).collect::<Vec<_>>()
+        params
+            .iter()
+            .map(|param| param.name.clone())
+            .collect::<Vec<_>>()
     });
     let entry_method_name = entry_method
         .as_ref()
-        .map(|method| sanitize_identifier(&method.name))
+        .map(|(method, _)| sanitize_identifier(&method.name))
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "ScriptEntry".to_string());
     let entry_return = entry_method
         .as_ref()
-        .map(|method| format_manifest_type_csharp(&method.return_type))
+        .map(|(method, _)| format_manifest_type_csharp(&method.return_type))
         .unwrap_or_else(|| "void".to_string());
     let entry_param_signature = entry_parameters
         .as_ref()
         .map(|params| format_csharp_parameters(params))
         .unwrap_or_default();
-    let entry_signature = format_method_signature(&entry_method_name, &entry_param_signature, &entry_return);
+    let entry_signature =
+        format_method_signature(&entry_method_name, &entry_param_signature, &entry_return);
+    if let Some((method, matched)) = entry_method.as_ref() {
+        if !matched {
+            writeln!(
+                output,
+                "        // warning: manifest entry offset {} did not match script entry at 0x{:04X}; using first ABI method",
+                method.offset.unwrap_or_default(),
+                entry_offset
+            )
+            .unwrap();
+        }
+    }
 
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
@@ -454,7 +486,7 @@ fn render_csharp(
 
     if let Some(manifest) = manifest {
         for method in &manifest.abi.methods {
-            let is_entry = entry_method.as_ref().map_or(false, |entry| {
+            let is_entry = entry_method.as_ref().map_or(false, |(entry, _)| {
                 entry.name == method.name && entry.offset == method.offset
             });
             if is_entry {
@@ -498,7 +530,12 @@ fn sanitize_identifier(input: &str) -> String {
     if ident.is_empty() {
         ident.push_str("param");
     }
-    if ident.chars().next().map(|ch| ch.is_ascii_digit()).unwrap_or(false) {
+    if ident
+        .chars()
+        .next()
+        .map(|ch| ch.is_ascii_digit())
+        .unwrap_or(false)
+    {
         ident.insert(0, '_');
     }
     ident
@@ -629,15 +666,29 @@ fn manifest_extra_string(manifest: &ContractManifest, key: &str) -> Option<Strin
         .and_then(|(_, value)| value.as_str().map(|s| s.to_string()))
 }
 
-fn find_manifest_entry_method(
-    manifest: &ContractManifest,
+fn find_manifest_entry_method<'a>(
+    manifest: &'a ContractManifest,
     entry_offset: usize,
-) -> Option<&ManifestMethod> {
-    manifest
+) -> Option<(&'a ManifestMethod, bool)> {
+    if let Some(method) = manifest
         .abi
         .methods
         .iter()
         .find(|method| method.offset.map(|value| value as usize) == Some(entry_offset))
+    {
+        return Some((method, true));
+    }
+
+    let fallback = manifest
+        .abi
+        .methods
+        .iter()
+        .filter_map(|method| method.offset.map(|offset| (offset as usize, method)))
+        .min_by_key(|(offset, _)| *offset)
+        .map(|(_, method)| method)
+        .or_else(|| manifest.abi.methods.first())?;
+
+    Some((fallback, false))
 }
 
 fn format_permission_entry(permission: &ManifestPermission) -> String {
@@ -998,17 +1049,24 @@ impl HighLevelEmitter {
     fn emit_syscall(&mut self, instruction: &Instruction) {
         self.push_comment(instruction);
         if let Some(Operand::Syscall(hash)) = instruction.operand {
-            let temp = self.next_temp();
             if let Some(info) = crate::syscalls::lookup(hash) {
-                self.statements.push(format!(
-                    "let {temp} = syscall(\"{}\"); // 0x{hash:08X}",
-                    info.name
-                ));
+                if crate::syscalls::returns_value(hash) {
+                    let temp = self.next_temp();
+                    self.statements.push(format!(
+                        "let {temp} = syscall(\"{}\"); // 0x{hash:08X}",
+                        info.name
+                    ));
+                    self.stack.push(temp);
+                } else {
+                    self.statements
+                        .push(format!("syscall(\"{}\"); // 0x{hash:08X}", info.name));
+                }
             } else {
+                let temp = self.next_temp();
                 self.statements
                     .push(format!("let {temp} = syscall(0x{hash:08X});"));
+                self.stack.push(temp);
             }
-            self.stack.push(temp);
         } else {
             self.statements.push(format!(
                 "// {:04X}: missing syscall operand",
@@ -1024,9 +1082,7 @@ impl HighLevelEmitter {
                 self.statements
                     .push(format!("// declare {count} static slots"));
             }
-            _ => self
-                .statements
-                .push("// missing INITSSLOT operand".into()),
+            _ => self.statements.push("// missing INITSSLOT operand".into()),
         }
     }
 
@@ -1036,13 +1092,10 @@ impl HighLevelEmitter {
             Some(Operand::Bytes(bytes)) if bytes.len() >= 2 => {
                 let locals = bytes[0];
                 let args = bytes[1];
-                self.statements.push(format!(
-                    "// declare {locals} locals, {args} arguments"
-                ));
+                self.statements
+                    .push(format!("// declare {locals} locals, {args} arguments"));
             }
-            _ => self
-                .statements
-                .push("// missing INITSLOT operand".into()),
+            _ => self.statements.push("// missing INITSLOT operand".into()),
         }
     }
 
@@ -1182,10 +1235,7 @@ impl HighLevelEmitter {
                     &format!("jump -> 0x{target:04X} (control flow not yet lifted)"),
                 );
             }
-            None => self.note(
-                instruction,
-                "jump with unsupported operand (skipping)",
-            ),
+            None => self.note(instruction, "jump with unsupported operand (skipping)"),
         }
     }
 
@@ -1273,11 +1323,7 @@ impl HighLevelEmitter {
         true
     }
 
-    fn detect_loop_back(
-        &self,
-        false_offset: usize,
-        condition_offset: usize,
-    ) -> Option<LoopJump> {
+    fn detect_loop_back(&self, false_offset: usize, condition_offset: usize) -> Option<LoopJump> {
         let (_, &index) = self.index_by_offset.range(..false_offset).next_back()?;
         let jump_instruction = self.program.get(index)?;
         match jump_instruction.opcode {
@@ -1398,8 +1444,7 @@ impl HighLevelEmitter {
     }
 
     fn is_loop_control_target(&self, target: usize) -> bool {
-        self
-            .loop_stack
+        self.loop_stack
             .iter()
             .any(|ctx| ctx.break_offset == target || ctx.continue_offset == target)
     }
@@ -1423,12 +1468,9 @@ impl HighLevelEmitter {
                 index += 1;
                 continue;
             };
-            let Some((increment_idx, temp_idx, increment_expr)) = Self::find_increment_assignment(
-                statements,
-                index,
-                end,
-                &init_assignment.lhs,
-            ) else {
+            let Some((increment_idx, temp_idx, increment_expr)) =
+                Self::find_increment_assignment(statements, index, end, &init_assignment.lhs)
+            else {
                 index += 1;
                 continue;
             };
@@ -1582,6 +1624,7 @@ struct Assignment {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::disassembler::UnknownHandling;
 
     fn write_varint(buf: &mut Vec<u8>, value: u32) {
         match value {
@@ -1725,6 +1768,72 @@ mod tests {
     }
 
     #[test]
+    fn void_syscall_does_not_push_stack_value() {
+        // Script: SYSCALL(System.Runtime.Notify) ; RET
+        let script = [0x41, 0x95, 0x01, 0x6F, 0x61, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        assert!(
+            decompilation
+                .high_level
+                .contains("syscall(\"System.Runtime.Notify\");"),
+            "void syscall should be emitted as a statement"
+        );
+        assert!(
+            !decompilation
+                .high_level
+                .contains("let t0 = syscall(\"System.Runtime.Notify\")"),
+            "void syscall should not push a temp onto the stack"
+        );
+    }
+
+    #[test]
+    fn void_storage_syscall_is_emitted_as_statement() {
+        // Script: SYSCALL(System.Storage.Put) ; RET
+        let script = [0x41, 0xE6, 0x3F, 0x18, 0x84, 0x40];
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::new()
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+
+        assert!(
+            decompilation
+                .high_level
+                .contains("syscall(\"System.Storage.Put\");"),
+            "void storage syscall should be emitted as a statement"
+        );
+        assert!(
+            !decompilation
+                .high_level
+                .contains("let t0 = syscall(\"System.Storage.Put\")"),
+            "void storage syscall should not push a temp onto the stack"
+        );
+    }
+
+    #[test]
+    fn tolerant_mode_emits_unknown_opcode() {
+        let script = [0xFFu8, 0x40]; // UNKNOWN, RET
+        let nef_bytes = build_nef(&script);
+        let decompilation = Decompiler::with_unknown_handling(UnknownHandling::Permit)
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile in tolerant mode");
+
+        assert!(
+            decompilation.pseudocode.contains("0000: UNKNOWN_0xFF"),
+            "pseudocode should include unknown opcode"
+        );
+        assert!(
+            decompilation
+                .high_level
+                .contains("UNKNOWN_0xFF (not yet translated)"),
+            "high-level output should note unknown opcode"
+        );
+    }
+
+    #[test]
     fn high_level_lifts_boolean_ops() {
         // Script: PUSH1, PUSH1, BOOLAND, RET
         let script = [0x11, 0x11, 0xAB, 0x40];
@@ -1806,7 +1915,10 @@ mod tests {
             .expect("decompile succeeds");
 
         let high_level = &decompilation.high_level;
-        assert!(high_level.contains("while t0 {"), "missing while block: {high_level}");
+        assert!(
+            high_level.contains("while t0 {"),
+            "missing while block: {high_level}"
+        );
         assert!(
             !high_level.contains("jump ->"),
             "loop back-edge should be lifted: {high_level}"
@@ -1823,7 +1935,10 @@ mod tests {
             .expect("decompile succeeds");
 
         let high_level = &decompilation.high_level;
-        assert!(high_level.contains("do {"), "missing do/while header: {high_level}");
+        assert!(
+            high_level.contains("do {"),
+            "missing do/while header: {high_level}"
+        );
         assert!(
             high_level.contains("} while ("),
             "missing do/while tail: {high_level}"
@@ -1858,8 +1973,14 @@ mod tests {
             .expect("decompile succeeds");
 
         let high_level = &decompilation.high_level;
-        assert!(high_level.contains("for (let loc0 = t0;"), "missing for-loop header: {high_level}");
-        assert!(high_level.contains("loc0 = loc0 +"), "increment not surfaced: {high_level}");
+        assert!(
+            high_level.contains("for (let loc0 = t0;"),
+            "missing for-loop header: {high_level}"
+        );
+        assert!(
+            high_level.contains("loc0 = loc0 +"),
+            "increment not surfaced: {high_level}"
+        );
     }
 
     #[test]
@@ -1876,8 +1997,14 @@ mod tests {
             .expect("decompile succeeds");
 
         let high_level = &decompilation.high_level;
-        assert!(high_level.contains("break;"), "missing break statement: {high_level}");
-        assert!(high_level.contains("continue;"), "missing continue statement: {high_level}");
+        assert!(
+            high_level.contains("break;"),
+            "missing break statement: {high_level}"
+        );
+        assert!(
+            high_level.contains("continue;"),
+            "missing continue statement: {high_level}"
+        );
     }
 
     #[test]
@@ -1916,9 +2043,75 @@ mod tests {
         let csharp = &decompilation.csharp;
         assert!(csharp.contains("[ManifestExtra(\"Author\", \"Jane Doe\")]"));
         assert!(csharp.contains("[ManifestExtra(\"Email\", \"jane@example.com\")]"));
-        assert!(csharp.contains(
-            "public static void deploy_contract(UInt160 owner_name, BigInteger amount)"
-        ));
+        assert!(csharp
+            .contains("public static void deploy_contract(UInt160 owner_name, BigInteger amount)"));
+    }
+
+    #[test]
+    fn contract_name_is_sanitized_with_manifest() {
+        let nef_bytes = sample_nef();
+        let manifest = ContractManifest::from_json_str(
+            r#"
+            {
+                "name": "  Weird Name! ",
+                "abi": {
+                    "methods": [
+                        { "name": "main", "parameters": [], "returntype": "Void", "offset": 0 }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+        )
+        .expect("manifest parsed");
+
+        let decompilation = Decompiler::new()
+            .decompile_bytes_with_manifest(&nef_bytes, Some(manifest))
+            .expect("decompile succeeds");
+
+        assert!(
+            decompilation.high_level.contains("contract Weird_Name"),
+            "contract name should be sanitized"
+        );
+    }
+
+    #[test]
+    fn entry_point_falls_back_to_manifest_method_when_offset_mismatches() {
+        let nef_bytes = sample_nef();
+        let manifest = ContractManifest::from_json_str(
+            r#"
+            {
+                "name": "OffsetMismatch",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "deploy",
+                            "parameters": [{ "name": "owner", "type": "Hash160" }],
+                            "returntype": "Void",
+                            "offset": 42
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+        )
+        .expect("manifest parsed");
+
+        let decompilation = Decompiler::new()
+            .decompile_bytes_with_manifest(&nef_bytes, Some(manifest))
+            .expect("decompile succeeds");
+
+        assert!(
+            decompilation
+                .high_level
+                .contains("fn deploy(owner: hash160) {"),
+            "entry point should use manifest method even when offsets do not align"
+        );
     }
 
     #[test]
@@ -1963,7 +2156,10 @@ mod tests {
         );
         assert!(statements[0].is_empty(), "initializer should be removed");
         assert!(statements[3].is_empty(), "temp increment should be removed");
-        assert!(statements[4].is_empty(), "final increment should be removed");
+        assert!(
+            statements[4].is_empty(),
+            "final increment should be removed"
+        );
     }
 
     #[test]

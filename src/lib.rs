@@ -17,7 +17,7 @@ pub mod syscalls;
 mod util;
 
 pub use crate::decompiler::{Decompilation, Decompiler};
-pub use crate::disassembler::Disassembler;
+pub use crate::disassembler::{Disassembler, UnknownHandling};
 pub use crate::error::{Error, Result};
 pub use crate::instruction::{Instruction, OpCode, Operand};
 pub use crate::manifest::{ContractManifest, ManifestAbi, ManifestFeatures, ManifestMethod};
