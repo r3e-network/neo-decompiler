@@ -123,7 +123,9 @@ enum ContractStatus {
 
 #[derive(Debug)]
 enum Artifact {
-    CSharp { path: PathBuf },
+    CSharp {
+        path: PathBuf,
+    },
     NefManifest {
         nef_path: PathBuf,
         manifest_path: PathBuf,
@@ -250,7 +252,14 @@ fn process_csharp_contract(
     fs::write(&manifest_path, manifest_json.as_bytes())
         .unwrap_or_else(|err| panic!("failed to write {}: {err}", manifest_path.display()));
 
-    decompile_and_write_outputs(decompiler, id, &nef_path, &manifest_path, output_base, known_unsupported)
+    decompile_and_write_outputs(
+        decompiler,
+        id,
+        &nef_path,
+        &manifest_path,
+        output_base,
+        known_unsupported,
+    )
 }
 
 fn process_nef_contract(
@@ -268,7 +277,14 @@ fn process_nef_contract(
         panic!("Manifest missing: {}", manifest_path.display());
     }
 
-    decompile_and_write_outputs(decompiler, id, nef_path, manifest_path, output_base, known_unsupported)
+    decompile_and_write_outputs(
+        decompiler,
+        id,
+        nef_path,
+        manifest_path,
+        output_base,
+        known_unsupported,
+    )
 }
 
 fn decompile_and_write_outputs(
@@ -299,8 +315,9 @@ fn decompile_and_write_outputs(
         }
         Err(err) => {
             if find_known_entry(id, known_unsupported).is_some() {
-                fs::write(&error_path, err.to_string())
-                    .unwrap_or_else(|io_err| panic!("failed to write {}: {io_err}", error_path.display()));
+                fs::write(&error_path, err.to_string()).unwrap_or_else(|io_err| {
+                    panic!("failed to write {}: {io_err}", error_path.display())
+                });
                 eprintln!("Skipping {id} due to known limitation: {err}");
                 ContractStatus::KnownUnsupported
             } else {
@@ -377,9 +394,9 @@ fn find_known_entry<'a>(
     known_unsupported: &'a [KnownUnsupported],
 ) -> Option<&'a KnownUnsupported> {
     let basename = id.rsplit('/').next();
-    known_unsupported.iter().find(|entry| {
-        entry.id == id || basename.map(|name| name == entry.id).unwrap_or(false)
-    })
+    known_unsupported
+        .iter()
+        .find(|entry| entry.id == id || basename.map(|name| name == entry.id).unwrap_or(false))
 }
 
 fn find_expected_message<'a>(id: &str, known: &'a [KnownUnsupported]) -> Option<&'a str> {

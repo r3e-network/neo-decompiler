@@ -1,3 +1,5 @@
+//! Stateless Neo VM bytecode decoder used by the decompiler and CLI.
+//! Converts raw byte buffers into structured instructions with operands.
 use crate::error::{DisassemblyError, Result};
 use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
 

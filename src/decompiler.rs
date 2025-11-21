@@ -1,3 +1,5 @@
+//! High-level decompilation pipeline shared by the library and CLI.
+//! Parses NEF, disassembles bytecode, lifts control flow, and renders text/C#.
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
