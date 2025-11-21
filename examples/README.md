@@ -30,6 +30,9 @@ nccs compile \
 
 # Inspect the output with the decompiler (auto-detects the manifest)
 neo-decompiler decompile build/HelloWorld.nef
+
+# Fail fast on unknown opcodes (default is tolerant)
+neo-decompiler decompile --fail-on-unknown-opcodes build/HelloWorld.nef
 ```
 
 The `decompile` command prints both the reconstructed high-level contract view

@@ -59,8 +59,10 @@ Sections~\ref{sec:inputs}--\ref{sec:limits}. Non-normative notes are marked as
 \begin{itemize}[nosep]
     \item The disassembler shall decode all opcodes defined in the generated
     metadata and preserve byte offsets.
-    \item Unsupported or unknown opcodes shall be represented with mnemonic
-    placeholders but may not cause failure of the entire disassembly.
+    \item Unsupported or unknown opcodes shall, by default, be represented with
+    mnemonic placeholders (\texttt{UNKNOWN\_0x..}) without aborting disassembly.
+    A fail-fast mode shall be available via the CLI or library to error on the
+    first unknown opcode.
     \item Operands shall be parsed according to the operand encoding declared by
     each opcode.
 \end{itemize}
@@ -102,8 +104,8 @@ Table~\ref{tab:commands} enumerates the CLI commands and supported formats.
 Command & Purpose & Formats \& Notes \\
 \midrule
 \texttt{info} & Header/manifest summary & Text, JSON (includes method tokens) \\
-\texttt{disasm} & Instruction listing & Text, JSON \\
-\texttt{decompile} & Pseudocode / High-level / C\# & Text (pseudocode/high-level/C\#), JSON \\
+\texttt{disasm} & Instruction listing & Text, JSON; optional fail-fast on unknown opcodes \\
+\texttt{decompile} & Pseudocode / High-level / C\# & Text (pseudocode/high-level/C\#), JSON; optional fail-fast on unknown opcodes \\
 \texttt{tokens} & Method tokens & Text, JSON \\
 \texttt{catalog} & Syscalls/native/opcodes tables & Text, JSON \\
 \texttt{schema} & Emit JSON schemas & Text (schema body), optional validation \\
@@ -142,8 +144,8 @@ script\_hash\_le / script\_hash\_be & Script hashes in little/big endian hex.\\
 high\_level & Lifted textual representation.\\
 pseudocode & Raw instruction listing with offsets.\\
 csharp & C\# skeleton derived from high-level view and manifest.\\
-instructions & Array of decoded instructions with operands.\\
-method\_tokens & Tokens with hashes, call flags, and native hints.\\
+instructions & Array of decoded instructions with operands; \texttt{returns\_value} may be present for \texttt{SYSCALL}.\\
+method\_tokens & Tokens with hashes, call flags, \texttt{returns\_value}, and native hints.\\
 manifest & Manifest summary (methods, events, permissions, trusts).\\
 warnings & Array of human-readable warnings (e.g., unknown native methods).\\
 \bottomrule
@@ -164,6 +166,8 @@ Native contracts & Method tokens annotated using \texttt{src/native\_contracts\_
 Control flow lifting & \texttt{if/else}, \texttt{while}, \texttt{do--while}, \texttt{for}, \texttt{break}/\texttt{continue}.\\
 Manifest integration & Entry signature, parameter names, extras (Author/Email) applied to outputs.\\
 Output formats & Text and JSON for all commands; pseudocode, high-level, C\# for \texttt{decompile}.\\
+Unknown opcode handling & Default tolerant mode emits \texttt{UNKNOWN\_0x..}; fail-fast mode available via CLI/library.\\
+Syscall metadata & Syscalls supply names, call flags, and \texttt{returns\_value} to avoid phantom temporaries.\\
 \bottomrule
 \end{tabular}
 \caption{Mandatory capabilities}\label{tab:features}
@@ -190,7 +194,8 @@ Input validation & Opcode/syscall/native lookup & Pseudocode / High-level / C\# 
     \item Complex control-flow graph recovery (e.g., switch lowering, try/finally
     reconstruction) is not guaranteed.
     \item Unknown opcodes beyond the generated table are rendered as
-    placeholders but not lifted.
+    placeholders in tolerant mode and not lifted; fail-fast mode will error at
+    the first occurrence.
     \item The C\# view is a scaffold; method bodies beyond the entry point are
     emitted as stubs and not semantically reconstructed.
 \end{itemize}
