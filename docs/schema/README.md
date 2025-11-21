@@ -5,10 +5,10 @@ documents that describe the machine-readable output of the CLI commands:
 
 | Schema | Command | Description |
 | ------ | ------- | ----------- |
-| `info.schema.json` | `neo-decompiler info --format json` | NEF metadata, manifest summary, method tokens, warnings. |
-| `disasm.schema.json` | `neo-decompiler disasm --format json` | Instruction stream including operand types and values. |
-| `decompile.schema.json` | `neo-decompiler decompile --format json` | High-level/pseudocode listings plus the disassembly, manifest summary, and method tokens. |
-| `tokens.schema.json` | `neo-decompiler tokens --format json` | Standalone method-token listing. |
+| `info.schema.json` | `neo-decompiler info --format json` | NEF metadata, manifest summary, method tokens (includes `returns_value`), warnings. |
+| `disasm.schema.json` | `neo-decompiler disasm --format json` | Instruction stream including operand types/values and optional `returns_value` for `SYSCALL`. |
+| `decompile.schema.json` | `neo-decompiler decompile --format json` | High-level/pseudocode listings plus the disassembly (including optional `returns_value`), manifest summary, and method tokens (`returns_value`). |
+| `tokens.schema.json` | `neo-decompiler tokens --format json` | Standalone method-token listing (with `returns_value`). |
 
 ## Versioning
 
