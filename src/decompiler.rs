@@ -488,9 +488,9 @@ fn render_csharp(
 
     if let Some(manifest) = manifest {
         for method in &manifest.abi.methods {
-            let is_entry = entry_method.as_ref().map_or(false, |(entry, _)| {
-                entry.name == method.name && entry.offset == method.offset
-            });
+            let is_entry = entry_method
+                .as_ref()
+                .is_some_and(|(entry, _)| entry.name == method.name && entry.offset == method.offset);
             if is_entry {
                 continue;
             }
