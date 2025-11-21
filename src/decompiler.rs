@@ -666,10 +666,10 @@ fn manifest_extra_string(manifest: &ContractManifest, key: &str) -> Option<Strin
         .and_then(|(_, value)| value.as_str().map(|s| s.to_string()))
 }
 
-fn find_manifest_entry_method<'a>(
-    manifest: &'a ContractManifest,
+fn find_manifest_entry_method(
+    manifest: &ContractManifest,
     entry_offset: usize,
-) -> Option<(&'a ManifestMethod, bool)> {
+) -> Option<(&ManifestMethod, bool)> {
     if let Some(method) = manifest
         .abi
         .methods
