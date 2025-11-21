@@ -1,5 +1,9 @@
 # Neo N3 NEF Inspector
 
+<p align="center">
+  <img src="docs/logo.svg" alt="Neo Decompiler logo" width="180" />
+</p>
+
 [![CI](https://github.com/r3e-network/neo-decompiler/actions/workflows/ci.yml/badge.svg)](https://github.com/r3e-network/neo-decompiler/actions/workflows/ci.yml)
 [![docs.rs](https://img.shields.io/docsrs/neo-decompiler)](https://docs.rs/neo-decompiler)
 [![License](https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue.svg)](#license)
