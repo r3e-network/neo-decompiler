@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" role="img" aria-labelledby="title desc">
+  <title id="title">Neo Decompiler Logo</title>
+  <desc id="desc">An abstract N-shaped circuit with a decompiler bracket.</desc>
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4CAF50"/>
+      <stop offset="100%" stop-color="#2E7D32"/>
+    </linearGradient>
+    <style>
+      .bg { fill: #0B1B0B; }
+      .glyph { fill: url(#g); }
+      .accent { fill: none; stroke: #A5D6A7; stroke-width: 10; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+  <rect class="bg" width="320" height="320" rx="28" ry="28"/>
+  <path class="glyph" d="M68 242 V86 a12 12 0 0 1 12-12 h32 l82 118 V90 a12 12 0 0 1 12-12 h36 a12 12 0 0 1 12 12 v146 a12 12 0 0 1-12 12 h-34 a12 12 0 0 1-10-5 L126 127 v103 a12 12 0 0 1-12 12 H80 a12 12 0 0 1-12-12z"/>
+  <path class="accent" d="M54 160 h-20 v-64 M54 160 h-20 v64"/>
+  <path class="accent" d="M286 160 h20 v-48 M286 160 h20 v48"/>
+  <path class="accent" d="M160 262 c-24 0-44-6-60-18"/>
+  <circle cx="160" cy="58" r="12" fill="#A5D6A7"/>
+</svg>
