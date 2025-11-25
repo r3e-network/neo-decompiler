@@ -5,8 +5,10 @@
 </p>
 
 [![CI](https://github.com/r3e-network/neo-decompiler/actions/workflows/ci.yml/badge.svg)](https://github.com/r3e-network/neo-decompiler/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/neo-decompiler.svg)](https://crates.io/crates/neo-decompiler)
 [![docs.rs](https://img.shields.io/docsrs/neo-decompiler)](https://docs.rs/neo-decompiler)
 [![License](https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue.svg)](#license)
+[![GitHub release](https://img.shields.io/github/v/release/r3e-network/neo-decompiler)](https://github.com/r3e-network/neo-decompiler/releases/latest)
 
 This project provides a small, well-tested Rust crate and CLI for inspecting
 Neo N3 NEF bytecode packages. It focuses on the essential pieces that are easy
@@ -150,8 +152,21 @@ The `examples/README.md` file explains the walkthrough and can serve as a
 starting point for your own experiments.
 
 ## Installation
+
+### From crates.io (recommended)
 ```bash
-# Install the latest commit from the main branch
+cargo install neo-decompiler
+```
+
+### From GitHub releases
+Download pre-built binaries from the [releases page](https://github.com/r3e-network/neo-decompiler/releases/latest).
+
+### From source
+```bash
+# Install the latest release from git
+cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.1.0 --locked
+
+# Or install the latest development version
 cargo install --git https://github.com/r3e-network/neo-decompiler --locked
 
 # Or install locally from a checkout
@@ -349,6 +364,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development guidelines and
 
 ## Changelog
 Recent project history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
+
+**Current version:** [v0.1.0](https://github.com/r3e-network/neo-decompiler/releases/tag/v0.1.0) (2025-11-26)
 
 ## Minimum supported Rust version
 The crate is tested against Rust `1.70` and newer on CI. Older toolchains are
