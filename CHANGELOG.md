@@ -3,7 +3,9 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## [0.1.0] - 2025-11-26
+
+### Added
 - Document MSRV (1.70) and add installation instructions in the README.
 - Bundle dual-license texts and polish crate metadata (`homepage`,
   `documentation`, README links).
