@@ -16,6 +16,126 @@ to run locally: parsing the NEF container (header, method tokens, checksum),
 loading the companion contract manifest, decoding a useful slice of Neo VM
 opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
+## Supported Features
+
+### Binary Format Analysis
+
+| Feature                 | Status | Description                                                        |
+| ----------------------- | ------ | ------------------------------------------------------------------ |
+| NEF Container Parsing   | ✅     | Magic bytes, compiler metadata, source hash, checksum verification |
+| Script Hash Calculation | ✅     | Hash160 (RIPEMD160(SHA256)) in little-endian and canonical forms   |
+| Method Token Decoding   | ✅     | Variable-length encoding with call flag validation                 |
+| Checksum Verification   | ✅     | Double SHA-256 integrity check per Neo specification               |
+| Manifest Parsing        | ✅     | Full ABI, permissions, trusts, groups, features extraction         |
+
+### Disassembly Engine
+
+| Feature                  | Status | Description                                                         |
+| ------------------------ | ------ | ------------------------------------------------------------------- |
+| Linear Sweep Disassembly | ✅     | Sequential instruction decoding with operand extraction             |
+| Opcode Coverage          | ✅     | 160+ Neo VM opcodes from upstream `OpCode.cs`                       |
+| Operand Decoding         | ✅     | I8/I16/I32/I64, variable-length bytes, jump targets, syscall hashes |
+| Unknown Opcode Handling  | ✅     | Tolerant mode (comments) or strict mode (fail-fast)                 |
+| Syscall Resolution       | ✅     | 50+ syscalls with handler names, prices, call flags                 |
+| Native Contract Binding  | ✅     | GasToken, NeoToken, ContractManagement, etc. method resolution      |
+
+### Decompilation Pipeline
+
+| Feature                       | Status | Description                                         |
+| ----------------------------- | ------ | --------------------------------------------------- |
+| Stack Simulation              | ✅     | Abstract interpretation of stack operations         |
+| Expression Building           | ✅     | Stack values lifted to infix expressions            |
+| Temporary Variable Generation | ✅     | Automatic naming for intermediate values            |
+| Constant Propagation          | ✅     | Literal tracking through stack operations           |
+| Void Syscall Detection        | ✅     | Suppress phantom return values for known void calls |
+
+### Control Flow Recovery
+
+| Feature              | Status | Description                                       |
+| -------------------- | ------ | ------------------------------------------------- |
+| Conditional Branches | ✅     | `if`/`else` block reconstruction                  |
+| Pre-test Loops       | ✅     | `while` loop pattern detection                    |
+| Post-test Loops      | ✅     | `do { } while` loop pattern detection             |
+| Counting Loops       | ✅     | `for` loop reconstruction with iterator detection |
+| Loop Exit Statements | ✅     | `break`/`continue` emission at correct scope      |
+| Exception Handling   | ✅     | `try`/`catch`/`finally` block reconstruction      |
+| Jump Target Analysis | ✅     | Forward/backward branch classification            |
+
+### Slot & Variable Analysis
+
+| Feature                  | Status | Description                                         |
+| ------------------------ | ------ | --------------------------------------------------- |
+| Local Slot Tracking      | ✅     | `STLOC`/`LDLOC` mapped to `local_N` identifiers     |
+| Argument Slot Tracking   | ✅     | `STARG`/`LDARG` mapped to `arg_N` or manifest names |
+| Static Slot Tracking     | ✅     | `STSFLD`/`LDSFLD` mapped to `static_N` identifiers  |
+| Manifest Parameter Names | ✅     | ABI parameter names applied to argument slots       |
+| Initialization Detection | ✅     | First-write tracking for declaration placement      |
+
+### Output Formats
+
+| Feature         | Status | Description                                                |
+| --------------- | ------ | ---------------------------------------------------------- |
+| Pseudocode      | ✅     | Linear instruction listing with resolved operands          |
+| High-Level View | ✅     | Structured code with control flow and expressions          |
+| C# Skeleton     | ✅     | Compilable stub with attributes, events, method signatures |
+| JSON Reports    | ✅     | Machine-readable output with JSON Schema validation        |
+| Text Reports    | ✅     | Human-readable formatted output                            |
+
+### Security & Robustness
+
+| Feature                     | Status | Description                                    |
+| --------------------------- | ------ | ---------------------------------------------- |
+| Input Size Limits           | ✅     | 10 MiB file limit, 1 MiB operand limit         |
+| Integer Overflow Protection | ✅     | Checked arithmetic in slice operations         |
+| Malformed Input Handling    | ✅     | Graceful error reporting, no panics            |
+| Fuzz Testing                | ✅     | cargo-fuzz targets for parser and disassembler |
+
+---
+
+## Roadmap
+
+### Planned Features (v0.3.x)
+
+| Feature                   | Priority | Description                                             |
+| ------------------------- | -------- | ------------------------------------------------------- |
+| Control Flow Graph (CFG)  | High     | Explicit basic block graph with edges for visualization |
+| Else-If Chain Detection   | High     | Collapse nested `if`/`else` into `else if` chains       |
+| Dead Code Detection       | Medium   | Identify unreachable basic blocks post-CFG construction |
+| Expression Simplification | Medium   | Algebraic simplification (e.g., `x + 0` → `x`)          |
+| Inline Expansion          | Medium   | Inline single-use temporaries into parent expressions   |
+
+### Planned Features (v0.4.x)
+
+| Feature                   | Priority | Description                                               |
+| ------------------------- | -------- | --------------------------------------------------------- |
+| Type Inference            | High     | Infer primitive types from opcodes and syscall signatures |
+| Array/Map Type Recovery   | High     | Detect collection types from `PACK`/`NEWARRAY`/`NEWMAP`   |
+| Call Graph Construction   | Medium   | Inter-procedural call relationships                       |
+| Cross-Reference Analysis  | Medium   | Track where values are defined and used                   |
+| Switch Statement Recovery | Medium   | Pattern-match jump tables to `switch`/`case`              |
+
+### Planned Features (v0.5.x+)
+
+| Feature               | Priority | Description                                         |
+| --------------------- | -------- | --------------------------------------------------- |
+| SSA Transformation    | Medium   | Static Single Assignment form for advanced analysis |
+| Data Flow Analysis    | Medium   | Reaching definitions, live variable analysis        |
+| Struct/Class Recovery | Low      | Infer composite types from field access patterns    |
+| Deobfuscation Passes  | Low      | Detect and simplify common obfuscation patterns     |
+| Interactive Mode      | Low      | REPL for exploratory analysis                       |
+| Plugin Architecture   | Low      | User-defined analysis passes                        |
+
+### Not Planned (Out of Scope)
+
+| Feature                         | Reason                                                         |
+| ------------------------------- | -------------------------------------------------------------- |
+| Full Type System Reconstruction | Requires source-level type information not present in bytecode |
+| Automatic Variable Naming       | Semantic naming requires ML/heuristics beyond current scope    |
+| Source-Level Debugging          | Would require debug symbol format specification                |
+| Contract Modification/Patching  | Tool is read-only by design                                    |
+
+---
+
 ## What you get
 
 - NEF header parsing (magic, compiler, version, script length, checksum)
