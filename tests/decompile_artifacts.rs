@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use neo_decompiler::Decompiler;
+use neo_decompiler::{Decompiler, OutputFormat};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -303,12 +303,15 @@ fn decompile_and_write_outputs(
     create_parent(&pseudocode_path);
     create_parent(&error_path);
 
-    match decompiler.decompile_file_with_manifest(nef_path, Some(manifest_path)) {
+    match decompiler.decompile_file_with_manifest(nef_path, Some(manifest_path), OutputFormat::All)
+    {
         Ok(result) => {
-            fs::write(&high_level_path, result.high_level.as_bytes()).unwrap_or_else(|err| {
+            let high_level = result.high_level.as_deref().unwrap_or_default();
+            let pseudocode = result.pseudocode.as_deref().unwrap_or_default();
+            fs::write(&high_level_path, high_level.as_bytes()).unwrap_or_else(|err| {
                 panic!("failed to write {}: {err}", high_level_path.display())
             });
-            fs::write(&pseudocode_path, result.pseudocode.as_bytes()).unwrap_or_else(|err| {
+            fs::write(&pseudocode_path, pseudocode.as_bytes()).unwrap_or_else(|err| {
                 panic!("failed to write {}: {err}", pseudocode_path.display())
             });
             ContractStatus::Success

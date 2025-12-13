@@ -1,0 +1,19 @@
+contract NeoContract {
+    // script hash (little-endian): B9B02D58D4E203558865B169D0BFBA7E3DA868D8
+    // script hash (big-endian): D868A83D7EBABFD069B165885503E2D4582DB0B9
+    // manifest not provided
+
+    fn script_entry() {
+        // 0000: TRY
+        try {
+        // 0003: PUSH1
+        let t0 = 1;
+        }
+        finally {
+        // 0006: PUSH2
+        let t1 = 2;
+        }
+        // 0008: RET
+        return t1;
+    }
+}

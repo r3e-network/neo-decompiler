@@ -17,6 +17,7 @@ loading the companion contract manifest, decoding a useful slice of Neo VM
 opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 ## What you get
+
 - NEF header parsing (magic, compiler, version, script length, checksum)
 - Script hash calculation (Hash160) exposed in both little-endian and canonical forms
 - Method token decoding using the official variable-length encoding
@@ -33,16 +34,20 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 - High-level contract view that surfaces manifest ABI data, names locals/args
   via slot instructions (including manifest parameter names), and lifts stack
   operations into readable statements with structured `if`/`else`, `for`,
-  `while`, and `do { } while` blocks plus emitted `break`/`continue`
-  statements and manifest-derived entry signatures
+  `while`, `do { } while`, and `try`/`catch`/`finally` blocks plus emitted `break`/`continue`
+  statements and manifest-derived signatures. When ABI offsets are present,
+  each manifest method is decompiled within its own offset range; methods
+  without offsets are still emitted as stubs for completeness.
 - Syscall lifting that resolves human-readable names and suppresses phantom
   temporaries for known void syscalls (e.g., Runtime.Notify, Storage.Put)
 - A simple pseudocode view mirroring the decoded instruction stream
 - A C# contract skeleton view (`--format csharp`) that mirrors the manifest
-  entry point and emits stubs for additional ABI methods
+  entry point, emits stubs for additional ABI methods, declares ABI events,
+  and adds `[DisplayName]`/`[Safe]` attributes when available
 - A single binary (`neo-decompiler`) and a reusable library (`neo_decompiler`)
 
 ## Quick start
+
 ```bash
 # Build the binary
 cargo build --release
@@ -88,6 +93,7 @@ cargo build --release
 ```
 
 ### Permissions example
+
 Given a manifest snippet:
 
 ```json
@@ -154,17 +160,20 @@ starting point for your own experiments.
 ## Installation
 
 ### From crates.io (recommended)
+
 ```bash
 cargo install neo-decompiler
 ```
 
 ### From GitHub releases
+
 Download pre-built binaries from the [releases page](https://github.com/r3e-network/neo-decompiler/releases/latest).
 
 ### From source
+
 ```bash
 # Install the latest release from git
-cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.1.0 --locked
+cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.2.0 --locked
 
 # Or install the latest development version
 cargo install --git https://github.com/r3e-network/neo-decompiler --locked
@@ -174,18 +183,30 @@ cargo install --path . --locked
 ```
 
 ## Library example
+
+The crate ships with the CLI enabled by default. If you only need the library
+APIs and want to avoid pulling in CLI-only dependencies, disable default
+features in your `Cargo.toml`:
+
+```toml
+neo-decompiler = { version = "0.2.0", default-features = false }
+```
+
 ```rust
-use neo_decompiler::Decompiler;
+use neo_decompiler::{Decompiler, OutputFormat};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decompiler = Decompiler::new();
     let result = decompiler.decompile_file_with_manifest(
         "contract.nef",
         Some("contract.manifest.json"),
+        OutputFormat::All,
     )?;
 
     println!("{} instructions", result.instructions.len());
-    println!("{}", result.high_level);
+    if let Some(ref hl) = result.high_level {
+        println!("{}", hl);
+    }
     Ok(())
 }
 ```
@@ -195,6 +216,7 @@ and `Wildcard` when `*` is specified. `methods.type` mirrors the same wildcard v
 semantics (e.g., `Methods` with `value: ["symbol"]`).
 
 ### Built-in metadata coverage
+
 All published Neo N3 opcodes, syscalls, and native contracts are bundled with the
 crate so there is no network or tooling dependency at runtime:
 
@@ -229,6 +251,7 @@ neo-decompiler catalog opcodes
 ```
 
 ## Testing artifacts
+
 - Drop real contracts anywhere under `TestingArtifacts/` to extend coverage:
   - C# source with embedded manifest/NEF blobs (`*.cs`) are parsed and rewritten into `TestingArtifacts/decompiled/<relative>/`.
   - Paired files (`Example.nef` + `Example.manifest.json`) are also picked up automatically (recursively).
@@ -237,12 +260,20 @@ neo-decompiler catalog opcodes
 - Current samples ship under `TestingArtifacts/edgecases/` (loop lifting, method tokens, manifest metadata, permissions/trusts, call-flag failure, events) and `TestingArtifacts/embedded/` (compiler-style C# with embedded manifest/NEF).
 
 ### Extending opcode coverage
-The disassembler prints informative comments for opcodes that are not yet translated
-(`// XXXX: <MNEMONIC> (not yet translated)`). To extend support, update
-`tools/generate_opcodes.py` (which regenerates `src/opcodes_generated.rs`) and add
-handling in `src/decompiler.rs`/`src/cli.rs` for any new instructions.
+
+The high-level view prints informative comments for opcodes that are not yet lifted
+into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
+
+- If Neo adds new opcodes, regenerate `src/opcodes_generated.rs` via
+  `tools/generate_opcodes.py` (requires `tools/OpCode.cs` from the upstream
+  Neo project) and update the disassembler as needed.
+- If you want to improve high-level lifting for existing opcodes, add handling
+  in `src/decompiler/high_level/emitter/dispatch.rs` (and related helpers under
+  `src/decompiler/high_level/emitter/`), then extend the unit tests under
+  `src/decompiler/tests/`.
 
 ## Scope and limitations
+
 - NEF checksums are verified using the same double-SHA256 calculation employed
   by the official toolchain. Files with mismatching checksums are rejected.
 - The disassembler covers the opcodes exercised by our tests (including the
@@ -257,6 +288,7 @@ handling in `src/decompiler.rs`/`src/cli.rs` for any new instructions.
   scope.
 
 ## Troubleshooting
+
 - **"manifest not provided" in JSON/text output** – ensure the `.manifest.json`
   file sits next to the NEF or pass it explicitly via `--manifest path/to/file`.
 - **Manifest path missing in text/JSON output** – both views show the detected
@@ -279,7 +311,9 @@ handling in `src/decompiler.rs`/`src/cli.rs` for any new instructions.
   warning types may be added in the future.)
 
 ### JSON schema overview
+
 Each `--format json` command emits a top-level object containing:
+
 - `file`: Path to the NEF file being inspected.
 - `manifest_path`: Optional path to the manifest file that was consumed.
 - `warnings`: Array of human-readable warnings (currently populated when method
@@ -295,6 +329,7 @@ Each `--format json` command emits a top-level object containing:
   - `tokens`: standalone `method_tokens` array for quick inspection.
 
 Example (excerpt from `info --format json`):
+
 ```json
 {
   "file": "path/to/contract.nef",
@@ -317,7 +352,10 @@ Example (excerpt from `info --format json`):
   "method_tokens": [
     {
       "method": "Transfer",
-      "native_contract": { "contract": "GasToken", "label": "GasToken::Transfer" }
+      "native_contract": {
+        "contract": "GasToken",
+        "label": "GasToken::Transfer"
+      }
     }
   ],
   "warnings": []
@@ -328,8 +366,8 @@ Formal schema files live under [`docs/schema`](docs/schema) for every JSON comma
 (`info.schema.json`, `disasm.schema.json`, `decompile.schema.json`, `tokens.schema.json`).
 See [`docs/schema/README.md`](docs/schema/README.md) for versioning guarantees,
 validation instructions, and per-command details. Use
-`neo-decompiler schema --list` to discover the available schemas (with version,
-path, and description) or `--list-json` for machine-readable listings, and
+`neo-decompiler schema --list` to discover the available schemas (with version
+and description; use `--list-json` for paths), and
 `neo-decompiler schema <info|disasm|decompile|tokens>` (optionally with
 `--json-compact`, `--output schema.json`, or `--quiet`) to print or persist
 them without cloning the repository.
@@ -338,12 +376,13 @@ To validate an existing JSON report:
 
 ```bash
 neo-decompiler info --format json contract.nef > info.json
-neo-decompiler schema --schema info --validate info.json
+neo-decompiler schema info --validate info.json
 # or pipe via stdin (suppress schema body with --quiet / --no-print)
-neo-decompiler schema --schema info --validate - --quiet < info.json
+neo-decompiler schema info --validate - --quiet < info.json
 ```
 
 ## Development
+
 ```bash
 cargo fmt
 cargo test
@@ -355,22 +394,27 @@ If you use [`just`](https://github.com/casey/just), the repository ships with a
 Issues and pull requests are welcome if they keep the project lean and focused.
 
 ## Contributing
+
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development guidelines and
 [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for behavioural expectations.
 
 ## Support & Security
+
 - Support channels are documented in [`SUPPORT.md`](SUPPORT.md).
 - Responsible disclosure guidance lives in [`SECURITY.md`](SECURITY.md).
 
 ## Changelog
+
 Recent project history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
-**Current version:** [v0.1.0](https://github.com/r3e-network/neo-decompiler/releases/tag/v0.1.0) (2025-11-26)
+**Current version:** [v0.2.0](https://github.com/r3e-network/neo-decompiler/releases/tag/v0.2.0) (2025-12-13)
 
 ## Minimum supported Rust version
+
 The crate is tested against Rust `1.70` and newer on CI. Older toolchains are
 not guaranteed to work.
 
 ## License
+
 Dual licensed under MIT or Apache-2.0.
 See `LICENSE-MIT` and `LICENSE-APACHE` for details.

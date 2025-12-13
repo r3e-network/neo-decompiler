@@ -129,7 +129,7 @@ def main() -> None:
         variants.append(f"    {rust_name},")
         from_byte.append(f"            0x{value:02X} => OpCode::{rust_name},")
         to_byte.append(f"            OpCode::{rust_name} => 0x{value:02X},")
-        mnemonics.append(f"            OpCode::{rust_name} => \"{name}\".into(),")
+        mnemonics.append(f"            OpCode::{rust_name} => \"{name}\",")
         encodings.append(
             f"            OpCode::{rust_name} => {operand_encoding(name)},"
         )
@@ -159,10 +159,10 @@ def main() -> None:
                 }}
             }}
 
-            pub fn mnemonic(self) -> String {{
+            pub fn mnemonic(self) -> &'static str {{
                 match self {{
         {mnemonics}
-                    OpCode::Unknown(value) => format!("UNKNOWN_0x{{:02X}}", value),
+                    OpCode::Unknown(_) => "UNKNOWN",
                 }}
             }}
 

@@ -3,9 +3,49 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2025-12-13
+
+### Changed
+
+- **BREAKING**: Add `#[non_exhaustive]` to public enums and structs (`Error`,
+  `NefError`, `DisassemblyError`, `ManifestError`, `Decompilation`, `NefFile`,
+  `NefHeader`, `MethodToken`, `ContractManifest`, `Instruction`, `Operand`) for
+  semver safety. Downstream code using exhaustive pattern matching will need
+  wildcard arms.
+- `OpCode::mnemonic()` now returns `&'static str` instead of `String`, removing
+  per-call heap allocations on hot paths.
+
+### Added
+
+- New `DisassemblyError::OperandTooLarge` variant for rejecting oversized
+  `PUSHDATA*` operands (1 MiB limit) to prevent memory exhaustion attacks.
+- Checked arithmetic in disassembler slice operations to avoid integer overflow
+  on malformed input.
+- `#[must_use]` attributes on `Decompiler::new()`, `Disassembler::new()`,
+  `NefParser::new()`, and related constructors.
+- Comprehensive rustdoc with examples for `NativeMethodHint`, manifest
+  `describe_*` helpers, `Instruction::new`, and `Disassembler` API.
+- Crate-level `#![warn(missing_docs)]` and `#![warn(rust_2018_idioms)]` lints.
+- Edge-case tests for invalid UTF-8/JSON manifests and oversized operands.
+
+### Fixed
+
+- CLI `expect()` calls in schema handling replaced with proper error propagation
+  to avoid panics on edge cases.
+- Removed redundant `#[must_use]` on `Result`-returning functions (clippy
+  `double_must_use` warnings).
+
+### Internal
+
+- Modularized codebase: split monolithic files (`cli.rs`, `decompiler.rs`,
+  `nef.rs`, etc.) into focused submodules for maintainability.
+- Test count increased from 102 to 130 (107 unit + 16 CLI + 6 doctests + 1
+  artifact).
+
 ## [0.1.0] - 2025-11-26
 
 ### Added
+
 - Document MSRV (1.70) and add installation instructions in the README.
 - Bundle dual-license texts and polish crate metadata (`homepage`,
   `documentation`, README links).

@@ -5,6 +5,11 @@
 //! decoding a handful of common opcodes, and exposing a simple API that other
 //! applications (including the CLI binary in this repository) can use.
 
+#![forbid(unsafe_code)]
+#![warn(missing_docs)]
+#![warn(rust_2018_idioms)]
+
+#[cfg(feature = "cli")]
 pub mod cli;
 pub mod decompiler;
 pub mod disassembler;
@@ -16,7 +21,7 @@ pub mod nef;
 pub mod syscalls;
 mod util;
 
-pub use crate::decompiler::{Decompilation, Decompiler};
+pub use crate::decompiler::{Decompilation, Decompiler, OutputFormat};
 pub use crate::disassembler::{Disassembler, UnknownHandling};
 pub use crate::error::{Error, Result};
 pub use crate::instruction::{Instruction, OpCode, Operand};

@@ -1,0 +1,37 @@
+[package]
+name = "neo-decompiler-fuzz"
+version = "0.0.0"
+authors = ["Automatically generated"]
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.neo-decompiler]
+path = ".."
+default-features = false
+
+[[bin]]
+name = "fuzz_nef_parse"
+path = "fuzz_targets/fuzz_nef_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_disassemble"
+path = "fuzz_targets/fuzz_disassemble.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_manifest"
+path = "fuzz_targets/fuzz_manifest.rs"
+test = false
+doc = false
+bench = false
