@@ -3,6 +3,94 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2025-12-14
+
+### Changed
+
+- Documented analysis output in the README and added rustdoc examples for `decompiler::analysis`.
+
+### Internal
+
+- Expanded unit test coverage for v0.4.x analysis outputs (call graph, xrefs, type inference)
+  and high-level post-processing passes (indexing + switch recovery).
+
+## [0.4.0] - 2025-12-14
+
+### Added
+
+- New analysis layer exposed via `Decompilation`:
+  - `call_graph`: inter-procedural relationships across `CALL*`, `CALLT`, and `SYSCALL`
+  - `xrefs`: local/argument/static slot read/write offsets
+  - `types`: best-effort primitive/collection type inference for locals/args/statics
+- `neo-decompiler decompile --format json` now includes an `analysis` object (and the decompile JSON schema documents it).
+
+### Changed
+
+- High-level output rewrites collection helpers into more idiomatic syntax:
+  - `PICKITEM` becomes bracket indexing (`a[b]`)
+  - `SETITEM` becomes bracket assignment (`a[b] = c`)
+  - `HASKEY` becomes `has_key(a, b)`
+- High-level output can now rewrite equality-based `if`/`else` chains into `switch`/`case` blocks (conservative).
+
+## [0.3.1] - 2025-12-14
+
+### Changed
+
+- High-level decompiler output is now brace-indented for more readable nested blocks.
+- Conservative temp inlining can now substitute trivial literals/identifiers into `if`/`while`/`for`
+  headers while still avoiding large expression inlining that harms readability.
+- Rewrite simple `x = x + y` / `x = x - y` patterns into compound assignments (`x += y`, `x -= y`)
+  in the high-level view, including within `for` headers.
+
+### Fixed
+
+- Removed stray blank lines caused by post-processing passes clearing lifted statements.
+- CLI commands no longer panic on broken pipes when output is piped to tools like `head`.
+
+## [0.3.0] - 2025-12-13
+
+### Added
+
+- **Control Flow Graph (CFG) infrastructure**: New `cfg` module providing
+  explicit basic block representation for control flow analysis.
+  - `BasicBlock`, `BlockId`, `Terminator` types for block-level analysis
+  - `Cfg` graph structure with edges, successors/predecessors queries
+  - `CfgBuilder` for constructing CFG from instruction streams
+  - DOT format export via `Cfg::to_dot()` for Graphviz visualization
+  - CLI export via `neo-decompiler cfg <contract.nef> > cfg.dot`
+  - Reverse post-order traversal for dataflow analysis
+- **Dead code detection helpers**: Reachability analysis via `Cfg::reachable_blocks()` /
+  `Cfg::unreachable_blocks()` and unreachable block highlighting in DOT output.
+- **Expression simplification helpers**: New `ir::simplify` module with algebraic
+  simplifications for cleaner IR expressions (usable in downstream tooling and future passes).
+  - Arithmetic identities: `x + 0 → x`, `x * 1 → x`, `x ** 0 → 1`
+  - Boolean simplifications: `x == true → x`, `!!x → x`, `true && x → x`
+  - Bitwise identities: `x ^ x → 0`, `x & 0 → 0`, `x | 0 → x`
+- **Else-if chain detection**: Post-processing pass that collapses nested
+  `} else { if ... {` patterns into cleaner `} else if ... {` syntax.
+- **Loop header temp inlining**: Inline condition/increment temporaries into `while`/`for`
+  headers for cleaner loop output.
+- **Single-use temp inlining** (experimental, disabled by default): Optional pass
+  for inlining temporary variables used exactly once (enable via
+  `neo-decompiler decompile --inline-single-use-temps` or
+  `Decompiler::with_inline_single_use_temps(true)`).
+- CFG is now part of `Decompilation` result with `cfg_to_dot()` helper method.
+- Public API exports for CFG types: `BasicBlock`, `BlockId`, `Cfg`, `CfgBuilder`,
+  `Edge`, `EdgeKind`, `Terminator`.
+
+### Changed
+
+- MSRV bumped to Rust 1.74 to match CLI dependency requirements.
+- CI now validates MSRV + `--no-default-features` builds and fails on rustdoc warnings.
+
+### Internal
+
+- Added 17 new CFG unit tests covering exit blocks, predecessors/successors,
+  edge counting, and terminator properties.
+- Added 17 expression simplification tests.
+- Refactored large modules into focused submodules (`cfg::graph`, `decompiler` API, `error`, `instruction`, `nef::parser`, `manifest::model`, high-level emitter internals, disassembler operand handling, postprocess inliners).
+- Test count increased from 130 to 180+ tests.
+
 ## [0.2.0] - 2025-12-13
 
 ### Changed

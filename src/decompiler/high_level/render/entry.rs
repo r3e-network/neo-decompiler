@@ -13,6 +13,7 @@ pub(super) fn write_entry_method(
     output: &mut String,
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
+    inline_single_use_temps: bool,
 ) -> Option<(String, Option<u32>)> {
     let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
     let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
@@ -73,7 +74,12 @@ pub(super) fn write_entry_method(
     }
     writeln!(output, "    {signature} {{").unwrap();
 
-    body::write_method_body(output, &entry_instructions, entry_param_labels.as_deref());
+    body::write_method_body(
+        output,
+        &entry_instructions,
+        entry_param_labels.as_deref(),
+        inline_single_use_temps,
+    );
     writeln!(output, "    }}").unwrap();
 
     entry_method

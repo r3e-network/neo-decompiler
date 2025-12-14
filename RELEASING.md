@@ -5,10 +5,9 @@
 3. Bump the crate version in `Cargo.toml` and `Cargo.lock` (if present).
 4. Run the full verification suite:
    ```bash
-   cargo fmt
-   cargo clippy --all-targets --all-features -- -D warnings
-   cargo test
-   cargo package --allow-dirty --no-verify
+   just ci
+   cargo package
+   cargo publish --dry-run
    ```
 5. Create a signed git tag: `git tag -s vX.Y.Z -m "neo-decompiler vX.Y.Z"`.
 6. Push commits and tags: `git push && git push --tags`.

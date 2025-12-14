@@ -1,5 +1,7 @@
 use crate::error::Result;
 
+use std::io::Write as _;
+
 use super::super::args::{CatalogArgs, CatalogFormat, CatalogKind, Cli};
 use super::super::catalog as catalog_data;
 
@@ -16,16 +18,19 @@ impl Cli {
         let entries = catalog_data::build_syscall_catalog_entries();
         match format {
             CatalogFormat::Text => {
-                println!("{} syscalls bundled", entries.len());
-                println!();
-                for entry in &entries {
-                    println!("{} ({})", entry.name, entry.hash);
-                    println!("    handler: {}", entry.handler);
-                    println!("    price: {}", entry.price);
-                    println!("    call_flags: {}", entry.call_flags);
-                    println!("    returns_value: {}", entry.returns_value);
-                    println!();
-                }
+                self.write_stdout(|out| {
+                    writeln!(out, "{} syscalls bundled", entries.len())?;
+                    writeln!(out)?;
+                    for entry in &entries {
+                        writeln!(out, "{} ({})", entry.name, entry.hash)?;
+                        writeln!(out, "    handler: {}", entry.handler)?;
+                        writeln!(out, "    price: {}", entry.price)?;
+                        writeln!(out, "    call_flags: {}", entry.call_flags)?;
+                        writeln!(out, "    returns_value: {}", entry.returns_value)?;
+                        writeln!(out)?;
+                    }
+                    Ok(())
+                })?;
             }
             CatalogFormat::Json => {
                 self.print_catalog_json(CatalogKind::Syscalls, entries)?;
@@ -38,18 +43,21 @@ impl Cli {
         let entries = catalog_data::build_native_contract_catalog_entries();
         match format {
             CatalogFormat::Text => {
-                println!("{} native contracts bundled", entries.len());
-                println!();
-                for entry in &entries {
-                    println!("{} ({})", entry.name, entry.script_hash_le);
-                    println!("    script_hash_be: {}", entry.script_hash_be);
-                    if entry.methods.is_empty() {
-                        println!("    methods: (none)");
-                    } else {
-                        println!("    methods: {}", entry.methods.join(", "));
+                self.write_stdout(|out| {
+                    writeln!(out, "{} native contracts bundled", entries.len())?;
+                    writeln!(out)?;
+                    for entry in &entries {
+                        writeln!(out, "{} ({})", entry.name, entry.script_hash_le)?;
+                        writeln!(out, "    script_hash_be: {}", entry.script_hash_be)?;
+                        if entry.methods.is_empty() {
+                            writeln!(out, "    methods: (none)")?;
+                        } else {
+                            writeln!(out, "    methods: {}", entry.methods.join(", "))?;
+                        }
+                        writeln!(out)?;
                     }
-                    println!();
-                }
+                    Ok(())
+                })?;
             }
             CatalogFormat::Json => {
                 self.print_catalog_json(CatalogKind::NativeContracts, entries)?;
@@ -62,13 +70,16 @@ impl Cli {
         let entries = catalog_data::build_opcode_catalog_entries();
         match format {
             CatalogFormat::Text => {
-                println!("{} opcodes bundled", entries.len());
-                println!();
-                for entry in &entries {
-                    println!("{} ({})", entry.mnemonic, entry.byte);
-                    println!("    operand: {}", entry.operand_encoding);
-                    println!();
-                }
+                self.write_stdout(|out| {
+                    writeln!(out, "{} opcodes bundled", entries.len())?;
+                    writeln!(out)?;
+                    for entry in &entries {
+                        writeln!(out, "{} ({})", entry.mnemonic, entry.byte)?;
+                        writeln!(out, "    operand: {}", entry.operand_encoding)?;
+                        writeln!(out)?;
+                    }
+                    Ok(())
+                })?;
             }
             CatalogFormat::Json => {
                 self.print_catalog_json(CatalogKind::Opcodes, entries)?;

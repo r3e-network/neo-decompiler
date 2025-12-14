@@ -1,3 +1,4 @@
+use std::io::Write as _;
 use std::path::PathBuf;
 
 use crate::error::Result;
@@ -13,7 +14,9 @@ impl Cli {
 
         if nef.method_tokens.is_empty() {
             match format {
-                TokensFormat::Text => println!("(no method tokens)"),
+                TokensFormat::Text => {
+                    self.write_stdout(|out| writeln!(out, "(no method tokens)"))?;
+                }
                 TokensFormat::Json => {
                     let report = TokensReport {
                         file: path.display().to_string(),
@@ -28,9 +31,12 @@ impl Cli {
 
         match format {
             TokensFormat::Text => {
-                for (index, token) in nef.method_tokens.iter().enumerate() {
-                    println!("{}", reports::format_method_token_line(index, token));
-                }
+                self.write_stdout(|out| {
+                    for (index, token) in nef.method_tokens.iter().enumerate() {
+                        writeln!(out, "{}", reports::format_method_token_line(index, token))?;
+                    }
+                    Ok(())
+                })?;
             }
             TokensFormat::Json => {
                 let tokens = nef

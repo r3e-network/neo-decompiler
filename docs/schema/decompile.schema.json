@@ -36,9 +36,202 @@
         {"type": "null"}
       ]
     },
+    "analysis": {"$ref": "#/definitions/analysisReport"},
     "warnings": {"type": "array", "items": {"type": "string"}}
   },
   "definitions": {
+    "analysisReport": {
+      "type": "object",
+      "required": ["call_graph", "xrefs", "types"],
+      "properties": {
+        "call_graph": {"$ref": "#/definitions/callGraph"},
+        "xrefs": {"$ref": "#/definitions/xrefs"},
+        "types": {"$ref": "#/definitions/typeInfo"}
+      }
+    },
+    "methodRef": {
+      "type": "object",
+      "required": ["offset", "name"],
+      "properties": {
+        "offset": {"type": "integer", "minimum": 0},
+        "name": {"type": "string"}
+      }
+    },
+    "callGraph": {
+      "type": "object",
+      "required": ["methods", "edges"],
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/methodRef"}
+        },
+        "edges": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/callEdge"}
+        }
+      }
+    },
+    "callEdge": {
+      "type": "object",
+      "required": ["caller", "call_offset", "opcode", "target"],
+      "properties": {
+        "caller": {"$ref": "#/definitions/methodRef"},
+        "call_offset": {"type": "integer", "minimum": 0},
+        "opcode": {"type": "string"},
+        "target": {"$ref": "#/definitions/callTarget"}
+      }
+    },
+    "callTarget": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["Internal"],
+          "properties": {
+            "Internal": {
+              "type": "object",
+              "required": ["method"],
+              "properties": {"method": {"$ref": "#/definitions/methodRef"}}
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["MethodToken"],
+          "properties": {
+            "MethodToken": {
+              "type": "object",
+              "required": [
+                "index",
+                "hash_le",
+                "hash_be",
+                "method",
+                "parameters_count",
+                "has_return_value",
+                "call_flags"
+              ],
+              "properties": {
+                "index": {"type": "integer", "minimum": 0},
+                "hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
+                "hash_be": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
+                "method": {"type": "string"},
+                "parameters_count": {"type": "integer", "minimum": 0},
+                "has_return_value": {"type": "boolean"},
+                "call_flags": {"type": "integer", "minimum": 0, "maximum": 255}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["Syscall"],
+          "properties": {
+            "Syscall": {
+              "type": "object",
+              "required": ["hash", "returns_value"],
+              "properties": {
+                "hash": {"type": "integer", "minimum": 0},
+                "name": {"type": ["string", "null"]},
+                "returns_value": {"type": "boolean"}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["Indirect"],
+          "properties": {
+            "Indirect": {
+              "type": "object",
+              "required": ["opcode"],
+              "properties": {
+                "opcode": {"type": "string"},
+                "operand": {"type": ["integer", "null"], "minimum": 0}
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["UnresolvedInternal"],
+          "properties": {
+            "UnresolvedInternal": {
+              "type": "object",
+              "required": ["target"],
+              "properties": {"target": {"type": "integer"}}
+            }
+          }
+        }
+      ]
+    },
+    "xrefs": {
+      "type": "object",
+      "required": ["methods"],
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/methodXrefs"}
+        }
+      }
+    },
+    "methodXrefs": {
+      "type": "object",
+      "required": ["method", "locals", "arguments", "statics"],
+      "properties": {
+        "method": {"$ref": "#/definitions/methodRef"},
+        "locals": {"type": "array", "items": {"$ref": "#/definitions/slotXref"}},
+        "arguments": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/slotXref"}
+        },
+        "statics": {"type": "array", "items": {"$ref": "#/definitions/slotXref"}}
+      }
+    },
+    "slotXref": {
+      "type": "object",
+      "required": ["index", "reads", "writes"],
+      "properties": {
+        "index": {"type": "integer", "minimum": 0},
+        "reads": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "writes": {"type": "array", "items": {"type": "integer", "minimum": 0}}
+      }
+    },
+    "valueType": {
+      "type": "string",
+      "enum": [
+        "unknown",
+        "any",
+        "null",
+        "bool",
+        "integer",
+        "bytestring",
+        "buffer",
+        "array",
+        "struct",
+        "map",
+        "interopinterface",
+        "pointer"
+      ]
+    },
+    "typeInfo": {
+      "type": "object",
+      "required": ["methods", "statics"],
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/methodTypes"}
+        },
+        "statics": {"type": "array", "items": {"$ref": "#/definitions/valueType"}}
+      }
+    },
+    "methodTypes": {
+      "type": "object",
+      "required": ["method", "arguments", "locals"],
+      "properties": {
+        "method": {"$ref": "#/definitions/methodRef"},
+        "arguments": {"type": "array", "items": {"$ref": "#/definitions/valueType"}},
+        "locals": {"type": "array", "items": {"$ref": "#/definitions/valueType"}}
+      }
+    },
     "instruction": {
       "type": "object",
       "required": ["offset", "opcode"],

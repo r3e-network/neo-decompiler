@@ -8,7 +8,7 @@
 \usepackage{csquotes}
 
 \title{Neo Decompiler Specification}
-\author{Neo Decompiler Project}
+\author{Jimmy \texttt{jimmy@r3e.network}}
 \date{\today}
 
 \begin{document}
@@ -148,6 +148,7 @@ instructions & Array of decoded instructions with operands; \texttt{returns\_val
 method\_tokens & Tokens with hashes, call flags, \texttt{returns\_value}, and native hints.\\
 manifest & Manifest summary (methods, events, permissions, trusts).\\
 warnings & Array of human-readable warnings (e.g., unknown native methods).\\
+analysis & Best-effort analysis results including call graph, slot cross-references, and inferred types.\\
 \bottomrule
 \end{longtable}
 
@@ -190,7 +191,8 @@ Input validation & Opcode/syscall/native lookup & Pseudocode / High-level / C\# 
 
 \section{Limitations}\label{sec:limits}
 \begin{itemize}[nosep]
-    \item Type inference beyond manifest-provided metadata is out-of-scope.
+    \item Type inference is best-effort; values may remain \texttt{unknown} and
+    syscall argument signatures are not recovered from bytecode.
     \item Complex control-flow graph recovery (e.g., switch lowering, try/finally
     reconstruction) is not guaranteed.
     \item Unknown opcodes beyond the generated table are rendered as

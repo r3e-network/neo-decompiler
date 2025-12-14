@@ -27,10 +27,12 @@ impl HighLevelEmitter {
                 let expr = format!("{} = {}", var, prev_assign.rhs);
                 return Some((index, Some(prev_idx), expr));
             }
-            if assign.rhs.contains(&prev_assign.lhs) {
-                let replaced = assign
-                    .rhs
-                    .replace(prev_assign.lhs.as_str(), prev_assign.rhs.as_str());
+            if Self::contains_identifier(&assign.rhs, &prev_assign.lhs) {
+                let replaced = Self::replace_identifier(
+                    &assign.rhs,
+                    &prev_assign.lhs,
+                    prev_assign.rhs.as_str(),
+                );
                 let expr = format!("{} = {}", var, replaced);
                 return Some((index, Some(prev_idx), expr));
             }

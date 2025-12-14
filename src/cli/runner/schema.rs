@@ -1,5 +1,5 @@
 use std::fmt::Write as _;
-use std::io::{self, Read};
+use std::io::{self, Read, Write as _};
 use std::path::Path;
 
 use jsonschema::JSONSchema;
@@ -17,14 +17,18 @@ impl Cli {
                 let listing: Vec<_> = SchemaKind::ALL.iter().map(SchemaMetadata::report).collect();
                 self.print_json(&listing)?;
             } else {
-                for entry in SchemaKind::ALL {
-                    println!(
-                        "{} v{} - {}",
-                        entry.kind.as_str(),
-                        entry.version,
-                        entry.description
-                    );
-                }
+                self.write_stdout(|out| {
+                    for entry in SchemaKind::ALL {
+                        writeln!(
+                            out,
+                            "{} v{} - {}",
+                            entry.kind.as_str(),
+                            entry.version,
+                            entry.description
+                        )?;
+                    }
+                    Ok(())
+                })?;
             }
             return Ok(());
         }
@@ -36,14 +40,13 @@ impl Cli {
             )
         })?;
         let entry = schema.metadata();
-        let value: Value = serde_json::from_str(entry.contents)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        let value: Value = serde_json::from_str(entry.contents).map_err(io::Error::other)?;
         if let Some(target) = args.validate.as_ref() {
             self.validate_against_schema(entry.kind.as_str(), &value, target)?;
         }
         let json = self.render_json(&value)?;
         if !args.no_print {
-            println!("{json}");
+            self.write_stdout(|out| writeln!(out, "{json}"))?;
         }
         if let Some(path) = args.output.as_ref() {
             std::fs::write(path, &json)?;
@@ -57,8 +60,8 @@ impl Cli {
         schema_value: &Value,
         path: &Path,
     ) -> Result<()> {
-        let compiled = JSONSchema::compile(schema_value)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+        let compiled =
+            JSONSchema::compile(schema_value).map_err(|err| io::Error::other(err.to_string()))?;
         let data = if path == Path::new("-") {
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
@@ -79,15 +82,17 @@ impl Cli {
             }
             return Err(io::Error::new(io::ErrorKind::InvalidData, buffer).into());
         }
-        println!(
-            "Validation succeeded for {} against {} schema",
-            if path == Path::new("-") {
-                "stdin".into()
-            } else {
-                path.display().to_string()
-            },
-            schema_name
-        );
-        Ok(())
+        self.write_stdout(|out| {
+            writeln!(
+                out,
+                "Validation succeeded for {} against {} schema",
+                if path == Path::new("-") {
+                    "stdin".into()
+                } else {
+                    path.display().to_string()
+                },
+                schema_name
+            )
+        })
     }
 }

@@ -21,6 +21,13 @@ pub mod nef;
 pub mod syscalls;
 mod util;
 
+pub use crate::decompiler::analysis::call_graph::{CallEdge, CallGraph, CallTarget};
+pub use crate::decompiler::analysis::types::{MethodTypes, TypeInfo, ValueType};
+pub use crate::decompiler::analysis::xrefs::{MethodXrefs, SlotKind, SlotXref, Xrefs};
+pub use crate::decompiler::analysis::MethodRef;
+pub use crate::decompiler::cfg::{
+    BasicBlock, BlockId, Cfg, CfgBuilder, Edge, EdgeKind, Terminator,
+};
 pub use crate::decompiler::{Decompilation, Decompiler, OutputFormat};
 pub use crate::disassembler::{Disassembler, UnknownHandling};
 pub use crate::error::{Error, Result};

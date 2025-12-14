@@ -8,6 +8,7 @@ mod generated {
 /// Metadata describing a native contract.
 pub use generated::NativeContractInfo;
 
+#[allow(dead_code)]
 const fn script_hash_lt(left: &[u8; 20], right: &[u8; 20]) -> bool {
     let mut i = 0usize;
     while i < 20 {
@@ -22,6 +23,7 @@ const fn script_hash_lt(left: &[u8; 20], right: &[u8; 20]) -> bool {
     false
 }
 
+#[allow(dead_code)]
 const fn assert_native_contracts_sorted_by_hash(contracts: &[NativeContractInfo]) {
     let mut i = 1usize;
     while i < contracts.len() {

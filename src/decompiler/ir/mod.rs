@@ -8,11 +8,13 @@
 mod control_flow;
 mod expression;
 mod render;
+mod simplify;
 mod statement;
 
 pub use control_flow::ControlFlow;
 pub use expression::{BinOp, Expr, Literal, UnaryOp};
 pub use render::{render_block, render_expr, render_stmt};
+pub use simplify::simplify;
 pub use statement::{Block, Stmt};
 
 #[cfg(test)]

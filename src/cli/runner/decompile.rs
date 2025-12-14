@@ -1,3 +1,4 @@
+use std::io::Write as _;
 use std::path::PathBuf;
 
 use crate::decompiler::{Decompiler, OutputFormat};
@@ -6,7 +7,9 @@ use crate::error::Result;
 use crate::util;
 
 use super::super::args::{Cli, DecompileFormat};
-use super::super::reports::{self, DecompileReport, InstructionReport, MethodTokenReport};
+use super::super::reports::{
+    self, AnalysisReport, DecompileReport, InstructionReport, MethodTokenReport,
+};
 
 impl Cli {
     pub(super) fn run_decompile(
@@ -15,13 +18,15 @@ impl Cli {
         format: DecompileFormat,
         output_format: OutputFormat,
         fail_on_unknown_opcodes: bool,
+        inline_single_use_temps: bool,
     ) -> Result<()> {
         let handling = if fail_on_unknown_opcodes {
             UnknownHandling::Error
         } else {
             UnknownHandling::Permit
         };
-        let decompiler = Decompiler::with_unknown_handling(handling);
+        let decompiler = Decompiler::with_unknown_handling(handling)
+            .with_inline_single_use_temps(inline_single_use_temps);
         let manifest_path = self.resolve_manifest_path(path);
         // Use explicit output_format, but ensure All is used for JSON format
         let effective_output_format = if matches!(format, DecompileFormat::Json) {
@@ -37,19 +42,27 @@ impl Cli {
 
         match format {
             DecompileFormat::Pseudocode => {
-                print!("{}", result.pseudocode.as_deref().unwrap_or_default());
+                self.write_stdout(|out| {
+                    write!(out, "{}", result.pseudocode.as_deref().unwrap_or_default())
+                })?;
             }
             DecompileFormat::HighLevel => {
-                print!("{}", result.high_level.as_deref().unwrap_or_default());
+                self.write_stdout(|out| {
+                    write!(out, "{}", result.high_level.as_deref().unwrap_or_default())
+                })?;
             }
             DecompileFormat::Both => {
-                println!("// High-level view");
-                println!("{}", result.high_level.as_deref().unwrap_or_default());
-                println!("// Pseudocode view");
-                print!("{}", result.pseudocode.as_deref().unwrap_or_default());
+                self.write_stdout(|out| {
+                    writeln!(out, "// High-level view")?;
+                    writeln!(out, "{}", result.high_level.as_deref().unwrap_or_default())?;
+                    writeln!(out, "// Pseudocode view")?;
+                    write!(out, "{}", result.pseudocode.as_deref().unwrap_or_default())
+                })?;
             }
             DecompileFormat::Csharp => {
-                print!("{}", result.csharp.as_deref().unwrap_or_default());
+                self.write_stdout(|out| {
+                    write!(out, "{}", result.csharp.as_deref().unwrap_or_default())
+                })?;
             }
             DecompileFormat::Json => {
                 let script_hash = result.nef.script_hash();
@@ -77,6 +90,11 @@ impl Cli {
                         .collect(),
                     method_tokens,
                     manifest: result.manifest.as_ref().map(reports::summarize_manifest),
+                    analysis: AnalysisReport {
+                        call_graph: result.call_graph.clone(),
+                        xrefs: result.xrefs.clone(),
+                        types: result.types.clone(),
+                    },
                     warnings,
                 };
                 self.print_json(&report)?;

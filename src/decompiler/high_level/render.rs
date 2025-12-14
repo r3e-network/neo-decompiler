@@ -14,15 +14,23 @@ pub(crate) fn render_high_level(
     nef: &NefFile,
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
+    inline_single_use_temps: bool,
 ) -> String {
     use std::fmt::Write;
 
     let mut output = String::new();
     header::write_contract_header(&mut output, nef, manifest);
 
-    let entry_method = entry::write_entry_method(&mut output, instructions, manifest);
+    let entry_method =
+        entry::write_entry_method(&mut output, instructions, manifest, inline_single_use_temps);
     if let Some(manifest) = manifest {
-        methods::write_manifest_methods(&mut output, instructions, manifest, entry_method.as_ref());
+        methods::write_manifest_methods(
+            &mut output,
+            instructions,
+            manifest,
+            entry_method.as_ref(),
+            inline_single_use_temps,
+        );
     }
     writeln!(output, "}}").unwrap();
 

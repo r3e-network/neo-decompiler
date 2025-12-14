@@ -1,8 +1,8 @@
 [package]
 name = "neo-decompiler"
-version = "0.2.0"
+version = "0.4.1"
 edition = "2021"
-authors = ["Neo Development Team"]
+authors = ["Jimmy <jimmy@r3e.network>"]
 license = "MIT OR Apache-2.0"
 description = "Minimal tooling for inspecting Neo N3 NEF bytecode"
 readme = "README.md"
@@ -11,7 +11,7 @@ categories = ["development-tools", "parser-implementations"]
 repository = "https://github.com/r3e-network/neo-decompiler"
 homepage = "https://github.com/r3e-network/neo-decompiler"
 documentation = "https://docs.rs/neo-decompiler"
-rust-version = "1.70"
+rust-version = "1.74"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"], optional = true }
@@ -22,6 +22,8 @@ serde_json = "1.0"
 hex = "0.4"
 ripemd = "0.1"
 jsonschema = { version = "0.17", default-features = false, optional = true }
+url = { version = ">=2.2,<2.5", optional = true }
+time = { version = ">=0.3,<0.3.42", optional = true }
 
 [dev-dependencies]
 assert_cmd = "2.0"
@@ -31,7 +33,7 @@ base64 = "0.21"
 
 [features]
 default = ["cli"]
-cli = ["dep:clap", "dep:jsonschema"]
+cli = ["dep:clap", "dep:jsonschema", "dep:time", "dep:url"]
 
 [[bin]]
 name = "neo-decompiler"

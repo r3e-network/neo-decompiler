@@ -32,6 +32,15 @@ pub(in crate::cli) enum Command {
         fail_on_unknown_opcodes: bool,
     },
 
+    /// Render the contract's control flow graph (DOT format)
+    Cfg {
+        path: PathBuf,
+
+        /// Fail fast if an unknown opcode is encountered (default: tolerate and emit UNKNOWN_0x..)
+        #[arg(long)]
+        fail_on_unknown_opcodes: bool,
+    },
+
     /// Parse and pretty-print the bytecode
     Decompile {
         path: PathBuf,
@@ -47,6 +56,10 @@ pub(in crate::cli) enum Command {
         /// Fail fast if an unknown opcode is encountered (default: tolerate and emit UNKNOWN_0x..)
         #[arg(long)]
         fail_on_unknown_opcodes: bool,
+
+        /// Inline single-use temporary variables in the high-level view (experimental)
+        #[arg(long)]
+        inline_single_use_temps: bool,
     },
 
     /// List method tokens embedded in the NEF file

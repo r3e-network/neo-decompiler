@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use std::io::Write as _;
+
 use crate::error::Result;
 use crate::manifest::ContractManifest;
 use crate::nef::NefFile;
@@ -16,67 +18,82 @@ impl Cli {
         manifest: Option<&ContractManifest>,
         manifest_path: Option<&PathBuf>,
     ) -> Result<()> {
-        println!("File: {}", path.display());
-        println!("Compiler: {}", nef.header.compiler);
-        if !nef.header.source.is_empty() {
-            println!("Source: {}", nef.header.source);
-        }
-        println!("Script length: {} bytes", nef.script.len());
-        let script_hash = nef.script_hash();
-        println!("Script hash (LE): {}", util::format_hash(&script_hash));
-        println!("Script hash (BE): {}", util::format_hash_be(&script_hash));
-        println!("Method tokens: {}", nef.method_tokens.len());
-        if !nef.method_tokens.is_empty() {
-            println!("Method token entries:");
-            for (index, token) in nef.method_tokens.iter().enumerate() {
-                println!("    {}", reports::format_method_token_line(index, token));
+        self.write_stdout(|out| {
+            writeln!(out, "File: {}", path.display())?;
+            writeln!(out, "Compiler: {}", nef.header.compiler)?;
+            if !nef.header.source.is_empty() {
+                writeln!(out, "Source: {}", nef.header.source)?;
             }
-        }
-        println!("Checksum: 0x{:08X}", nef.checksum);
+            writeln!(out, "Script length: {} bytes", nef.script.len())?;
+            let script_hash = nef.script_hash();
+            writeln!(out, "Script hash (LE): {}", util::format_hash(&script_hash))?;
+            writeln!(
+                out,
+                "Script hash (BE): {}",
+                util::format_hash_be(&script_hash)
+            )?;
+            writeln!(out, "Method tokens: {}", nef.method_tokens.len())?;
+            if !nef.method_tokens.is_empty() {
+                writeln!(out, "Method token entries:")?;
+                for (index, token) in nef.method_tokens.iter().enumerate() {
+                    writeln!(
+                        out,
+                        "    {}",
+                        reports::format_method_token_line(index, token)
+                    )?;
+                }
+            }
+            writeln!(out, "Checksum: 0x{:08X}", nef.checksum)?;
 
-        if let Some(manifest) = manifest {
-            println!("Manifest contract: {}", manifest.name);
-            if !manifest.supported_standards.is_empty() {
-                println!(
-                    "Supported standards: {}",
-                    manifest.supported_standards.join(", ")
-                );
-            }
-            println!(
-                "ABI methods: {} events: {}",
-                manifest.abi.methods.len(),
-                manifest.abi.events.len()
-            );
-            println!(
-                "Features: storage={} payable={}",
-                manifest.features.storage, manifest.features.payable
-            );
-            if !manifest.groups.is_empty() {
-                println!("Groups:");
-                for group in &manifest.groups {
-                    println!(
-                        "    - pubkey={} signature={}",
-                        group.pubkey, group.signature
-                    );
+            if let Some(manifest) = manifest {
+                writeln!(out, "Manifest contract: {}", manifest.name)?;
+                if !manifest.supported_standards.is_empty() {
+                    writeln!(
+                        out,
+                        "Supported standards: {}",
+                        manifest.supported_standards.join(", ")
+                    )?;
+                }
+                writeln!(
+                    out,
+                    "ABI methods: {} events: {}",
+                    manifest.abi.methods.len(),
+                    manifest.abi.events.len()
+                )?;
+                writeln!(
+                    out,
+                    "Features: storage={} payable={}",
+                    manifest.features.storage, manifest.features.payable
+                )?;
+                if !manifest.groups.is_empty() {
+                    writeln!(out, "Groups:")?;
+                    for group in &manifest.groups {
+                        writeln!(
+                            out,
+                            "    - pubkey={} signature={}",
+                            group.pubkey, group.signature
+                        )?;
+                    }
+                }
+                if !manifest.permissions.is_empty() {
+                    writeln!(out, "Permissions:")?;
+                    for permission in &manifest.permissions {
+                        writeln!(
+                            out,
+                            "    - contract={} methods={}",
+                            permission.contract.describe(),
+                            permission.methods.describe()
+                        )?;
+                    }
+                }
+                if let Some(trusts) = manifest.trusts.as_ref() {
+                    writeln!(out, "Trusts: {}", trusts.describe())?;
+                }
+                if let Some(path) = manifest_path {
+                    writeln!(out, "Manifest path: {}", path.display())?;
                 }
             }
-            if !manifest.permissions.is_empty() {
-                println!("Permissions:");
-                for permission in &manifest.permissions {
-                    println!(
-                        "    - contract={} methods={}",
-                        permission.contract.describe(),
-                        permission.methods.describe()
-                    );
-                }
-            }
-            if let Some(trusts) = manifest.trusts.as_ref() {
-                println!("Trusts: {}", trusts.describe());
-            }
-            if let Some(path) = manifest_path {
-                println!("Manifest path: {}", path.display());
-            }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 }

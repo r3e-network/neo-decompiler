@@ -2,6 +2,7 @@
 
 mod analysis;
 mod blocks;
+mod ident;
 mod model;
 mod parsing;
 mod scan;

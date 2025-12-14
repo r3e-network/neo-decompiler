@@ -3,6 +3,7 @@ use serde::Serialize;
 use super::instructions::InstructionReport;
 use super::manifest::ManifestSummary;
 use super::method_tokens::MethodTokenReport;
+use crate::decompiler::analysis::{call_graph::CallGraph, types::TypeInfo, xrefs::Xrefs};
 
 #[derive(Serialize)]
 pub(in crate::cli) struct InfoReport {
@@ -45,5 +46,13 @@ pub(in crate::cli) struct DecompileReport {
     pub(in crate::cli) instructions: Vec<InstructionReport>,
     pub(in crate::cli) method_tokens: Vec<MethodTokenReport>,
     pub(in crate::cli) manifest: Option<ManifestSummary>,
+    pub(in crate::cli) analysis: AnalysisReport,
     pub(in crate::cli) warnings: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub(in crate::cli) struct AnalysisReport {
+    pub(in crate::cli) call_graph: CallGraph,
+    pub(in crate::cli) xrefs: Xrefs,
+    pub(in crate::cli) types: TypeInfo,
 }

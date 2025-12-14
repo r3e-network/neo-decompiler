@@ -13,6 +13,7 @@ pub(super) fn write_manifest_methods(
     instructions: &[Instruction],
     manifest: &ContractManifest,
     entry_method: Option<&(String, Option<u32>)>,
+    inline_single_use_temps: bool,
 ) {
     let mut methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
     methods.sort_by_key(|m| m.offset.unwrap_or(u32::MAX));
@@ -70,7 +71,7 @@ pub(super) fn write_manifest_methods(
                     .iter()
                     .map(|p| sanitize_identifier(&p.name))
                     .collect();
-                body::write_method_body(output, &slice, Some(&labels));
+                body::write_method_body(output, &slice, Some(&labels), inline_single_use_temps);
             }
         } else {
             writeln!(

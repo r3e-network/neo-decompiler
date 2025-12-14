@@ -1,3 +1,4 @@
+use std::io::Write as _;
 use std::path::PathBuf;
 
 use crate::decompiler::Decompiler;
@@ -23,19 +24,27 @@ impl Cli {
         let result = decompiler.decompile_file(path)?;
         match format {
             DisasmFormat::Text => {
-                for instruction in result.instructions {
-                    match instruction.operand {
-                        Some(ref operand) => {
-                            println!(
-                                "{:04X}: {:<10} {}",
-                                instruction.offset, instruction.opcode, operand
-                            );
-                        }
-                        None => {
-                            println!("{:04X}: {}", instruction.offset, instruction.opcode);
+                self.write_stdout(|out| {
+                    for instruction in result.instructions {
+                        match instruction.operand {
+                            Some(ref operand) => {
+                                writeln!(
+                                    out,
+                                    "{:04X}: {:<10} {}",
+                                    instruction.offset, instruction.opcode, operand
+                                )?;
+                            }
+                            None => {
+                                writeln!(
+                                    out,
+                                    "{:04X}: {}",
+                                    instruction.offset, instruction.opcode
+                                )?;
+                            }
                         }
                     }
-                }
+                    Ok(())
+                })?;
             }
             DisasmFormat::Json => {
                 let instructions: Vec<InstructionReport> = result

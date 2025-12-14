@@ -1,4 +1,4 @@
-use std::io;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -9,6 +9,19 @@ use super::super::args::{CatalogKind, Cli};
 use super::super::catalog::CatalogReport;
 
 impl Cli {
+    pub(super) fn write_stdout<F>(&self, f: F) -> Result<()>
+    where
+        F: FnOnce(&mut io::StdoutLock<'_>) -> io::Result<()>,
+    {
+        let stdout = io::stdout();
+        let mut handle = stdout.lock();
+        match f(&mut handle) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+            Err(err) => Err(err.into()),
+        }
+    }
+
     pub(super) fn resolve_manifest_path(&self, nef_path: &Path) -> Option<PathBuf> {
         if let Some(path) = &self.manifest {
             return Some(path.clone());
@@ -29,13 +42,12 @@ impl Cli {
         } else {
             serde_json::to_string_pretty(value)
         }
-        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+        .map_err(io::Error::other)
     }
 
     pub(super) fn print_json<T: Serialize>(&self, value: &T) -> Result<()> {
         let json = self.render_json(value)?;
-        println!("{json}");
-        Ok(())
+        self.write_stdout(|out| writeln!(out, "{json}"))
     }
 
     pub(super) fn print_catalog_json<T: Serialize>(

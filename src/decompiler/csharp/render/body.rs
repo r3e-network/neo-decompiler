@@ -24,12 +24,23 @@ pub(super) fn write_lifted_body(
         return;
     }
 
+    let mut indent_level = 0usize;
     for line in statements {
         let converted = csharpize_statement(&line);
-        if converted.is_empty() {
-            writeln!(output).unwrap();
-        } else {
-            writeln!(output, "            {converted}").unwrap();
+        let trimmed = converted.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed.starts_with('}') {
+            indent_level = indent_level.saturating_sub(1);
+        }
+
+        let indent = 12 + indent_level * 4;
+        writeln!(output, "{:indent$}{}", "", trimmed, indent = indent).unwrap();
+
+        if trimmed.ends_with('{') {
+            indent_level += 1;
         }
     }
 }

@@ -21,6 +21,10 @@ impl HighLevelEmitter {
         }
     }
 
+    pub(crate) fn set_inline_single_use_temps(&mut self, enabled: bool) {
+        self.inline_single_use_temps = enabled;
+    }
+
     pub(crate) fn advance_to(&mut self, offset: usize) {
         if let Some(count) = self.pending_closers.remove(&offset) {
             for _ in 0..count {
@@ -77,8 +81,18 @@ impl HighLevelEmitter {
             }
         }
         Self::rewrite_for_loops(&mut self.statements);
+        Self::rewrite_else_if_chains(&mut self.statements);
+        // Note: inline_single_use_temps is available but disabled by default
+        // as it can be too aggressive for some use cases. Enable selectively.
         Self::inline_condition_temps(&mut self.statements);
         Self::inline_for_increment_temps(&mut self.statements);
+        if self.inline_single_use_temps {
+            Self::inline_single_use_temps(&mut self.statements);
+        }
+        Self::rewrite_compound_assignments(&mut self.statements);
+        Self::rewrite_indexing_syntax(&mut self.statements);
+        Self::rewrite_switch_statements(&mut self.statements);
+        self.statements.retain(|line| !line.trim().is_empty());
         self.statements
     }
 }

@@ -94,25 +94,25 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 ## Roadmap
 
-### Planned Features (v0.3.x)
+### Shipped Features (v0.3.x)
 
-| Feature                   | Priority | Description                                             |
-| ------------------------- | -------- | ------------------------------------------------------- |
-| Control Flow Graph (CFG)  | High     | Explicit basic block graph with edges for visualization |
-| Else-If Chain Detection   | High     | Collapse nested `if`/`else` into `else if` chains       |
-| Dead Code Detection       | Medium   | Identify unreachable basic blocks post-CFG construction |
-| Expression Simplification | Medium   | Algebraic simplification (e.g., `x + 0` → `x`)          |
-| Inline Expansion          | Medium   | Inline single-use temporaries into parent expressions   |
+| Feature                   | Status | Description                                                               |
+| ------------------------- | ------ | ------------------------------------------------------------------------- |
+| Control Flow Graph (CFG)  | ✅     | Explicit basic block graph with edges + DOT export for visualization      |
+| Else-If Chain Detection   | ✅     | Collapse nested `if`/`else` into `else if` chains                         |
+| Dead Code Detection       | ✅     | Identify unreachable basic blocks via CFG reachability analysis           |
+| Expression Simplification | ✅     | Algebraic simplification helpers (e.g., `x + 0` → `x`) in `decompiler::ir` |
+| Inline Expansion          | ✅     | Conservative temp inlining for loop conditions/increments (opt-in for more) |
 
-### Planned Features (v0.4.x)
+### Shipped Features (v0.4.x)
 
-| Feature                   | Priority | Description                                               |
-| ------------------------- | -------- | --------------------------------------------------------- |
-| Type Inference            | High     | Infer primitive types from opcodes and syscall signatures |
-| Array/Map Type Recovery   | High     | Detect collection types from `PACK`/`NEWARRAY`/`NEWMAP`   |
-| Call Graph Construction   | Medium   | Inter-procedural call relationships                       |
-| Cross-Reference Analysis  | Medium   | Track where values are defined and used                   |
-| Switch Statement Recovery | Medium   | Pattern-match jump tables to `switch`/`case`              |
+| Feature                   | Status | Description                                                                       |
+| ------------------------- | ------ | --------------------------------------------------------------------------------- |
+| Type Inference            | ✅     | Best-effort primitive/collection type recovery for locals/args/statics            |
+| Array/Map Type Recovery   | ✅     | Detect collection kinds from `PACK`/`NEWARRAY`/`NEWMAP` and emit bracket indexing  |
+| Call Graph Construction   | ✅     | Extract inter-procedural relationships (`CALL*`, `CALLT`, `SYSCALL`)              |
+| Cross-Reference Analysis  | ✅     | Track local/argument/static slot reads and writes by bytecode offset              |
+| Switch Statement Recovery | ✅     | Rewrite equality-based `if`/`else` chains into `switch`/`case` blocks (conservative) |
 
 ### Planned Features (v0.5.x+)
 
@@ -155,9 +155,14 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   via slot instructions (including manifest parameter names), and lifts stack
   operations into readable statements with structured `if`/`else`, `for`,
   `while`, `do { } while`, and `try`/`catch`/`finally` blocks plus emitted `break`/`continue`
-  statements and manifest-derived signatures. When ABI offsets are present,
+  statements and manifest-derived signatures with consistent indentation and small readability passes
+  like compound assignments and optional single-use temp inlining. When ABI offsets are present,
   each manifest method is decompiled within its own offset range; methods
   without offsets are still emitted as stubs for completeness.
+- Control Flow Graph (CFG) construction with DOT export (`Decompilation::cfg_to_dot`) and
+  reachability helpers for dead-code detection (`Cfg::unreachable_blocks`)
+- Best-effort analysis output in both the library and JSON decompile report:
+  call graph (`CALL*`, `CALLT`, `SYSCALL`), slot cross-references, and inferred primitive/collection types
 - Syscall lifting that resolves human-readable names and suppresses phantom
   temporaries for known void syscalls (e.g., Runtime.Notify, Storage.Put)
 - A simple pseudocode view mirroring the decoded instruction stream
@@ -187,8 +192,14 @@ cargo build --release
 # Machine-readable disassembly (tolerant by default)
 ./target/release/neo-decompiler disasm --format json path/to/contract.nef
 
+# Export the control flow graph as Graphviz DOT
+./target/release/neo-decompiler cfg path/to/contract.nef > cfg.dot
+
 # Emit the high-level contract view (auto-detects `*.manifest.json` if present)
 ./target/release/neo-decompiler decompile path/to/contract.nef
+
+# Enable experimental inlining of single-use temporaries in the high-level view
+./target/release/neo-decompiler decompile --inline-single-use-temps path/to/contract.nef
 
 # Fail fast on unknown opcodes during high-level reconstruction
 ./target/release/neo-decompiler decompile --fail-on-unknown-opcodes path/to/contract.nef
@@ -282,7 +293,7 @@ starting point for your own experiments.
 ### From crates.io (recommended)
 
 ```bash
-cargo install neo-decompiler
+cargo install neo-decompiler --locked
 ```
 
 ### From GitHub releases
@@ -292,8 +303,8 @@ Download pre-built binaries from the [releases page](https://github.com/r3e-netw
 ### From source
 
 ```bash
-# Install the latest release from git
-cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.2.0 --locked
+# Install from a tagged release (replace the tag as needed)
+cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.4.1 --locked
 
 # Or install the latest development version
 cargo install --git https://github.com/r3e-network/neo-decompiler --locked
@@ -309,7 +320,7 @@ APIs and want to avoid pulling in CLI-only dependencies, disable default
 features in your `Cargo.toml`:
 
 ```toml
-neo-decompiler = { version = "0.2.0", default-features = false }
+neo-decompiler = { version = "0.4.1", default-features = false }
 ```
 
 ```rust
@@ -324,10 +335,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     println!("{} instructions", result.instructions.len());
+    println!("{} call edges", result.call_graph.edges.len());
+    println!("{} methods with xrefs", result.xrefs.methods.len());
+    println!("{} inferred static slots", result.types.statics.len());
     if let Some(ref hl) = result.high_level {
         println!("{}", hl);
     }
     Ok(())
+}
+```
+
+### Analysis output (library + JSON)
+
+The decompiler also produces best-effort analysis results that can be consumed
+programmatically (via the library API) or via `neo-decompiler decompile --format json`
+under the top-level `analysis` key:
+
+```json
+{
+  "analysis": {
+    "call_graph": { "methods": [], "edges": [] },
+    "xrefs": { "methods": [] },
+    "types": { "methods": [], "statics": [] }
+  }
 }
 ```
 
@@ -445,7 +475,8 @@ Each `--format json` command emits a top-level object containing:
     structured `operand_value`.
   - `decompile`: combines the disassembly, `high_level` text, `csharp` view,
     `pseudocode`, and `method_tokens` into one report (C# view carries
-    manifest extras such as Author/Email when provided).
+    manifest extras such as Author/Email when provided), plus an `analysis`
+    object containing the call graph, slot cross-references, and inferred types.
   - `tokens`: standalone `method_tokens` array for quick inspection.
 
 Example (excerpt from `info --format json`):
@@ -506,10 +537,13 @@ neo-decompiler schema info --validate - --quiet < info.json
 ```bash
 cargo fmt
 cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --no-default-features
 ```
 
 If you use [`just`](https://github.com/casey/just), the repository ships with a
 `Justfile` providing shortcuts for the common workflows above.
+Run `just ci` for the full lint/test/doc matrix used in CI.
 
 Issues and pull requests are welcome if they keep the project lean and focused.
 
@@ -527,12 +561,10 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development guidelines and
 
 Recent project history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
-**Current version:** [v0.2.0](https://github.com/r3e-network/neo-decompiler/releases/tag/v0.2.0) (2025-12-13)
-
 ## Minimum supported Rust version
 
-The crate is tested against Rust `1.70` and newer on CI. Older toolchains are
-not guaranteed to work.
+The MSRV is Rust `1.74`. CI runs the test suite on the MSRV plus stable/beta/nightly
+to catch regressions early.
 
 ## License
 

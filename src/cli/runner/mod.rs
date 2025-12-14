@@ -1,6 +1,7 @@
 //! CLI command execution.
 
 mod catalog;
+mod cfg;
 mod common;
 mod decompile;
 mod disasm;
@@ -22,12 +23,23 @@ impl Cli {
                 format,
                 fail_on_unknown_opcodes,
             } => self.run_disasm(path, *format, *fail_on_unknown_opcodes),
+            Command::Cfg {
+                path,
+                fail_on_unknown_opcodes,
+            } => self.run_cfg(path, *fail_on_unknown_opcodes),
             Command::Decompile {
                 path,
                 format,
                 output_format,
                 fail_on_unknown_opcodes,
-            } => self.run_decompile(path, *format, *output_format, *fail_on_unknown_opcodes),
+                inline_single_use_temps,
+            } => self.run_decompile(
+                path,
+                *format,
+                *output_format,
+                *fail_on_unknown_opcodes,
+                *inline_single_use_temps,
+            ),
             Command::Tokens { path, format } => self.run_tokens(path, *format),
             Command::Catalog(args) => self.run_catalog(args),
             Command::Schema(args) => self.run_schema(args),

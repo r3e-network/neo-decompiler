@@ -8,6 +8,7 @@ mod generated {
 /// Metadata describing a syscall.
 pub use generated::SyscallInfo;
 
+#[allow(dead_code)]
 const fn assert_syscalls_sorted_by_hash(syscalls: &[SyscallInfo]) {
     let mut i = 1usize;
     while i < syscalls.len() {

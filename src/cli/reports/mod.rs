@@ -10,4 +10,4 @@ pub(super) use manifest::summarize_manifest;
 pub(super) use method_tokens::{
     build_method_token_report, collect_warnings, format_method_token_line, MethodTokenReport,
 };
-pub(super) use types::{DecompileReport, DisasmReport, InfoReport, TokensReport};
+pub(super) use types::{AnalysisReport, DecompileReport, DisasmReport, InfoReport, TokensReport};
