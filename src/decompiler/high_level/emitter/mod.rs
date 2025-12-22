@@ -19,6 +19,7 @@ use types::{DoWhileLoop, LiteralValue, LoopContext, LoopJump, SlotKind};
 pub(crate) struct HighLevelEmitter {
     stack: Vec<String>,
     statements: Vec<String>,
+    warnings: Vec<String>,
     next_temp: usize,
     inline_single_use_temps: bool,
     pending_closers: BTreeMap<usize, usize>,
@@ -36,4 +37,9 @@ pub(crate) struct HighLevelEmitter {
     initialized_statics: BTreeSet<usize>,
     argument_labels: BTreeMap<usize, String>,
     literal_values: BTreeMap<String, LiteralValue>,
+}
+
+pub(crate) struct HighLevelOutput {
+    pub(crate) statements: Vec<String>,
+    pub(crate) warnings: Vec<String>,
 }

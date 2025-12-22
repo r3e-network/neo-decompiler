@@ -2,7 +2,7 @@
 //! Parses NEF, disassembles bytecode, lifts control flow, and renders text/C#.
 
 /// Maximum file size allowed for NEF files (10 MiB).
-pub const MAX_NEF_FILE_SIZE: u64 = 10 * 1024 * 1024;
+pub const MAX_NEF_FILE_SIZE: u64 = crate::nef::MAX_NEF_FILE_SIZE;
 
 pub mod analysis;
 pub mod cfg;

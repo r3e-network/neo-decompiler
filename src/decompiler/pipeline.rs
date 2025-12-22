@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::disassembler::{Disassembler, UnknownHandling};
 use crate::error::Result;
 use crate::manifest::ContractManifest;
@@ -73,7 +75,19 @@ impl Decompiler {
         output_format: OutputFormat,
     ) -> Result<Decompilation> {
         let nef = self.parser.parse(bytes)?;
-        let instructions = self.disassembler.disassemble(&nef.script)?;
+        let disassembly = self.disassembler.disassemble_with_warnings(&nef.script)?;
+        let instructions = disassembly.instructions;
+
+        let mut warnings = Vec::new();
+        let mut seen_warnings = HashSet::new();
+        let mut push_warning = |warning: String| {
+            if seen_warnings.insert(warning.clone()) {
+                warnings.push(warning);
+            }
+        };
+        for warning in disassembly.warnings {
+            push_warning(warning.to_string());
+        }
 
         let cfg = CfgBuilder::new(&instructions).build();
         let call_graph =
@@ -85,20 +99,29 @@ impl Decompiler {
             .wants_pseudocode()
             .then(|| pseudocode::render(&instructions));
         let high_level = output_format.wants_high_level().then(|| {
-            high_level::render_high_level(
+            let render = high_level::render_high_level(
                 &nef,
                 &instructions,
                 manifest.as_ref(),
                 self.inline_single_use_temps,
-            )
+            );
+            for warning in render.warnings {
+                push_warning(warning);
+            }
+            render.text
         });
-        let csharp = output_format
-            .wants_csharp()
-            .then(|| csharp::render_csharp(&nef, &instructions, manifest.as_ref()));
+        let csharp = output_format.wants_csharp().then(|| {
+            let render = csharp::render_csharp(&nef, &instructions, manifest.as_ref());
+            for warning in render.warnings {
+                push_warning(warning);
+            }
+            render.source
+        });
 
         Ok(Decompilation {
             nef,
             manifest,
+            warnings,
             instructions,
             cfg,
             call_graph,

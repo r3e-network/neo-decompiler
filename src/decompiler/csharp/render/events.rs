@@ -1,9 +1,12 @@
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use crate::manifest::ContractManifest;
 
-use super::super::super::helpers::sanitize_identifier;
-use super::super::helpers::{escape_csharp_string, format_manifest_type_csharp};
+use super::super::helpers::{
+    escape_csharp_string, format_manifest_type_csharp, make_unique_identifier,
+    sanitize_csharp_identifier,
+};
 
 pub(super) fn write_events(output: &mut String, manifest: &ContractManifest) {
     if manifest.abi.events.is_empty() {
@@ -11,8 +14,10 @@ pub(super) fn write_events(output: &mut String, manifest: &ContractManifest) {
     }
 
     writeln!(output, "        // Events").unwrap();
+    let mut used_names = HashSet::new();
     for event in &manifest.abi.events {
-        let event_name = sanitize_identifier(&event.name);
+        let event_name =
+            make_unique_identifier(sanitize_csharp_identifier(&event.name), &mut used_names);
         if event_name != event.name {
             writeln!(
                 output,

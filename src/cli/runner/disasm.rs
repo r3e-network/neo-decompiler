@@ -1,7 +1,7 @@
 use std::io::Write as _;
 use std::path::PathBuf;
 
-use crate::decompiler::Decompiler;
+use crate::decompiler::{Decompiler, OutputFormat};
 use crate::disassembler::UnknownHandling;
 use crate::error::Result;
 
@@ -21,7 +21,11 @@ impl Cli {
             UnknownHandling::Permit
         };
         let decompiler = Decompiler::with_unknown_handling(handling);
-        let result = decompiler.decompile_file(path)?;
+        let result = decompiler.decompile_file_with_manifest(
+            path,
+            Option::<PathBuf>::None,
+            OutputFormat::Pseudocode,
+        )?;
         match format {
             DisasmFormat::Text => {
                 self.write_stdout(|out| {
@@ -43,6 +47,13 @@ impl Cli {
                             }
                         }
                     }
+                    if !result.warnings.is_empty() {
+                        writeln!(out)?;
+                        writeln!(out, "Warnings:")?;
+                        for warning in &result.warnings {
+                            writeln!(out, "- {warning}")?;
+                        }
+                    }
                     Ok(())
                 })?;
             }
@@ -55,7 +66,7 @@ impl Cli {
                 let report = DisasmReport {
                     file: path.display().to_string(),
                     instructions,
-                    warnings: Vec::new(),
+                    warnings: result.warnings.clone(),
                 };
                 self.print_json(&report)?;
             }

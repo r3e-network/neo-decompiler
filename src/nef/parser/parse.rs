@@ -17,6 +17,13 @@ impl NefParser {
     /// Returns an error if the input is not a valid NEF container, if the script
     /// exceeds configured limits, or if the checksum does not match.
     pub fn parse(&self, bytes: &[u8]) -> Result<NefFile> {
+        if bytes.len() as u64 > super::super::MAX_NEF_FILE_SIZE {
+            return Err(NefError::FileTooLarge {
+                size: bytes.len() as u64,
+                max: super::super::MAX_NEF_FILE_SIZE,
+            }
+            .into());
+        }
         if bytes.len() < FIXED_HEADER_SIZE + CHECKSUM_SIZE {
             return Err(NefError::TooShort.into());
         }

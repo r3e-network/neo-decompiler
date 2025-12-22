@@ -4,16 +4,26 @@ use std::path::Path;
 
 use crate::error::{ManifestError, Result};
 
-use super::ContractManifest;
+use super::{ContractManifest, MAX_MANIFEST_SIZE};
+
+fn ensure_manifest_size(size: u64) -> Result<()> {
+    if size > MAX_MANIFEST_SIZE {
+        return Err(ManifestError::FileTooLarge {
+            size,
+            max: MAX_MANIFEST_SIZE,
+        }
+        .into());
+    }
+    Ok(())
+}
 
 impl ContractManifest {
     /// Load a manifest from a reader containing UTF-8 JSON.
-    pub fn from_reader<R: Read>(mut reader: R) -> Result<Self> {
-        let mut buf = String::new();
-        reader
-            .read_to_string(&mut buf)
-            .map_err(ManifestError::from)?;
-        Self::from_json_str(&buf)
+    pub fn from_reader<R: Read>(reader: R) -> Result<Self> {
+        let mut buf = Vec::new();
+        let mut limited = reader.take(MAX_MANIFEST_SIZE + 1);
+        limited.read_to_end(&mut buf).map_err(ManifestError::from)?;
+        Self::from_bytes(&buf)
     }
 
     /// Load a manifest from a raw JSON string.
@@ -23,6 +33,7 @@ impl ContractManifest {
 
     /// Load a manifest directly from bytes (UTF-8 JSON).
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        ensure_manifest_size(bytes.len() as u64)?;
         let text = std::str::from_utf8(bytes).map_err(|err| ManifestError::InvalidUtf8 {
             error: err.to_string(),
         })?;
@@ -31,6 +42,8 @@ impl ContractManifest {
 
     /// Load a manifest from a file on disk.
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let size = fs::metadata(&path)?.len();
+        ensure_manifest_size(size)?;
         let data = fs::read(path)?;
         Self::from_bytes(&data)
     }

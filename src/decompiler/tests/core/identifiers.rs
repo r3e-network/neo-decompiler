@@ -82,3 +82,33 @@ fn sanitize_identifier_handles_edge_cases() {
     assert_eq!(sanitize_identifier("9lives"), "_9lives");
     assert_eq!(sanitize_identifier("!!!"), "param");
 }
+
+#[test]
+fn high_level_disambiguates_colliding_method_names() {
+    let nef_bytes = sample_nef();
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "Collisions",
+                "abi": {
+                    "methods": [
+                        { "name": "foo-bar", "parameters": [], "returntype": "Void", "offset": 0 },
+                        { "name": "foo bar", "parameters": [], "returntype": "Void", "offset": 1 }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let output = decompilation.high_level.as_deref().expect("high-level output");
+    assert!(output.contains("fn foo_bar("));
+    assert!(output.contains("fn foo_bar_1("));
+}

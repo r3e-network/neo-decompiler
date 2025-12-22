@@ -8,10 +8,23 @@ impl HighLevelEmitter {
             .push(format!("// {:04X}: {}", instruction.offset, message));
     }
 
+    pub(super) fn warn(&mut self, instruction: &Instruction, message: &str) {
+        self.note(instruction, message);
+        self.warnings.push(format!(
+            "high-level: 0x{:04X}: {}",
+            instruction.offset, message
+        ));
+    }
+
     pub(super) fn stack_underflow(&mut self, instruction: &Instruction, needed: usize) {
-        self.statements.push(format!(
-            "// {:04X}: insufficient values on stack for {} (needs {needed})",
-            instruction.offset, instruction.opcode
+        let message = format!(
+            "insufficient values on stack for {} (needs {needed})",
+            instruction.opcode
+        );
+        self.note(instruction, &message);
+        self.warnings.push(format!(
+            "high-level: 0x{:04X}: {}",
+            instruction.offset, message
         ));
     }
 

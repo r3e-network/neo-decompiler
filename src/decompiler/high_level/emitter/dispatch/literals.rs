@@ -14,7 +14,7 @@ impl HighLevelEmitter {
                 if let Some(operand) = &instruction.operand {
                     self.push_literal(instruction, operand.to_string());
                 } else {
-                    self.note(
+                    self.warn(
                         instruction,
                         "literal push missing operand (malformed instruction)",
                     );

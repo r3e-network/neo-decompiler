@@ -86,6 +86,19 @@ fn manifest_from_bytes_rejects_invalid_json() {
 }
 
 #[test]
+fn manifest_from_bytes_rejects_oversized_payloads() {
+    let oversized = vec![b'a'; (MAX_MANIFEST_SIZE + 1) as usize];
+    let err = ContractManifest::from_bytes(&oversized).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Manifest(crate::error::ManifestError::FileTooLarge {
+            size,
+            max
+        }) if size == MAX_MANIFEST_SIZE + 1 && max == MAX_MANIFEST_SIZE
+    ));
+}
+
+#[test]
 fn parses_wildcard_permission_variants() {
     let json = r#"
         {

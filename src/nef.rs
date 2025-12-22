@@ -1,5 +1,7 @@
 //! Neo N3 NEF container parsing and helpers.
 
+/// Maximum file size allowed for NEF files (10 MiB).
+pub const MAX_NEF_FILE_SIZE: u64 = 10 * 1024 * 1024;
 const FIXED_HEADER_SIZE: usize = 68;
 const CHECKSUM_SIZE: usize = 4;
 const MAGIC: [u8; 4] = *b"NEF3";

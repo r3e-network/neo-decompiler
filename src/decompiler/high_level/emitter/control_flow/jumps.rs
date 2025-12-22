@@ -13,12 +13,12 @@ impl HighLevelEmitter {
             return;
         }
         if let Some(target) = self.jump_target(instruction, width) {
-            self.note(
+            self.warn(
                 instruction,
                 &format!("{label} -> 0x{target:04X} (control flow not yet lifted)"),
             );
         } else {
-            self.note(
+            self.warn(
                 instruction,
                 &format!("{label} with unsupported operand (skipping)"),
             );
@@ -30,7 +30,7 @@ impl HighLevelEmitter {
             Some(Operand::U16(value)) => format!("{label} 0x{value:04X}"),
             _ => format!("{label} (missing operand)"),
         };
-        self.note(instruction, &format!("{detail} (not yet translated)"));
+        self.warn(instruction, &format!("{detail} (not yet translated)"));
     }
 
     pub(in super::super) fn emit_jump(&mut self, instruction: &Instruction, width: isize) {
@@ -43,12 +43,12 @@ impl HighLevelEmitter {
                 if self.try_emit_loop_jump(instruction, target) {
                     return;
                 }
-                self.note(
+                self.warn(
                     instruction,
                     &format!("jump -> 0x{target:04X} (control flow not yet lifted)"),
                 );
             }
-            None => self.note(instruction, "jump with unsupported operand (skipping)"),
+            None => self.warn(instruction, "jump with unsupported operand (skipping)"),
         }
     }
 }

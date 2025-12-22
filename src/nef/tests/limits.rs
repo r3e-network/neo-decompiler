@@ -78,3 +78,13 @@ fn rejects_script_length_before_allocation() {
         crate::error::Error::Nef(NefError::ScriptTooLarge { .. })
     ));
 }
+
+#[test]
+fn rejects_files_larger_than_limit() {
+    let data = vec![0u8; MAX_NEF_FILE_SIZE as usize + 1];
+    let err = NefParser::new().parse(&data).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Nef(NefError::FileTooLarge { .. })
+    ));
+}

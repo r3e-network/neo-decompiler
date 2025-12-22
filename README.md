@@ -85,7 +85,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 | Feature                     | Status | Description                                    |
 | --------------------------- | ------ | ---------------------------------------------- |
-| Input Size Limits           | ✅     | 10 MiB file limit, 1 MiB operand limit         |
+| Input Size Limits           | ✅     | 10 MiB NEF limit, 1 MiB manifest limit, 1 MiB operand limit |
 | Integer Overflow Protection | ✅     | Checked arithmetic in slice operations         |
 | Malformed Input Handling    | ✅     | Graceful error reporting, no panics            |
 | Fuzz Testing                | ✅     | cargo-fuzz targets for parser and disassembler |
@@ -433,9 +433,9 @@ into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
 - The high-level contract view (and the derived C# skeleton) performs
   lightweight stack lifting (constants, arithmetic, simple returns, syscalls)
   and recognises structured control flow such as `if`/`else`, `for`, `while`,
-  and `do { } while` loops (including `break`/`continue` branches). Complex reconstruction
-  such as full control-flow graphs or type inference is intentionally out of
-  scope.
+  and `do { } while` loops (including `break`/`continue` branches). Full
+  source-level reconstruction is intentionally out of scope; CFG and type
+  inference are best-effort analysis outputs and may be incomplete.
 
 ## Troubleshooting
 
@@ -449,6 +449,9 @@ into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
 - **Unsupported opcode warnings** – the disassembler prints comments for
   unrecognised instructions; add tests and extend `opcodes_generated.rs` if you
   observe new opcodes.
+- **Warnings in JSON output** – the `warnings` array can include unknown opcodes
+  and high-level translation skips; use `--fail-on-unknown-opcodes` to halt
+  instead of continuing with potentially desynchronized output.
 - **Need structured data for scripting** – use the `--format json` variants
   (`info`, `disasm`, `tokens`, `decompile`) and add `--json-compact` when piping
   into tools that prefer minified payloads. If you need the manifest path or
@@ -466,8 +469,8 @@ Each `--format json` command emits a top-level object containing:
 
 - `file`: Path to the NEF file being inspected.
 - `manifest_path`: Optional path to the manifest file that was consumed.
-- `warnings`: Array of human-readable warnings (currently populated when method
-  tokens refer to unknown native methods).
+- `warnings`: Array of human-readable warnings (method token mismatches,
+  disassembly unknown opcodes, and high-level translation skips).
 - Command-specific payloads:
   - `info`: checksum, script hashes, `method_tokens` (with native annotations)
     and `manifest` summaries (methods, events, permissions, trusts).

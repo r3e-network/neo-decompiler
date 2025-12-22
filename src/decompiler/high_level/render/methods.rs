@@ -1,10 +1,12 @@
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use crate::instruction::Instruction;
 use crate::manifest::{ContractManifest, ManifestMethod};
 
 use super::super::super::helpers::{
-    format_manifest_parameters, format_manifest_type, next_method_offset, sanitize_identifier,
+    format_manifest_parameters, format_manifest_type, make_unique_identifier, next_method_offset,
+    sanitize_identifier, sanitize_parameter_names,
 };
 use super::body;
 
@@ -14,6 +16,8 @@ pub(super) fn write_manifest_methods(
     manifest: &ContractManifest,
     entry_method: Option<&(String, Option<u32>)>,
     inline_single_use_temps: bool,
+    warnings: &mut Vec<String>,
+    used_method_names: &mut HashSet<String>,
 ) {
     let mut methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
     methods.sort_by_key(|m| m.offset.unwrap_or(u32::MAX));
@@ -28,12 +32,14 @@ pub(super) fn write_manifest_methods(
 
         let params = format_manifest_parameters(&method.parameters);
         let return_ty = format_manifest_type(&method.return_type);
+        let method_name =
+            make_unique_identifier(sanitize_identifier(&method.name), used_method_names);
         let signature = if return_ty == "void" {
-            format!("fn {}({})", sanitize_identifier(&method.name), params)
+            format!("fn {}({})", method_name, params)
         } else {
             format!(
                 "fn {}({}) -> {}",
-                sanitize_identifier(&method.name),
+                method_name,
                 params,
                 return_ty
             )
@@ -66,12 +72,14 @@ pub(super) fn write_manifest_methods(
                 )
                 .unwrap();
             } else {
-                let labels: Vec<String> = method
-                    .parameters
-                    .iter()
-                    .map(|p| sanitize_identifier(&p.name))
-                    .collect();
-                body::write_method_body(output, &slice, Some(&labels), inline_single_use_temps);
+                let labels = sanitize_parameter_names(&method.parameters);
+                body::write_method_body(
+                    output,
+                    &slice,
+                    Some(&labels),
+                    inline_single_use_temps,
+                    warnings,
+                );
             }
         } else {
             writeln!(

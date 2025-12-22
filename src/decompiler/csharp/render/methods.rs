@@ -1,12 +1,13 @@
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use crate::instruction::Instruction;
 use crate::manifest::{ContractManifest, ManifestMethod};
 
-use super::super::super::helpers::{next_method_offset, sanitize_identifier};
+use super::super::super::helpers::next_method_offset;
 use super::super::helpers::{
     collect_csharp_parameters, escape_csharp_string, format_csharp_parameters,
-    format_manifest_type_csharp, format_method_signature,
+    format_manifest_type_csharp, format_method_signature, sanitize_csharp_identifier,
 };
 use super::body;
 
@@ -14,7 +15,9 @@ pub(super) fn write_manifest_methods(
     output: &mut String,
     manifest: &ContractManifest,
     instructions: &[Instruction],
+    warnings: &mut Vec<String>,
 ) {
+    let mut used_signatures: HashSet<(String, String)> = HashSet::new();
     let mut sorted_methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
     sorted_methods.sort_by_key(|m| m.offset.unwrap_or(u32::MAX));
 
@@ -38,8 +41,15 @@ pub(super) fn write_manifest_methods(
             .collect();
 
         let params = collect_csharp_parameters(&method.parameters);
+        let signature_key = params
+            .iter()
+            .map(|param| param.ty.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
         let param_signature = format_csharp_parameters(&params);
-        let method_name = sanitize_identifier(&method.name);
+        let base_name = sanitize_csharp_identifier(&method.name);
+        let method_name =
+            make_unique_method_name(base_name, &signature_key, &mut used_signatures);
         let return_type = format_manifest_type_csharp(&method.return_type);
         let signature = format_method_signature(&method_name, &param_signature, &return_type);
 
@@ -51,7 +61,7 @@ pub(super) fn write_manifest_methods(
             writeln!(output, "            throw new NotImplementedException();").unwrap();
         } else {
             let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-            body::write_lifted_body(output, &slice, Some(&labels));
+            body::write_lifted_body(output, &slice, Some(&labels), warnings);
         }
 
         writeln!(output, "        }}").unwrap();
@@ -60,8 +70,15 @@ pub(super) fn write_manifest_methods(
 
     for method in without_offsets {
         let params = collect_csharp_parameters(&method.parameters);
+        let signature_key = params
+            .iter()
+            .map(|param| param.ty.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
         let param_signature = format_csharp_parameters(&params);
-        let method_name = sanitize_identifier(&method.name);
+        let base_name = sanitize_csharp_identifier(&method.name);
+        let method_name =
+            make_unique_method_name(base_name, &signature_key, &mut used_signatures);
         let return_type = format_manifest_type_csharp(&method.return_type);
         let signature = format_method_signature(&method_name, &param_signature, &return_type);
 
@@ -74,12 +91,16 @@ pub(super) fn write_manifest_methods(
     }
 }
 
-pub(super) fn write_fallback_entry(output: &mut String, instructions: &[Instruction]) {
+pub(super) fn write_fallback_entry(
+    output: &mut String,
+    instructions: &[Instruction],
+    warnings: &mut Vec<String>,
+) {
     let entry_method_name = "ScriptEntry".to_string();
     let entry_signature = format_method_signature(&entry_method_name, "", "void");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, instructions, None);
+    body::write_lifted_body(output, instructions, None, warnings);
     writeln!(output, "        }}").unwrap();
 }
 
@@ -95,4 +116,18 @@ fn write_method_attributes(output: &mut String, method_name: &str, raw_name: &st
     if is_safe {
         writeln!(output, "        [Safe]").unwrap();
     }
+}
+
+fn make_unique_method_name(
+    base: String,
+    signature: &str,
+    used: &mut HashSet<(String, String)>,
+) -> String {
+    let mut candidate = base.clone();
+    let mut index = 1usize;
+    while !used.insert((candidate.clone(), signature.to_string())) {
+        candidate = format!("{base}_{index}");
+        index += 1;
+    }
+    candidate
 }

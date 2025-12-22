@@ -128,3 +128,37 @@ fn csharp_includes_manifest_events() {
         csharp.contains("public static event Action<UInt160, UInt160, BigInteger> transfer_event;")
     );
 }
+
+#[test]
+fn csharp_escapes_reserved_keywords() {
+    let nef_bytes = sample_nef();
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "class",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "class",
+                            "parameters": [{ "name": "namespace", "type": "Integer" }],
+                            "returntype": "Void",
+                            "offset": 0
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(csharp.contains("public class @class : SmartContract"));
+    assert!(csharp.contains("public static void @class(BigInteger @namespace)"));
+}

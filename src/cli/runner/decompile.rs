@@ -43,12 +43,28 @@ impl Cli {
         match format {
             DecompileFormat::Pseudocode => {
                 self.write_stdout(|out| {
-                    write!(out, "{}", result.pseudocode.as_deref().unwrap_or_default())
+                    write!(out, "{}", result.pseudocode.as_deref().unwrap_or_default())?;
+                    if !result.warnings.is_empty() {
+                        writeln!(out)?;
+                        writeln!(out, "Warnings:")?;
+                        for warning in &result.warnings {
+                            writeln!(out, "- {warning}")?;
+                        }
+                    }
+                    Ok(())
                 })?;
             }
             DecompileFormat::HighLevel => {
                 self.write_stdout(|out| {
-                    write!(out, "{}", result.high_level.as_deref().unwrap_or_default())
+                    write!(out, "{}", result.high_level.as_deref().unwrap_or_default())?;
+                    if !result.warnings.is_empty() {
+                        writeln!(out)?;
+                        writeln!(out, "Warnings:")?;
+                        for warning in &result.warnings {
+                            writeln!(out, "- {warning}")?;
+                        }
+                    }
+                    Ok(())
                 })?;
             }
             DecompileFormat::Both => {
@@ -56,12 +72,28 @@ impl Cli {
                     writeln!(out, "// High-level view")?;
                     writeln!(out, "{}", result.high_level.as_deref().unwrap_or_default())?;
                     writeln!(out, "// Pseudocode view")?;
-                    write!(out, "{}", result.pseudocode.as_deref().unwrap_or_default())
+                    write!(out, "{}", result.pseudocode.as_deref().unwrap_or_default())?;
+                    if !result.warnings.is_empty() {
+                        writeln!(out)?;
+                        writeln!(out, "Warnings:")?;
+                        for warning in &result.warnings {
+                            writeln!(out, "- {warning}")?;
+                        }
+                    }
+                    Ok(())
                 })?;
             }
             DecompileFormat::Csharp => {
                 self.write_stdout(|out| {
-                    write!(out, "{}", result.csharp.as_deref().unwrap_or_default())
+                    write!(out, "{}", result.csharp.as_deref().unwrap_or_default())?;
+                    if !result.warnings.is_empty() {
+                        writeln!(out)?;
+                        writeln!(out, "Warnings:")?;
+                        for warning in &result.warnings {
+                            writeln!(out, "- {warning}")?;
+                        }
+                    }
+                    Ok(())
                 })?;
             }
             DecompileFormat::Json => {
@@ -72,7 +104,12 @@ impl Cli {
                     .iter()
                     .map(reports::build_method_token_report)
                     .collect();
-                let warnings = reports::collect_warnings(&method_tokens);
+                let mut warnings = reports::collect_warnings(&method_tokens);
+                for warning in &result.warnings {
+                    if !warnings.contains(warning) {
+                        warnings.push(warning.clone());
+                    }
+                }
                 let report = DecompileReport {
                     file: path.display().to_string(),
                     manifest_path: manifest_path

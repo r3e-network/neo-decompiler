@@ -9,6 +9,7 @@ pub(super) fn write_method_body(
     instructions: &[Instruction],
     argument_labels: Option<&[String]>,
     inline_single_use_temps: bool,
+    warnings: &mut Vec<String>,
 ) {
     let mut emitter = HighLevelEmitter::with_program(instructions);
     if let Some(labels) = argument_labels {
@@ -19,7 +20,9 @@ pub(super) fn write_method_body(
         emitter.advance_to(instruction.offset);
         emitter.emit_instruction(instruction);
     }
-    let statements = emitter.finish();
+    let result = emitter.finish();
+    warnings.extend(result.warnings);
+    let statements = result.statements;
 
     if statements.is_empty() {
         writeln!(output, "        // no instructions decoded").unwrap();

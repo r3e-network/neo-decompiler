@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::manifest::ManifestParameter;
 
 use super::super::helpers::sanitize_identifier;
@@ -9,10 +11,11 @@ pub(super) struct CSharpParameter {
 }
 
 pub(super) fn collect_csharp_parameters(parameters: &[ManifestParameter]) -> Vec<CSharpParameter> {
+    let mut used_names = HashSet::new();
     parameters
         .iter()
         .map(|param| CSharpParameter {
-            name: sanitize_identifier(&param.name),
+            name: make_unique_identifier(sanitize_csharp_identifier(&param.name), &mut used_names),
             ty: format_manifest_type_csharp(&param.kind),
         })
         .collect()
@@ -79,6 +82,147 @@ pub(in crate::decompiler) fn csharpize_statement(line: &str) -> String {
         return format!("for ({converted}) {{");
     }
     trimmed.to_string()
+}
+
+pub(super) fn sanitize_csharp_identifier(input: &str) -> String {
+    let ident = sanitize_identifier(input);
+    if is_csharp_keyword(&ident) {
+        format!("@{ident}")
+    } else {
+        ident
+    }
+}
+
+pub(super) fn make_unique_identifier(base: String, used: &mut HashSet<String>) -> String {
+    if used.insert(base.clone()) {
+        return base;
+    }
+    let (prefix, stem) = match base.strip_prefix('@') {
+        Some(stem) => ("@", stem),
+        None => ("", base.as_str()),
+    };
+    let mut index = 1usize;
+    loop {
+        let candidate = format!("{prefix}{stem}_{index}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
+fn is_csharp_keyword(ident: &str) -> bool {
+    matches!(
+        ident,
+        "abstract"
+            | "as"
+            | "base"
+            | "bool"
+            | "break"
+            | "byte"
+            | "case"
+            | "catch"
+            | "char"
+            | "checked"
+            | "class"
+            | "const"
+            | "continue"
+            | "decimal"
+            | "default"
+            | "delegate"
+            | "do"
+            | "double"
+            | "else"
+            | "enum"
+            | "event"
+            | "explicit"
+            | "extern"
+            | "false"
+            | "finally"
+            | "fixed"
+            | "float"
+            | "for"
+            | "foreach"
+            | "goto"
+            | "if"
+            | "implicit"
+            | "in"
+            | "int"
+            | "interface"
+            | "internal"
+            | "is"
+            | "lock"
+            | "long"
+            | "namespace"
+            | "new"
+            | "null"
+            | "object"
+            | "operator"
+            | "out"
+            | "override"
+            | "params"
+            | "private"
+            | "protected"
+            | "public"
+            | "readonly"
+            | "ref"
+            | "return"
+            | "sbyte"
+            | "sealed"
+            | "short"
+            | "sizeof"
+            | "stackalloc"
+            | "static"
+            | "string"
+            | "struct"
+            | "switch"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typeof"
+            | "uint"
+            | "ulong"
+            | "unchecked"
+            | "unsafe"
+            | "ushort"
+            | "using"
+            | "virtual"
+            | "void"
+            | "volatile"
+            | "while"
+            | "add"
+            | "alias"
+            | "ascending"
+            | "async"
+            | "await"
+            | "by"
+            | "descending"
+            | "dynamic"
+            | "equals"
+            | "from"
+            | "get"
+            | "global"
+            | "group"
+            | "init"
+            | "into"
+            | "join"
+            | "let"
+            | "nameof"
+            | "on"
+            | "orderby"
+            | "partial"
+            | "remove"
+            | "select"
+            | "set"
+            | "unmanaged"
+            | "value"
+            | "var"
+            | "when"
+            | "where"
+            | "with"
+            | "yield"
+    )
 }
 
 pub(super) fn escape_csharp_string(value: &str) -> String {

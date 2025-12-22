@@ -44,7 +44,7 @@ impl HighLevelEmitter {
         kind: SlotKind,
     ) {
         let Some(index) = Self::slot_index_from_operand(instruction) else {
-            self.note(
+            self.warn(
                 instruction,
                 &format!("{} missing operand", instruction.opcode),
             );
@@ -83,7 +83,7 @@ impl HighLevelEmitter {
         kind: SlotKind,
     ) {
         let Some(index) = Self::slot_index_from_operand(instruction) else {
-            self.note(
+            self.warn(
                 instruction,
                 &format!("{} missing operand", instruction.opcode),
             );

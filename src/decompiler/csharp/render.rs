@@ -8,20 +8,26 @@ use crate::instruction::Instruction;
 use crate::manifest::ContractManifest;
 use crate::nef::NefFile;
 
-use super::super::helpers::sanitize_identifier;
+use super::helpers::sanitize_csharp_identifier;
 
 mod body;
 mod events;
 mod header;
 mod methods;
 
+pub(crate) struct CSharpRender {
+    pub(crate) source: String,
+    pub(crate) warnings: Vec<String>,
+}
+
 /// Render a C# skeleton with lifted bodies when possible.
 pub(crate) fn render_csharp(
     nef: &NefFile,
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
-) -> String {
+) -> CSharpRender {
     let mut output = String::new();
+    let mut warnings = Vec::new();
     header::write_preamble(&mut output);
 
     let contract_name = manifest
@@ -33,7 +39,7 @@ pub(crate) fn render_csharp(
                 Some(trimmed)
             }
         })
-        .map(sanitize_identifier)
+        .map(sanitize_csharp_identifier)
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "NeoContract".to_string());
 
@@ -41,11 +47,14 @@ pub(crate) fn render_csharp(
 
     if let Some(manifest) = manifest {
         events::write_events(&mut output, manifest);
-        methods::write_manifest_methods(&mut output, manifest, instructions);
+        methods::write_manifest_methods(&mut output, manifest, instructions, &mut warnings);
     } else {
-        methods::write_fallback_entry(&mut output, instructions);
+        methods::write_fallback_entry(&mut output, instructions, &mut warnings);
     }
 
     header::write_contract_close(&mut output);
-    output
+    CSharpRender {
+        source: output,
+        warnings,
+    }
 }

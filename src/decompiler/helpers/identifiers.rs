@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 /// Sanitize an arbitrary manifest or user-provided identifier into a stable
 /// snake-ish form suitable for high-level output.
 pub(in super::super) fn sanitize_identifier(input: &str) -> String {
@@ -24,4 +26,21 @@ pub(in super::super) fn sanitize_identifier(input: &str) -> String {
         ident.insert(0, '_');
     }
     ident
+}
+
+pub(in super::super) fn make_unique_identifier(
+    base: String,
+    used: &mut HashSet<String>,
+) -> String {
+    if used.insert(base.clone()) {
+        return base;
+    }
+    let mut index = 1usize;
+    loop {
+        let candidate = format!("{base}_{index}");
+        if used.insert(candidate.clone()) {
+            return candidate;
+        }
+        index += 1;
+    }
 }

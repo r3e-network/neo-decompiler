@@ -70,7 +70,7 @@ impl HighLevelEmitter {
         }
     }
 
-    pub(crate) fn finish(mut self) -> Vec<String> {
+    pub(crate) fn finish(mut self) -> super::HighLevelOutput {
         if !self.pending_closers.is_empty() {
             let mut remaining: Vec<_> = self.pending_closers.into_iter().collect();
             remaining.sort_by_key(|(offset, _)| *offset);
@@ -93,6 +93,9 @@ impl HighLevelEmitter {
         Self::rewrite_indexing_syntax(&mut self.statements);
         Self::rewrite_switch_statements(&mut self.statements);
         self.statements.retain(|line| !line.trim().is_empty());
-        self.statements
+        super::HighLevelOutput {
+            statements: self.statements,
+            warnings: self.warnings,
+        }
     }
 }

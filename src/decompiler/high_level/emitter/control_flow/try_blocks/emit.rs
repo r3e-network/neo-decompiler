@@ -9,7 +9,7 @@ impl HighLevelEmitter {
         let Some((body_start, catch_target, finally_target)) =
             self.try_handler_targets(instruction)
         else {
-            self.note(instruction, "try with unsupported operand (skipping)");
+            self.warn(instruction, "try with unsupported operand (skipping)");
             return;
         };
 

@@ -43,6 +43,24 @@ fn permits_unknown_opcode_when_configured() {
 }
 
 #[test]
+fn reports_warning_for_unknown_opcode_in_tolerant_mode() {
+    let bytecode = [0xFF, 0x40];
+    let output = Disassembler::with_unknown_handling(UnknownHandling::Permit)
+        .disassemble_with_warnings(&bytecode)
+        .expect("disassembly succeeds in tolerant mode");
+
+    assert_eq!(output.instructions.len(), 2);
+    assert_eq!(output.warnings.len(), 1);
+    assert!(matches!(
+        output.warnings[0],
+        DisassemblyWarning::UnknownOpcode {
+            opcode: 0xFF,
+            offset: 0
+        }
+    ));
+}
+
+#[test]
 fn fails_on_truncated_operand() {
     let bytecode = [0x01, 0x00];
     let err = Disassembler::new().disassemble(&bytecode).unwrap_err();

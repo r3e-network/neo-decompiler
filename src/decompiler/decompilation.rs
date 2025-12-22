@@ -15,6 +15,8 @@ pub struct Decompilation {
     pub nef: NefFile,
     /// Optional parsed contract manifest.
     pub manifest: Option<ContractManifest>,
+    /// Non-fatal warnings emitted during disassembly or rendering.
+    pub warnings: Vec<String>,
     /// Disassembled instruction stream from the NEF script.
     pub instructions: Vec<Instruction>,
     /// Control flow graph built from the instruction stream.

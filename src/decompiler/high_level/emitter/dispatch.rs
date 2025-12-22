@@ -26,7 +26,7 @@ impl HighLevelEmitter {
             return;
         }
 
-        self.note(
+        self.warn(
             instruction,
             &format!("{} (not yet translated)", instruction.opcode),
         );

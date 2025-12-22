@@ -1,11 +1,13 @@
 use std::fmt::Write;
 
 use crate::instruction::Instruction;
+use std::collections::HashSet;
+
 use crate::manifest::ContractManifest;
 
 use super::super::super::helpers::{
     find_manifest_entry_method, format_manifest_parameters, format_manifest_type,
-    next_method_offset, sanitize_identifier,
+    make_unique_identifier, next_method_offset, sanitize_identifier, sanitize_parameter_names,
 };
 use super::body;
 
@@ -14,6 +16,8 @@ pub(super) fn write_entry_method(
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
     inline_single_use_temps: bool,
+    warnings: &mut Vec<String>,
+    used_method_names: &mut HashSet<String>,
 ) -> Option<(String, Option<u32>)> {
     let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
     let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
@@ -38,17 +42,15 @@ pub(super) fn write_entry_method(
     } else {
         entry_instructions
     };
-    let entry_param_labels = entry_method.as_ref().map(|(method, _)| {
-        method
-            .parameters
-            .iter()
-            .map(|param| sanitize_identifier(&param.name))
-            .collect::<Vec<_>>()
-    });
+    let entry_param_labels =
+        entry_method
+            .as_ref()
+            .map(|(method, _)| sanitize_parameter_names(&method.parameters));
     let entry_name = entry_method
         .as_ref()
         .map(|(method, _)| sanitize_identifier(&method.name))
         .unwrap_or_else(|| "script_entry".to_string());
+    let entry_name = make_unique_identifier(entry_name, used_method_names);
     let entry_params = entry_method
         .as_ref()
         .map(|(method, _)| format_manifest_parameters(&method.parameters))
@@ -79,6 +81,7 @@ pub(super) fn write_entry_method(
         &entry_instructions,
         entry_param_labels.as_deref(),
         inline_single_use_temps,
+        warnings,
     );
     writeln!(output, "    }}").unwrap();
 

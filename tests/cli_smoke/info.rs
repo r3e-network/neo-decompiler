@@ -3,7 +3,8 @@ use serde_json::Value;
 use tempfile::tempdir;
 
 use crate::common::{
-    assert_schema, build_sample_nef, neo_decompiler_cmd, SchemaKind, SAMPLE_MANIFEST,
+    assert_schema, build_sample_nef, neo_decompiler_cmd, write_oversize_nef, SchemaKind,
+    SAMPLE_MANIFEST,
 };
 
 #[test]
@@ -129,4 +130,19 @@ fn info_command_loads_manifest_when_available() {
         ))
         .stdout(contains("Permissions:"))
         .stdout(contains("Trusts:"));
+}
+
+#[test]
+fn info_command_rejects_large_nef() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("oversize.nef");
+    write_oversize_nef(&nef_path);
+
+    neo_decompiler_cmd()
+        .arg("info")
+        .arg(&nef_path)
+        .assert()
+        .failure()
+        .stderr(contains("file size"))
+        .stderr(contains("exceeds maximum"));
 }

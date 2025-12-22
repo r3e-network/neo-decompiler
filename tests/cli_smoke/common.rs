@@ -3,6 +3,7 @@ use assert_cmd::Command;
 use jsonschema::JSONSchema;
 use serde_json::Value;
 use std::fmt::Write;
+use std::fs::File;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -88,6 +89,12 @@ pub(crate) fn build_nef_with_unknown_opcode() -> Vec<u8> {
     let checksum = neo_decompiler::nef::NefParser::calculate_checksum(&data);
     data.extend_from_slice(&checksum.to_le_bytes());
     data
+}
+
+pub(crate) fn write_oversize_nef(path: &Path) {
+    let file = File::create(path).expect("create oversize nef");
+    file.set_len(neo_decompiler::nef::MAX_NEF_FILE_SIZE + 1)
+        .expect("set oversize nef length");
 }
 
 pub(crate) const SAMPLE_MANIFEST: &str = r#"

@@ -10,6 +10,15 @@ pub enum ManifestError {
     #[error("failed to read manifest: {0}")]
     Io(#[from] io::Error),
 
+    /// Manifest content exceeded the configured maximum size.
+    #[error("manifest size {size} exceeds maximum {max}")]
+    FileTooLarge {
+        /// Manifest size in bytes.
+        size: u64,
+        /// Maximum allowed size in bytes.
+        max: u64,
+    },
+
     /// The manifest JSON failed to parse.
     #[error("manifest json parse error: {0}")]
     Json(#[from] serde_json::Error),
