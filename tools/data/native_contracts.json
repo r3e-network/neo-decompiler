@@ -4,14 +4,20 @@
     "name": "CryptoLib",
     "script_hash": "1bf575ab1189688413610a35a12886cde0b66c72",
     "methods": [
+      "Bls12381Add",
+      "Bls12381Deserialize",
+      "Bls12381Equal",
+      "Bls12381Mul",
+      "Bls12381Pairing",
+      "Bls12381Serialize",
       "Keccak256",
       "Murmur32",
-      "RIPEMD160",
-      "RecoverSecp256K1",
       "Sha256",
       "VerifyWithECDsa",
-      "VerifyWithECDsaV0",
-      "VerifyWithEd25519"
+      "VerifyWithEd25519",
+      "recoverSecp256K1",
+      "ripemd160",
+      "verifyWithECDsa"
     ]
   },
   {
@@ -46,25 +52,29 @@
     "name": "PolicyContract",
     "script_hash": "7bc681c0a1f71d543457b68bba8d5f9fdd4e5ecc",
     "methods": [
-      "BlockAccount",
-      "GetAttributeFeeV0",
-      "GetAttributeFeeV1",
+      "GetBlockedAccounts",
       "GetExecFeeFactor",
+      "GetExecPicoFeeFactor",
       "GetFeePerByte",
       "GetMaxTraceableBlocks",
       "GetMaxValidUntilBlockIncrement",
       "GetMillisecondsPerBlock",
       "GetStoragePrice",
+      "GetWhitelistFeeContracts",
       "IsBlocked",
-      "SetAttributeFeeV0",
-      "SetAttributeFeeV1",
+      "RecoverFund",
+      "RemoveWhitelistFeeContract",
       "SetExecFeeFactor",
       "SetFeePerByte",
       "SetMaxTraceableBlocks",
       "SetMaxValidUntilBlockIncrement",
       "SetMillisecondsPerBlock",
       "SetStoragePrice",
-      "UnblockAccount"
+      "SetWhitelistFeeContract",
+      "UnblockAccount",
+      "blockAccount",
+      "getAttributeFee",
+      "setAttributeFee"
     ]
   },
   {
@@ -75,11 +85,11 @@
       "CurrentHash",
       "CurrentIndex",
       "GetBlock",
-      "GetTransactionForContract",
       "GetTransactionFromBlock",
       "GetTransactionHeight",
       "GetTransactionSigners",
-      "GetTransactionVMState"
+      "GetTransactionVMState",
+      "getTransaction"
     ]
   },
   {
@@ -97,6 +107,8 @@
       "Base64UrlDecode",
       "Base64UrlEncode",
       "Deserialize",
+      "HexDecode",
+      "HexEncode",
       "Itoa",
       "JsonDeserialize",
       "JsonSerialize",
@@ -105,6 +117,16 @@
       "Serialize",
       "StrLen",
       "StringSplit"
+    ]
+  },
+  {
+    "class_name": "Treasury",
+    "name": "Treasury",
+    "script_hash": "c13a56c98353a7ea6a324d9a835d1b5bf2266315",
+    "methods": [
+      "OnNEP11Payment",
+      "OnNEP17Payment",
+      "Verify"
     ]
   },
   {

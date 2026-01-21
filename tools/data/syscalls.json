@@ -24,6 +24,14 @@
     "returns_value": true
   },
   {
+    "name": "System.Storage.Local.Put",
+    "handler": "PutLocal",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.WriteStates",
+    "hash": 182651961,
+    "returns_value": false
+  },
+  {
     "name": "System.Contract.NativePostPersist",
     "handler": "NativePostPersistAsync",
     "price": "0",
@@ -184,6 +192,14 @@
     "returns_value": false
   },
   {
+    "name": "System.Storage.Local.Delete",
+    "handler": "DeleteLocal",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.WriteStates",
+    "hash": 2499105909,
+    "returns_value": false
+  },
+  {
     "name": "System.Runtime.Log",
     "handler": "RuntimeLog",
     "price": "1 << 15",
@@ -264,6 +280,14 @@
     "returns_value": true
   },
   {
+    "name": "System.Storage.Local.Get",
+    "handler": "GetLocal",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.ReadStates",
+    "hash": 3898510805,
+    "returns_value": true
+  },
+  {
     "name": "System.Storage.AsReadOnly",
     "handler": "AsReadOnly",
     "price": "1 << 4",
@@ -285,6 +309,14 @@
     "price": "1 << 12",
     "call_flags": "CallFlags.None",
     "hash": 4046799655,
+    "returns_value": true
+  },
+  {
+    "name": "System.Storage.Local.Find",
+    "handler": "FindLocal",
+    "price": "1 << 15",
+    "call_flags": "CallFlags.ReadStates",
+    "hash": 4082267655,
     "returns_value": true
   },
   {

@@ -103,8 +103,15 @@ pub fn describe_method_token(hash: &[u8; 20], method: &str) -> Option<NativeMeth
     let canonical_method = contract
         .methods
         .iter()
-        .find(|candidate| candidate.eq_ignore_ascii_case(method))
-        .copied();
+        .find(|candidate| **candidate == method)
+        .copied()
+        .or_else(|| {
+            contract
+                .methods
+                .iter()
+                .find(|candidate| candidate.eq_ignore_ascii_case(method))
+                .copied()
+        });
     Some(NativeMethodHint {
         contract: contract.name,
         canonical_method,

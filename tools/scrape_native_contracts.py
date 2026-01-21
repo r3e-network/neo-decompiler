@@ -13,8 +13,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, List, Set
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LOCAL_NATIVE_DIR = REPO_ROOT / "neo_csharp" / "core" / "src" / "Neo" / "SmartContract" / "Native"
 API_BASE_URL = "https://api.github.com/repos/neo-project/neo/contents/src/Neo/SmartContract/Native/"
-OUTPUT = Path("src/native_contracts_generated.rs")
+OUTPUT = REPO_ROOT / "src" / "native_contracts_generated.rs"
 
 
 @dataclass
@@ -30,6 +32,13 @@ class ClassInfo:
     name: str
     bases: list[str]
     methods: list[str]
+
+
+def read_local(path: str) -> str | None:
+    local_path = LOCAL_NATIVE_DIR / path
+    if local_path.exists():
+        return local_path.read_text(encoding="utf-8")
+    return None
 
 
 def fetch(path: str) -> str:
@@ -52,6 +61,36 @@ def fetch(path: str) -> str:
     raise RuntimeError(f"unreachable: failed to fetch {path}")
 
 
+_REMOTE_DIR_CACHE: list[str] | None = None
+
+
+def list_remote_files() -> list[str]:
+    global _REMOTE_DIR_CACHE
+    if _REMOTE_DIR_CACHE is not None:
+        return _REMOTE_DIR_CACHE
+    url = f"{API_BASE_URL}?ref=master"
+    headers = {
+        "User-Agent": "neo-decompiler/0.1",
+        "Accept": "application/vnd.github+json",
+    }
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req) as resp:  # type: ignore[arg-type]
+        payload = json.loads(resp.read().decode("utf-8"))
+    _REMOTE_DIR_CACHE = [
+        entry["name"]
+        for entry in payload
+        if entry.get("type") == "file" and isinstance(entry.get("name"), str)
+    ]
+    return _REMOTE_DIR_CACHE
+
+
+def load_source(path: str) -> str:
+    local = read_local(path)
+    if local is not None:
+        return local
+    return fetch(path)
+
+
 CONTRACT_PROPERTY_PATTERN = re.compile(
     r"public\s+static\s+(?P<class>[A-Za-z0-9_]+)\s+(?P<name>[A-Za-z0-9_]+)\s*{\s*get;\s*}\s*=\s*new\(\);"
 )
@@ -69,21 +108,25 @@ CLASS_DECL_PATTERN = re.compile(
 
 METHOD_SIGNATURE_PATTERN = re.compile(
     r"(?:public|internal|protected|private)\s+(?:async\s+)?(?:static\s+)?"
-    r"(?:[\w<>\[\],\s]+)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(",
+    r"(?:[\w<>\[\],\s\.\?]+)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(",
     re.MULTILINE,
 )
+NAME_OVERRIDE_PATTERN = re.compile(r'Name\s*=\s*"(?P<name>[^"]+)"')
 
 
 def extract_contract_methods(source: str) -> list[str]:
     methods: list[str] = []
     pending = False
     buffer: list[str] = []
+    name_override: str | None = None
 
     for line in source.splitlines():
         stripped = line.strip()
         if stripped.startswith("[ContractMethod"):
             pending = True
             buffer.clear()
+            match = NAME_OVERRIDE_PATTERN.search(stripped)
+            name_override = match.group("name") if match else None
             continue
         if not pending:
             continue
@@ -94,22 +137,28 @@ def extract_contract_methods(source: str) -> list[str]:
         joined = " ".join(buffer)
         match = METHOD_SIGNATURE_PATTERN.search(joined)
         if match:
-            name = match.group("name")
+            name = name_override or match.group("name")
             if name not in methods:
                 methods.append(name)
             pending = False
             buffer.clear()
+            name_override = None
     return methods
 
 
-def parse_class_info(source: str) -> ClassInfo:
-    match = CLASS_DECL_PATTERN.search(source)
+def parse_class_info(sources: Iterable[str]) -> ClassInfo:
     bases: List[str] = []
-    if match:
-        bases_text = match.group("bases")
-        bases = [part.strip() for part in bases_text.split(",")]
-    methods = extract_contract_methods(source)
-    name = match.group("name") if match else "Unknown"
+    methods: list[str] = []
+    name = "Unknown"
+    for source in sources:
+        match = CLASS_DECL_PATTERN.search(source)
+        if match:
+            name = match.group("name")
+            bases_text = match.group("bases")
+            bases.extend(part.strip() for part in bases_text.split(","))
+        methods.extend(extract_contract_methods(source))
+    bases = sorted(set(bases))
+    methods = sorted(set(methods))
     return ClassInfo(name=name, bases=bases, methods=methods)
 
 
@@ -136,7 +185,7 @@ def contract_hash(name: str) -> bytes:
 
 
 def collect_contracts() -> list[NativeContract]:
-    native_contract_src = fetch("NativeContract.cs")
+    native_contract_src = load_source("NativeContract.cs")
     class_names = parse_contract_class_names(native_contract_src)
 
     class_info: Dict[str, ClassInfo] = {}
@@ -144,12 +193,28 @@ def collect_contracts() -> list[NativeContract]:
     def ensure_class_loaded(name: str) -> None:
         if name in class_info or name == "NativeContract":
             return
-        try:
-            source = fetch(f"{name}.cs")
-        except urllib.error.HTTPError:  # type: ignore[attr-defined]
+        sources: list[str] = []
+        local_sources = list(LOCAL_NATIVE_DIR.glob(f"{name}*.cs")) if LOCAL_NATIVE_DIR.exists() else []
+        if local_sources:
+            sources = [path.read_text(encoding="utf-8") for path in local_sources]
+        else:
+            remote_files = [
+                filename
+                for filename in list_remote_files()
+                if filename.startswith(f"{name}.") or filename == f"{name}.cs"
+            ]
+            if not remote_files:
+                class_info[name] = ClassInfo(name=name, bases=[], methods=[])
+                return
+            for filename in remote_files:
+                try:
+                    sources.append(fetch(filename))
+                except urllib.error.HTTPError:  # type: ignore[attr-defined]
+                    continue
+        if not sources:
             class_info[name] = ClassInfo(name=name, bases=[], methods=[])
             return
-        info = parse_class_info(source)
+        info = parse_class_info(sources)
         class_info[name] = info
         for base in info.bases:
             ensure_class_loaded(base)
@@ -215,7 +280,7 @@ def main() -> None:
     contracts = collect_contracts()
     entries = "\n".join(render_contract(c) for c in contracts)
     OUTPUT.write_text(RUST_TEMPLATE.format(entries=entries))
-    data_dir = Path("tools/data")
+    data_dir = REPO_ROOT / "tools" / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     meta = [
         {

@@ -16,6 +16,7 @@ from textwrap import dedent
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OPCODE_SOURCE = REPO_ROOT / "tools" / "OpCode.cs"
+LOCAL_OPCODE_SOURCE = REPO_ROOT / "neo_csharp" / "vm" / "src" / "Neo.VM" / "OpCode.cs"
 OUTPUT = REPO_ROOT / "src" / "opcodes_generated.rs"
 
 
@@ -106,17 +107,26 @@ def operand_encoding(name: str) -> str:
     return "OperandEncoding::None"
 
 
-def parse_opcodes() -> list[tuple[str, int]]:
+def resolve_opcode_source() -> Path:
+    if OPCODE_SOURCE.exists():
+        return OPCODE_SOURCE
+    if LOCAL_OPCODE_SOURCE.exists():
+        return LOCAL_OPCODE_SOURCE
+    return OPCODE_SOURCE
+
+
+def parse_opcodes(source: Path) -> list[tuple[str, int]]:
     pattern = re.compile(
         r"(?:\[OperandSize\([^\]]*\)\]\s*)?(\w+)\s*=\s*0x([0-9A-Fa-f]{2})",
         re.MULTILINE,
     )
-    matches = pattern.findall(OPCODE_SOURCE.read_text())
+    matches = pattern.findall(source.read_text())
     return [(name, int(value, 16)) for name, value in matches]
 
 
 def main() -> None:
-    entries = parse_opcodes()
+    source = resolve_opcode_source()
+    entries = parse_opcodes(source)
 
     variants = []
     from_byte = []
@@ -189,8 +199,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    if not OPCODE_SOURCE.exists():
+    source = resolve_opcode_source()
+    if not source.exists():
         raise SystemExit(
-            f"missing {OPCODE_SOURCE}. Please download OpCode.cs from Neo project."
+            f"missing opcode source. Looked for {OPCODE_SOURCE} and {LOCAL_OPCODE_SOURCE}."
         )
     main()

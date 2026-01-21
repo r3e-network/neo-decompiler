@@ -18,6 +18,16 @@ fn falls_back_to_contract_name_when_method_unknown() {
 }
 
 #[test]
+fn describe_method_token_prefers_exact_case_match() {
+    let info = generated::NATIVE_CONTRACTS
+        .iter()
+        .find(|info| info.name == "CryptoLib")
+        .expect("CryptoLib contract");
+    let hint = describe_method_token(&info.script_hash, "verifyWithECDsa").expect("hint");
+    assert_eq!(hint.canonical_method, Some("verifyWithECDsa"));
+}
+
+#[test]
 fn lookup_finds_every_native_contract() {
     for info in all() {
         let got = lookup(&info.script_hash).expect("expected contract to be present");

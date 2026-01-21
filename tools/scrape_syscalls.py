@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LOCAL_BASE = REPO_ROOT / "neo_csharp" / "core" / "src" / "Neo" / "SmartContract"
 API_BASE_URL = "https://api.github.com/repos/neo-project/neo/contents/src/Neo/SmartContract/"
 FILES = [
     "ApplicationEngine.Runtime.cs",
@@ -22,7 +24,7 @@ FILES = [
     "ApplicationEngine.Iterator.cs",
 ]
 
-OUTPUT = Path("src/syscalls_generated.rs")
+OUTPUT = REPO_ROOT / "src" / "syscalls_generated.rs"
 
 
 @dataclass
@@ -50,9 +52,16 @@ class Syscall:
 
 
 REGISTER_PATTERN = re.compile(
-    r'Register\("(?P<name>[^"]+)",\s*(?:nameof\()?(?P<handler>[A-Za-z0-9_\.]+)\)?\s*,\s*(?P<price>[^,]+),\s*(?P<flags>CallFlags\.[A-Za-z0-9_\s|&^\.]+)\)',
+    r'Register\("(?P<name>[^"]+)",\s*(?:nameof\()?(?P<handler>[A-Za-z0-9_\.]+)\)?\s*,\s*(?P<price>[^,]+),\s*(?P<flags>CallFlags\.[A-Za-z0-9_\s|&^\.]+)(?:,\s*Hardfork\.[A-Za-z0-9_]+)?\)',
     re.MULTILINE,
 )
+
+
+def read_local(path: str) -> str | None:
+    local_path = LOCAL_BASE / path
+    if local_path.exists():
+        return local_path.read_text(encoding="utf-8")
+    return None
 
 
 def fetch(path: str) -> str:
@@ -76,6 +85,13 @@ def fetch(path: str) -> str:
     raise RuntimeError(f"unreachable: failed to fetch {path}")
 
 
+def load_source(path: str) -> str:
+    local = read_local(path)
+    if local is not None:
+        return local
+    return fetch(path)
+
+
 def parse_registers(text: str) -> Iterable[Syscall]:
     for match in REGISTER_PATTERN.finditer(text):
         name = match.group("name")
@@ -96,7 +112,7 @@ def collect_syscalls() -> list[Syscall]:
     entries: dict[str, Syscall] = {}
     for file in FILES:
         try:
-            text = fetch(file)
+            text = load_source(file)
         except urllib.error.HTTPError as exc:  # type: ignore[attr-defined]
             raise SystemExit(f"failed to fetch {file}: {exc}") from exc
         for syscall in parse_registers(text):
@@ -140,6 +156,8 @@ def returns_void(name: str) -> bool:
         "System.Runtime.BurnGas",
         "System.Storage.Put",
         "System.Storage.Delete",
+        "System.Storage.Local.Put",
+        "System.Storage.Local.Delete",
         "System.Contract.NativePostPersist",
         "System.Contract.NativeOnPersist",
     }
@@ -150,7 +168,7 @@ def main() -> None:
     entries = "\n".join(render_entry(s) for s in syscalls)
     OUTPUT.write_text(RUST_TEMPLATE.format(entries=entries))
     meta = [s.as_dict() for s in syscalls]
-    data_dir = Path("tools/data")
+    data_dir = REPO_ROOT / "tools" / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     (data_dir / "syscalls.json").write_text(json.dumps(meta, indent=2))
     print(f"wrote {OUTPUT} ({len(syscalls)} entries)")

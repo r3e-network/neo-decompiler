@@ -99,3 +99,30 @@ fn void_storage_syscall_is_emitted_as_statement() {
         "void storage syscall should not push a temp onto the stack"
     );
 }
+
+#[test]
+fn void_storage_local_syscall_is_emitted_as_statement() {
+    // Script: SYSCALL(System.Storage.Local.Put) ; RET
+    let script = [0x41, 0x39, 0x0C, 0xE3, 0x0A, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    assert!(
+        decompilation
+            .high_level
+            .as_deref()
+            .expect("high-level output")
+            .contains("syscall(\"System.Storage.Local.Put\");"),
+        "void storage local syscall should be emitted as a statement"
+    );
+    assert!(
+        !decompilation
+            .high_level
+            .as_deref()
+            .expect("high-level output")
+            .contains("let t0 = syscall(\"System.Storage.Local.Put\")"),
+        "void storage local syscall should not push a temp onto the stack"
+    );
+}

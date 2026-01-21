@@ -371,21 +371,25 @@ All published Neo N3 opcodes, syscalls, and native contracts are bundled with th
 crate so there is no network or tooling dependency at runtime:
 
 - `src/opcodes_generated.rs` is produced by `tools/generate_opcodes.py`, which
-  scrapes the upstream `OpCode.cs` file and emits every mnemonic alongside its
-  byte value and operand encoding.
-- `src/syscalls_generated.rs` originates from `tools/data/syscalls.json` and
-  lists each syscall hash, its friendly name, handler, price, and call-flag
-  mask. `crate::syscalls::lookup` wires this table into the disassembler and
+  reads `tools/OpCode.cs` or falls back to `neo_csharp/vm/src/Neo.VM/OpCode.cs`
+  to emit every mnemonic alongside its byte value and operand encoding.
+- `src/syscalls_generated.rs` is produced by `tools/scrape_syscalls.py`, which
+  reads the `ApplicationEngine.*.cs` sources (local `neo_csharp` if present,
+  otherwise the upstream repo) and writes `tools/data/syscalls.json` alongside
+  the Rust table. `crate::syscalls::lookup` wires this into the disassembler and
   high-level view so every `SYSCALL` shows human-readable context.
-- `src/native_contracts_generated.rs` is generated from
-  `tools/data/native_contracts.json` and enumerates every native contract hash
-  plus its publicly-exposed methods, ensuring method tokens are annotated with
-  canonical names when possible.
+- `src/native_contracts_generated.rs` is produced by
+  `tools/scrape_native_contracts.py`, which reads native contract sources
+  (local `neo_csharp` if present, otherwise the upstream repo) and writes
+  `tools/data/native_contracts.json` alongside the Rust table. It enumerates
+  every native contract hash plus its publicly-exposed methods, ensuring method
+  tokens are annotated with canonical names when possible.
 
 Re-run the scripts in `tools/` whenever Neo introduces new entries. Each script
-overwrites the corresponding generated Rust file, so `git status` immediately
-highlights the delta and the expanded coverage is propagated to the CLI and
-library APIs.
+overwrites the corresponding generated Rust file (and refreshes the JSON
+sidecar), so `git status` immediately highlights the delta and the expanded
+coverage is propagated to the CLI and library APIs. With `neo_csharp` available,
+the scripts run without network access.
 
 Use the CLI to browse these tables directly:
 
@@ -415,8 +419,8 @@ The high-level view prints informative comments for opcodes that are not yet lif
 into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
 
 - If Neo adds new opcodes, regenerate `src/opcodes_generated.rs` via
-  `tools/generate_opcodes.py` (requires `tools/OpCode.cs` from the upstream
-  Neo project) and update the disassembler as needed.
+  `tools/generate_opcodes.py` (uses `tools/OpCode.cs` or the local
+  `neo_csharp/vm/src/Neo.VM/OpCode.cs`) and update the disassembler as needed.
 - If you want to improve high-level lifting for existing opcodes, add handling
   in `src/decompiler/high_level/emitter/dispatch.rs` (and related helpers under
   `src/decompiler/high_level/emitter/`), then extend the unit tests under

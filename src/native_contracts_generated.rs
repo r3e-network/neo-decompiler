@@ -10,7 +10,7 @@ pub const NATIVE_CONTRACTS: &[NativeContractInfo] = &[
     NativeContractInfo {
         name: "CryptoLib",
         script_hash: [0x1B, 0xF5, 0x75, 0xAB, 0x11, 0x89, 0x68, 0x84, 0x13, 0x61, 0x0A, 0x35, 0xA1, 0x28, 0x86, 0xCD, 0xE0, 0xB6, 0x6C, 0x72],
-        methods: &["Keccak256", "Murmur32", "RIPEMD160", "RecoverSecp256K1", "Sha256", "VerifyWithECDsa", "VerifyWithECDsaV0", "VerifyWithEd25519"],
+        methods: &["Bls12381Add", "Bls12381Deserialize", "Bls12381Equal", "Bls12381Mul", "Bls12381Pairing", "Bls12381Serialize", "Keccak256", "Murmur32", "Sha256", "VerifyWithECDsa", "VerifyWithEd25519", "recoverSecp256K1", "ripemd160", "verifyWithECDsa"],
     },
     NativeContractInfo {
         name: "Notary",
@@ -25,17 +25,22 @@ pub const NATIVE_CONTRACTS: &[NativeContractInfo] = &[
     NativeContractInfo {
         name: "PolicyContract",
         script_hash: [0x7B, 0xC6, 0x81, 0xC0, 0xA1, 0xF7, 0x1D, 0x54, 0x34, 0x57, 0xB6, 0x8B, 0xBA, 0x8D, 0x5F, 0x9F, 0xDD, 0x4E, 0x5E, 0xCC],
-        methods: &["BlockAccount", "GetAttributeFeeV0", "GetAttributeFeeV1", "GetExecFeeFactor", "GetFeePerByte", "GetMaxTraceableBlocks", "GetMaxValidUntilBlockIncrement", "GetMillisecondsPerBlock", "GetStoragePrice", "IsBlocked", "SetAttributeFeeV0", "SetAttributeFeeV1", "SetExecFeeFactor", "SetFeePerByte", "SetMaxTraceableBlocks", "SetMaxValidUntilBlockIncrement", "SetMillisecondsPerBlock", "SetStoragePrice", "UnblockAccount"],
+        methods: &["GetBlockedAccounts", "GetExecFeeFactor", "GetExecPicoFeeFactor", "GetFeePerByte", "GetMaxTraceableBlocks", "GetMaxValidUntilBlockIncrement", "GetMillisecondsPerBlock", "GetStoragePrice", "GetWhitelistFeeContracts", "IsBlocked", "RecoverFund", "RemoveWhitelistFeeContract", "SetExecFeeFactor", "SetFeePerByte", "SetMaxTraceableBlocks", "SetMaxValidUntilBlockIncrement", "SetMillisecondsPerBlock", "SetStoragePrice", "SetWhitelistFeeContract", "UnblockAccount", "blockAccount", "getAttributeFee", "setAttributeFee"],
     },
     NativeContractInfo {
         name: "LedgerContract",
         script_hash: [0xBE, 0xF2, 0x04, 0x31, 0x40, 0x36, 0x2A, 0x77, 0xC1, 0x50, 0x99, 0xC7, 0xE6, 0x4C, 0x12, 0xF7, 0x00, 0xB6, 0x65, 0xDA],
-        methods: &["CurrentHash", "CurrentIndex", "GetBlock", "GetTransactionForContract", "GetTransactionFromBlock", "GetTransactionHeight", "GetTransactionSigners", "GetTransactionVMState"],
+        methods: &["CurrentHash", "CurrentIndex", "GetBlock", "GetTransactionFromBlock", "GetTransactionHeight", "GetTransactionSigners", "GetTransactionVMState", "getTransaction"],
     },
     NativeContractInfo {
         name: "StdLib",
         script_hash: [0xC0, 0xEF, 0x39, 0xCE, 0xE0, 0xE4, 0xE9, 0x25, 0xC6, 0xC2, 0xA0, 0x6A, 0x79, 0xE1, 0x44, 0x0D, 0xD8, 0x6F, 0xCE, 0xAC],
-        methods: &["Atoi", "Base58CheckDecode", "Base58CheckEncode", "Base58Decode", "Base58Encode", "Base64Decode", "Base64Encode", "Base64UrlDecode", "Base64UrlEncode", "Deserialize", "Itoa", "JsonDeserialize", "JsonSerialize", "MemoryCompare", "MemorySearch", "Serialize", "StrLen", "StringSplit"],
+        methods: &["Atoi", "Base58CheckDecode", "Base58CheckEncode", "Base58Decode", "Base58Encode", "Base64Decode", "Base64Encode", "Base64UrlDecode", "Base64UrlEncode", "Deserialize", "HexDecode", "HexEncode", "Itoa", "JsonDeserialize", "JsonSerialize", "MemoryCompare", "MemorySearch", "Serialize", "StrLen", "StringSplit"],
+    },
+    NativeContractInfo {
+        name: "Treasury",
+        script_hash: [0xC1, 0x3A, 0x56, 0xC9, 0x83, 0x53, 0xA7, 0xEA, 0x6A, 0x32, 0x4D, 0x9A, 0x83, 0x5D, 0x1B, 0x5B, 0xF2, 0x26, 0x63, 0x15],
+        methods: &["OnNEP11Payment", "OnNEP17Payment", "Verify"],
     },
     NativeContractInfo {
         name: "GasToken",
