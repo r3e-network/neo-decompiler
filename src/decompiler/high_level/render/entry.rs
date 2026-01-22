@@ -42,10 +42,9 @@ pub(super) fn write_entry_method(
     } else {
         entry_instructions
     };
-    let entry_param_labels =
-        entry_method
-            .as_ref()
-            .map(|(method, _)| sanitize_parameter_names(&method.parameters));
+    let entry_param_labels = entry_method
+        .as_ref()
+        .map(|(method, _)| sanitize_parameter_names(&method.parameters));
     let entry_name = entry_method
         .as_ref()
         .map(|(method, _)| sanitize_identifier(&method.name))

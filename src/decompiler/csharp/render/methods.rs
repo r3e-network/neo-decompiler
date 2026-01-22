@@ -48,8 +48,7 @@ pub(super) fn write_manifest_methods(
             .join(",");
         let param_signature = format_csharp_parameters(&params);
         let base_name = sanitize_csharp_identifier(&method.name);
-        let method_name =
-            make_unique_method_name(base_name, &signature_key, &mut used_signatures);
+        let method_name = make_unique_method_name(base_name, &signature_key, &mut used_signatures);
         let return_type = format_manifest_type_csharp(&method.return_type);
         let signature = format_method_signature(&method_name, &param_signature, &return_type);
 
@@ -77,8 +76,7 @@ pub(super) fn write_manifest_methods(
             .join(",");
         let param_signature = format_csharp_parameters(&params);
         let base_name = sanitize_csharp_identifier(&method.name);
-        let method_name =
-            make_unique_method_name(base_name, &signature_key, &mut used_signatures);
+        let method_name = make_unique_method_name(base_name, &signature_key, &mut used_signatures);
         let return_type = format_manifest_type_csharp(&method.return_type);
         let signature = format_method_signature(&method_name, &param_signature, &return_type);
 

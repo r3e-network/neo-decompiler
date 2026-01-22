@@ -18,9 +18,7 @@ pub(in super::super) fn format_manifest_parameters(parameters: &[ManifestParamet
         .join(", ")
 }
 
-pub(in super::super) fn sanitize_parameter_names(
-    parameters: &[ManifestParameter],
-) -> Vec<String> {
+pub(in super::super) fn sanitize_parameter_names(parameters: &[ManifestParameter]) -> Vec<String> {
     let mut used = HashSet::new();
     parameters
         .iter()

@@ -108,7 +108,10 @@ fn high_level_disambiguates_colliding_method_names() {
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
-    let output = decompilation.high_level.as_deref().expect("high-level output");
+    let output = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
     assert!(output.contains("fn foo_bar("));
     assert!(output.contains("fn foo_bar_1("));
 }

@@ -37,12 +37,7 @@ pub(super) fn write_manifest_methods(
         let signature = if return_ty == "void" {
             format!("fn {}({})", method_name, params)
         } else {
-            format!(
-                "fn {}({}) -> {}",
-                method_name,
-                params,
-                return_ty
-            )
+            format!("fn {}({}) -> {}", method_name, params, return_ty)
         };
 
         writeln!(output).unwrap();

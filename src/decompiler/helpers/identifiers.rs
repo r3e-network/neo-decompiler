@@ -28,10 +28,7 @@ pub(in super::super) fn sanitize_identifier(input: &str) -> String {
     ident
 }
 
-pub(in super::super) fn make_unique_identifier(
-    base: String,
-    used: &mut HashSet<String>,
-) -> String {
+pub(in super::super) fn make_unique_identifier(base: String, used: &mut HashSet<String>) -> String {
     if used.insert(base.clone()) {
         return base;
     }
