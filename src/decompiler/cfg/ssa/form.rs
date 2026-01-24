@@ -1,6 +1,7 @@
 //! SSA form types for representing code in static single assignment form.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use crate::decompiler::cfg::{BlockId, Cfg};
 use crate::decompiler::ir::{BinOp, Literal, Stmt, UnaryOp};
@@ -103,6 +104,69 @@ impl SsaForm {
     pub fn uses_of(&self, var: &SsaVariable) -> Option<&BTreeSet<UseSite>> {
         self.uses.get(var)
     }
+
+    /// Render the SSA form as a string for debugging/display.
+    ///
+    /// This produces a human-readable representation of the SSA code,
+    /// with φ nodes shown at the start of each block (marked with φ).
+    /// φ nodes are internal analysis constructs and may be transformed
+    /// away before final output.
+    #[must_use]
+    pub fn render(&self) -> String {
+        let mut output = String::new();
+        use std::fmt::Write;
+
+        writeln!(output, "// SSA Form - {} blocks", self.block_count()).unwrap();
+        writeln!(output).unwrap();
+
+        for (block_id, block) in self.blocks_iter() {
+            writeln!(output, "block {:?}:", block_id).unwrap();
+            write!(output, "{}", block).unwrap();
+        }
+
+        output
+    }
+
+    /// Get statistics about the SSA form.
+    #[must_use]
+    pub fn stats(&self) -> SsaStats {
+        let total_phi_nodes: usize = self.blocks.values().map(|b| b.phi_count()).sum();
+        let total_statements: usize = self.blocks.values().map(|b| b.stmt_count()).sum();
+        let total_variables = self.definitions.len();
+
+        SsaStats {
+            block_count: self.block_count(),
+            total_phi_nodes,
+            total_statements,
+            total_variables,
+        }
+    }
+}
+
+/// Statistics about an SSA form.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SsaStats {
+    /// Number of blocks in the SSA form.
+    pub block_count: usize,
+    /// Total number of φ nodes across all blocks.
+    pub total_phi_nodes: usize,
+    /// Total number of SSA statements (excluding φ nodes).
+    pub total_statements: usize,
+    /// Total number of unique SSA variables.
+    pub total_variables: usize,
+}
+
+impl fmt::Display for SsaStats {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "SSA Stats: {} blocks, {} φ nodes, {} statements, {} variables",
+            self.block_count,
+            self.total_phi_nodes,
+            self.total_statements,
+            self.total_variables
+        )
+    }
 }
 
 /// A basic block in SSA form.
@@ -154,6 +218,22 @@ impl SsaBlock {
     #[must_use]
     pub fn stmt_count(&self) -> usize {
         self.stmts.len()
+    }
+}
+
+impl fmt::Display for SsaBlock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Print φ nodes first (they conceptually execute at the edge)
+        for phi in &self.phi_nodes {
+            writeln!(f, "    {}", phi)?;
+        }
+
+        // Then print regular statements
+        for stmt in &self.stmts {
+            writeln!(f, "    {}", stmt)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -297,6 +377,66 @@ impl SsaExpr {
     }
 }
 
+impl fmt::Display for SsaExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use std::fmt::Write;
+        match self {
+            Self::Variable(var) => write!(f, "{}", var),
+            Self::Literal(lit) => write!(f, "{}", lit),
+            Self::Binary { op, left, right } => write!(f, "({} {} {})", left, op, right),
+            Self::Unary { op, operand } => write!(f, "{}({})", op, operand),
+            Self::Call { name, args } => {
+                write!(f, "{}(", name)?;
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", arg)?;
+                }
+                write!(f, ")")
+            }
+            Self::Index { base, index } => write!(f, "{}[{}]", base, index),
+            Self::Member { base, name } => write!(f, "{}.{}", base, name),
+            Self::Cast { expr, target_type } => write!(f, "{} as {}", expr, target_type),
+            Self::Array(elements) => {
+                write!(f, "[")?;
+                for (i, elem) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", elem)?;
+                }
+                write!(f, "]")
+            }
+            Self::Map(pairs) => {
+                write!(f, "{{")?;
+                for (i, (key, value)) in pairs.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}: {}", key, value)?;
+                }
+                write!(f, "}}")
+            }
+            Self::Ternary {
+                condition,
+                then_expr,
+                else_expr,
+            } => write!(f, "{} ? {} : {}", condition, then_expr, else_expr),
+        }
+    }
+}
+
+impl fmt::Display for SsaStmt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Assign { target, value } => write!(f, "{} = {};", target, value),
+            Self::Phi(phi) => write!(f, "{}", phi), // φ nodes have their own Display
+            Self::Other(stmt) => write!(f, "{:?}", stmt), // Use debug for other statements
+        }
+    }
+}
+
 /// A location where a variable is used.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct UseSite {
@@ -383,5 +523,126 @@ mod tests {
 
         assert_eq!(site.block, BlockId(5));
         assert_eq!(site.stmt_index, 10);
+    }
+
+    #[test]
+    fn test_ssa_expr_display() {
+        let var = SsaVariable::initial("x".to_string());
+        assert_eq!(format!("{}", SsaExpr::var(var.clone())), "x");
+
+        let lit = SsaExpr::lit(Literal::Int(42));
+        assert_eq!(format!("{}", lit), "42");
+
+        let binary = SsaExpr::binary(
+            BinOp::Add,
+            SsaExpr::var(var.clone()),
+            SsaExpr::lit(Literal::Int(10)),
+        );
+        assert_eq!(format!("{}", binary), "(x + 10)");
+
+        let unary = SsaExpr::unary(UnaryOp::Neg, SsaExpr::var(var));
+        assert_eq!(format!("{}", unary), "-(x)");
+
+        let var2 = SsaVariable::initial("x".to_string());
+        let call = SsaExpr::call("foo".to_string(), vec![SsaExpr::var(var2)]);
+        assert_eq!(format!("{}", call), "foo(x)");
+    }
+
+    #[test]
+    fn test_ssa_stmt_display() {
+        let var = SsaVariable::new("result".to_string(), 0);
+        let stmt = SsaStmt::assign(var.clone(), SsaExpr::lit(Literal::Int(42)));
+
+        assert_eq!(format!("{}", stmt), "result = 42;");
+    }
+
+    #[test]
+    fn test_ssa_block_display() {
+        let mut block = SsaBlock::new();
+
+        let phi = PhiNode::new(SsaVariable::initial("x".to_string()));
+        block.add_phi(phi);
+
+        let stmt = SsaStmt::assign(
+            SsaVariable::new("y".to_string(), 0),
+            SsaExpr::lit(Literal::Int(42)),
+        );
+        block.add_stmt(stmt);
+
+        let display = format!("{}", block);
+        assert!(display.contains("φ")); // φ node should be present
+        assert!(display.contains("y = 42;")); // statement should be present
+    }
+
+    #[test]
+    fn test_ssa_form_render() {
+        let cfg = Cfg::new();
+        let dominance = DominanceInfo::new();
+        let mut ssa = SsaForm::new(cfg, dominance);
+
+        let mut block = SsaBlock::new();
+        block.add_stmt(SsaStmt::assign(
+            SsaVariable::new("x".to_string(), 0),
+            SsaExpr::lit(Literal::Int(42)),
+        ));
+        ssa.add_block(BlockId::ENTRY, block);
+
+        let rendered = ssa.render();
+        assert!(rendered.contains("SSA Form"));
+        assert!(rendered.contains("block"));
+        assert!(rendered.contains("x = 42;"));
+    }
+
+    #[test]
+    fn test_ssa_stats() {
+        let cfg = Cfg::new();
+        let dominance = DominanceInfo::new();
+        let mut ssa = SsaForm::new(cfg, dominance);
+
+        let mut block = SsaBlock::new();
+
+        // Add a φ node
+        let phi = PhiNode::new(SsaVariable::initial("x".to_string()));
+        block.add_phi(phi);
+
+        // Add a statement
+        let stmt = SsaStmt::assign(
+            SsaVariable::new("y".to_string(), 0),
+            SsaExpr::lit(Literal::Int(42)),
+        );
+        block.add_stmt(stmt);
+
+        ssa.add_block(BlockId::ENTRY, block);
+        ssa.add_definition(SsaVariable::initial("y".to_string()), BlockId::ENTRY);
+
+        let stats = ssa.stats();
+        assert_eq!(stats.block_count, 1);
+        assert_eq!(stats.total_phi_nodes, 1);
+        assert_eq!(stats.total_statements, 1);
+        assert_eq!(stats.total_variables, 1);
+    }
+
+    #[test]
+    fn test_ssa_expr_complex() {
+        // Test array literal
+        let arr = SsaExpr::Array(vec![
+            SsaExpr::lit(Literal::Int(1)),
+            SsaExpr::lit(Literal::Int(2)),
+        ]);
+        assert_eq!(format!("{}", arr), "[1, 2]");
+
+        // Test map literal
+        let map = SsaExpr::Map(vec![
+            (SsaExpr::lit(Literal::String("key".to_string())), SsaExpr::lit(Literal::Int(1))),
+        ]);
+        assert!(format!("{}", map).contains("{"));
+
+        // Test ternary
+        let ternary = SsaExpr::Ternary {
+            condition: Box::new(SsaExpr::lit(Literal::Bool(true))),
+            then_expr: Box::new(SsaExpr::lit(Literal::Int(1))),
+            else_expr: Box::new(SsaExpr::lit(Literal::Int(2))),
+        };
+        assert_eq!(format!("{}", ternary), "true ? 1 : 2");
     }
 }

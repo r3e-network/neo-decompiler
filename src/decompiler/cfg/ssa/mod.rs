@@ -11,7 +11,7 @@ mod variable;
 
 pub use builder::{build_ssa_from_cfg, SsaBuilder};
 pub use dominance::{compute, DominanceInfo};
-pub use form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
+pub use form::{SsaBlock, SsaExpr, SsaForm, SsaStats, SsaStmt, UseSite};
 pub use variable::{PhiNode, SsaVariable};
 
 use crate::decompiler::cfg::Cfg;
