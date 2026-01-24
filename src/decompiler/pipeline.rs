@@ -130,6 +130,7 @@ impl Decompiler {
             pseudocode,
             high_level,
             csharp,
+            ssa: None,
         })
     }
 

@@ -83,12 +83,12 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 ### Security & Robustness
 
-| Feature                     | Status | Description                                    |
-| --------------------------- | ------ | ---------------------------------------------- |
+| Feature                     | Status | Description                                                 |
+| --------------------------- | ------ | ----------------------------------------------------------- |
 | Input Size Limits           | ✅     | 10 MiB NEF limit, 1 MiB manifest limit, 1 MiB operand limit |
-| Integer Overflow Protection | ✅     | Checked arithmetic in slice operations         |
-| Malformed Input Handling    | ✅     | Graceful error reporting, no panics            |
-| Fuzz Testing                | ✅     | cargo-fuzz targets for parser and disassembler |
+| Integer Overflow Protection | ✅     | Checked arithmetic in slice operations                      |
+| Malformed Input Handling    | ✅     | Graceful error reporting, no panics                         |
+| Fuzz Testing                | ✅     | cargo-fuzz targets for parser and disassembler              |
 
 ---
 
@@ -96,34 +96,42 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 ### Shipped Features (v0.3.x)
 
-| Feature                   | Status | Description                                                               |
-| ------------------------- | ------ | ------------------------------------------------------------------------- |
-| Control Flow Graph (CFG)  | ✅     | Explicit basic block graph with edges + DOT export for visualization      |
-| Else-If Chain Detection   | ✅     | Collapse nested `if`/`else` into `else if` chains                         |
-| Dead Code Detection       | ✅     | Identify unreachable basic blocks via CFG reachability analysis           |
-| Expression Simplification | ✅     | Algebraic simplification helpers (e.g., `x + 0` → `x`) in `decompiler::ir` |
+| Feature                   | Status | Description                                                                 |
+| ------------------------- | ------ | --------------------------------------------------------------------------- |
+| Control Flow Graph (CFG)  | ✅     | Explicit basic block graph with edges + DOT export for visualization        |
+| Else-If Chain Detection   | ✅     | Collapse nested `if`/`else` into `else if` chains                           |
+| Dead Code Detection       | ✅     | Identify unreachable basic blocks via CFG reachability analysis             |
+| Expression Simplification | ✅     | Algebraic simplification helpers (e.g., `x + 0` → `x`) in `decompiler::ir`  |
 | Inline Expansion          | ✅     | Conservative temp inlining for loop conditions/increments (opt-in for more) |
 
 ### Shipped Features (v0.4.x)
 
-| Feature                   | Status | Description                                                                       |
-| ------------------------- | ------ | --------------------------------------------------------------------------------- |
-| Type Inference            | ✅     | Best-effort primitive/collection type recovery for locals/args/statics            |
-| Array/Map Type Recovery   | ✅     | Detect collection kinds from `PACK`/`NEWARRAY`/`NEWMAP` and emit bracket indexing  |
-| Call Graph Construction   | ✅     | Extract inter-procedural relationships (`CALL*`, `CALLT`, `SYSCALL`)              |
-| Cross-Reference Analysis  | ✅     | Track local/argument/static slot reads and writes by bytecode offset              |
+| Feature                   | Status | Description                                                                          |
+| ------------------------- | ------ | ------------------------------------------------------------------------------------ |
+| Type Inference            | ✅     | Best-effort primitive/collection type recovery for locals/args/statics               |
+| Array/Map Type Recovery   | ✅     | Detect collection kinds from `PACK`/`NEWARRAY`/`NEWMAP` and emit bracket indexing    |
+| Call Graph Construction   | ✅     | Extract inter-procedural relationships (`CALL*`, `CALLT`, `SYSCALL`)                 |
+| Cross-Reference Analysis  | ✅     | Track local/argument/static slot reads and writes by bytecode offset                 |
 | Switch Statement Recovery | ✅     | Rewrite equality-based `if`/`else` chains into `switch`/`case` blocks (conservative) |
 
-### Planned Features (v0.5.x+)
+### Shipped Features (v0.5.x)
 
-| Feature               | Priority | Description                                         |
-| --------------------- | -------- | --------------------------------------------------- |
-| SSA Transformation    | Medium   | Static Single Assignment form for advanced analysis |
-| Data Flow Analysis    | Medium   | Reaching definitions, live variable analysis        |
-| Struct/Class Recovery | Low      | Infer composite types from field access patterns    |
-| Deobfuscation Passes  | Low      | Detect and simplify common obfuscation patterns     |
-| Interactive Mode      | Low      | REPL for exploratory analysis                       |
-| Plugin Architecture   | Low      | User-defined analysis passes                        |
+| Feature            | Status | Description                                                       |
+| ------------------ | ------ | ----------------------------------------------------------------- |
+| SSA Transformation | ✅     | Static Single Assignment form with φ nodes and variable versions  |
+| Dominance Analysis | ✅     | Immediate dominators, dominator tree, dominance frontiers         |
+| SSA Rendering      | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars) |
+
+### Planned Features (v0.6.x+)
+
+| Feature               | Priority | Description                                           |
+| --------------------- | -------- | ----------------------------------------------------- |
+| Data Flow Analysis    | Medium   | Reaching definitions, live variable analysis          |
+| SSA Optimizations     | Medium   | Constant propagation, dead code elimination using SSA |
+| Struct/Class Recovery | Low      | Infer composite types from field access patterns      |
+| Deobfuscation Passes  | Low      | Detect and simplify common obfuscation patterns       |
+| Interactive Mode      | Low      | REPL for exploratory analysis                         |
+| Plugin Architecture   | Low      | User-defined analysis passes                          |
 
 ### Not Planned (Out of Scope)
 
@@ -161,6 +169,10 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   without offsets are still emitted as stubs for completeness.
 - Control Flow Graph (CFG) construction with DOT export (`Decompilation::cfg_to_dot`) and
   reachability helpers for dead-code detection (`Cfg::unreachable_blocks`)
+- SSA (Static Single Assignment) transformation via `cfg.to_ssa()` or `Decompilation::compute_ssa()`:
+  - Dominance analysis (immediate dominators, dominator tree, dominance frontiers)
+  - φ node placement at control flow merge points
+  - SSA form rendering with variable versions and statistics
 - Best-effort analysis output in both the library and JSON decompile report:
   call graph (`CALL*`, `CALLT`, `SYSCALL`), slot cross-references, and inferred primitive/collection types
 - Syscall lifting that resolves human-readable names and suppresses phantom
@@ -341,6 +353,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(ref hl) = result.high_level {
         println!("{}", hl);
     }
+
+    // SSA transformation (lazy computation)
+    result.compute_ssa();
+    if let Some(ssa) = result.ssa() {
+        println!("SSA Stats: {}", ssa.stats());
+        println!("{}", ssa.render());
+    }
+
     Ok(())
 }
 ```

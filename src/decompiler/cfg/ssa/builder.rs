@@ -10,7 +10,8 @@ use crate::decompiler::cfg::{BlockId, Cfg};
 use crate::instruction::Instruction;
 
 use super::dominance::{self, DominanceInfo};
-use super::form::{SsaBlock, SsaForm};
+use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
+use super::variable::PhiNode;
 use super::variable::SsaVariable;
 
 /// Builder for constructing SSA form from a CFG and instructions.
@@ -68,6 +69,7 @@ impl<'a> SsaBuilder<'a> {
     /// 1. Compute φ node placement using dominance frontiers
     /// 2. Perform variable renaming via dominator tree traversal
     pub fn build(mut self) -> SsaForm {
+
         // Phase 1: Compute φ node locations
         self.compute_phi_locations();
 
@@ -95,17 +97,88 @@ impl<'a> SsaBuilder<'a> {
     /// Build SSA blocks by placing φ nodes and renaming variables.
     fn build_ssa_blocks(&mut self) -> SsaForm {
         let mut ssa_blocks = BTreeMap::new();
+        let mut definitions = BTreeMap::new();
+        let mut uses = BTreeMap::new();
 
         for block in self.cfg.blocks() {
             let mut ssa_block = SsaBlock::new();
 
-            // Add φ nodes for this block (if any)
-            if let Some(_locations) = self.phi_locations.get("") {
-                // φ nodes will be added here in future implementation
+            // Add φ nodes for this block
+            for (var_name, locations) in &self.phi_locations {
+                if locations.contains(&block.id) {
+                    let phi_node = PhiNode::new(SsaVariable::initial(var_name.clone()));
+                    ssa_block.add_phi(phi_node);
+                    // Record φ node as defining a new version
+                    definitions.insert(SsaVariable::initial(var_name.clone()), block.id);
+                }
             }
 
-            // For now, just create empty blocks
-            // Full implementation will convert instructions to SSA statements
+            // Add terminator information as comment
+            match &block.terminator {
+                crate::decompiler::cfg::Terminator::Return => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        format!("return from block {:?}", block.id)
+                    )));
+                }
+                crate::decompiler::cfg::Terminator::Jump { target } => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        format!("jump to {:?}", target)
+                    )));
+                }
+                crate::decompiler::cfg::Terminator::Branch { then_target, else_target } => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        format!("branch: then={:?}, else={:?}", then_target, else_target)
+                    )));
+                }
+                crate::decompiler::cfg::Terminator::Fallthrough { target } => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        format!("fallthrough to {:?}", target)
+                    )));
+                }
+                crate::decompiler::cfg::Terminator::TryEntry { .. } => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        "try entry".to_string()
+                    )));
+                }
+                crate::decompiler::cfg::Terminator::EndTry { .. } => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        "end try".to_string()
+                    )));
+                }
+                crate::decompiler::cfg::Terminator::Throw => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        "throw exception".to_string()
+                    )));
+                }
+                crate::decompiler::cfg::Terminator::Abort => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        "abort execution".to_string()
+                    )));
+                }
+                crate::decompiler::cfg::Terminator::Unknown => {
+                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                        "unknown terminator".to_string()
+                    )));
+                }
+            }
+
+            // Process instructions to populate SSA statements
+            let mut statement_count = 0;
+            for offset in block.start_offset..block.end_offset {
+                if let Some(instr) = self.instructions.get(offset) {
+                    if self.process_instruction_for_ssa(block.id, offset, instr, &mut ssa_block, &mut definitions, &mut uses) {
+                        statement_count += 1;
+                    }
+                }
+            }
+
+            // If no statements were added, add a placeholder comment
+            if statement_count == 0 && ssa_block.phi_count() == 0 {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    format!("empty block {:?} (offsets {}..{})", block.id, block.start_offset, block.end_offset)
+                )));
+            }
+
             ssa_blocks.insert(block.id, ssa_block);
         }
 
@@ -113,8 +186,239 @@ impl<'a> SsaBuilder<'a> {
             cfg: self.cfg.clone(),
             dominance: self.dominance.clone(),
             blocks: ssa_blocks,
-            definitions: BTreeMap::new(),
-            uses: BTreeMap::new(),
+            definitions,
+            uses,
+        }
+    }
+
+    /// Process a single instruction to extract SSA-relevant information.
+    ///
+    /// Returns true if an SSA statement was created.
+    fn process_instruction_for_ssa(
+        &mut self,
+        block_id: BlockId,
+        offset: usize,
+        instr: &Instruction,
+        ssa_block: &mut SsaBlock,
+        definitions: &mut BTreeMap<SsaVariable, BlockId>,
+        uses: &mut BTreeMap<SsaVariable, BTreeSet<UseSite>>,
+    ) -> bool {
+        use crate::instruction::OpCode;
+
+        // Create a comment showing the instruction
+        ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+            format!("// {}: {:?}", offset, instr.opcode)
+        )));
+
+        // Track variable operations
+        match instr.opcode {
+            // Handle common opcodes that affect SSA
+            OpCode::Push0 => {
+                let var = self.new_version("stack_0".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(0))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push1 => {
+                let var = self.new_version("stack_1".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(1))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push2 => {
+                let var = self.new_version("stack_2".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(2))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push3 => {
+                let var = self.new_version("stack_3".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(3))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push4 => {
+                let var = self.new_version("stack_4".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(4))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push5 => {
+                let var = self.new_version("stack_5".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(5))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push6 => {
+                let var = self.new_version("stack_6".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(6))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push7 => {
+                let var = self.new_version("stack_7".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(7))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push8 => {
+                let var = self.new_version("stack_8".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(8))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push9 => {
+                let var = self.new_version("stack_9".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(9))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push10 => {
+                let var = self.new_version("stack_10".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(10))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push11 => {
+                let var = self.new_version("stack_11".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(11))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push12 => {
+                let var = self.new_version("stack_12".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(12))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push13 => {
+                let var = self.new_version("stack_13".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(13))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push14 => {
+                let var = self.new_version("stack_14".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(14))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Push15 => {
+                let var = self.new_version("stack_15".to_string());
+                ssa_block.add_stmt(SsaStmt::assign(
+                    var.clone(),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(15))
+                ));
+                definitions.insert(var, block_id);
+                return true;
+            }
+            OpCode::Add => {
+                // Binary operation - create a dummy addition
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "ADD operation (binary addition)".to_string()
+                )));
+                return true;
+            }
+            OpCode::Sub => {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "SUB operation (binary subtraction)".to_string()
+                )));
+                return true;
+            }
+            OpCode::Mul => {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "MUL operation (binary multiplication)".to_string()
+                )));
+                return true;
+            }
+            OpCode::Div => {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "DIV operation (binary division)".to_string()
+                )));
+                return true;
+            }
+            OpCode::Ret => {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "RET (return from function)".to_string()
+                )));
+                return true;
+            }
+            OpCode::Nop => {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "NOP (no operation)".to_string()
+                )));
+                return true;
+            }
+            OpCode::Isnull => {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "ISNULL (null check)".to_string()
+                )));
+                return true;
+            }
+            OpCode::Equal => {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "EQUAL (equality comparison)".to_string()
+                )));
+                return true;
+            }
+            OpCode::Notequal => {
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    "NOTEQUAL (inequality comparison)".to_string()
+                )));
+                return true;
+            }
+            _ => {
+                // For other opcodes, just add a comment
+                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
+                    format!("{:?}", instr.opcode)
+                )));
+                return true;
+            }
         }
     }
 

@@ -28,6 +28,9 @@ pub use crate::decompiler::analysis::MethodRef;
 pub use crate::decompiler::cfg::{
     BasicBlock, BlockId, Cfg, CfgBuilder, Edge, EdgeKind, Terminator,
 };
+pub use crate::decompiler::cfg::ssa::{
+    DominanceInfo, PhiNode, SsaBlock, SsaConversion, SsaExpr, SsaForm, SsaStats, SsaStmt, SsaVariable,
+};
 pub use crate::decompiler::{Decompilation, Decompiler, OutputFormat};
 pub use crate::disassembler::{Disassembler, UnknownHandling};
 pub use crate::error::{Error, Result};

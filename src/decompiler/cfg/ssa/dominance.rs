@@ -171,11 +171,9 @@ fn compute_immediate_dominators(cfg: &Cfg) -> BTreeMap<BlockId, Option<BlockId>>
     let mut iteration_count = 0u32;
     while changed {
         iteration_count += 1;
+        if iteration_count % 100 == 0 {
+        }
         if iteration_count > 1000 {
-            eprintln!("ERROR: Dominance computation not converging after 1000 iterations!");
-            eprintln!("Current idom state: {:?}", idom);
-            eprintln!("Entry: {:?}", entry_id);
-            eprintln!("Reverse post order: {:?}", reverse_post_order(cfg));
             panic!("Dominance computation failed to converge");
         }
         changed = false;
@@ -220,12 +218,22 @@ fn intersect_dominators(
     // Start with the first predecessor's processed dominator
     let mut result = None;
 
-    for pred in predecessors {
-        let pred_idom = idom.get(&pred).copied().flatten();
+    for (i, pred) in predecessors.iter().enumerate() {
+        let pred_idom = idom.get(pred).copied().flatten();
 
         result = match result {
             None => pred_idom,
-            Some(current) => Some(find_common_dominator(cfg, current, pred, idom)),
+            Some(current) => {
+                // Skip predecessors that haven't been processed yet (idom = None)
+                match pred_idom {
+                    None => {
+                        Some(current)
+                    }
+                    Some(pred_dom) => {
+                        Some(find_common_dominator(cfg, current, *pred, idom))
+                    }
+                }
+            }
         };
     }
 
@@ -242,21 +250,38 @@ fn find_common_dominator(
     mut finger2: BlockId,
     idom: &BTreeMap<BlockId, Option<BlockId>>,
 ) -> BlockId {
-    // Move fingers to the same depth in the dominator tree
-    let depth1 = depth_in_dominator_tree(finger1, idom);
-    let depth2 = depth_in_dominator_tree(finger2, idom);
 
+    // Move fingers to the same depth in the dominator tree
+    let mut depth1 = depth_in_dominator_tree(finger1, idom);
+    let mut depth2 = depth_in_dominator_tree(finger2, idom);
+
+    let mut iterations = 0;
     while depth1 > depth2 {
         finger1 = idom.get(&finger1).copied().flatten().unwrap();
+        depth1 -= 1;
+        iterations += 1;
+        if iterations > 100 {
+            panic!("find_common_dominator: too many iterations adjusting depth");
+        }
     }
     while depth2 > depth1 {
         finger2 = idom.get(&finger2).copied().flatten().unwrap();
+        depth2 -= 1;
+        iterations += 1;
+        if iterations > 100 {
+            panic!("find_common_dominator: too many iterations adjusting depth");
+        }
     }
+
 
     // Move both fingers up until they meet
     while finger1 != finger2 {
         finger1 = idom.get(&finger1).copied().flatten().unwrap();
         finger2 = idom.get(&finger2).copied().flatten().unwrap();
+        iterations += 1;
+        if iterations > 100 {
+            panic!("find_common_dominator: too many iterations finding common");
+        }
     }
 
     finger1
@@ -264,9 +289,17 @@ fn find_common_dominator(
 
 /// Get the depth of a block in the dominator tree.
 fn depth_in_dominator_tree(block: BlockId, idom: &BTreeMap<BlockId, Option<BlockId>>) -> usize {
-    let mut depth = 0;
+    let mut depth = 1;  // Count the block itself
     let mut current = idom.get(&block).copied().flatten();
+    let mut visited = BTreeSet::new();
+    visited.insert(block);  // Track the starting block to prevent cycles
+
     while let Some(idom_block) = current {
+        if visited.contains(&idom_block) {
+            // Cycle detected - this happens when the entry block dominates itself
+            break;
+        }
+        visited.insert(idom_block);
         depth += 1;
         current = idom.get(&idom_block).copied().flatten();
     }
@@ -304,7 +337,8 @@ fn dfs_post_order(
     visited.insert(block);
 
     // Visit successors first
-    for succ in cfg.successors(block) {
+    let successors = cfg.successors(block);
+    for succ in successors {
         dfs_post_order(cfg, succ, visited, order);
     }
 

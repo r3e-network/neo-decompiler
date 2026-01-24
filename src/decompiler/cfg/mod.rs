@@ -11,6 +11,7 @@ pub mod ssa;
 pub use basic_block::{BasicBlock, BlockId, Terminator};
 pub use builder::CfgBuilder;
 pub use graph::{Cfg, Edge, EdgeKind};
+pub use ssa::SsaConversion;
 
 #[cfg(test)]
 mod tests;
