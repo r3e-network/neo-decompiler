@@ -218,7 +218,7 @@ fn intersect_dominators(
     // Start with the first predecessor's processed dominator
     let mut result = None;
 
-    for (i, pred) in predecessors.iter().enumerate() {
+    for (_i, pred) in predecessors.iter().enumerate() {
         let pred_idom = idom.get(pred).copied().flatten();
 
         result = match result {
@@ -229,7 +229,7 @@ fn intersect_dominators(
                     None => {
                         Some(current)
                     }
-                    Some(pred_dom) => {
+                    Some(_pred_dom) => {
                         Some(find_common_dominator(cfg, current, *pred, idom))
                     }
                 }

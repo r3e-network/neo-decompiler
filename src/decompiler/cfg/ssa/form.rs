@@ -379,7 +379,6 @@ impl SsaExpr {
 
 impl fmt::Display for SsaExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use std::fmt::Write;
         match self {
             Self::Variable(var) => write!(f, "{}", var),
             Self::Literal(lit) => write!(f, "{}", lit),

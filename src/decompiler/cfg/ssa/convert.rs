@@ -6,11 +6,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::cfg::{BlockId, Cfg};
-use crate::decompiler::ir::{BinOp, Expr, Literal, Stmt, UnaryOp};
+use crate::decompiler::ir::{Expr, Literal, Stmt};
 
 use super::dominance::DominanceInfo;
 use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt};
-use super::variable::{PhiNode, SsaVariable};
+use super::variable::SsaVariable;
 
 /// Converts IR expressions and statements to SSA form.
 pub struct IrToSsaConverter<'a> {
@@ -132,7 +132,7 @@ impl<'a> IrToSsaConverter<'a> {
     /// Initialize empty SSA blocks for each CFG block.
     fn initialize_ssa_blocks(&mut self) {
         for block in self.cfg.blocks() {
-            let mut ssa_block = SsaBlock::new();
+            let ssa_block = SsaBlock::new();
 
             // Add φ nodes for this block
             if let Some(locations) = self.phi_locations.get("") {
@@ -314,6 +314,7 @@ pub fn stmt_to_ssa(stmt: &Stmt) -> SsaStmt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decompiler::ir::BinOp;
 
     #[test]
     fn test_expr_to_ssa_literal() {

@@ -3,6 +3,44 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2025-01-25
+
+### Added
+
+- **Static Single Assignment (SSA) transformation**: Complete SSA infrastructure
+  for advanced bytecode analysis and optimization.
+  - `SsaForm`: SSA representation with φ nodes and versioned variables
+  - `DominanceInfo`: Immediate dominators, dominator tree, dominance frontiers
+  - `SsaBuilder`: Two-phase SSA construction (φ placement + variable renaming)
+  - `SsaStats`: Statistics (blocks, φ nodes, statements, variables)
+  - SSA rendering via `Decompilation::render_ssa()`
+  - Lazy SSA computation via `Decompilation::compute_ssa()`
+- **Dominance analysis**: Cooper-Harvey-Kennedy algorithm for computing dominators
+  with cycle detection and iteration limits for malformed CFG safety
+- **Versioned variables**: Each variable definition gets a unique version (e.g.,
+  `stack_0_0`, `stack_0_1`) ensuring single-assignment property
+- **φ nodes**: Merge points at control flow confluence with predecessor-based
+  operand selection
+- Public API exports for SSA types: `DominanceInfo`, `PhiNode`, `SsaBlock`,
+  `SsaConversion`, `SsaExpr`, `SsaForm`, `SsaStats`, `SsaStmt`, `SsaVariable`
+
+### Changed
+
+- SSA computation is lazy and optional, triggered via `Decompilation::compute_ssa()`
+- SSA results are cached in `Decompilation` for efficient repeated access
+- `SsaVariable::Display` hides version numbers from end users (internal detail)
+
+### Internal
+
+- Implemented two-phase SSA construction algorithm:
+  1. φ node placement using dominance frontiers
+  2. Variable renaming via dominator tree traversal
+- Added comprehensive SSA unit tests (45+ tests for dominance, variables, φ nodes)
+- Test count increased from 180 to 225 tests
+- Fixed infinite loop bugs in dominance computation with proper cycle detection
+- Added iteration limits to prevent DoS via malformed CFG input
+- Integrated SSA with existing CFG infrastructure for seamless dataflow analysis
+
 ## [0.4.1] - 2025-12-14
 
 ### Changed

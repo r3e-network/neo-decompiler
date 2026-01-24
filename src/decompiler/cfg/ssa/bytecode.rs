@@ -59,7 +59,7 @@ impl<'a> BytecodeAnalyzer<'a> {
     ///
     /// This is a simplified placeholder that tracks variables by name pattern.
     /// Full implementation would scan actual bytecode instructions.
-    pub fn analyze(mut self) -> (BTreeMap<BlockId, BTreeSet<VarInfo>>, BTreeMap<BlockId, BTreeSet<VarInfo>>, BTreeSet<VarInfo>) {
+    pub fn analyze(self) -> (BTreeMap<BlockId, BTreeSet<VarInfo>>, BTreeMap<BlockId, BTreeSet<VarInfo>>, BTreeSet<VarInfo>) {
         // For now, create placeholder variable info based on block structure
         // Full implementation would scan bytecode for STLOC/LDLOC/etc.
         for block in self.cfg.blocks() {

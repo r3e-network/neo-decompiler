@@ -201,7 +201,7 @@ impl<'a> SsaBuilder<'a> {
         instr: &Instruction,
         ssa_block: &mut SsaBlock,
         definitions: &mut BTreeMap<SsaVariable, BlockId>,
-        uses: &mut BTreeMap<SsaVariable, BTreeSet<UseSite>>,
+        _uses: &mut BTreeMap<SsaVariable, BTreeSet<UseSite>>,
     ) -> bool {
         use crate::instruction::OpCode;
 
