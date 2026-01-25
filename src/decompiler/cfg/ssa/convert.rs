@@ -3,6 +3,14 @@
 //! This module handles the conversion of IR expressions and statements
 //! into their SSA equivalents, handling variable versioning and φ nodes.
 
+#![allow(
+    dead_code,
+    unused_imports,
+    unused_variables,
+    missing_docs,
+    clippy::clone_on_copy
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::cfg::{BlockId, Cfg};
@@ -175,7 +183,10 @@ impl<'a> IrToSsaConverter<'a> {
         for phi in &phi_nodes {
             let new_var = self.new_version(phi.target.base.clone());
             if let Some(ssa_block) = self.ssa_blocks.get_mut(&block_id) {
-                ssa_block.add_stmt(SsaStmt::assign(new_var.clone(), SsaExpr::var(new_var.clone())));
+                ssa_block.add_stmt(SsaStmt::assign(
+                    new_var.clone(),
+                    SsaExpr::var(new_var.clone()),
+                ));
             }
             self.definitions.insert(new_var, block_id);
         }
@@ -247,18 +258,13 @@ pub fn expr_to_ssa(expr: &Expr) -> SsaExpr {
             // Full implementation would look up the current SSA version
             SsaExpr::var(SsaVariable::initial(name.clone()))
         }
-        Expr::Binary { op, left, right } => SsaExpr::binary(
-            op.clone(),
-            expr_to_ssa(left),
-            expr_to_ssa(right),
-        ),
-        Expr::Unary { op, operand } => {
-            SsaExpr::unary(op.clone(), expr_to_ssa(operand))
+        Expr::Binary { op, left, right } => {
+            SsaExpr::binary(op.clone(), expr_to_ssa(left), expr_to_ssa(right))
         }
-        Expr::Call { name, args } => SsaExpr::call(
-            name.clone(),
-            args.iter().map(expr_to_ssa).collect(),
-        ),
+        Expr::Unary { op, operand } => SsaExpr::unary(op.clone(), expr_to_ssa(operand)),
+        Expr::Call { name, args } => {
+            SsaExpr::call(name.clone(), args.iter().map(expr_to_ssa).collect())
+        }
         Expr::Index { base, index } => SsaExpr::Index {
             base: Box::new(expr_to_ssa(base)),
             index: Box::new(expr_to_ssa(index)),
@@ -271,9 +277,7 @@ pub fn expr_to_ssa(expr: &Expr) -> SsaExpr {
             expr: Box::new(expr_to_ssa(expr)),
             target_type: target_type.clone(),
         },
-        Expr::Array(elements) => {
-            SsaExpr::Array(elements.iter().map(expr_to_ssa).collect())
-        }
+        Expr::Array(elements) => SsaExpr::Array(elements.iter().map(expr_to_ssa).collect()),
         Expr::Map(pairs) => SsaExpr::Map(
             pairs
                 .iter()

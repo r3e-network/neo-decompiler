@@ -5,8 +5,8 @@ use crate::nef::NefFile;
 use super::analysis::call_graph::CallGraph;
 use super::analysis::types::TypeInfo;
 use super::analysis::xrefs::Xrefs;
-use super::cfg::Cfg;
 use super::cfg::ssa::{SsaBuilder, SsaForm};
+use super::cfg::Cfg;
 
 /// Result of a successful decompilation run.
 #[derive(Debug, Clone)]

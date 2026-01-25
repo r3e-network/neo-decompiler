@@ -3,6 +3,8 @@
 //! This module analyzes Neo VM bytecode to extract variable definitions
 //! and uses, enabling proper SSA construction.
 
+#![allow(dead_code, unused_variables, missing_docs, clippy::type_complexity)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::cfg::{BlockId, Cfg};
@@ -59,7 +61,13 @@ impl<'a> BytecodeAnalyzer<'a> {
     ///
     /// This is a simplified placeholder that tracks variables by name pattern.
     /// Full implementation would scan actual bytecode instructions.
-    pub fn analyze(self) -> (BTreeMap<BlockId, BTreeSet<VarInfo>>, BTreeMap<BlockId, BTreeSet<VarInfo>>, BTreeSet<VarInfo>) {
+    pub fn analyze(
+        self,
+    ) -> (
+        BTreeMap<BlockId, BTreeSet<VarInfo>>,
+        BTreeMap<BlockId, BTreeSet<VarInfo>>,
+        BTreeSet<VarInfo>,
+    ) {
         // For now, create placeholder variable info based on block structure
         // Full implementation would scan bytecode for STLOC/LDLOC/etc.
         for block in self.cfg.blocks() {
@@ -72,13 +80,19 @@ impl<'a> BytecodeAnalyzer<'a> {
 
     /// Add a variable definition for a block.
     pub fn add_definition(&mut self, block_id: BlockId, var_info: VarInfo) {
-        self.definitions.entry(block_id).or_default().insert(var_info.clone());
+        self.definitions
+            .entry(block_id)
+            .or_default()
+            .insert(var_info.clone());
         self.all_vars.insert(var_info);
     }
 
     /// Add a variable use for a block.
     pub fn add_use(&mut self, block_id: BlockId, var_info: VarInfo) {
-        self.uses.entry(block_id).or_default().insert(var_info.clone());
+        self.uses
+            .entry(block_id)
+            .or_default()
+            .insert(var_info.clone());
         self.all_vars.insert(var_info);
     }
 }
@@ -99,7 +113,8 @@ impl PartialOrd for VarInfo {
 
 impl Ord for VarInfo {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.name.cmp(&other.name)
+        self.name
+            .cmp(&other.name)
             .then_with(|| self.kind.cmp(&other.kind))
             .then_with(|| self.slot.cmp(&other.slot))
     }

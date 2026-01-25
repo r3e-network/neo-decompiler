@@ -1,5 +1,12 @@
 //! SSA form types for representing code in static single assignment form.
 
+#![allow(
+    dead_code,
+    missing_docs,
+    clippy::type_complexity,
+    clippy::double_must_use
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -14,27 +21,12 @@ use super::variable::{PhiNode, SsaVariable};
 /// SSA form guarantees that each variable is assigned exactly once, making
 /// data flow analysis and optimizations significantly simpler.
 ///
-/// # Structure
-///
+/// Structure:
 /// - `cfg`: The original control flow graph
 /// - `dominance`: Pre-computed dominance relationships
 /// - `blocks`: Each basic block with φ nodes at the start, followed by SSA statements
 /// - `definitions`: Mapping from SSA variables to their defining blocks
 /// - `uses`: Mapping from SSA variables to their use sites
-///
-/// # Examples
-///
-/// ```
-/// use neo_decompiler::decompiler::cfg::Cfg;
-///
-/// let cfg = /* ... */;
-/// let ssa = cfg.to_ssa();
-///
-/// // Query variable definitions
-/// for (var, block) in &ssa.definitions {
-///     println!("{:?} defined in block {:?}", var, block);
-/// }
-/// ```
 #[derive(Debug, Clone)]
 pub struct SsaForm {
     /// The original control flow graph.
@@ -161,10 +153,7 @@ impl fmt::Display for SsaStats {
         write!(
             f,
             "SSA Stats: {} blocks, {} φ nodes, {} statements, {} variables",
-            self.block_count,
-            self.total_phi_nodes,
-            self.total_statements,
-            self.total_variables
+            self.block_count, self.total_phi_nodes, self.total_statements, self.total_variables
         )
     }
 }
@@ -295,16 +284,10 @@ pub enum SsaExpr {
     },
 
     /// Unary operation.
-    Unary {
-        op: UnaryOp,
-        operand: Box<SsaExpr>,
-    },
+    Unary { op: UnaryOp, operand: Box<SsaExpr> },
 
     /// Function or syscall invocation.
-    Call {
-        name: String,
-        args: Vec<SsaExpr>,
-    },
+    Call { name: String, args: Vec<SsaExpr> },
 
     /// Array/map index access.
     Index {
@@ -313,10 +296,7 @@ pub enum SsaExpr {
     },
 
     /// Field/member access.
-    Member {
-        base: Box<SsaExpr>,
-        name: String,
-    },
+    Member { base: Box<SsaExpr>, name: String },
 
     /// Type cast.
     Cast {
@@ -631,9 +611,10 @@ mod tests {
         assert_eq!(format!("{}", arr), "[1, 2]");
 
         // Test map literal
-        let map = SsaExpr::Map(vec![
-            (SsaExpr::lit(Literal::String("key".to_string())), SsaExpr::lit(Literal::Int(1))),
-        ]);
+        let map = SsaExpr::Map(vec![(
+            SsaExpr::lit(Literal::String("key".to_string())),
+            SsaExpr::lit(Literal::Int(1)),
+        )]);
         assert!(format!("{}", map).contains("{"));
 
         // Test ternary

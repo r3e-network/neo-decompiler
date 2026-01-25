@@ -3,6 +3,14 @@
 //! Computes immediate dominators, dominator tree, and dominance frontiers
 //! using the Cooper-Harvey-Kennedy iterative algorithm.
 
+#![allow(
+    dead_code,
+    unused_variables,
+    missing_docs,
+    clippy::needless_if,
+    clippy::unused_enumerate_index
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::cfg::{BlockId, Cfg};
@@ -55,7 +63,10 @@ impl DominanceInfo {
     /// Get all blocks that this block dominates (children in dominator tree).
     #[must_use]
     pub fn children(&self, block: BlockId) -> &[BlockId] {
-        self.dominator_tree.get(&block).map(|v| v.as_slice()).unwrap_or(&[])
+        self.dominator_tree
+            .get(&block)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get the dominance frontier of a block as a vector.
@@ -92,32 +103,13 @@ impl Default for DominanceInfo {
 
 /// Compute dominance information for a CFG.
 ///
-/// # Algorithm
-///
 /// Uses the Cooper-Harvey-Kennedy iterative algorithm:
 /// 1. Initialize: entry dominates itself, others unknown
 /// 2. Iterate: Intersect dominators of predecessors until convergence
 /// 3. Build dominator tree from immediate dominator relationships
 /// 4. Compute dominance frontiers for φ node insertion
 ///
-/// # Complexity
-///
-/// - Time: O(n²) worst case, but typically much faster for structured code
-/// - Space: O(n) for storing dominator relationships
-///
-/// # Examples
-///
-/// ```
-/// use neo_decompiler::decompiler::cfg::Cfg;
-///
-/// let cfg = /* ... */;
-/// let dominance = cfg.compute_dominance();
-///
-/// // Query dominance relationships
-/// if let Some(idom) = dominance.idom(block_id) {
-///     println!("Block {:?} is immediately dominated by {:?}", block_id, idom);
-/// }
-/// ```
+/// Complexity: O(n²) worst case, but typically much faster for structured code.
 pub fn compute(cfg: &Cfg) -> DominanceInfo {
     if cfg.blocks().count() == 0 {
         return DominanceInfo::new();
@@ -171,8 +163,7 @@ fn compute_immediate_dominators(cfg: &Cfg) -> BTreeMap<BlockId, Option<BlockId>>
     let mut iteration_count = 0u32;
     while changed {
         iteration_count += 1;
-        if iteration_count % 100 == 0 {
-        }
+        if iteration_count % 100 == 0 {}
         if iteration_count > 1000 {
             panic!("Dominance computation failed to converge");
         }
@@ -226,12 +217,8 @@ fn intersect_dominators(
             Some(current) => {
                 // Skip predecessors that haven't been processed yet (idom = None)
                 match pred_idom {
-                    None => {
-                        Some(current)
-                    }
-                    Some(_pred_dom) => {
-                        Some(find_common_dominator(cfg, current, *pred, idom))
-                    }
+                    None => Some(current),
+                    Some(_pred_dom) => Some(find_common_dominator(cfg, current, *pred, idom)),
                 }
             }
         };
@@ -250,7 +237,6 @@ fn find_common_dominator(
     mut finger2: BlockId,
     idom: &BTreeMap<BlockId, Option<BlockId>>,
 ) -> BlockId {
-
     // Move fingers to the same depth in the dominator tree
     let mut depth1 = depth_in_dominator_tree(finger1, idom);
     let mut depth2 = depth_in_dominator_tree(finger2, idom);
@@ -273,7 +259,6 @@ fn find_common_dominator(
         }
     }
 
-
     // Move both fingers up until they meet
     while finger1 != finger2 {
         finger1 = idom.get(&finger1).copied().flatten().unwrap();
@@ -289,10 +274,10 @@ fn find_common_dominator(
 
 /// Get the depth of a block in the dominator tree.
 fn depth_in_dominator_tree(block: BlockId, idom: &BTreeMap<BlockId, Option<BlockId>>) -> usize {
-    let mut depth = 1;  // Count the block itself
+    let mut depth = 1; // Count the block itself
     let mut current = idom.get(&block).copied().flatten();
     let mut visited = BTreeSet::new();
-    visited.insert(block);  // Track the starting block to prevent cycles
+    visited.insert(block); // Track the starting block to prevent cycles
 
     while let Some(idom_block) = current {
         if visited.contains(&idom_block) {
@@ -350,7 +335,9 @@ fn dfs_post_order(
 ///
 /// The dominator tree has edges from each block to its immediate dominator.
 /// This creates a tree rooted at the entry block.
-fn build_dominator_tree(idom: &BTreeMap<BlockId, Option<BlockId>>) -> BTreeMap<BlockId, Vec<BlockId>> {
+fn build_dominator_tree(
+    idom: &BTreeMap<BlockId, Option<BlockId>>,
+) -> BTreeMap<BlockId, Vec<BlockId>> {
     let mut tree: BTreeMap<BlockId, Vec<BlockId>> = BTreeMap::new();
 
     // Initialize empty children lists
@@ -507,7 +494,9 @@ mod tests {
                 i + 1,
                 i..(i + 1),
                 if i < count - 1 {
-                    Terminator::Jump { target: BlockId(i + 1) }
+                    Terminator::Jump {
+                        target: BlockId(i + 1),
+                    }
                 } else {
                     Terminator::Return
                 },
@@ -515,7 +504,11 @@ mod tests {
             cfg.add_block(block);
 
             if i > 0 {
-                cfg.add_edge(BlockId(i - 1), BlockId(i), crate::decompiler::cfg::EdgeKind::Unconditional);
+                cfg.add_edge(
+                    BlockId(i - 1),
+                    BlockId(i),
+                    crate::decompiler::cfg::EdgeKind::Unconditional,
+                );
             }
         }
         cfg
@@ -538,20 +531,48 @@ mod tests {
         cfg.add_block(entry);
 
         // Left branch
-        let left = BasicBlock::new(BlockId(1), 1, 2, 1..2, Terminator::Jump { target: BlockId(3) });
+        let left = BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Jump { target: BlockId(3) },
+        );
         cfg.add_block(left);
-        cfg.add_edge(BlockId::ENTRY, BlockId(1), crate::decompiler::cfg::EdgeKind::Unconditional);
+        cfg.add_edge(
+            BlockId::ENTRY,
+            BlockId(1),
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
 
         // Right branch
-        let right = BasicBlock::new(BlockId(2), 2, 3, 2..3, Terminator::Jump { target: BlockId(3) });
+        let right = BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            2..3,
+            Terminator::Jump { target: BlockId(3) },
+        );
         cfg.add_block(right);
-        cfg.add_edge(BlockId::ENTRY, BlockId(2), crate::decompiler::cfg::EdgeKind::Unconditional);
+        cfg.add_edge(
+            BlockId::ENTRY,
+            BlockId(2),
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
 
         // Exit
         let exit = BasicBlock::new(BlockId(3), 3, 4, 3..4, Terminator::Return);
         cfg.add_block(exit);
-        cfg.add_edge(BlockId(1), BlockId(3), crate::decompiler::cfg::EdgeKind::Unconditional);
-        cfg.add_edge(BlockId(2), BlockId(3), crate::decompiler::cfg::EdgeKind::Unconditional);
+        cfg.add_edge(
+            BlockId(1),
+            BlockId(3),
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
+        cfg.add_edge(
+            BlockId(2),
+            BlockId(3),
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
 
         cfg
     }

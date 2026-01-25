@@ -8,8 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let nef_path = &args[1];
-    let manifest_path = format!("{}.manifest.json",
-        nef_path.strip_suffix(".nef").unwrap_or(nef_path));
+    let manifest_path = format!(
+        "{}.manifest.json",
+        nef_path.strip_suffix(".nef").unwrap_or(nef_path)
+    );
 
     let decompiler = Decompiler::new();
     let mut result = decompiler.decompile_file_with_manifest(

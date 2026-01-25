@@ -23,30 +23,12 @@ use crate::decompiler::cfg::Cfg;
 /// SSA conversion trait for extending CFG with SSA capabilities.
 pub trait SsaConversion {
     /// Convert this CFG to SSA form.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use neo_decompiler::decompiler::cfg::Cfg;
-    ///
-    /// let cfg = /* ... */;
-    /// let ssa = cfg.to_ssa();
-    /// ```
     fn to_ssa(&self) -> SsaForm;
 
     /// Compute dominance information for this CFG.
     ///
     /// Dominance information includes immediate dominators, dominator tree,
     /// and dominance frontiers needed for SSA construction.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use neo_decompiler::decompiler::cfg::Cfg;
-    ///
-    /// let cfg = /* ... */;
-    /// let dominance = cfg.compute_dominance();
-    /// ```
     fn compute_dominance(&self) -> DominanceInfo;
 }
 

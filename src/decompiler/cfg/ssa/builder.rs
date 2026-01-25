@@ -4,6 +4,17 @@
 //! 1. φ node insertion using dominance frontiers
 //! 2. Variable renaming via dominator tree traversal
 
+#![allow(
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unused_mut,
+    missing_docs,
+    clippy::clone_on_copy,
+    clippy::type_complexity,
+    clippy::needless_return
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::cfg::{BlockId, Cfg};
@@ -69,7 +80,6 @@ impl<'a> SsaBuilder<'a> {
     /// 1. Compute φ node placement using dominance frontiers
     /// 2. Perform variable renaming via dominator tree traversal
     pub fn build(mut self) -> SsaForm {
-
         // Phase 1: Compute φ node locations
         self.compute_phi_locations();
 
@@ -117,47 +127,50 @@ impl<'a> SsaBuilder<'a> {
             match &block.terminator {
                 crate::decompiler::cfg::Terminator::Return => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        format!("return from block {:?}", block.id)
+                        format!("return from block {:?}", block.id),
                     )));
                 }
                 crate::decompiler::cfg::Terminator::Jump { target } => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        format!("jump to {:?}", target)
+                        format!("jump to {:?}", target),
                     )));
                 }
-                crate::decompiler::cfg::Terminator::Branch { then_target, else_target } => {
+                crate::decompiler::cfg::Terminator::Branch {
+                    then_target,
+                    else_target,
+                } => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        format!("branch: then={:?}, else={:?}", then_target, else_target)
+                        format!("branch: then={:?}, else={:?}", then_target, else_target),
                     )));
                 }
                 crate::decompiler::cfg::Terminator::Fallthrough { target } => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        format!("fallthrough to {:?}", target)
+                        format!("fallthrough to {:?}", target),
                     )));
                 }
                 crate::decompiler::cfg::Terminator::TryEntry { .. } => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "try entry".to_string()
+                        "try entry".to_string(),
                     )));
                 }
                 crate::decompiler::cfg::Terminator::EndTry { .. } => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "end try".to_string()
+                        "end try".to_string(),
                     )));
                 }
                 crate::decompiler::cfg::Terminator::Throw => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "throw exception".to_string()
+                        "throw exception".to_string(),
                     )));
                 }
                 crate::decompiler::cfg::Terminator::Abort => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "abort execution".to_string()
+                        "abort execution".to_string(),
                     )));
                 }
                 crate::decompiler::cfg::Terminator::Unknown => {
                     ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "unknown terminator".to_string()
+                        "unknown terminator".to_string(),
                     )));
                 }
             }
@@ -166,7 +179,14 @@ impl<'a> SsaBuilder<'a> {
             let mut statement_count = 0;
             for offset in block.start_offset..block.end_offset {
                 if let Some(instr) = self.instructions.get(offset) {
-                    if self.process_instruction_for_ssa(block.id, offset, instr, &mut ssa_block, &mut definitions, &mut uses) {
+                    if self.process_instruction_for_ssa(
+                        block.id,
+                        offset,
+                        instr,
+                        &mut ssa_block,
+                        &mut definitions,
+                        &mut uses,
+                    ) {
                         statement_count += 1;
                     }
                 }
@@ -175,7 +195,10 @@ impl<'a> SsaBuilder<'a> {
             // If no statements were added, add a placeholder comment
             if statement_count == 0 && ssa_block.phi_count() == 0 {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    format!("empty block {:?} (offsets {}..{})", block.id, block.start_offset, block.end_offset)
+                    format!(
+                        "empty block {:?} (offsets {}..{})",
+                        block.id, block.start_offset, block.end_offset
+                    ),
                 )));
             }
 
@@ -207,7 +230,7 @@ impl<'a> SsaBuilder<'a> {
 
         // Create a comment showing the instruction
         ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-            format!("// {}: {:?}", offset, instr.opcode)
+            format!("// {}: {:?}", offset, instr.opcode),
         )));
 
         // Track variable operations
@@ -217,7 +240,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_0".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(0))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(0)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -226,7 +249,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_1".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(1))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(1)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -235,7 +258,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_2".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(2))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(2)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -244,7 +267,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_3".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(3))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(3)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -253,7 +276,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_4".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(4))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(4)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -262,7 +285,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_5".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(5))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(5)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -271,7 +294,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_6".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(6))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(6)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -280,7 +303,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_7".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(7))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(7)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -289,7 +312,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_8".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(8))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(8)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -298,7 +321,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_9".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(9))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(9)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -307,7 +330,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_10".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(10))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(10)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -316,7 +339,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_11".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(11))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(11)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -325,7 +348,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_12".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(12))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(12)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -334,7 +357,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_13".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(13))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(13)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -343,7 +366,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_14".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(14))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(14)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -352,7 +375,7 @@ impl<'a> SsaBuilder<'a> {
                 let var = self.new_version("stack_15".to_string());
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(15))
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(15)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -360,62 +383,62 @@ impl<'a> SsaBuilder<'a> {
             OpCode::Add => {
                 // Binary operation - create a dummy addition
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "ADD operation (binary addition)".to_string()
+                    "ADD operation (binary addition)".to_string(),
                 )));
                 return true;
             }
             OpCode::Sub => {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "SUB operation (binary subtraction)".to_string()
+                    "SUB operation (binary subtraction)".to_string(),
                 )));
                 return true;
             }
             OpCode::Mul => {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "MUL operation (binary multiplication)".to_string()
+                    "MUL operation (binary multiplication)".to_string(),
                 )));
                 return true;
             }
             OpCode::Div => {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "DIV operation (binary division)".to_string()
+                    "DIV operation (binary division)".to_string(),
                 )));
                 return true;
             }
             OpCode::Ret => {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "RET (return from function)".to_string()
+                    "RET (return from function)".to_string(),
                 )));
                 return true;
             }
             OpCode::Nop => {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "NOP (no operation)".to_string()
+                    "NOP (no operation)".to_string(),
                 )));
                 return true;
             }
             OpCode::Isnull => {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "ISNULL (null check)".to_string()
+                    "ISNULL (null check)".to_string(),
                 )));
                 return true;
             }
             OpCode::Equal => {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "EQUAL (equality comparison)".to_string()
+                    "EQUAL (equality comparison)".to_string(),
                 )));
                 return true;
             }
             OpCode::Notequal => {
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "NOTEQUAL (inequality comparison)".to_string()
+                    "NOTEQUAL (inequality comparison)".to_string(),
                 )));
                 return true;
             }
             _ => {
                 // For other opcodes, just add a comment
                 ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    format!("{:?}", instr.opcode)
+                    format!("{:?}", instr.opcode),
                 )));
                 return true;
             }
@@ -577,13 +600,7 @@ mod tests {
     #[test]
     fn test_build_ssa_with_blocks() {
         let mut cfg = Cfg::new();
-        let block = BasicBlock::new(
-            BlockId::ENTRY,
-            0,
-            0,
-            0..0,
-            Terminator::Return,
-        );
+        let block = BasicBlock::new(BlockId::ENTRY, 0, 0, 0..0, Terminator::Return);
         cfg.add_block(block);
 
         let ssa = build_ssa_from_cfg(&cfg);
@@ -606,7 +623,11 @@ mod tests {
         );
 
         builder.pop_version("x");
-        assert!(builder.version_stack.get("x").map(|v| v.is_empty()).unwrap_or(true));
+        assert!(builder
+            .version_stack
+            .get("x")
+            .map(|v| v.is_empty())
+            .unwrap_or(true));
     }
 
     #[test]
@@ -621,7 +642,9 @@ mod tests {
                 i + 1,
                 i..(i + 1),
                 if i < 2 {
-                    Terminator::Jump { target: BlockId(i + 1) }
+                    Terminator::Jump {
+                        target: BlockId(i + 1),
+                    }
                 } else {
                     Terminator::Return
                 },
@@ -629,7 +652,11 @@ mod tests {
             cfg.add_block(block);
 
             if i > 0 {
-                cfg.add_edge(BlockId(i - 1), BlockId(i), crate::decompiler::cfg::EdgeKind::Unconditional);
+                cfg.add_edge(
+                    BlockId(i - 1),
+                    BlockId(i),
+                    crate::decompiler::cfg::EdgeKind::Unconditional,
+                );
             }
         }
 

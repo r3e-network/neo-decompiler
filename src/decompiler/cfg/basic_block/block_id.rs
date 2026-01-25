@@ -12,8 +12,15 @@ impl BlockId {
     }
 
     /// Get the numeric ID.
+    #[must_use]
     pub fn index(self) -> usize {
         self.0
+    }
+}
+
+impl From<usize> for BlockId {
+    fn from(value: usize) -> Self {
+        BlockId(value)
     }
 }
 
