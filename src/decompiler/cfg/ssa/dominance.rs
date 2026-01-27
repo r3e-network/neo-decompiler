@@ -7,7 +7,7 @@
     dead_code,
     unused_variables,
     missing_docs,
-    clippy::needless_if,
+    clippy::needless_ifs,
     clippy::unused_enumerate_index
 )]
 
