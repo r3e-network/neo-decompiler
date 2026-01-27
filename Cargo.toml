@@ -11,7 +11,7 @@ categories = ["development-tools", "parser-implementations"]
 repository = "https://github.com/r3e-network/neo-decompiler"
 homepage = "https://github.com/r3e-network/neo-decompiler"
 documentation = "https://docs.rs/neo-decompiler"
-rust-version = "1.82"
+rust-version = "1.83"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"], optional = true }
