@@ -163,9 +163,10 @@ fn compute_immediate_dominators(cfg: &Cfg) -> BTreeMap<BlockId, Option<BlockId>>
     let mut iteration_count = 0u32;
     while changed {
         iteration_count += 1;
-        if iteration_count % 100 == 0 {}
         if iteration_count > 1000 {
-            panic!("Dominance computation failed to converge");
+            // Gracefully return partial results instead of panicking
+            // This can happen with pathological CFGs from malformed bytecode
+            break;
         }
         changed = false;
 
@@ -231,6 +232,9 @@ fn intersect_dominators(
 ///
 /// Uses the "finger" method: move fingers up the dominator chains
 /// until they meet at the common ancestor.
+///
+/// Returns the common dominator, or falls back to finger1 if the algorithm
+/// fails to converge (e.g., due to malformed CFG from invalid bytecode).
 fn find_common_dominator(
     _cfg: &Cfg,
     mut finger1: BlockId,
@@ -242,30 +246,44 @@ fn find_common_dominator(
     let mut depth2 = depth_in_dominator_tree(finger2, idom);
 
     let mut iterations = 0;
+    const MAX_ITERATIONS: usize = 1000;
+
     while depth1 > depth2 {
-        finger1 = idom.get(&finger1).copied().flatten().unwrap();
+        let Some(next) = idom.get(&finger1).copied().flatten() else {
+            return finger1; // Graceful fallback
+        };
+        finger1 = next;
         depth1 -= 1;
         iterations += 1;
-        if iterations > 100 {
-            panic!("find_common_dominator: too many iterations adjusting depth");
+        if iterations > MAX_ITERATIONS {
+            return finger1; // Graceful fallback on pathological CFG
         }
     }
     while depth2 > depth1 {
-        finger2 = idom.get(&finger2).copied().flatten().unwrap();
+        let Some(next) = idom.get(&finger2).copied().flatten() else {
+            return finger1; // Graceful fallback
+        };
+        finger2 = next;
         depth2 -= 1;
         iterations += 1;
-        if iterations > 100 {
-            panic!("find_common_dominator: too many iterations adjusting depth");
+        if iterations > MAX_ITERATIONS {
+            return finger1; // Graceful fallback on pathological CFG
         }
     }
 
     // Move both fingers up until they meet
     while finger1 != finger2 {
-        finger1 = idom.get(&finger1).copied().flatten().unwrap();
-        finger2 = idom.get(&finger2).copied().flatten().unwrap();
+        let (Some(next1), Some(next2)) = (
+            idom.get(&finger1).copied().flatten(),
+            idom.get(&finger2).copied().flatten(),
+        ) else {
+            return finger1; // Graceful fallback
+        };
+        finger1 = next1;
+        finger2 = next2;
         iterations += 1;
-        if iterations > 100 {
-            panic!("find_common_dominator: too many iterations finding common");
+        if iterations > MAX_ITERATIONS {
+            return finger1; // Graceful fallback on pathological CFG
         }
     }
 
