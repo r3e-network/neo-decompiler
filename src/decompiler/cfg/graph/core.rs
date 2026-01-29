@@ -88,7 +88,10 @@ impl Cfg {
     /// Returns an empty slice if the block has no successors.
     /// This operation is O(1) due to pre-computed adjacency lists.
     pub fn successors(&self, id: BlockId) -> &[BlockId] {
-        self.successors.get(&id).map(|v| v.as_slice()).unwrap_or(&[])
+        self.successors
+            .get(&id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get predecessors of a block.
@@ -96,7 +99,10 @@ impl Cfg {
     /// Returns an empty slice if the block has no predecessors.
     /// This operation is O(1) due to pre-computed adjacency lists.
     pub fn predecessors(&self, id: BlockId) -> &[BlockId] {
-        self.predecessors.get(&id).map(|v| v.as_slice()).unwrap_or(&[])
+        self.predecessors
+            .get(&id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Get exit blocks.
