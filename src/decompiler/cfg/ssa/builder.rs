@@ -235,147 +235,29 @@ impl<'a> SsaBuilder<'a> {
 
         // Track variable operations
         match instr.opcode {
-            // Handle common opcodes that affect SSA
-            OpCode::Push0 => {
-                let var = self.new_version("stack_0".to_string());
+            // Handle Push0-Push16 opcodes using a unified pattern
+            OpCode::Push0
+            | OpCode::Push1
+            | OpCode::Push2
+            | OpCode::Push3
+            | OpCode::Push4
+            | OpCode::Push5
+            | OpCode::Push6
+            | OpCode::Push7
+            | OpCode::Push8
+            | OpCode::Push9
+            | OpCode::Push10
+            | OpCode::Push11
+            | OpCode::Push12
+            | OpCode::Push13
+            | OpCode::Push14
+            | OpCode::Push15
+            | OpCode::Push16 => {
+                let value = self.extract_push_value(instr.opcode);
+                let var = self.new_version(format!("stack_{}", value));
                 ssa_block.add_stmt(SsaStmt::assign(
                     var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(0)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push1 => {
-                let var = self.new_version("stack_1".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(1)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push2 => {
-                let var = self.new_version("stack_2".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(2)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push3 => {
-                let var = self.new_version("stack_3".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(3)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push4 => {
-                let var = self.new_version("stack_4".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(4)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push5 => {
-                let var = self.new_version("stack_5".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(5)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push6 => {
-                let var = self.new_version("stack_6".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(6)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push7 => {
-                let var = self.new_version("stack_7".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(7)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push8 => {
-                let var = self.new_version("stack_8".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(8)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push9 => {
-                let var = self.new_version("stack_9".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(9)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push10 => {
-                let var = self.new_version("stack_10".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(10)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push11 => {
-                let var = self.new_version("stack_11".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(11)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push12 => {
-                let var = self.new_version("stack_12".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(12)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push13 => {
-                let var = self.new_version("stack_13".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(13)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push14 => {
-                let var = self.new_version("stack_14".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(14)),
-                ));
-                definitions.insert(var, block_id);
-                return true;
-            }
-            OpCode::Push15 => {
-                let var = self.new_version("stack_15".to_string());
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(15)),
+                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(value)),
                 ));
                 definitions.insert(var, block_id);
                 return true;
@@ -536,6 +418,31 @@ impl<'a> SsaBuilder<'a> {
     fn pop_version(&mut self, base: &str) {
         if let Some(stack) = self.version_stack.get_mut(base) {
             stack.pop();
+        }
+    }
+
+    /// Extract the integer value from a Push0-Push16 opcode.
+    fn extract_push_value(&self, opcode: crate::instruction::OpCode) -> i64 {
+        use crate::instruction::OpCode;
+        match opcode {
+            OpCode::Push0 => 0,
+            OpCode::Push1 => 1,
+            OpCode::Push2 => 2,
+            OpCode::Push3 => 3,
+            OpCode::Push4 => 4,
+            OpCode::Push5 => 5,
+            OpCode::Push6 => 6,
+            OpCode::Push7 => 7,
+            OpCode::Push8 => 8,
+            OpCode::Push9 => 9,
+            OpCode::Push10 => 10,
+            OpCode::Push11 => 11,
+            OpCode::Push12 => 12,
+            OpCode::Push13 => 13,
+            OpCode::Push14 => 14,
+            OpCode::Push15 => 15,
+            OpCode::Push16 => 16,
+            _ => 0, // Should not happen for valid push opcodes
         }
     }
 }
