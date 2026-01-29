@@ -340,8 +340,7 @@ fn dfs_post_order(
     visited.insert(block);
 
     // Visit successors first
-    let successors = cfg.successors(block);
-    for succ in successors {
+    for &succ in cfg.successors(block) {
         dfs_post_order(cfg, succ, visited, order);
     }
 
@@ -403,7 +402,7 @@ fn compute_df(
         }
 
         // For each predecessor
-        for &runner in &predecessors {
+        for &runner in predecessors {
             // Walk up the dominator tree from runner
             let mut current = runner;
             while let Some(&Some(idom_block)) = idom.get(&current) {

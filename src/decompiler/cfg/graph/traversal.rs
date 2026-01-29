@@ -22,7 +22,7 @@ impl Cfg {
         if !visited.insert(block) {
             return;
         }
-        for succ in self.successors(block) {
+        for &succ in self.successors(block) {
             self.dfs_postorder(succ, visited, postorder);
         }
         postorder.push(block);

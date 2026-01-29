@@ -63,7 +63,7 @@ fn successors_and_predecessors() {
     let entry_succs = cfg.successors(BlockId::ENTRY);
     assert!(!entry_succs.is_empty());
 
-    for succ in entry_succs {
+    for &succ in entry_succs {
         let preds = cfg.predecessors(succ);
         assert!(preds.contains(&BlockId::ENTRY));
     }

@@ -19,7 +19,7 @@ impl Cfg {
             if !visited.insert(id) {
                 continue;
             }
-            for succ in self.successors(id) {
+            for &succ in self.successors(id) {
                 if self.blocks.contains_key(&succ) {
                     stack.push(succ);
                 }

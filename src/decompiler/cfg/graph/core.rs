@@ -14,6 +14,10 @@ pub struct Cfg {
     pub(super) entry: BlockId,
     /// Exit block IDs (blocks that return/throw/abort).
     pub(super) exits: BTreeSet<BlockId>,
+    /// Pre-computed successor map for O(1) lookup.
+    pub(super) successors: BTreeMap<BlockId, Vec<BlockId>>,
+    /// Pre-computed predecessor map for O(1) lookup.
+    pub(super) predecessors: BTreeMap<BlockId, Vec<BlockId>>,
 }
 
 impl Cfg {
@@ -24,6 +28,8 @@ impl Cfg {
             edges: Vec::new(),
             entry: BlockId::ENTRY,
             exits: BTreeSet::new(),
+            successors: BTreeMap::new(),
+            predecessors: BTreeMap::new(),
         }
     }
 
@@ -42,6 +48,9 @@ impl Cfg {
     /// Add an edge between two blocks.
     pub fn add_edge(&mut self, from: BlockId, to: BlockId, kind: EdgeKind) {
         self.edges.push(Edge { from, to, kind });
+        // Maintain adjacency lists for O(1) lookup
+        self.successors.entry(from).or_default().push(to);
+        self.predecessors.entry(to).or_default().push(from);
     }
 
     /// Get a block by ID.
@@ -75,21 +84,19 @@ impl Cfg {
     }
 
     /// Get successors of a block.
-    pub fn successors(&self, id: BlockId) -> Vec<BlockId> {
-        self.edges
-            .iter()
-            .filter(|e| e.from == id)
-            .map(|e| e.to)
-            .collect()
+    ///
+    /// Returns an empty slice if the block has no successors.
+    /// This operation is O(1) due to pre-computed adjacency lists.
+    pub fn successors(&self, id: BlockId) -> &[BlockId] {
+        self.successors.get(&id).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     /// Get predecessors of a block.
-    pub fn predecessors(&self, id: BlockId) -> Vec<BlockId> {
-        self.edges
-            .iter()
-            .filter(|e| e.to == id)
-            .map(|e| e.from)
-            .collect()
+    ///
+    /// Returns an empty slice if the block has no predecessors.
+    /// This operation is O(1) due to pre-computed adjacency lists.
+    pub fn predecessors(&self, id: BlockId) -> &[BlockId] {
+        self.predecessors.get(&id).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     /// Get exit blocks.
