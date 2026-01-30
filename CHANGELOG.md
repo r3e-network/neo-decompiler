@@ -3,6 +3,22 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2025-01-30
+
+### Added
+
+- **SSA Transformation**: Complete Static Single Assignment form implementation
+  - φ (phi) node insertion at dominance frontiers
+  - Variable versioning with subscript notation
+  - Proper handling of all Neo VM stack operations
+- **Dominance Analysis**: Full dominance tree construction
+  - Immediate dominator computation (Cooper-Harvey-Kennedy algorithm)
+  - Dominance frontier calculation for φ placement
+  - Dominator tree visualization support
+- **SSA Rendering**: Human-readable SSA output
+  - Statistics display (blocks, φ nodes, variables)
+  - Clean variable naming with version subscripts
+
 ## [0.4.1] - 2025-12-14
 
 ### Changed
