@@ -18,6 +18,8 @@ pub struct Cfg {
     pub(super) successors: BTreeMap<BlockId, Vec<BlockId>>,
     /// Pre-computed predecessor map for O(1) lookup.
     pub(super) predecessors: BTreeMap<BlockId, Vec<BlockId>>,
+    /// Index from start_offset → BlockId for O(log n) offset lookup.
+    pub(super) offset_to_block: BTreeMap<usize, BlockId>,
 }
 
 impl Cfg {
@@ -30,18 +32,21 @@ impl Cfg {
             exits: BTreeSet::new(),
             successors: BTreeMap::new(),
             predecessors: BTreeMap::new(),
+            offset_to_block: BTreeMap::new(),
         }
     }
 
     /// Add a basic block to the CFG.
     pub fn add_block(&mut self, block: BasicBlock) {
         let id = block.id;
+        let start_offset = block.start_offset;
         if matches!(
             block.terminator,
             Terminator::Return | Terminator::Throw | Terminator::Abort
         ) {
             self.exits.insert(id);
         }
+        self.offset_to_block.insert(start_offset, id);
         self.blocks.insert(id, block);
     }
 
@@ -111,8 +116,17 @@ impl Cfg {
     }
 
     /// Find block containing the given offset.
+    ///
+    /// Uses a BTreeMap range query for O(log n) lookup instead of linear scan.
     pub fn block_at_offset(&self, offset: usize) -> Option<&BasicBlock> {
-        self.blocks.values().find(|b| b.contains_offset(offset))
+        // Find the block whose start_offset is the largest value ≤ offset
+        let (_, &block_id) = self.offset_to_block.range(..=offset).next_back()?;
+        let block = self.blocks.get(&block_id)?;
+        if block.contains_offset(offset) {
+            Some(block)
+        } else {
+            None
+        }
     }
 }
 
