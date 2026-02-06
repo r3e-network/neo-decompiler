@@ -63,6 +63,10 @@ impl NefFile {
 
     /// Hash160 of the script (little-endian) as used for the contract script hash.
     #[must_use]
+    #[deprecated(
+        since = "0.5.1",
+        note = "use `script_hash()` instead, which is identical"
+    )]
     pub fn script_hash_le(&self) -> [u8; 20] {
         self.script_hash()
     }

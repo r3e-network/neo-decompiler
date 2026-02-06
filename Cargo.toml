@@ -43,6 +43,7 @@ required-features = ["cli"]
 [[bin]]
 name = "test_ssa"
 path = "src/bin/test_ssa.rs"
+required-features = ["cli"]
 
 [lib]
 name = "neo_decompiler"
