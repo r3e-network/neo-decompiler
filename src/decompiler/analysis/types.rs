@@ -65,13 +65,7 @@ impl ValueType {
         }
         match (self, other) {
             (Unknown, x) | (x, Unknown) => x,
-            (Null, x) | (x, Null) => {
-                if matches!(x, Unknown) {
-                    Unknown
-                } else {
-                    Any
-                }
-            }
+            (Null, _) | (_, Null) => Any,
             _ => Any,
         }
     }
