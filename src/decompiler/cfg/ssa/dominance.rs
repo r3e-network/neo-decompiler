@@ -3,14 +3,6 @@
 //! Computes immediate dominators, dominator tree, and dominance frontiers
 //! using the Cooper-Harvey-Kennedy iterative algorithm.
 
-#![allow(
-    dead_code,
-    unused_variables,
-    missing_docs,
-    clippy::needless_if,
-    clippy::unused_enumerate_index
-)]
-
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::cfg::{BlockId, Cfg};
@@ -126,14 +118,6 @@ pub fn compute(cfg: &Cfg) -> DominanceInfo {
     }
 }
 
-/// Convenience alias for [`compute`].
-///
-/// This function provides an alternative name that may be more descriptive
-/// in certain contexts.
-pub fn compute_dominance(cfg: &Cfg) -> DominanceInfo {
-    compute(cfg)
-}
-
 /// Compute immediate dominators using the Cooper-Harvey-Kennedy algorithm.
 ///
 /// For each block n, IDOM(n) is the unique block that:
@@ -159,6 +143,8 @@ fn compute_immediate_dominators(cfg: &Cfg) -> BTreeMap<BlockId, Option<BlockId>>
     }
 
     // Iterate until convergence
+    // Pre-compute RPO once — the CFG is immutable during the fixpoint loop.
+    let rpo = reverse_post_order(cfg);
     let mut changed = true;
     let mut iteration_count = 0u32;
     while changed {
@@ -171,7 +157,7 @@ fn compute_immediate_dominators(cfg: &Cfg) -> BTreeMap<BlockId, Option<BlockId>>
         changed = false;
 
         // Process blocks in reverse post-order (predecessors processed first)
-        for block_id in reverse_post_order(cfg) {
+        for &block_id in &rpo {
             if Some(block_id) == entry_id {
                 continue;
             }
@@ -207,19 +193,27 @@ fn intersect_dominators(
         return None;
     }
 
-    // Start with the first predecessor's processed dominator
+    // Start with the first processed predecessor (the predecessor itself, per CHK algorithm)
     let mut result = None;
 
-    for (_i, pred) in predecessors.iter().enumerate() {
+    for pred in predecessors.iter() {
         let pred_idom = idom.get(pred).copied().flatten();
 
         result = match result {
-            None => pred_idom,
+            None => {
+                // First processed predecessor: use the predecessor itself (not its idom).
+                // Skip unprocessed predecessors (pred_idom == None).
+                if pred_idom.is_some() {
+                    Some(*pred)
+                } else {
+                    None
+                }
+            }
             Some(current) => {
                 // Skip predecessors that haven't been processed yet (idom = None)
                 match pred_idom {
                     None => Some(current),
-                    Some(_pred_dom) => Some(find_common_dominator(cfg, current, *pred, idom)),
+                    Some(_) => Some(find_common_dominator(cfg, current, *pred, idom)),
                 }
             }
         };
@@ -291,18 +285,19 @@ fn find_common_dominator(
 }
 
 /// Get the depth of a block in the dominator tree.
+///
+/// Uses an iteration counter instead of a `BTreeSet` for cycle detection.
+/// A dominator tree over N blocks has at most N nodes, so exceeding that
+/// depth means we hit a cycle (e.g. entry dominating itself).
 fn depth_in_dominator_tree(block: BlockId, idom: &BTreeMap<BlockId, Option<BlockId>>) -> usize {
+    let max_depth = idom.len();
     let mut depth = 1; // Count the block itself
     let mut current = idom.get(&block).copied().flatten();
-    let mut visited = BTreeSet::new();
-    visited.insert(block); // Track the starting block to prevent cycles
 
     while let Some(idom_block) = current {
-        if visited.contains(&idom_block) {
-            // Cycle detected - this happens when the entry block dominates itself
+        if idom_block == block || depth >= max_depth {
             break;
         }
-        visited.insert(idom_block);
         depth += 1;
         current = idom.get(&idom_block).copied().flatten();
     }
@@ -456,50 +451,41 @@ mod tests {
         let cfg = create_linear_cfg(3);
         let dominance = compute(&cfg);
 
-        // In a linear chain, all paths to block N go through block 0
-        // So idom(1) = 0, idom(2) = 0 (not 1!)
-        // This is because you must pass through block 0 to reach ANY block
+        // In a linear chain, idom(1) = 0, idom(2) = 1
         assert_eq!(dominance.idom(BlockId(1)), Some(BlockId(0)));
-        assert_eq!(dominance.idom(BlockId(2)), Some(BlockId(0)));
+        assert_eq!(dominance.idom(BlockId(2)), Some(BlockId(1)));
 
         // Block 0 strictly dominates 1 and 2
         assert!(dominance.strictly_dominates(BlockId(0), BlockId(1)));
         assert!(dominance.strictly_dominates(BlockId(0), BlockId(2)));
 
-        // Block 1 does NOT strictly dominate 2 in a linear chain
-        // because block 0 also dominates 1, so 1 is not the immediate dominator of 2
-        assert!(!dominance.strictly_dominates(BlockId(1), BlockId(2)));
+        // Block 1 strictly dominates 2
+        assert!(dominance.strictly_dominates(BlockId(1), BlockId(2)));
     }
 
     #[test]
     fn test_dominance_diamond() {
         // Build diamond: entry -> (left, right) -> exit
         let cfg = create_diamond_cfg();
+        let dominance = compute(&cfg);
 
-        // TODO: Debug infinite loop in dominance computation for diamond CFG
-        // The diamond CFG causes the dominance computation to hang.
-        // This is likely due to an issue with how the Branch terminator
-        // interacts with the edge list in the reverse_post_order computation.
-        //
-        // For now, we just verify the CFG is valid.
-        assert!(cfg.block_count() > 0);
+        // Entry dominates all blocks
+        assert!(dominance.strictly_dominates(BlockId::ENTRY, BlockId(1)));
+        assert!(dominance.strictly_dominates(BlockId::ENTRY, BlockId(2)));
+        assert!(dominance.strictly_dominates(BlockId::ENTRY, BlockId(3)));
 
-        // let dominance = compute(&cfg);
-        // assert!(dominance.strictly_dominates(BlockId::ENTRY, BlockId(1)));
-        // assert!(dominance.strictly_dominates(BlockId::ENTRY, BlockId(2)));
-        // assert!(dominance.strictly_dominates(BlockId::ENTRY, BlockId(3)));
+        // idom of exit (3) is entry (0) since both paths merge there
+        assert_eq!(dominance.idom(BlockId(3)), Some(BlockId(0)));
     }
 
     #[test]
     fn test_dominator_tree_structure() {
-        // TODO: Debug infinite loop in dominance computation for diamond CFG
-        // See test_dominance_diamond for details.
         let cfg = create_diamond_cfg();
-        assert!(cfg.block_count() > 0);
+        let dominance = compute(&cfg);
 
-        // let dominance = compute(&cfg);
-        // let entry_children = dominance.children(BlockId::ENTRY);
-        // assert!(!entry_children.is_empty());
+        // Entry should have children (it dominates all other blocks)
+        let entry_children = dominance.children(BlockId::ENTRY);
+        assert!(!entry_children.is_empty());
     }
 
     fn create_linear_cfg(count: usize) -> Cfg {

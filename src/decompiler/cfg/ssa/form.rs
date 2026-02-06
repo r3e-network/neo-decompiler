@@ -1,12 +1,5 @@
 //! SSA form types for representing code in static single assignment form.
 
-#![allow(
-    dead_code,
-    missing_docs,
-    clippy::type_complexity,
-    clippy::double_must_use
-)]
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
@@ -70,7 +63,6 @@ impl SsaForm {
     }
 
     /// Get all blocks in SSA form.
-    #[must_use]
     pub fn blocks_iter(&self) -> impl Iterator<Item = (&BlockId, &SsaBlock)> {
         self.blocks.iter()
     }
@@ -278,29 +270,51 @@ pub enum SsaExpr {
 
     /// Binary operation.
     Binary {
+        /// The binary operator.
         op: BinOp,
+        /// Left-hand operand.
         left: Box<SsaExpr>,
+        /// Right-hand operand.
         right: Box<SsaExpr>,
     },
 
     /// Unary operation.
-    Unary { op: UnaryOp, operand: Box<SsaExpr> },
+    Unary {
+        /// The unary operator.
+        op: UnaryOp,
+        /// The operand.
+        operand: Box<SsaExpr>,
+    },
 
     /// Function or syscall invocation.
-    Call { name: String, args: Vec<SsaExpr> },
+    Call {
+        /// Function name.
+        name: String,
+        /// Call arguments.
+        args: Vec<SsaExpr>,
+    },
 
     /// Array/map index access.
     Index {
+        /// Base expression being indexed.
         base: Box<SsaExpr>,
+        /// Index expression.
         index: Box<SsaExpr>,
     },
 
     /// Field/member access.
-    Member { base: Box<SsaExpr>, name: String },
+    Member {
+        /// Base expression.
+        base: Box<SsaExpr>,
+        /// Field name.
+        name: String,
+    },
 
     /// Type cast.
     Cast {
+        /// Expression being cast.
         expr: Box<SsaExpr>,
+        /// Target type name.
         target_type: String,
     },
 
@@ -312,8 +326,11 @@ pub enum SsaExpr {
 
     /// Ternary conditional expression.
     Ternary {
+        /// Condition expression.
         condition: Box<SsaExpr>,
+        /// Value when condition is true.
         then_expr: Box<SsaExpr>,
+        /// Value when condition is false.
         else_expr: Box<SsaExpr>,
     },
 }

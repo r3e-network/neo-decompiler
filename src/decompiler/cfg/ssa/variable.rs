@@ -3,8 +3,6 @@
 //! Static Single Assignment (SSA) form ensures each variable is assigned exactly once.
 //! We achieve this by versioning variables: each definition creates a new (name, version) pair.
 
-#![allow(missing_docs)]
-
 use std::fmt;
 
 use crate::decompiler::cfg::BlockId;
