@@ -36,8 +36,8 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | Opcode Coverage          | ✅     | 160+ Neo VM opcodes from upstream `OpCode.cs`                       |
 | Operand Decoding         | ✅     | I8/I16/I32/I64, variable-length bytes, jump targets, syscall hashes |
 | Unknown Opcode Handling  | ✅     | Tolerant mode (comments) or strict mode (fail-fast)                 |
-| Syscall Resolution       | ✅     | 50+ syscalls with handler names, prices, call flags                 |
-| Native Contract Binding  | ✅     | GasToken, NeoToken, ContractManagement, etc. method resolution      |
+| Syscall Resolution       | ✅     | All published syscalls with handler names, prices, call flags      |
+| Native Contract Binding  | ✅     | Legacy + latest native contracts (GasToken/Governance/etc.)        |
 
 ### Decompilation Pipeline
 
@@ -181,6 +181,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 - A C# contract skeleton view (`--format csharp`) that mirrors the manifest
   entry point, emits stubs for additional ABI methods, declares ABI events,
   and adds `[DisplayName]`/`[Safe]` attributes when available
+- Label-based control-transfer placeholders use `label_0xNNNN` targets in both high-level and C# views (`goto label_...`; high-level may emit `leave label_...` for exceptional flow)
 - A single binary (`neo-decompiler`) and a reusable library (`neo_decompiler`)
 
 ## Quick start
@@ -316,7 +317,7 @@ Download pre-built binaries from the [releases page](https://github.com/r3e-netw
 
 ```bash
 # Install from a tagged release (replace the tag as needed)
-cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.4.1 --locked
+cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.5.1 --locked
 
 # Or install the latest development version
 cargo install --git https://github.com/r3e-network/neo-decompiler --locked
@@ -332,7 +333,7 @@ APIs and want to avoid pulling in CLI-only dependencies, disable default
 features in your `Cargo.toml`:
 
 ```toml
-neo-decompiler = { version = "0.4.1", default-features = false }
+neo-decompiler = { version = "0.5.1", default-features = false }
 ```
 
 ```rust
@@ -399,11 +400,12 @@ crate so there is no network or tooling dependency at runtime:
   the Rust table. `crate::syscalls::lookup` wires this into the disassembler and
   high-level view so every `SYSCALL` shows human-readable context.
 - `src/native_contracts_generated.rs` is produced by
-  `tools/scrape_native_contracts.py`, which reads native contract sources
-  (local `neo_csharp` if present, otherwise the upstream repo) and writes
-  `tools/data/native_contracts.json` alongside the Rust table. It enumerates
-  every native contract hash plus its publicly-exposed methods, ensuring method
-  tokens are annotated with canonical names when possible.
+  `tools/scrape_native_contracts.py`, which reads native contract sources from
+  the local `neo_csharp` snapshot and supplements them with upstream sources
+  when available, then writes `tools/data/native_contracts.json` alongside
+  the Rust table. It enumerates every detected native contract hash plus its
+  publicly-exposed methods, ensuring method tokens are annotated with canonical
+  names across legacy and latest contract sets when possible.
 
 Re-run the scripts in `tools/` whenever Neo introduces new entries. Each script
 overwrites the corresponding generated Rust file (and refreshes the JSON
@@ -425,6 +427,9 @@ neo-decompiler catalog opcodes
 ```
 
 ## Testing artifacts
+
+Detailed contributor instructions (including CI sweep semantics and
+known-unsupported rules) live in `docs/testing-artifacts.md`.
 
 - Drop real contracts anywhere under `TestingArtifacts/` to extend coverage:
   - C# source with embedded manifest/NEF blobs (`*.cs`) are parsed and rewritten into `TestingArtifacts/decompiled/<relative>/`.

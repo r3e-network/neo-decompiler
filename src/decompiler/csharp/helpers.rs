@@ -81,6 +81,9 @@ pub(in crate::decompiler) fn csharpize_statement(line: &str) -> String {
         let converted = inner.replacen("let ", "var ", 1);
         return format!("for ({converted}) {{");
     }
+    if let Some(target) = trimmed.strip_prefix("leave ") {
+        return format!("goto {target}");
+    }
     trimmed.to_string()
 }
 

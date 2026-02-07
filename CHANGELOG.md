@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-02-07
+
+### Added
+
+- High-level control-flow lifting now covers `CALLA`/`CALLT`/`CALL`/`CALL_L`, comparison branches, and `JMP`/`JMPIF`/`ENDTRY` long forms with label-based transfer placeholders.
+- Added regression tests for native-contract metadata completeness, including latest upstream contracts and legacy token contracts used by existing fixtures.
+
+### Changed
+
+- Native-contract metadata generation now merges local `neo_csharp` sources with upstream Neo sources, preventing stale snapshots from dropping current contracts.
+- Syscall metadata generation now uses the same local+upstream merge strategy to keep bundled syscall catalogs current.
+- Updated metadata coverage documentation and release snippets in the README.
+
 ## [0.5.0] - 2025-01-30
 
 ### Added

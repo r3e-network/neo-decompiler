@@ -11,3 +11,5 @@ Known limitations:
 
 Outputs:
 - All generated files mirror the source layout under `TestingArtifacts/decompiled/`, which is already git-ignored.
+
+Contributor workflow and CI behavior are documented in `docs/testing-artifacts.md`.

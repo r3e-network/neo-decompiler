@@ -32,11 +32,11 @@ documents that describe the machine-readable output of the CLI commands:
 ### Rust example
 
 ```rust
-use jsonschema::JSONSchema;
+use jsonschema::validator_for;
 use serde_json::Value;
 
 fn validate(output: &str, schema_json: &Value) {
-    let schema = JSONSchema::compile(schema_json).expect("invalid schema");
+    let schema = validator_for(schema_json).expect("invalid schema");
     let value: Value = serde_json::from_str(output).expect("invalid JSON");
     schema.validate(&value).expect("schema mismatch");
 }

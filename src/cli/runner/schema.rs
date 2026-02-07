@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 use std::io::{self, Read, Write as _};
 use std::path::Path;
 
-use jsonschema::JSONSchema;
+use jsonschema::validator_for;
 use serde_json::Value;
 
 use crate::error::Result;
@@ -61,7 +61,7 @@ impl Cli {
         path: &Path,
     ) -> Result<()> {
         let compiled =
-            JSONSchema::compile(schema_value).map_err(|err| io::Error::other(err.to_string()))?;
+            validator_for(schema_value).map_err(|err| io::Error::other(err.to_string()))?;
         let data = if path == Path::new("-") {
             let mut buf = String::new();
             io::stdin().read_to_string(&mut buf)?;
@@ -71,10 +71,11 @@ impl Cli {
         };
         let instance: Value = serde_json::from_str(&data)
             .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))?;
-        if let Err(errors) = compiled.validate(&instance) {
+        let mut errors = compiled.iter_errors(&instance).peekable();
+        if errors.peek().is_some() {
             let mut buffer = String::from("schema validation failed:\n");
             for error in errors {
-                let mut path = error.instance_path.to_string();
+                let mut path = error.instance_path().to_string();
                 if path.is_empty() {
                     path.push_str("<root>");
                 }

@@ -73,3 +73,29 @@ fn native_method_hint_helpers_report_expected_state() {
         "Contract::<unknown Provided>"
     );
 }
+
+#[test]
+fn native_contract_catalog_includes_latest_core_contracts() {
+    let names: Vec<&str> = all().iter().map(|info| info.name).collect();
+    assert!(
+        names.contains(&"TokenManagement"),
+        "native contract table must include TokenManagement"
+    );
+    assert!(
+        names.contains(&"Governance"),
+        "native contract table must include Governance"
+    );
+}
+
+#[test]
+fn native_contract_catalog_keeps_legacy_token_contracts() {
+    let names: Vec<&str> = all().iter().map(|info| info.name).collect();
+    assert!(
+        names.contains(&"NeoToken"),
+        "native contract table must include NeoToken for compatibility"
+    );
+    assert!(
+        names.contains(&"GasToken"),
+        "native contract table must include GasToken for compatibility"
+    );
+}

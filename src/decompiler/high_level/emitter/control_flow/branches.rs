@@ -3,22 +3,84 @@ use crate::instruction::{Instruction, Operand};
 use super::super::{HighLevelEmitter, LoopContext};
 
 impl HighLevelEmitter {
-    pub(in super::super) fn emit_if_block(&mut self, instruction: &Instruction) {
+    pub(in super::super) fn emit_comparison_if_block(
+        &mut self,
+        instruction: &Instruction,
+        symbol: &str,
+    ) {
         let width = Self::branch_width(instruction.opcode);
         let delta = match instruction.operand {
             Some(Operand::Jump(value)) => value as isize,
             Some(Operand::Jump32(value)) => value as isize,
             _ => {
-                self.emit_relative(instruction, width, "jump-ifnot");
+                self.emit_relative(instruction, width, &format!("jump-if-{symbol}"));
                 return;
             }
         };
         let target = instruction.offset as isize + width + delta;
         if target <= instruction.offset as isize {
-            self.emit_relative(instruction, width, "jump-ifnot");
+            self.emit_relative(instruction, width, &format!("jump-if-{symbol}"));
             return;
         }
-        let condition = match self.stack.pop() {
+
+        if self.stack.len() < 2 {
+            self.push_comment(instruction);
+            self.stack_underflow(instruction, 2);
+            return;
+        }
+
+        let right = self.stack.pop().expect("len checked");
+        let left = self.stack.pop().expect("len checked");
+        let condition = format!("{left} {symbol} {right}");
+
+        self.push_comment(instruction);
+        self.statements.push(format!("if {condition} {{"));
+
+        let false_target = target as usize;
+        let closer_entry = self.pending_closers.entry(false_target).or_insert(0);
+        *closer_entry += 1;
+
+        if let Some((jump_offset, jump_target)) = self.detect_else(false_target) {
+            if !self.is_loop_control_target(jump_target) {
+                self.skip_jumps.insert(jump_offset);
+                let else_entry = self.else_targets.entry(false_target).or_insert(0);
+                *else_entry += 1;
+                let closer = self.pending_closers.entry(jump_target).or_insert(0);
+                *closer += 1;
+            }
+        }
+    }
+
+    pub(in super::super) fn emit_if_block(&mut self, instruction: &Instruction) {
+        self.emit_unary_if_block(instruction, false, "jump-ifnot");
+    }
+
+    pub(in super::super) fn emit_jmpif_block(&mut self, instruction: &Instruction) {
+        self.emit_unary_if_block(instruction, true, "jump-if");
+    }
+
+    fn emit_unary_if_block(
+        &mut self,
+        instruction: &Instruction,
+        negate_condition: bool,
+        fallback_label: &str,
+    ) {
+        let width = Self::branch_width(instruction.opcode);
+        let delta = match instruction.operand {
+            Some(Operand::Jump(value)) => value as isize,
+            Some(Operand::Jump32(value)) => value as isize,
+            _ => {
+                self.emit_relative(instruction, width, fallback_label);
+                return;
+            }
+        };
+        let target = instruction.offset as isize + width + delta;
+        if target <= instruction.offset as isize {
+            self.emit_relative(instruction, width, fallback_label);
+            return;
+        }
+
+        let mut condition = match self.stack.pop() {
             Some(value) => value,
             None => {
                 self.push_comment(instruction);
@@ -26,6 +88,10 @@ impl HighLevelEmitter {
                 return;
             }
         };
+        if negate_condition {
+            condition = format!("!{condition}");
+        }
+
         self.push_comment(instruction);
         let false_target = target as usize;
         let loop_jump = self.detect_loop_back(false_target, instruction.offset);

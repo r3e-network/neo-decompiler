@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """
-Generate Rust lookup tables for Neo N3 syscalls by scraping the upstream
-ApplicationEngine partial classes.
+Generate Rust lookup tables for Neo syscalls by scraping ApplicationEngine partial classes.
 """
 
-import base64
 import hashlib
 import json
 import re
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +14,7 @@ from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_BASE = REPO_ROOT / "neo_csharp" / "core" / "src" / "Neo" / "SmartContract"
-API_BASE_URL = "https://api.github.com/repos/neo-project/neo/contents/src/Neo/SmartContract/"
+RAW_BASE_URL = "https://raw.githubusercontent.com/neo-project/neo/master/src/Neo/SmartContract/"
 FILES = [
     "ApplicationEngine.Runtime.cs",
     "ApplicationEngine.Contract.cs",
@@ -65,31 +64,56 @@ def read_local(path: str) -> str | None:
 
 
 def fetch(path: str) -> str:
-    url = f"{API_BASE_URL}{path}?ref=master"
+    url = f"{RAW_BASE_URL}{path}"
     headers = {
         "User-Agent": "neo-decompiler/0.1",
-        "Accept": "application/vnd.github+json",
+        "Accept": "text/plain",
     }
     for attempt in range(3):
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req) as resp:  # type: ignore[arg-type]
-                payload = json.loads(resp.read().decode("utf-8"))
-            if payload.get("encoding") != "base64":
-                raise ValueError(f"unexpected encoding for {path}")
-            content = base64.b64decode(payload["content"])
-            return content.decode("utf-8")
+                return resp.read().decode("utf-8")
         except urllib.error.URLError:  # type: ignore[attr-defined]
             if attempt == 2:
                 raise
     raise RuntimeError(f"unreachable: failed to fetch {path}")
 
 
-def load_source(path: str) -> str:
+def try_fetch(path: str) -> str | None:
+    try:
+        return fetch(path)
+    except urllib.error.URLError:  # type: ignore[attr-defined]
+        return None
+    except urllib.error.HTTPError:  # type: ignore[attr-defined]
+        return None
+
+
+def dedupe_preserve_order(items: Iterable[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def load_sources(path: str) -> list[str]:
+    sources: list[str] = []
     local = read_local(path)
     if local is not None:
-        return local
-    return fetch(path)
+        sources.append(local)
+
+    remote = try_fetch(path)
+    if remote is not None:
+        sources.append(remote)
+
+    if not sources:
+        raise SystemExit(f"failed to load {path} from local snapshot or upstream")
+
+    return dedupe_preserve_order(sources)
 
 
 def parse_registers(text: str) -> Iterable[Syscall]:
@@ -111,12 +135,9 @@ def parse_registers(text: str) -> Iterable[Syscall]:
 def collect_syscalls() -> list[Syscall]:
     entries: dict[str, Syscall] = {}
     for file in FILES:
-        try:
-            text = load_source(file)
-        except urllib.error.HTTPError as exc:  # type: ignore[attr-defined]
-            raise SystemExit(f"failed to fetch {file}: {exc}") from exc
-        for syscall in parse_registers(text):
-            entries.setdefault(syscall.name, syscall)
+        for text in load_sources(file):
+            for syscall in parse_registers(text):
+                entries[syscall.name] = syscall
     return sorted(entries.values(), key=lambda s: (s.hash_value, s.name))
 
 
@@ -149,7 +170,6 @@ def render_entry(syscall: Syscall) -> str:
 
 
 def returns_void(name: str) -> bool:
-    # Minimal allowlist; expand as upstream adds metadata.
     return name in {
         "System.Runtime.Notify",
         "System.Runtime.Log",

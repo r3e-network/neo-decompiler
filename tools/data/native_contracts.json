@@ -32,7 +32,8 @@
       "OnNEP17Payment",
       "SetMaxNotValidBeforeDelta",
       "Verify",
-      "Withdraw"
+      "Withdraw",
+      "_OnPayment"
     ]
   },
   {
@@ -48,10 +49,29 @@
     ]
   },
   {
+    "class_name": "Governance",
+    "name": "Governance",
+    "script_hash": "67ca70350663bf258ca513049467c6059d15e74c",
+    "methods": [
+      "GetCandidateVote",
+      "GetCommittee",
+      "GetCommitteeAddress",
+      "GetGasPerBlock",
+      "GetNextBlockValidators",
+      "GetRegisterPrice",
+      "GetVoteTarget",
+      "ShouldRefreshCommittee",
+      "UnclaimedGas",
+      "VoteInternal"
+    ]
+  },
+  {
     "class_name": "PolicyContract",
     "name": "PolicyContract",
     "script_hash": "7bc681c0a1f71d543457b68bba8d5f9fdd4e5ecc",
     "methods": [
+      "BlockAccount",
+      "GetAttributeFee",
       "GetBlockedAccounts",
       "GetExecFeeFactor",
       "GetExecPicoFeeFactor",
@@ -64,6 +84,7 @@
       "IsBlocked",
       "RecoverFund",
       "RemoveWhitelistFeeContract",
+      "SetAttributeFee",
       "SetExecFeeFactor",
       "SetFeePerByte",
       "SetMaxTraceableBlocks",
@@ -75,6 +96,16 @@
       "blockAccount",
       "getAttributeFee",
       "setAttributeFee"
+    ]
+  },
+  {
+    "class_name": "TokenManagement",
+    "name": "TokenManagement",
+    "script_hash": "9f040ea4a8448f015af645659b0fb2ae7dc500ae",
+    "methods": [
+      "BalanceOf",
+      "GetAssetsOfOwner",
+      "GetTokenInfo"
     ]
   },
   {

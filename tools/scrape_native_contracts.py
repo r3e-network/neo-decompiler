@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Generate Rust lookup tables for Neo N3 native contracts and their exposed method names.
+Generate Rust lookup tables for Neo native contracts and their exposed method names.
 """
 
-import base64
 import hashlib
 import json
 import re
@@ -15,7 +14,8 @@ from typing import Dict, Iterable, List, Set
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_NATIVE_DIR = REPO_ROOT / "neo_csharp" / "core" / "src" / "Neo" / "SmartContract" / "Native"
-API_BASE_URL = "https://api.github.com/repos/neo-project/neo/contents/src/Neo/SmartContract/Native/"
+API_CONTENTS_URL = "https://api.github.com/repos/neo-project/neo/contents/src/Neo/SmartContract/Native/"
+RAW_BASE_URL = "https://raw.githubusercontent.com/neo-project/neo/master/src/Neo/SmartContract/Native/"
 OUTPUT = REPO_ROOT / "src" / "native_contracts_generated.rs"
 
 
@@ -42,23 +42,29 @@ def read_local(path: str) -> str | None:
 
 
 def fetch(path: str) -> str:
-    url = f"{API_BASE_URL}{path}?ref=master"
+    url = f"{RAW_BASE_URL}{path}"
     headers = {
         "User-Agent": "neo-decompiler/0.1",
-        "Accept": "application/vnd.github+json",
+        "Accept": "text/plain",
     }
     for attempt in range(3):
         try:
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req) as resp:  # type: ignore[arg-type]
-                payload = json.loads(resp.read().decode("utf-8"))
-            if payload.get("encoding") != "base64":
-                raise ValueError(f"unexpected encoding for {path}")
-            return base64.b64decode(payload["content"]).decode("utf-8")
+                return resp.read().decode("utf-8")
         except urllib.error.URLError:  # type: ignore[attr-defined]
             if attempt == 2:
                 raise
     raise RuntimeError(f"unreachable: failed to fetch {path}")
+
+
+def try_fetch(path: str) -> str | None:
+    try:
+        return fetch(path)
+    except urllib.error.URLError:  # type: ignore[attr-defined]
+        return None
+    except urllib.error.HTTPError:  # type: ignore[attr-defined]
+        return None
 
 
 _REMOTE_DIR_CACHE: list[str] | None = None
@@ -68,14 +74,21 @@ def list_remote_files() -> list[str]:
     global _REMOTE_DIR_CACHE
     if _REMOTE_DIR_CACHE is not None:
         return _REMOTE_DIR_CACHE
-    url = f"{API_BASE_URL}?ref=master"
+
+    url = f"{API_CONTENTS_URL}?ref=master"
     headers = {
         "User-Agent": "neo-decompiler/0.1",
         "Accept": "application/vnd.github+json",
     }
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req) as resp:  # type: ignore[arg-type]
-        payload = json.loads(resp.read().decode("utf-8"))
+
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req) as resp:  # type: ignore[arg-type]
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError:  # type: ignore[attr-defined]
+        _REMOTE_DIR_CACHE = []
+        return _REMOTE_DIR_CACHE
+
     _REMOTE_DIR_CACHE = [
         entry["name"]
         for entry in payload
@@ -84,16 +97,22 @@ def list_remote_files() -> list[str]:
     return _REMOTE_DIR_CACHE
 
 
-def load_source(path: str) -> str:
-    local = read_local(path)
-    if local is not None:
-        return local
-    return fetch(path)
-
-
 CONTRACT_PROPERTY_PATTERN = re.compile(
-    r"public\s+static\s+(?P<class>[A-Za-z0-9_]+)\s+(?P<name>[A-Za-z0-9_]+)\s*{\s*get;\s*}\s*=\s*new\(\);"
+    r"public\s+static\s+(?P<class>[A-Za-z0-9_]+)\s+"
+    r"(?P<name>[A-Za-z0-9_]+)\s*{\s*get;\s*}\s*=\s*new\(\);"
 )
+
+CLASS_DECL_PATTERN = re.compile(
+    r"class\s+(?P<name>[A-Za-z0-9_]+)\s*:\s*(?P<bases>[A-Za-z0-9_,\s]+)"
+)
+
+METHOD_SIGNATURE_PATTERN = re.compile(
+    r"(?:public|internal|protected|private)\s+(?:async\s+)?(?:static\s+)?"
+    r"(?:[\w<>\[\],\s\.\?]+)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(",
+    re.MULTILINE,
+)
+
+NAME_OVERRIDE_PATTERN = re.compile(r'Name\s*=\s*"(?P<name>[^"]+)"')
 
 
 def parse_contract_class_names(native_contract_source: str) -> list[str]:
@@ -103,15 +122,73 @@ def parse_contract_class_names(native_contract_source: str) -> list[str]:
     return classes
 
 
-CLASS_DECL_PATTERN = re.compile(
-    r"class\s+(?P<name>[A-Za-z0-9_]+)\s*:\s*(?P<bases>[A-Za-z0-9_,\s]+)")
+def dedupe_preserve_order(items: Iterable[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
 
-METHOD_SIGNATURE_PATTERN = re.compile(
-    r"(?:public|internal|protected|private)\s+(?:async\s+)?(?:static\s+)?"
-    r"(?:[\w<>\[\],\s\.\?]+)\s+(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\(",
-    re.MULTILINE,
-)
-NAME_OVERRIDE_PATTERN = re.compile(r'Name\s*=\s*"(?P<name>[^"]+)"')
+
+def collect_contract_class_names() -> list[str]:
+    sources: list[str] = []
+
+    local_native_contract = read_local("NativeContract.cs")
+    if local_native_contract is not None:
+        sources.append(local_native_contract)
+
+    remote_native_contract = try_fetch("NativeContract.cs")
+    if remote_native_contract is not None:
+        sources.append(remote_native_contract)
+
+    if not sources:
+        raise RuntimeError("unable to load NativeContract.cs from local snapshot or upstream")
+
+    class_names: list[str] = []
+    for source in dedupe_preserve_order(sources):
+        class_names.extend(parse_contract_class_names(source))
+
+    return dedupe_preserve_order(class_names)
+
+
+def local_class_files(class_name: str) -> list[Path]:
+    if not LOCAL_NATIVE_DIR.exists():
+        return []
+
+    files: list[Path] = []
+    files.extend(sorted(LOCAL_NATIVE_DIR.glob(f"{class_name}.cs")))
+    files.extend(sorted(LOCAL_NATIVE_DIR.glob(f"{class_name}.*.cs")))
+
+    unique_paths = dedupe_preserve_order(str(path) for path in files)
+    return [Path(path) for path in unique_paths]
+
+
+def remote_class_files(class_name: str) -> list[str]:
+    files = [f"{class_name}.cs"]
+    files.extend(
+        filename
+        for filename in list_remote_files()
+        if filename == f"{class_name}.cs" or filename.startswith(f"{class_name}.")
+    )
+    files.sort()
+    return dedupe_preserve_order(files)
+
+
+def load_class_sources(class_name: str) -> list[str]:
+    sources: list[str] = []
+
+    for local_file in local_class_files(class_name):
+        sources.append(local_file.read_text(encoding="utf-8"))
+
+    for remote_file in remote_class_files(class_name):
+        remote_source = try_fetch(remote_file)
+        if remote_source is not None:
+            sources.append(remote_source)
+
+    return dedupe_preserve_order(sources)
 
 
 def extract_contract_methods(source: str) -> list[str]:
@@ -131,7 +208,6 @@ def extract_contract_methods(source: str) -> list[str]:
         if not pending:
             continue
         if stripped.startswith("["):
-            # additional attribute, keep waiting
             continue
         buffer.append(stripped)
         joined = " ".join(buffer)
@@ -150,6 +226,7 @@ def parse_class_info(sources: Iterable[str]) -> ClassInfo:
     bases: List[str] = []
     methods: list[str] = []
     name = "Unknown"
+
     for source in sources:
         match = CLASS_DECL_PATTERN.search(source)
         if match:
@@ -157,6 +234,7 @@ def parse_class_info(sources: Iterable[str]) -> ClassInfo:
             bases_text = match.group("bases")
             bases.extend(part.strip() for part in bases_text.split(","))
         methods.extend(extract_contract_methods(source))
+
     bases = sorted(set(bases))
     methods = sorted(set(methods))
     return ClassInfo(name=name, bases=bases, methods=methods)
@@ -185,35 +263,18 @@ def contract_hash(name: str) -> bytes:
 
 
 def collect_contracts() -> list[NativeContract]:
-    native_contract_src = load_source("NativeContract.cs")
-    class_names = parse_contract_class_names(native_contract_src)
-
+    class_names = collect_contract_class_names()
     class_info: Dict[str, ClassInfo] = {}
 
     def ensure_class_loaded(name: str) -> None:
         if name in class_info or name == "NativeContract":
             return
-        sources: list[str] = []
-        local_sources = list(LOCAL_NATIVE_DIR.glob(f"{name}*.cs")) if LOCAL_NATIVE_DIR.exists() else []
-        if local_sources:
-            sources = [path.read_text(encoding="utf-8") for path in local_sources]
-        else:
-            remote_files = [
-                filename
-                for filename in list_remote_files()
-                if filename.startswith(f"{name}.") or filename == f"{name}.cs"
-            ]
-            if not remote_files:
-                class_info[name] = ClassInfo(name=name, bases=[], methods=[])
-                return
-            for filename in remote_files:
-                try:
-                    sources.append(fetch(filename))
-                except urllib.error.HTTPError:  # type: ignore[attr-defined]
-                    continue
+
+        sources = load_class_sources(name)
         if not sources:
             class_info[name] = ClassInfo(name=name, bases=[], methods=[])
             return
+
         info = parse_class_info(sources)
         class_info[name] = info
         for base in info.bases:
@@ -246,6 +307,7 @@ def collect_contracts() -> list[NativeContract]:
                 methods=sorted(set(methods)),
             )
         )
+
     contracts.sort(key=lambda c: c.script_hash)
     return contracts
 
@@ -280,6 +342,7 @@ def main() -> None:
     contracts = collect_contracts()
     entries = "\n".join(render_contract(c) for c in contracts)
     OUTPUT.write_text(RUST_TEMPLATE.format(entries=entries))
+
     data_dir = REPO_ROOT / "tools" / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     meta = [

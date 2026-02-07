@@ -28,6 +28,7 @@ pub(crate) struct HighLevelEmitter {
     catch_targets: BTreeMap<usize, usize>,
     finally_targets: BTreeMap<usize, usize>,
     skip_jumps: BTreeSet<usize>,
+    transfer_labels: BTreeSet<usize>,
     program: Vec<Instruction>,
     index_by_offset: BTreeMap<usize, usize>,
     do_while_headers: BTreeMap<usize, Vec<DoWhileLoop>>,

@@ -27,31 +27,25 @@ impl HighLevelEmitter {
             Jmp_L => self.emit_jump(instruction, 5),
             Jmpif => {
                 if !self.try_emit_do_while_tail(instruction) {
-                    self.emit_relative(instruction, 2, "jump-if");
+                    self.emit_jmpif_block(instruction);
                 }
             }
             Jmpif_L => {
                 if !self.try_emit_do_while_tail(instruction) {
-                    self.emit_relative(instruction, 5, "jump-if");
+                    self.emit_jmpif_block(instruction);
                 }
             }
             Jmpifnot | Jmpifnot_L => self.emit_if_block(instruction),
-            JmpEq => self.emit_relative(instruction, 2, "jump-if-eq"),
-            JmpEq_L => self.emit_relative(instruction, 5, "jump-if-eq"),
-            JmpNe => self.emit_relative(instruction, 2, "jump-if-ne"),
-            JmpNe_L => self.emit_relative(instruction, 5, "jump-if-ne"),
-            JmpGt => self.emit_relative(instruction, 2, "jump-if-gt"),
-            JmpGt_L => self.emit_relative(instruction, 5, "jump-if-gt"),
-            JmpGe => self.emit_relative(instruction, 2, "jump-if-ge"),
-            JmpGe_L => self.emit_relative(instruction, 5, "jump-if-ge"),
-            JmpLt => self.emit_relative(instruction, 2, "jump-if-lt"),
-            JmpLt_L => self.emit_relative(instruction, 5, "jump-if-lt"),
-            JmpLe => self.emit_relative(instruction, 2, "jump-if-le"),
-            JmpLe_L => self.emit_relative(instruction, 5, "jump-if-le"),
-            Endtry => self.emit_relative(instruction, 2, "end-try"),
-            EndtryL => self.emit_relative(instruction, 5, "end-try"),
-            Call => self.emit_relative(instruction, 2, "call"),
-            Call_L => self.emit_relative(instruction, 5, "call"),
+            JmpEq | JmpEq_L => self.emit_comparison_if_block(instruction, "=="),
+            JmpNe | JmpNe_L => self.emit_comparison_if_block(instruction, "!="),
+            JmpGt | JmpGt_L => self.emit_comparison_if_block(instruction, ">"),
+            JmpGe | JmpGe_L => self.emit_comparison_if_block(instruction, ">="),
+            JmpLt | JmpLt_L => self.emit_comparison_if_block(instruction, "<"),
+            JmpLe | JmpLe_L => self.emit_comparison_if_block(instruction, "<="),
+            Endtry => self.emit_endtry(instruction, 2),
+            EndtryL => self.emit_endtry(instruction, 5),
+            Call => self.emit_relative_call(instruction, 2),
+            Call_L => self.emit_relative_call(instruction, 5),
             CallA => self.emit_indirect_call(instruction, "calla"),
             CallT => self.emit_indirect_call(instruction, "callt"),
             Try | TryL => self.emit_try_block(instruction),

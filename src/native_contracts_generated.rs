@@ -15,7 +15,7 @@ pub const NATIVE_CONTRACTS: &[NativeContractInfo] = &[
     NativeContractInfo {
         name: "Notary",
         script_hash: [0x3B, 0xEC, 0x35, 0x31, 0x11, 0x9B, 0xBA, 0xD7, 0x6D, 0xD0, 0x44, 0x92, 0x0B, 0x0D, 0xE6, 0xC3, 0x19, 0x4F, 0xE1, 0xC1],
-        methods: &["BalanceOf", "ExpirationOf", "GetMaxNotValidBeforeDelta", "LockDepositUntil", "OnNEP17Payment", "SetMaxNotValidBeforeDelta", "Verify", "Withdraw"],
+        methods: &["BalanceOf", "ExpirationOf", "GetMaxNotValidBeforeDelta", "LockDepositUntil", "OnNEP17Payment", "SetMaxNotValidBeforeDelta", "Verify", "Withdraw", "_OnPayment"],
     },
     NativeContractInfo {
         name: "OracleContract",
@@ -23,9 +23,19 @@ pub const NATIVE_CONTRACTS: &[NativeContractInfo] = &[
         methods: &["Finish", "GetPrice", "Request", "SetPrice", "Verify"],
     },
     NativeContractInfo {
+        name: "Governance",
+        script_hash: [0x67, 0xCA, 0x70, 0x35, 0x06, 0x63, 0xBF, 0x25, 0x8C, 0xA5, 0x13, 0x04, 0x94, 0x67, 0xC6, 0x05, 0x9D, 0x15, 0xE7, 0x4C],
+        methods: &["GetCandidateVote", "GetCommittee", "GetCommitteeAddress", "GetGasPerBlock", "GetNextBlockValidators", "GetRegisterPrice", "GetVoteTarget", "ShouldRefreshCommittee", "UnclaimedGas", "VoteInternal"],
+    },
+    NativeContractInfo {
         name: "PolicyContract",
         script_hash: [0x7B, 0xC6, 0x81, 0xC0, 0xA1, 0xF7, 0x1D, 0x54, 0x34, 0x57, 0xB6, 0x8B, 0xBA, 0x8D, 0x5F, 0x9F, 0xDD, 0x4E, 0x5E, 0xCC],
-        methods: &["GetBlockedAccounts", "GetExecFeeFactor", "GetExecPicoFeeFactor", "GetFeePerByte", "GetMaxTraceableBlocks", "GetMaxValidUntilBlockIncrement", "GetMillisecondsPerBlock", "GetStoragePrice", "GetWhitelistFeeContracts", "IsBlocked", "RecoverFund", "RemoveWhitelistFeeContract", "SetExecFeeFactor", "SetFeePerByte", "SetMaxTraceableBlocks", "SetMaxValidUntilBlockIncrement", "SetMillisecondsPerBlock", "SetStoragePrice", "SetWhitelistFeeContract", "UnblockAccount", "blockAccount", "getAttributeFee", "setAttributeFee"],
+        methods: &["BlockAccount", "GetAttributeFee", "GetBlockedAccounts", "GetExecFeeFactor", "GetExecPicoFeeFactor", "GetFeePerByte", "GetMaxTraceableBlocks", "GetMaxValidUntilBlockIncrement", "GetMillisecondsPerBlock", "GetStoragePrice", "GetWhitelistFeeContracts", "IsBlocked", "RecoverFund", "RemoveWhitelistFeeContract", "SetAttributeFee", "SetExecFeeFactor", "SetFeePerByte", "SetMaxTraceableBlocks", "SetMaxValidUntilBlockIncrement", "SetMillisecondsPerBlock", "SetStoragePrice", "SetWhitelistFeeContract", "UnblockAccount", "blockAccount", "getAttributeFee", "setAttributeFee"],
+    },
+    NativeContractInfo {
+        name: "TokenManagement",
+        script_hash: [0x9F, 0x04, 0x0E, 0xA4, 0xA8, 0x44, 0x8F, 0x01, 0x5A, 0xF6, 0x45, 0x65, 0x9B, 0x0F, 0xB2, 0xAE, 0x7D, 0xC5, 0x00, 0xAE],
+        methods: &["BalanceOf", "GetAssetsOfOwner", "GetTokenInfo"],
     },
     NativeContractInfo {
         name: "LedgerContract",

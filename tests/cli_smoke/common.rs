@@ -1,6 +1,6 @@
 use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
-use jsonschema::JSONSchema;
+use jsonschema::{validator_for, Validator};
 use serde_json::Value;
 use std::fmt::Write;
 use std::fs::File;
@@ -147,7 +147,8 @@ pub(crate) enum SchemaKind {
 }
 
 pub(crate) fn assert_schema(kind: SchemaKind, payload: &Value) {
-    if let Err(errors) = schema(kind).validate(payload) {
+    let mut errors = schema(kind).iter_errors(payload).peekable();
+    if errors.peek().is_some() {
         let mut message = String::new();
         let _ = writeln!(&mut message, "Schema validation failed for {kind:?}:");
         for error in errors {
@@ -157,11 +158,11 @@ pub(crate) fn assert_schema(kind: SchemaKind, payload: &Value) {
     }
 }
 
-fn schema(kind: SchemaKind) -> &'static JSONSchema {
-    static INFO_SCHEMA: OnceLock<JSONSchema> = OnceLock::new();
-    static DISASM_SCHEMA: OnceLock<JSONSchema> = OnceLock::new();
-    static DECOMPILE_SCHEMA: OnceLock<JSONSchema> = OnceLock::new();
-    static TOKENS_SCHEMA: OnceLock<JSONSchema> = OnceLock::new();
+fn schema(kind: SchemaKind) -> &'static Validator {
+    static INFO_SCHEMA: OnceLock<Validator> = OnceLock::new();
+    static DISASM_SCHEMA: OnceLock<Validator> = OnceLock::new();
+    static DECOMPILE_SCHEMA: OnceLock<Validator> = OnceLock::new();
+    static TOKENS_SCHEMA: OnceLock<Validator> = OnceLock::new();
 
     match kind {
         SchemaKind::Info => INFO_SCHEMA.get_or_init(|| load_schema("info")),
@@ -171,7 +172,7 @@ fn schema(kind: SchemaKind) -> &'static JSONSchema {
     }
 }
 
-fn load_schema(name: &str) -> JSONSchema {
+fn load_schema(name: &str) -> Validator {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = manifest_dir
         .join("docs")
@@ -181,6 +182,6 @@ fn load_schema(name: &str) -> JSONSchema {
         .unwrap_or_else(|err| panic!("failed to read schema {}: {err}", path.display()));
     let schema_json: Value = serde_json::from_str(&raw)
         .unwrap_or_else(|err| panic!("failed to parse schema {}: {err}", path.display()));
-    JSONSchema::compile(&schema_json)
+    validator_for(&schema_json)
         .unwrap_or_else(|err| panic!("failed to compile schema {}: {err}", path.display()))
 }

@@ -47,4 +47,8 @@ impl HighLevelEmitter {
             _ => None,
         }
     }
+
+    pub(super) fn transfer_label_name(target: usize) -> String {
+        format!("label_0x{target:04X}")
+    }
 }

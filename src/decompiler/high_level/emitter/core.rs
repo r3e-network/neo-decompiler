@@ -68,6 +68,11 @@ impl HighLevelEmitter {
                 self.statements.push(header);
             }
         }
+
+        if self.transfer_labels.remove(&offset) {
+            self.statements
+                .push(format!("{}:", Self::transfer_label_name(offset)));
+        }
     }
 
     pub(crate) fn finish(mut self) -> super::HighLevelOutput {
