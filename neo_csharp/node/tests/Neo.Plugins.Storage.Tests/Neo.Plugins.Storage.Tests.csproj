@@ -1,8 +1,0 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\plugins\LevelDBStore\LevelDBStore.csproj" />
-    <ProjectReference Include="..\..\plugins\RocksDBStore\RocksDBStore.csproj" />
-  </ItemGroup>
-
-</Project>

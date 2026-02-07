@@ -58,3 +58,9 @@ __pycache__/
 local_config.toml
 .env
 .serena/
+
+.claude/
+
+# Vendored neo_csharp build outputs
+neo_csharp/**/bin/
+neo_csharp/**/obj/

@@ -1,7 +1,0 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
-
-  <ItemGroup>
-    <ProjectReference Include="..\..\src\Neo.ConsoleService\Neo.ConsoleService.csproj" />
-  </ItemGroup>
-
-</Project>
