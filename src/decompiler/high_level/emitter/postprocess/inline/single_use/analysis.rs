@@ -60,6 +60,6 @@ pub(super) fn collect_candidates(statements: &[String]) -> Vec<InlineCandidate> 
         }
     }
 
-    candidates.sort_by(|a, b| b.def_line.cmp(&a.def_line));
+    candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.def_line));
     candidates
 }
