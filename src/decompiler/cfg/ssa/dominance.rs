@@ -401,29 +401,29 @@ fn compute_df(
         df.insert(block.id, BTreeSet::new());
     }
 
-    // For each block with multiple predecessors
+    // Cooper-Harvey-Kennedy dominance frontier algorithm:
+    // For each join point (block with ≥2 predecessors), walk up the
+    // dominator tree from each predecessor until reaching the join
+    // point's immediate dominator, adding the join point to each
+    // visited node's DF along the way.
     for block in cfg.blocks() {
         let predecessors = cfg.predecessors(block.id);
 
         if predecessors.len() < 2 {
-            continue; // Skip single-predecessor blocks
+            continue; // Only join points contribute to DFs
         }
 
-        // For each predecessor
-        for &runner in predecessors {
-            // Walk up the dominator tree from runner
-            let mut current = runner;
-            while let Some(&Some(idom_block)) = idom.get(&current) {
-                if Some(idom_block) == idom.get(&block.id).copied().flatten() {
-                    // Reached the block's immediate dominator - stop
-                    break;
+        let block_idom = idom.get(&block.id).copied().flatten();
+
+        for &pred in predecessors {
+            let mut runner = pred;
+            // Walk up until runner IS the immediate dominator of the join block
+            while Some(runner) != block_idom {
+                df.entry(runner).or_default().insert(block.id);
+                match idom.get(&runner).copied().flatten() {
+                    Some(next) => runner = next,
+                    None => break, // entry block — no further idom
                 }
-
-                // Add block to current's dominance frontier
-                df.entry(current).or_default().insert(block.id);
-
-                // Continue walking up
-                current = idom_block;
             }
         }
     }
@@ -527,6 +527,132 @@ mod tests {
                 );
             }
         }
+        cfg
+    }
+
+    #[test]
+    fn diamond_cfg_dominance_frontier() {
+        // Diamond: BB0 -> (BB1, BB2) -> BB3
+        // DF(BB0) = {}, DF(BB1) = {BB3}, DF(BB2) = {BB3}, DF(BB3) =
+        let cfg = create_diamond_cfg();
+        let dominance = compute(&cfg);
+
+        assert!(
+            dominance.dominance_frontier_vec(BlockId(0)).is_empty(),
+            "DF(BB0) should be empty for diamond entry"
+        );
+        assert_eq!(
+            dominance.dominance_frontier_vec(BlockId(1)),
+            vec![BlockId(3)],
+            "DF(BB1) should be {{BB3}}"
+        );
+        assert_eq!(
+            dominance.dominance_frontier_vec(BlockId(2)),
+            vec![BlockId(3)],
+            "DF(BB2) should be {{BB3}}"
+        );
+        assert!(
+            dominance.dominance_frontier_vec(BlockId(3)).is_empty(),
+            "DF(BB3) should be empty for diamond exit"
+        );
+    }
+
+    #[test]
+    fn loop_cfg_dominance_frontier() {
+        // Loop with pre-header:
+        //   BB0 (pre-header) -> BB1
+        //   BB1 (loop header) -> branch BB2 (body) / BB3 (exit)
+        //   BB2 (body) -> BB1  (back edge)
+        //   BB3 (exit) -> return
+        //
+        // BB1 has 2 predecessors (BB0, BB2) → join point
+        // DF(BB0) = {}, DF(BB1) = {BB1}, DF(BB2) = {BB1}, DF(BB3) = {}
+        let cfg = create_loop_cfg();
+        let dominance = compute(&cfg);
+
+        let df0 = dominance.dominance_frontier_vec(BlockId(0));
+        assert!(df0.is_empty(), "DF(BB0) should be empty (pre-header)");
+
+        let df1 = dominance.dominance_frontier_vec(BlockId(1));
+        assert_eq!(
+            df1,
+            vec![BlockId(1)],
+            "DF(BB1) should be {{BB1}} (loop header in own DF)"
+        );
+
+        let df2 = dominance.dominance_frontier_vec(BlockId(2));
+        assert_eq!(df2, vec![BlockId(1)], "DF(BB2) should be {{BB1}}");
+
+        let df3 = dominance.dominance_frontier_vec(BlockId(3));
+        assert!(df3.is_empty(), "DF(BB3) should be empty (exit block)");
+    }
+
+    fn create_loop_cfg() -> Cfg {
+        let mut cfg = Cfg::new();
+
+        // BB0: pre-header, jumps to loop header
+        let pre_header = BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::Jump {
+                target: BlockId(1),
+            },
+        );
+        cfg.add_block(pre_header);
+
+        // BB1: loop header, branch to body (BB2) or exit (BB3)
+        let header = BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Branch {
+                then_target: BlockId(2),
+                else_target: BlockId(3),
+            },
+        );
+        cfg.add_block(header);
+        cfg.add_edge(
+            BlockId(0),
+            BlockId(1),
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
+
+        // BB2: loop body, back-edge to header
+        let body = BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            2..3,
+            Terminator::Jump {
+                target: BlockId(1),
+            },
+        );
+        cfg.add_block(body);
+        cfg.add_edge(
+            BlockId(1),
+            BlockId(2),
+            crate::decompiler::cfg::EdgeKind::ConditionalTrue,
+        );
+
+        // BB3: exit
+        let exit = BasicBlock::new(BlockId(3), 3, 4, 3..4, Terminator::Return);
+        cfg.add_block(exit);
+        cfg.add_edge(
+            BlockId(1),
+            BlockId(3),
+            crate::decompiler::cfg::EdgeKind::ConditionalFalse,
+        );
+
+        // Back edge: BB2 -> BB1
+        cfg.add_edge(
+            BlockId(2),
+            BlockId(1),
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
+
         cfg
     }
 
