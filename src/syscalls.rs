@@ -12,9 +12,10 @@ pub use generated::SyscallInfo;
 const fn assert_syscalls_sorted_by_hash(syscalls: &[SyscallInfo]) {
     let mut i = 1usize;
     while i < syscalls.len() {
-        if syscalls[i - 1].hash >= syscalls[i].hash {
-            panic!("generated::SYSCALLS must be sorted by hash (strictly increasing)");
-        }
+        assert!(
+            syscalls[i - 1].hash < syscalls[i].hash,
+            "generated::SYSCALLS must be sorted by hash (strictly increasing)"
+        );
         i += 1;
     }
 }
@@ -22,6 +23,7 @@ const fn assert_syscalls_sorted_by_hash(syscalls: &[SyscallInfo]) {
 const _: () = assert_syscalls_sorted_by_hash(generated::SYSCALLS);
 
 /// Find information about a syscall by its numeric hash.
+#[must_use]
 pub fn lookup(hash: u32) -> Option<&'static SyscallInfo> {
     generated::SYSCALLS
         .binary_search_by_key(&hash, |info| info.hash)
@@ -30,16 +32,19 @@ pub fn lookup(hash: u32) -> Option<&'static SyscallInfo> {
 }
 
 /// Returns true if the syscall is known to push a value onto the stack.
+#[must_use]
 pub fn returns_value(hash: u32) -> bool {
     lookup(hash).map(|info| info.returns_value).unwrap_or(true)
 }
 
 /// Return the complete table of known syscalls.
+#[must_use]
 pub fn all() -> &'static [SyscallInfo] {
     generated::SYSCALLS
 }
 
 /// Return a human-readable summary of a syscall suitable for catalogs.
+#[must_use]
 pub fn summarize(syscall: &SyscallInfo) -> (&'static str, &'static str, bool) {
     (syscall.name, syscall.call_flags, syscall.returns_value)
 }

@@ -46,6 +46,7 @@ pub enum Terminator {
 
 impl Terminator {
     /// Get all successor block IDs.
+    #[must_use]
     pub fn successors(&self) -> Vec<BlockId> {
         match self {
             Terminator::Fallthrough { target } => vec![*target],
@@ -75,11 +76,13 @@ impl Terminator {
     }
 
     /// Check if this terminator can fall through to the next instruction.
+    #[must_use]
     pub fn can_fallthrough(&self) -> bool {
         matches!(self, Terminator::Fallthrough { .. })
     }
 
     /// Check if this is a conditional branch.
+    #[must_use]
     pub fn is_conditional(&self) -> bool {
         matches!(self, Terminator::Branch { .. })
     }

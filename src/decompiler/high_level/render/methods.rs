@@ -54,11 +54,11 @@ pub(super) fn write_manifest_methods(
                 .or_else(|| instructions.last().map(|i| i.offset + 1))
                 .unwrap_or(start);
 
-            let slice: Vec<Instruction> = instructions
-                .iter()
-                .filter(|ins| ins.offset >= start && ins.offset < end)
-                .cloned()
-                .collect();
+            // Instructions are sorted by offset — use partition_point
+            // to locate the sub-slice without cloning.
+            let lo = instructions.partition_point(|ins| ins.offset < start);
+            let hi = instructions.partition_point(|ins| ins.offset < end);
+            let slice = &instructions[lo..hi];
 
             if slice.is_empty() {
                 writeln!(
@@ -70,7 +70,7 @@ pub(super) fn write_manifest_methods(
                 let labels = sanitize_parameter_names(&method.parameters);
                 body::write_method_body(
                     output,
-                    &slice,
+                    slice,
                     Some(&labels),
                     inline_single_use_temps,
                     warnings,

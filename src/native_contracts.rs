@@ -27,11 +27,10 @@ const fn script_hash_lt(left: &[u8; 20], right: &[u8; 20]) -> bool {
 const fn assert_native_contracts_sorted_by_hash(contracts: &[NativeContractInfo]) {
     let mut i = 1usize;
     while i < contracts.len() {
-        if !script_hash_lt(&contracts[i - 1].script_hash, &contracts[i].script_hash) {
-            panic!(
-                "generated::NATIVE_CONTRACTS must be sorted by script_hash (strictly increasing)"
-            );
-        }
+        assert!(
+            script_hash_lt(&contracts[i - 1].script_hash, &contracts[i].script_hash),
+            "generated::NATIVE_CONTRACTS must be sorted by script_hash (strictly increasing)"
+        );
         i += 1;
     }
 }
@@ -39,6 +38,7 @@ const fn assert_native_contracts_sorted_by_hash(contracts: &[NativeContractInfo]
 const _: () = assert_native_contracts_sorted_by_hash(generated::NATIVE_CONTRACTS);
 
 /// Return the native contract that matches the provided script hash (little-endian bytes).
+#[must_use]
 pub fn lookup(hash: &[u8; 20]) -> Option<&'static NativeContractInfo> {
     generated::NATIVE_CONTRACTS
         .binary_search_by_key(hash, |info| info.script_hash)
@@ -47,6 +47,7 @@ pub fn lookup(hash: &[u8; 20]) -> Option<&'static NativeContractInfo> {
 }
 
 /// Return the full list of bundled native contracts.
+#[must_use]
 pub fn all() -> &'static [NativeContractInfo] {
     generated::NATIVE_CONTRACTS
 }
@@ -84,6 +85,7 @@ impl NativeMethodHint {
     /// let hint = NativeMethodHint { contract: "Contract", canonical_method: None };
     /// assert_eq!(hint.formatted_label("Provided"), "Contract::<unknown Provided>");
     /// ```
+    #[must_use]
     pub fn formatted_label(&self, provided: &str) -> String {
         match self.canonical_method {
             Some(method) => format!("{}::{method}", self.contract),
@@ -92,12 +94,14 @@ impl NativeMethodHint {
     }
 
     /// Return `true` if the hint resolved the provided method to a known native method.
+    #[must_use]
     pub fn has_exact_method(&self) -> bool {
         self.canonical_method.is_some()
     }
 }
 
 /// Return native contract guidance for the supplied method token.
+#[must_use]
 pub fn describe_method_token(hash: &[u8; 20], method: &str) -> Option<NativeMethodHint> {
     let contract = lookup(hash)?;
     let canonical_method = contract

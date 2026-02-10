@@ -1,3 +1,11 @@
+// Bytecode offset arithmetic requires isize↔usize casts for signed jump deltas.
+// NEF scripts are bounded (~1 MB), so these conversions are structurally safe.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+
 use crate::instruction::{Instruction, Operand};
 
 use super::super::{HighLevelEmitter, LoopContext};
@@ -29,8 +37,9 @@ impl HighLevelEmitter {
             return;
         }
 
-        let right = self.stack.pop().expect("len checked");
-        let left = self.stack.pop().expect("len checked");
+        let (Some(right), Some(left)) = (self.stack.pop(), self.stack.pop()) else {
+            return;
+        };
         let condition = format!("{left} {symbol} {right}");
 
         self.push_comment(instruction);

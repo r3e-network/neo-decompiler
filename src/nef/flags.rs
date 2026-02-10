@@ -1,4 +1,5 @@
 /// Return the individual call flag labels set on the provided mask.
+#[must_use]
 pub fn call_flag_labels(flags: u8) -> Vec<&'static str> {
     let mut labels = Vec::new();
     if flags & super::CALL_FLAG_READ_STATES != 0 {
@@ -17,6 +18,7 @@ pub fn call_flag_labels(flags: u8) -> Vec<&'static str> {
 }
 
 /// Return a human-readable list of call flag names for displaying method tokens.
+#[must_use]
 pub fn describe_call_flags(flags: u8) -> String {
     if flags == 0 {
         return "None".into();

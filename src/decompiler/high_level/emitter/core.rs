@@ -76,13 +76,10 @@ impl HighLevelEmitter {
     }
 
     pub(crate) fn finish(mut self) -> super::HighLevelOutput {
-        if !self.pending_closers.is_empty() {
-            let mut remaining: Vec<_> = self.pending_closers.into_iter().collect();
-            remaining.sort_by_key(|(offset, _)| *offset);
-            for (_, count) in remaining {
-                for _ in 0..count {
-                    self.statements.push("}".into());
-                }
+        // BTreeMap iterates in key order — no sort needed.
+        for (_, count) in self.pending_closers {
+            for _ in 0..count {
+                self.statements.push("}".into());
             }
         }
         Self::rewrite_for_loops(&mut self.statements);

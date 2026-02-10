@@ -46,6 +46,7 @@ pub struct NefFile {
 
 impl NefFile {
     /// Length of the payload included in the checksum calculation.
+    #[must_use]
     pub fn payload_len(&self) -> usize {
         let fixed_header_len = super::FIXED_HEADER_SIZE; // magic + fixed 64-byte compiler
         let source_bytes = self.header.source.as_bytes();
@@ -57,6 +58,7 @@ impl NefFile {
     }
 
     /// Hash160 of the script (little-endian) as used for the contract script hash.
+    #[must_use]
     pub fn script_hash(&self) -> [u8; 20] {
         util::hash160(&self.script)
     }

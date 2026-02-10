@@ -18,7 +18,7 @@ impl From<&Instruction> for InstructionReport {
         InstructionReport {
             offset: instruction.offset,
             opcode: instruction.opcode.mnemonic().to_string(),
-            operand: instruction.operand.as_ref().map(|op| op.to_string()),
+            operand: instruction.operand.as_ref().map(ToString::to_string),
             operand_kind: instruction
                 .operand
                 .as_ref()

@@ -21,6 +21,7 @@ mod tests;
 ///
 /// This function recursively simplifies subexpressions and then applies
 /// simplification rules to the result.
+#[must_use]
 pub fn simplify(expr: Expr) -> Expr {
     // First, recursively simplify subexpressions
     let expr = walk::simplify_children(expr);

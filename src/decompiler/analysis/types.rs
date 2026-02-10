@@ -8,6 +8,14 @@
 //! - useful for collection recovery and readability improvements
 //! - deterministic and panic-free on malformed input
 
+// Stack depth → i64 and type-tag byte reinterpretation casts are structurally
+// safe: stack depth fits in i64, and the i8→u8 cast is intentional.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+
 use serde::Serialize;
 
 use crate::instruction::{Instruction, OpCode, Operand};
@@ -264,19 +272,16 @@ fn infer_types_in_slice(
                 }
             }
             OpCode::Rot => {
-                if stack.len() >= 3 {
-                    let top = stack.pop().unwrap();
-                    let mid = stack.pop().unwrap();
-                    let bottom = stack.pop().unwrap();
+                if let (Some(top), Some(mid), Some(bottom)) =
+                    (stack.pop(), stack.pop(), stack.pop())
+                {
                     stack.push(mid);
                     stack.push(top);
                     stack.push(bottom);
                 }
             }
             OpCode::Tuck => {
-                if stack.len() >= 2 {
-                    let top = stack.pop().unwrap();
-                    let second = stack.pop().unwrap();
+                if let (Some(top), Some(second)) = (stack.pop(), stack.pop()) {
                     stack.push(top);
                     stack.push(second);
                     stack.push(top);

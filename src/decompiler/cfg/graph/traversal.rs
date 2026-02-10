@@ -5,6 +5,7 @@ use super::Cfg;
 
 impl Cfg {
     /// Iterate blocks in reverse post-order (useful for dataflow analysis).
+    #[must_use]
     pub fn reverse_postorder(&self) -> Vec<BlockId> {
         let mut visited = BTreeSet::new();
         let mut postorder = Vec::new();

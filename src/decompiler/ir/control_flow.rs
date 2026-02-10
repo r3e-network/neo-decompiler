@@ -40,6 +40,7 @@ pub enum ControlFlow {
 
 impl ControlFlow {
     /// Create an if statement without else branch.
+    #[must_use]
     pub fn if_then(condition: Expr, then_branch: Block) -> Self {
         ControlFlow::If {
             condition,
@@ -49,6 +50,7 @@ impl ControlFlow {
     }
 
     /// Create an if-else statement.
+    #[must_use]
     pub fn if_else(condition: Expr, then_branch: Block, else_branch: Block) -> Self {
         ControlFlow::If {
             condition,
@@ -58,11 +60,13 @@ impl ControlFlow {
     }
 
     /// Create a while loop.
+    #[must_use]
     pub fn while_loop(condition: Expr, body: Block) -> Self {
         ControlFlow::While { condition, body }
     }
 
     /// Create a do-while loop.
+    #[must_use]
     pub fn do_while(body: Block, condition: Expr) -> Self {
         ControlFlow::DoWhile { body, condition }
     }
@@ -83,6 +87,7 @@ impl ControlFlow {
     }
 
     /// Create a try-catch block.
+    #[must_use]
     pub fn try_catch(
         try_body: Block,
         catch_var: Option<String>,

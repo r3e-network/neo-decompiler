@@ -46,6 +46,7 @@ pub use opcodes_generated::OpCode;
 
 impl OpCode {
     /// Return every opcode variant known to the generated table ordered by opcode byte.
+    #[must_use]
     pub fn all_known() -> Vec<OpCode> {
         let mut entries = Vec::new();
         for byte in u8::MIN..=u8::MAX {

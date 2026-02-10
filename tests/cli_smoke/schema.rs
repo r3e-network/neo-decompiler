@@ -107,7 +107,7 @@ fn schema_command_outputs_embedded_schema() {
         .output()
         .expect("info json output");
     assert!(info_json.status.success());
-    let info_json_bytes = info_json.stdout.clone();
+    let info_json_bytes = info_json.stdout;
     std::fs::write(&info_json_path, &info_json_bytes).unwrap();
 
     let validation = neo_decompiler_cmd()
@@ -117,12 +117,11 @@ fn schema_command_outputs_embedded_schema() {
         .arg(&info_json_path)
         .output()
         .expect("schema validation");
-    if !validation.status.success() {
-        panic!(
-            "schema validation stderr: {}",
-            String::from_utf8_lossy(&validation.stderr)
-        );
-    }
+    assert!(
+        validation.status.success(),
+        "schema validation stderr: {}",
+        String::from_utf8_lossy(&validation.stderr)
+    );
     assert!(String::from_utf8_lossy(&validation.stdout).contains("Validation succeeded"));
 
     let stdin_validation = neo_decompiler_cmd()
@@ -131,14 +130,13 @@ fn schema_command_outputs_embedded_schema() {
         .arg("--validate")
         .arg("-")
         .arg("--no-print")
-        .write_stdin(info_json_bytes.clone())
+        .write_stdin(info_json_bytes)
         .output()
         .expect("schema validation via stdin");
-    if !stdin_validation.status.success() {
-        panic!(
-            "schema validation (stdin) stderr: {}",
-            String::from_utf8_lossy(&stdin_validation.stderr)
-        );
-    }
+    assert!(
+        stdin_validation.status.success(),
+        "schema validation (stdin) stderr: {}",
+        String::from_utf8_lossy(&stdin_validation.stderr)
+    );
     assert!(String::from_utf8_lossy(&stdin_validation.stdout).contains("Validation succeeded"));
 }

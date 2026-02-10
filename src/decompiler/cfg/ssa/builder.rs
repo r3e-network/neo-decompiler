@@ -3,6 +3,18 @@
 //! Implements the two-phase SSA construction algorithm:
 //! 1. φ node insertion using dominance frontiers
 //! 2. Variable renaming via dominator tree traversal
+//!
+//! # Current limitations
+//!
+//! The builder currently produces a **skeleton** SSA form: only `Push0`–`Push16`
+//! opcodes generate true SSA assignments with versioned variables. All other
+//! opcodes (arithmetic, comparisons, control flow, etc.) are lowered to
+//! comment-only statements. This means the resulting [`SsaForm`] is useful for
+//! structural analysis (dominance, φ placement) but does **not** yet model
+//! data flow for the full Neo VM instruction set.
+//!
+//! Extending coverage requires mapping each opcode's stack effects to explicit
+//! SSA definitions and uses.
 
 #![allow(clippy::needless_return)]
 
@@ -15,6 +27,13 @@ use super::dominance::{self, DominanceInfo};
 use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
 use super::variable::PhiNode;
 use super::variable::SsaVariable;
+
+/// Intermediate result from SSA block construction: (blocks, definitions, uses).
+type SsaBuildResult = (
+    BTreeMap<BlockId, SsaBlock>,
+    BTreeMap<SsaVariable, BlockId>,
+    BTreeMap<SsaVariable, BTreeSet<UseSite>>,
+);
 
 /// Builder for constructing SSA form from a CFG and instructions.
 pub struct SsaBuilder<'a> {
@@ -37,6 +56,7 @@ pub struct SsaBuilder<'a> {
 
 impl<'a> SsaBuilder<'a> {
     /// Create a new SSA builder for the given CFG and instructions.
+    #[must_use]
     pub fn new(cfg: &'a Cfg, instructions: &'a [Instruction]) -> Self {
         let dominance = dominance::compute(cfg);
 
@@ -54,12 +74,25 @@ impl<'a> SsaBuilder<'a> {
     /// This implements the two-phase SSA construction algorithm:
     /// 1. Compute φ node placement using dominance frontiers
     /// 2. Perform variable renaming via dominator tree traversal
+    #[must_use]
     pub fn build(mut self) -> SsaForm {
-        self.build_ssa_blocks()
+        let (ssa_blocks, definitions, uses) = self.build_ssa_blocks();
+        SsaForm {
+            cfg: self.cfg.clone(),
+            dominance: self.dominance,
+            blocks: ssa_blocks,
+            definitions,
+            uses,
+        }
     }
 
     /// Build SSA blocks by placing φ nodes and renaming variables.
-    fn build_ssa_blocks(&mut self) -> SsaForm {
+    ///
+    /// Returns the built blocks, definitions, and uses separately so the
+    /// caller can assemble `SsaForm` without cloning `dominance`.
+    fn build_ssa_blocks(
+        &mut self,
+    ) -> SsaBuildResult {
         let mut ssa_blocks = BTreeMap::new();
         let mut definitions = BTreeMap::new();
         let mut uses = BTreeMap::new();
@@ -159,13 +192,7 @@ impl<'a> SsaBuilder<'a> {
             ssa_blocks.insert(block.id, ssa_block);
         }
 
-        SsaForm {
-            cfg: self.cfg.clone(),
-            dominance: self.dominance.clone(),
-            blocks: ssa_blocks,
-            definitions,
-            uses,
-        }
+        (ssa_blocks, definitions, uses)
     }
 
     /// Process a single instruction to extract SSA-relevant information.
@@ -318,7 +345,11 @@ impl<'a> SsaBuilder<'a> {
 /// Create SSA form from a CFG without an instruction stream.
 ///
 /// Produces an SSA skeleton with empty blocks (no φ nodes or statements).
+/// The resulting form is suitable for dominance queries and structural
+/// analysis but contains no data-flow information.
+///
 /// Use [`SsaBuilder`] when instruction-level analysis is needed.
+#[must_use]
 pub fn build_ssa_from_cfg(cfg: &Cfg) -> SsaForm {
     let dominance = dominance::compute(cfg);
     let mut ssa_blocks = BTreeMap::new();

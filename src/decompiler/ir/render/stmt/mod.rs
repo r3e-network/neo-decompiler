@@ -6,6 +6,7 @@ mod control_flow;
 
 const INDENT: &str = "    ";
 
+#[must_use]
 pub fn render_stmt(stmt: &Stmt, indent: usize) -> String {
     let prefix = INDENT.repeat(indent);
     match stmt {
@@ -47,6 +48,7 @@ pub fn render_stmt(stmt: &Stmt, indent: usize) -> String {
     }
 }
 
+#[must_use]
 pub fn render_block(block: &Block, indent: usize) -> String {
     block
         .stmts

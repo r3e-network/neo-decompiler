@@ -65,8 +65,9 @@ impl HighLevelEmitter {
             return;
         }
 
-        let right = self.pop_stack_value().expect("len checked");
-        let left = self.pop_stack_value().expect("len checked");
+        let (Some(right), Some(left)) = (self.pop_stack_value(), self.pop_stack_value()) else {
+            return;
+        };
         let temp = self.next_temp();
         self.statements
             .push(format!("let {temp} = {left} {symbol} {right};"));

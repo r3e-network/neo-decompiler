@@ -91,12 +91,12 @@ fn process_nef_contract(
     id: &str,
     known_unsupported: &[KnownUnsupported],
 ) -> ContractStatus {
-    if !nef_path.is_file() {
-        panic!("NEF missing: {}", nef_path.display());
-    }
-    if !manifest_path.is_file() {
-        panic!("Manifest missing: {}", manifest_path.display());
-    }
+    assert!(nef_path.is_file(), "NEF missing: {}", nef_path.display());
+    assert!(
+        manifest_path.is_file(),
+        "Manifest missing: {}",
+        manifest_path.display()
+    );
 
     decompile_and_write_outputs(
         decompiler,

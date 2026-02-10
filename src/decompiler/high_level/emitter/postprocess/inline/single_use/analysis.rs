@@ -8,10 +8,13 @@ pub(super) fn collect_candidates(statements: &[String]) -> Vec<InlineCandidate> 
     let mut definitions: HashMap<String, (usize, String)> = HashMap::new();
     let mut use_counts: HashMap<String, usize> = HashMap::new();
     let mut reassigned: HashSet<String> = HashSet::new();
+    // Incrementally maintained list of defined variable names, avoiding
+    // the previous O(n²) pattern of rebuilding from definitions.keys()
+    // on every iteration.
+    let mut known: Vec<String> = Vec::new();
 
     for (idx, line) in statements.iter().enumerate() {
         let trimmed = line.trim();
-        let known: Vec<String> = definitions.keys().cloned().collect();
 
         if let Some(assign) = HighLevelEmitter::parse_assignment(trimmed) {
             // Count uses in RHS.
@@ -32,6 +35,7 @@ pub(super) fn collect_candidates(statements: &[String]) -> Vec<InlineCandidate> 
                     // Variable redefined, mark as reassigned.
                     reassigned.insert(assign.lhs.clone());
                 } else {
+                    known.push(assign.lhs.clone());
                     definitions.insert(assign.lhs.clone(), (idx, assign.rhs.clone()));
                 }
             } else {

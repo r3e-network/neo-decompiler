@@ -20,6 +20,7 @@ pub struct BasicBlock {
 
 impl BasicBlock {
     /// Create a new basic block.
+    #[must_use]
     pub fn new(
         id: BlockId,
         start_offset: usize,
@@ -37,16 +38,19 @@ impl BasicBlock {
     }
 
     /// Check if this block contains the given offset.
+    #[must_use]
     pub fn contains_offset(&self, offset: usize) -> bool {
         offset >= self.start_offset && offset < self.end_offset
     }
 
     /// Get the number of instructions in this block.
+    #[must_use]
     pub fn instruction_count(&self) -> usize {
         self.instruction_range.len()
     }
 
     /// Check if this is an empty block (no instructions).
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.instruction_range.is_empty()
     }

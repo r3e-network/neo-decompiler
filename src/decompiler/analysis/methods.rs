@@ -49,6 +49,7 @@ impl MethodTable {
     /// If the manifest does not cover the script entry region, a synthetic
     /// entry span is inserted to ensure that every offset resolves to some
     /// method.
+    #[must_use]
     pub fn new(instructions: &[Instruction], manifest: Option<&ContractManifest>) -> Self {
         let script_start = instructions.first().map(|ins| ins.offset).unwrap_or(0);
         let script_end = instructions

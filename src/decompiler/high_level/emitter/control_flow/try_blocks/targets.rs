@@ -1,3 +1,11 @@
+// Bytecode offset arithmetic requires isize↔usize casts for signed jump deltas.
+// NEF scripts are bounded (~1 MB), so these conversions are structurally safe.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+
 use crate::instruction::{Instruction, Operand};
 
 use super::super::super::HighLevelEmitter;

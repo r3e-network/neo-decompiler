@@ -9,9 +9,11 @@ impl HighLevelEmitter {
             self.stack_underflow(instruction, 3);
             return;
         }
-        let top = self.stack.pop().expect("len checked");
-        let mid = self.stack.pop().expect("len checked");
-        let bottom = self.stack.pop().expect("len checked");
+        let (Some(top), Some(mid), Some(bottom)) =
+            (self.stack.pop(), self.stack.pop(), self.stack.pop())
+        else {
+            return;
+        };
         // ROT: bring the third item to the top -> [a, b, c] becomes [b, c, a]
         self.stack.push(mid);
         self.stack.push(top);
@@ -27,8 +29,9 @@ impl HighLevelEmitter {
             return;
         }
 
-        let top = self.stack.pop().expect("len checked");
-        let second = self.stack.pop().expect("len checked");
+        let (Some(top), Some(second)) = (self.stack.pop(), self.stack.pop()) else {
+            return;
+        };
 
         let dup = self.next_temp();
         self.statements

@@ -66,7 +66,7 @@ impl Cli {
                 let report = DisasmReport {
                     file: path.display().to_string(),
                     instructions,
-                    warnings: result.warnings.clone(),
+                    warnings: result.warnings,
                 };
                 self.print_json(&report)?;
             }

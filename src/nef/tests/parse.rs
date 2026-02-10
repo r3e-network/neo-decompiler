@@ -55,7 +55,7 @@ fn rejects_truncated_checksum_instead_of_panicking() {
 fn rejects_trailing_bytes() {
     let script = vec![0x40];
     let bytes = build_sample(&script);
-    let mut with_extra = bytes.clone();
+    let mut with_extra = bytes;
     with_extra.push(0x99);
 
     let err = NefParser::new().parse(&with_extra).unwrap_err();

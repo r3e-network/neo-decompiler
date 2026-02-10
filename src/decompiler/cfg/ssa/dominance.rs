@@ -57,7 +57,7 @@ impl DominanceInfo {
     pub fn children(&self, block: BlockId) -> &[BlockId] {
         self.dominator_tree
             .get(&block)
-            .map(|v| v.as_slice())
+            .map(Vec::as_slice)
             .unwrap_or(&[])
     }
 
@@ -102,6 +102,7 @@ impl Default for DominanceInfo {
 /// 4. Compute dominance frontiers for φ node insertion
 ///
 /// Complexity: O(n²) worst case, but typically much faster for structured code.
+#[must_use]
 pub fn compute(cfg: &Cfg) -> DominanceInfo {
     if cfg.blocks().count() == 0 {
         return DominanceInfo::new();
@@ -322,25 +323,37 @@ fn reverse_post_order(cfg: &Cfg) -> Vec<BlockId> {
     order
 }
 
-/// DFS post-order traversal helper.
+/// Iterative DFS post-order traversal.
+///
+/// Uses an explicit stack instead of recursion to avoid stack overflow
+/// on deeply nested CFGs produced by malformed bytecode.
 fn dfs_post_order(
     cfg: &Cfg,
-    block: BlockId,
+    entry: BlockId,
     visited: &mut BTreeSet<BlockId>,
     order: &mut Vec<BlockId>,
 ) {
-    if visited.contains(&block) {
+    // Each frame tracks the block and how many successors have been visited.
+    let mut stack: Vec<(BlockId, usize)> = Vec::new();
+
+    if !visited.insert(entry) {
         return;
     }
-    visited.insert(block);
+    stack.push((entry, 0));
 
-    // Visit successors first
-    for &succ in cfg.successors(block) {
-        dfs_post_order(cfg, succ, visited, order);
+    while let Some((block, next_idx)) = stack.last_mut() {
+        let successors = cfg.successors(*block);
+        if *next_idx < successors.len() {
+            let succ = successors[*next_idx];
+            *next_idx += 1;
+            if visited.insert(succ) {
+                stack.push((succ, 0));
+            }
+        } else {
+            let (block, _) = stack.pop().expect("stack is non-empty");
+            order.push(block);
+        }
     }
-
-    // Add block after visiting successors (post-order)
-    order.push(block);
 }
 
 /// Build the dominator tree from immediate dominator relationships.

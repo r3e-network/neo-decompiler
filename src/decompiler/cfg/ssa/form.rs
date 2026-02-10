@@ -114,8 +114,8 @@ impl SsaForm {
     /// Get statistics about the SSA form.
     #[must_use]
     pub fn stats(&self) -> SsaStats {
-        let total_phi_nodes: usize = self.blocks.values().map(|b| b.phi_count()).sum();
-        let total_statements: usize = self.blocks.values().map(|b| b.stmt_count()).sum();
+        let total_phi_nodes: usize = self.blocks.values().map(SsaBlock::phi_count).sum();
+        let total_statements: usize = self.blocks.values().map(SsaBlock::stmt_count).sum();
         let total_variables = self.definitions.len();
 
         SsaStats {
@@ -495,7 +495,7 @@ mod tests {
     #[test]
     fn test_ssa_expr_constructors() {
         let var = SsaVariable::initial("x".to_string());
-        let expr = SsaExpr::var(var.clone());
+        let expr = SsaExpr::var(var);
 
         assert!(matches!(expr, SsaExpr::Variable(_)));
 
@@ -547,7 +547,7 @@ mod tests {
     #[test]
     fn test_ssa_stmt_display() {
         let var = SsaVariable::new("result".to_string(), 0);
-        let stmt = SsaStmt::assign(var.clone(), SsaExpr::lit(Literal::Int(42)));
+        let stmt = SsaStmt::assign(var, SsaExpr::lit(Literal::Int(42)));
 
         assert_eq!(format!("{}", stmt), "result = 42;");
     }

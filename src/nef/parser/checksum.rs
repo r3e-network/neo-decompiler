@@ -8,6 +8,7 @@ impl NefParser {
     /// This implements the double-SHA256 checksum used by the NEF container and
     /// returns the first 4 bytes of the resulting digest as a little-endian
     /// `u32`.
+    #[must_use]
     pub fn calculate_checksum(payload: &[u8]) -> u32 {
         let first = Sha256::digest(payload);
         let second = Sha256::digest(first.as_slice());

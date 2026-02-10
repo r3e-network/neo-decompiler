@@ -106,6 +106,6 @@ impl Decompilation {
     /// `Option<String>` - Rendered SSA code, or `None` if SSA not computed.
     #[must_use]
     pub fn render_ssa(&self) -> Option<String> {
-        self.ssa.as_ref().map(|ssa| ssa.render())
+        self.ssa.as_ref().map(SsaForm::render)
     }
 }

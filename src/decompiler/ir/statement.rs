@@ -46,16 +46,19 @@ impl Stmt {
     }
 
     /// Create a return statement with a value.
+    #[must_use]
     pub fn ret(value: Expr) -> Self {
         Stmt::Return(Some(value))
     }
 
     /// Create a return statement without a value.
+    #[must_use]
     pub fn ret_void() -> Self {
         Stmt::Return(None)
     }
 
     /// Create an expression statement.
+    #[must_use]
     pub fn expr(e: Expr) -> Self {
         Stmt::ExprStmt(e)
     }
@@ -83,11 +86,13 @@ pub struct Block {
 
 impl Block {
     /// Create a new empty block.
+    #[must_use]
     pub fn new() -> Self {
         Self { stmts: Vec::new() }
     }
 
     /// Create a block with statements.
+    #[must_use]
     pub fn with_stmts(stmts: Vec<Stmt>) -> Self {
         Self { stmts }
     }
@@ -98,11 +103,13 @@ impl Block {
     }
 
     /// Check if the block is empty.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stmts.is_empty()
     }
 
     /// Get the number of statements.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.stmts.len()
     }

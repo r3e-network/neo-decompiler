@@ -24,6 +24,7 @@ pub struct Cfg {
 
 impl Cfg {
     /// Create a new empty CFG.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             blocks: BTreeMap::new(),
@@ -59,6 +60,7 @@ impl Cfg {
     }
 
     /// Get a block by ID.
+    #[must_use]
     pub fn block(&self, id: BlockId) -> Option<&BasicBlock> {
         self.blocks.get(&id)
     }
@@ -69,6 +71,7 @@ impl Cfg {
     }
 
     /// Get the entry block.
+    #[must_use]
     pub fn entry_block(&self) -> Option<&BasicBlock> {
         self.blocks.get(&self.entry)
     }
@@ -79,11 +82,13 @@ impl Cfg {
     }
 
     /// Get the number of blocks.
+    #[must_use]
     pub fn block_count(&self) -> usize {
         self.blocks.len()
     }
 
     /// Get all edges.
+    #[must_use]
     pub fn edges(&self) -> &[Edge] {
         &self.edges
     }
@@ -92,10 +97,11 @@ impl Cfg {
     ///
     /// Returns an empty slice if the block has no successors.
     /// This operation is O(1) due to pre-computed adjacency lists.
+    #[must_use]
     pub fn successors(&self, id: BlockId) -> &[BlockId] {
         self.successors
             .get(&id)
-            .map(|v| v.as_slice())
+            .map(Vec::as_slice)
             .unwrap_or(&[])
     }
 
@@ -103,14 +109,16 @@ impl Cfg {
     ///
     /// Returns an empty slice if the block has no predecessors.
     /// This operation is O(1) due to pre-computed adjacency lists.
+    #[must_use]
     pub fn predecessors(&self, id: BlockId) -> &[BlockId] {
         self.predecessors
             .get(&id)
-            .map(|v| v.as_slice())
+            .map(Vec::as_slice)
             .unwrap_or(&[])
     }
 
     /// Get exit blocks.
+    #[must_use]
     pub fn exit_blocks(&self) -> &BTreeSet<BlockId> {
         &self.exits
     }
@@ -118,6 +126,7 @@ impl Cfg {
     /// Find block containing the given offset.
     ///
     /// Uses a BTreeMap range query for O(log n) lookup instead of linear scan.
+    #[must_use]
     pub fn block_at_offset(&self, offset: usize) -> Option<&BasicBlock> {
         // Find the block whose start_offset is the largest value ≤ offset
         let (_, &block_id) = self.offset_to_block.range(..=offset).next_back()?;

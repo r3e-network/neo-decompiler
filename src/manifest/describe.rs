@@ -17,6 +17,7 @@ impl ManifestPermissionContract {
     /// let contract = ManifestPermissionContract::Wildcard("*".into());
     /// assert_eq!(contract.describe(), "*");
     /// ```
+    #[must_use]
     pub fn describe(&self) -> String {
         match self {
             ManifestPermissionContract::Wildcard(value) => value.clone(),
@@ -42,6 +43,7 @@ impl ManifestPermissionMethods {
     /// let methods = ManifestPermissionMethods::Wildcard("*".into());
     /// assert_eq!(methods.describe(), "*");
     /// ```
+    #[must_use]
     pub fn describe(&self) -> String {
         match self {
             ManifestPermissionMethods::Wildcard(value) => value.clone(),
@@ -75,6 +77,7 @@ impl ManifestTrusts {
     /// let trusts = ManifestTrusts::Wildcard("*".into());
     /// assert_eq!(trusts.describe(), "*");
     /// ```
+    #[must_use]
     pub fn describe(&self) -> String {
         match self {
             ManifestTrusts::Wildcard(value) => value.clone(),

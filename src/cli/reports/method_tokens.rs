@@ -64,7 +64,7 @@ pub(in crate::cli) fn build_method_token_report(token: &MethodToken) -> MethodTo
 pub(in crate::cli) fn collect_warnings(tokens: &[MethodTokenReport]) -> Vec<String> {
     tokens
         .iter()
-        .filter_map(|report| report.warning.as_ref().map(|w| w.to_string()))
+        .filter_map(|report| report.warning.as_ref().map(ToString::to_string))
         .collect()
 }
 

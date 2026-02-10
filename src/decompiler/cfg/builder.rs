@@ -24,6 +24,7 @@ pub struct CfgBuilder<'a> {
 
 impl<'a> CfgBuilder<'a> {
     /// Create a new CFG builder.
+    #[must_use]
     pub fn new(instructions: &'a [Instruction]) -> Self {
         let mut offset_to_index = BTreeMap::new();
         for (i, instr) in instructions.iter().enumerate() {
@@ -38,6 +39,7 @@ impl<'a> CfgBuilder<'a> {
     }
 
     /// Build the CFG.
+    #[must_use]
     pub fn build(mut self) -> Cfg {
         if self.instructions.is_empty() {
             return Cfg::new();

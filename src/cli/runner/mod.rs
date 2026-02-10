@@ -15,6 +15,11 @@ use super::args::{Cli, Command};
 
 impl Cli {
     /// Execute the selected CLI subcommand.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subcommand encounters an I/O failure, a
+    /// malformed NEF container, an invalid manifest, or a disassembly problem.
     pub fn run(&self) -> Result<()> {
         match &self.command {
             Command::Info { path, format } => self.run_info(path, *format),

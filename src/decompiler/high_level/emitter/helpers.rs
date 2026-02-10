@@ -1,3 +1,7 @@
+// Widening casts (i8/i16/i32/u8/u16/u32 → i64) are lossless; the i8→u8 cast
+// in convert_target_name is a deliberate reinterpretation of a type-tag byte.
+#![allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
+
 use crate::instruction::Operand;
 
 use super::LiteralValue;

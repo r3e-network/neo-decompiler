@@ -27,6 +27,7 @@ impl Instruction {
     /// assert_eq!(ins.offset, 0);
     /// assert_eq!(ins.opcode, OpCode::Push0);
     /// ```
+    #[must_use]
     pub fn new(offset: usize, opcode: OpCode, operand: Option<Operand>) -> Self {
         Self {
             offset,

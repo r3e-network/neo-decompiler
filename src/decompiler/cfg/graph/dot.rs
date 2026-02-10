@@ -2,6 +2,7 @@ use super::{Cfg, EdgeKind};
 
 impl Cfg {
     /// Export CFG to DOT format for visualization.
+    #[must_use]
     pub fn to_dot(&self) -> String {
         let mut dot = String::from("digraph CFG {\n");
         dot.push_str("  node [shape=box];\n");

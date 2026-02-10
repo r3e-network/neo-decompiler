@@ -9,6 +9,7 @@ use super::form::{SsaExpr, SsaStmt};
 use super::variable::SsaVariable;
 
 /// Convert an IR expression to an SSA expression.
+#[must_use]
 pub fn expr_to_ssa(expr: &Expr) -> SsaExpr {
     match expr {
         Expr::Literal(lit) => SsaExpr::Literal(lit.clone()),
@@ -63,6 +64,7 @@ pub fn expr_to_ssa(expr: &Expr) -> SsaExpr {
 ///
 /// Note: This is a simplified conversion that wraps IR statements in `SsaStmt::Other`.
 /// Full implementation would convert all statement types to proper SSA form.
+#[must_use]
 pub fn stmt_to_ssa(stmt: &Stmt) -> SsaStmt {
     match stmt {
         Stmt::Assign { target, value } => {

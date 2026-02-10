@@ -63,11 +63,19 @@ impl Decompiler {
     }
 
     /// Decompile a NEF blob already loaded in memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the NEF container is malformed or disassembly fails.
     pub fn decompile_bytes(&self, bytes: &[u8]) -> Result<Decompilation> {
         self.decompile_bytes_with_manifest(bytes, None, OutputFormat::All)
     }
 
     /// Decompile a NEF blob using an optional manifest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the NEF container is malformed or disassembly fails.
     pub fn decompile_bytes_with_manifest(
         &self,
         bytes: &[u8],
@@ -135,11 +143,21 @@ impl Decompiler {
     }
 
     /// Decompile a NEF file from disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read, the NEF container is
+    /// malformed, or disassembly fails.
     pub fn decompile_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<Decompilation> {
         self.io_decompile_file(path)
     }
 
     /// Decompile a NEF file alongside an optional manifest file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either file cannot be read, the NEF container is
+    /// malformed, the manifest JSON is invalid, or disassembly fails.
     pub fn decompile_file_with_manifest<P, Q>(
         &self,
         nef_path: P,

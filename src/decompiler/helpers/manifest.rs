@@ -13,7 +13,7 @@ pub(in super::super) fn manifest_extra_string(
     let target = key.to_ascii_lowercase();
     map.iter()
         .find(|(candidate, _)| candidate.to_ascii_lowercase() == target)
-        .and_then(|(_, value)| value.as_str().map(|s| s.to_string()))
+        .and_then(|(_, value)| value.as_str().map(ToString::to_string))
 }
 
 /// Render a permission entry as used in the high-level and C# comments.

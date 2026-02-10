@@ -67,7 +67,9 @@ impl HighLevelEmitter {
             return;
         }
 
-        let index_name = self.stack.pop().expect("len checked");
+        let Some(index_name) = self.stack.pop() else {
+            return;
+        };
         let index_literal = self.take_usize_literal(&index_name);
 
         if let Some(index) = index_literal {
@@ -81,9 +83,10 @@ impl HighLevelEmitter {
             }
         }
 
-        let removed = self.stack.pop().expect("len checked");
-        self.literal_values.remove(&removed);
-        self.statements
-            .push(format!("// xdrop stack[{index_name}] (removed {removed})"));
+        if let Some(removed) = self.stack.pop() {
+            self.literal_values.remove(&removed);
+            self.statements
+                .push(format!("// xdrop stack[{index_name}] (removed {removed})"));
+        }
     }
 }
