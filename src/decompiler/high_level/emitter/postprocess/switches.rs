@@ -2,6 +2,10 @@
 //!
 //! This pass is intentionally conservative: it only rewrites chains that
 //! compare the same scrutinee expression against literal case values.
+//!
+//! Two patterns are recognized:
+//! - `if/else if` chains (minimum 2 cases)
+//! - Consecutive standalone `if` blocks comparing the same variable (minimum 3 cases)
 
 use super::super::HighLevelEmitter;
 
@@ -30,6 +34,7 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
     let mut cases: Vec<(String, Vec<String>)> = Vec::new();
     let mut default_body: Option<Vec<String>> = None;
     let mut overall_end = start;
+    let mut has_else_link = false;
 
     let mut current_header = start;
     let mut scrutinee: Option<String> = None;
@@ -64,6 +69,7 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
 
         let next_line = statements[next_header].trim();
         if is_else_if_open(next_line) {
+            has_else_link = true;
             if let Some((_, last_body)) = cases.last_mut() {
                 last_body.extend(trivia);
             }
@@ -72,6 +78,7 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
         }
 
         if is_else_open(next_line) {
+            has_else_link = true;
             let else_end = HighLevelEmitter::find_block_end(statements, next_header)?;
             overall_end = overall_end.max(else_end);
 
@@ -108,11 +115,31 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
             break;
         }
 
+        // Consecutive standalone `if` comparing the same scrutinee.
+        if is_if_open(next_line) {
+            if let Some(cond) = extract_if_condition(next_line) {
+                if let Some(resolved) =
+                    resolve_condition_expression(statements, next_header, cond)
+                {
+                    if let Some((peek_scrutinee, _)) = parse_case_sides(resolved.as_str()) {
+                        if scrutinee.as_deref() == Some(peek_scrutinee.as_str()) {
+                            current_header = next_header;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+
         break;
     }
 
     let scrutinee = scrutinee?;
-    if cases.len() < 2 {
+
+    // Require at least 2 cases for `if/else if` chains (unambiguous pattern)
+    // and at least 3 for consecutive standalone `if` blocks (conservative).
+    let min_cases = if has_else_link { 2 } else { 3 };
+    if cases.len() < min_cases {
         return None;
     }
 
