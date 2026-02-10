@@ -1,12 +1,13 @@
 /// Unique identifier for a basic block within a CFG.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct BlockId(pub usize);
+pub struct BlockId(pub(crate) usize);
 
 impl BlockId {
     /// The entry block ID (always 0).
     pub const ENTRY: BlockId = BlockId(0);
 
     /// Create a new block ID.
+    #[must_use]
     pub fn new(id: usize) -> Self {
         BlockId(id)
     }

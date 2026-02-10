@@ -862,7 +862,7 @@ impl OpCode {
             OpCode::JmpLe_L => OperandEncoding::Jump32,
             OpCode::Call => OperandEncoding::Jump8,
             OpCode::Call_L => OperandEncoding::Jump32,
-            OpCode::CallA => OperandEncoding::U16,
+            OpCode::CallA => OperandEncoding::None,
             OpCode::CallT => OperandEncoding::U16,
             OpCode::Abort => OperandEncoding::None,
             OpCode::Assert => OperandEncoding::None,

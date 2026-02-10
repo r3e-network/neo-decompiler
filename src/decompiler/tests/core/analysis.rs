@@ -148,10 +148,10 @@ fn decompilation_includes_call_graph_method_tokens() {
 #[test]
 fn decompilation_includes_indirect_calls() {
     // Script:
-    // CALLA 0x1234
-    // CALLT 1 (out of range)
+    // CALLA          (no operand — pops Pointer from stack)
+    // CALLT 0x0001   (U16 token index)
     // RET
-    let script = [0x36, 0x34, 0x12, 0x37, 0x01, 0x00, 0x40];
+    let script = [0x36, 0x37, 0x01, 0x00, 0x40];
     let hash = [0x42u8; 20];
     let nef_bytes = build_nef_with_single_token(&script, hash, "stub", 0, false, 0x0F);
     let decompilation = Decompiler::new()
@@ -163,7 +163,7 @@ fn decompilation_includes_indirect_calls() {
     match &decompilation.call_graph.edges[0].target {
         CallTarget::Indirect { opcode, operand } => {
             assert_eq!(opcode, "CALLA");
-            assert_eq!(*operand, Some(0x1234));
+            assert_eq!(*operand, None);
         }
         other => panic!("unexpected call target: {other:?}"),
     }

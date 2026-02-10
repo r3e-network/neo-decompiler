@@ -1,5 +1,13 @@
 //! Call graph construction for Neo N3 scripts.
 
+// Bytecode offset arithmetic requires isize↔usize casts for signed jump deltas.
+// NEF scripts are bounded (~1 MB), so these conversions are structurally safe.
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+
 use std::collections::BTreeMap;
 
 use serde::Serialize;
@@ -176,17 +184,14 @@ pub fn build_call_graph(
                 }
             }
             OpCode::CallA => {
-                let operand = match instr.operand {
-                    Some(Operand::U16(value)) => Some(value),
-                    _ => None,
-                };
+                // CALLA takes no operand — it pops a Pointer from the stack.
                 edges.push(CallEdge {
                     caller: table.method_for_offset(instr.offset),
                     call_offset: instr.offset,
                     opcode: instr.opcode.to_string(),
                     target: CallTarget::Indirect {
                         opcode: instr.opcode.to_string(),
-                        operand,
+                        operand: None,
                     },
                 });
             }

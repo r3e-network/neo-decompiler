@@ -43,14 +43,22 @@ impl HighLevelEmitter {
         self.push_comment(instruction);
         match instruction.operand {
             Some(Operand::U16(value)) => {
-                // The callee ABI is unknown at this stage, so conservatively
-                // assume a return value to avoid cascading stack underflow.
+                // CALLT: token-based indirect call with a U16 operand.
                 let temp = self.next_temp();
                 self.statements
                     .push(format!("let {temp} = {label}(0x{value:04X});"));
                 self.stack.push(temp);
             }
-            _ => self.warn(instruction, &format!("{label} (missing operand)")),
+            None => {
+                // CALLA: stack-based indirect call — pops a Pointer from the
+                // evaluation stack, so consume one stack entry as the target.
+                let target = self.stack.pop().unwrap_or_else(|| "??".to_string());
+                let temp = self.next_temp();
+                self.statements
+                    .push(format!("let {temp} = {label}({target});"));
+                self.stack.push(temp);
+            }
+            _ => self.warn(instruction, &format!("{label} (unexpected operand)")),
         }
     }
 

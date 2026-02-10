@@ -71,14 +71,16 @@ fn fails_on_truncated_operand() {
 }
 
 #[test]
-fn decodes_calla_operand() {
-    let bytecode = [0x36, 0x34, 0x12];
+fn decodes_calla_no_operand() {
+    // CALLA (0x36) takes no inline operand — it pops a Pointer from the stack.
+    let bytecode = [0x36];
     let instructions = Disassembler::new()
         .disassemble(&bytecode)
         .expect("disassembly succeeds");
 
     assert_eq!(instructions.len(), 1);
-    assert_eq!(instructions[0].operand, Some(Operand::U16(0x1234)));
+    assert_eq!(instructions[0].opcode, OpCode::CallA);
+    assert_eq!(instructions[0].operand, None);
 }
 
 #[test]

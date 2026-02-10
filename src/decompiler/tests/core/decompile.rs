@@ -47,8 +47,8 @@ fn decompile_with_manifest_produces_contract_name() {
 
 #[test]
 fn decompile_lifts_indirect_calls_without_not_yet_translated_warning() {
-    // Script: CALLA 0x1234, CALLT 0x0001, RET
-    let nef_bytes = build_nef(&[0x36, 0x34, 0x12, 0x37, 0x01, 0x00, 0x40]);
+    // Script: CALLA (no operand), CALLT 0x0001, RET
+    let nef_bytes = build_nef(&[0x36, 0x37, 0x01, 0x00, 0x40]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -59,7 +59,7 @@ fn decompile_lifts_indirect_calls_without_not_yet_translated_warning() {
         .expect("high-level output");
 
     assert!(
-        high_level.contains("calla(0x1234)"),
+        high_level.contains("calla("),
         "CALLA should be lifted to an indirect-call statement: {high_level}"
     );
     assert!(

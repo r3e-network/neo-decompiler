@@ -1,4 +1,5 @@
 use std::io;
+use std::str::Utf8Error;
 
 use thiserror::Error;
 
@@ -24,9 +25,10 @@ pub enum ManifestError {
     Json(#[from] serde_json::Error),
 
     /// The manifest bytes were not valid UTF-8.
-    #[error("manifest contains invalid utf-8: {error}")]
+    #[error("manifest contains invalid utf-8: {source}")]
     InvalidUtf8 {
-        /// Stringified UTF-8 decoding error.
-        error: String,
+        /// Original UTF-8 decoding error.
+        #[source]
+        source: Utf8Error,
     },
 }

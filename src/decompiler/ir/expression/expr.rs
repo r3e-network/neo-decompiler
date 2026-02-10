@@ -43,16 +43,19 @@ pub enum Expr {
 
 impl Expr {
     /// Create a new literal integer expression.
+    #[must_use]
     pub fn int(n: i64) -> Self {
         Expr::Literal(Literal::Int(n))
     }
 
     /// Create a new variable reference.
+    #[must_use]
     pub fn var(name: impl Into<String>) -> Self {
         Expr::Variable(name.into())
     }
 
     /// Create a binary expression.
+    #[must_use]
     pub fn binary(op: BinOp, left: Expr, right: Expr) -> Self {
         Expr::Binary {
             op,
@@ -62,6 +65,7 @@ impl Expr {
     }
 
     /// Create a unary expression.
+    #[must_use]
     pub fn unary(op: UnaryOp, operand: Expr) -> Self {
         Expr::Unary {
             op,
@@ -70,6 +74,7 @@ impl Expr {
     }
 
     /// Create a function call expression.
+    #[must_use]
     pub fn call(name: impl Into<String>, args: Vec<Expr>) -> Self {
         Expr::Call {
             name: name.into(),
@@ -78,6 +83,7 @@ impl Expr {
     }
 
     /// Create an index expression.
+    #[must_use]
     pub fn index(base: Expr, index: Expr) -> Self {
         Expr::Index {
             base: Box::new(base),
