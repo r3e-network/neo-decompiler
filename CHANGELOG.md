@@ -5,6 +5,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-02-10
+
 ### Added
 
 - New global CLI flag `--strict-manifest` to enforce strict manifest validation in commands that load manifests (for example `info` and `decompile`).
@@ -14,7 +16,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- `disasm` now executes a direct bytecode disassembly path without running the full decompilation analysis pipeline.
 - Added a dedicated manifest validation error path (`manifest validation error: ...`) for strict-mode failures so malformed wildcard-like values are clearly reported.
+
+### Fixed
+
+- Entry-point rendering now always starts at the real script entry offset; when manifest method offsets do not align, high-level and C# outputs emit a synthetic script-entry method instead of dropping entry bytecode.
 
 ## [0.5.1] - 2026-02-07
 

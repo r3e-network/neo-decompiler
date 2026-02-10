@@ -337,7 +337,7 @@ Download pre-built binaries from the [releases page](https://github.com/r3e-netw
 
 ```bash
 # Install from a tagged release (replace the tag as needed)
-cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.5.1 --locked
+cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.5.2 --locked
 
 # Or install the latest development version
 cargo install --git https://github.com/r3e-network/neo-decompiler --locked
@@ -353,7 +353,7 @@ APIs and want to avoid pulling in CLI-only dependencies, disable default
 features in your `Cargo.toml`:
 
 ```toml
-neo-decompiler = { version = "0.5.1", default-features = false }
+neo-decompiler = { version = "0.5.2", default-features = false }
 ```
 
 ```rust
