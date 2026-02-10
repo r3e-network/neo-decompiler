@@ -116,11 +116,14 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 ### Shipped Features (v0.5.x)
 
-| Feature            | Status | Description                                                       |
-| ------------------ | ------ | ----------------------------------------------------------------- |
-| SSA Transformation | ✅     | Static Single Assignment form with φ nodes and variable versions  |
-| Dominance Analysis | ✅     | Immediate dominators, dominator tree, dominance frontiers         |
-| SSA Rendering      | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars) |
+| Feature                    | Status | Description                                                                 |
+| -------------------------- | ------ | --------------------------------------------------------------------------- |
+| SSA Transformation         | ✅     | Static Single Assignment form with φ nodes and variable versions            |
+| Dominance Analysis         | ✅     | Immediate dominators, dominator tree, dominance frontiers                   |
+| SSA Rendering              | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars)           |
+| Strict Manifest Validation | ✅     | Global `--strict-manifest` flag plus strict manifest parser APIs            |
+| Entry-Offset Safety        | ✅     | Synthetic script-entry emission when ABI method offsets don't match entry    |
+| Disassembly Fast Path      | ✅     | `disasm` command decodes instruction streams without full decompile analysis |
 
 ### Planned Features (v0.6.x+)
 
@@ -152,10 +155,10 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 - Opcode metadata generated from the upstream Neo VM source (unknown mnemonics
   fall back to informative comments, and new opcodes can be added via
   `tools/generate_opcodes.py`)
-- Manifest parsing (`.manifest.json`) with ABI, feature, group, permission, and trust details that surface in both text and JSON outputs
+- Manifest parsing (`.manifest.json`) with ABI, feature, group, permission, and trust details that surface in both text and JSON outputs, with optional strict wildcard canonical checks via `--strict-manifest`
 - Disassembly for common opcodes such as `PUSH*`, arithmetic operations, jumps,
   calls, and `SYSCALL` (tolerant by default; optional fail-fast flag for unknown
-  opcodes)
+  opcodes), with `disasm` taking a direct decode path that skips full decompilation analysis
 - Syscall metadata resolution with human-readable names, call flags, and return
   arity (void syscalls avoid phantom temporaries in the high-level view)
 - Native contract lookup so method tokens can be paired with contract names
@@ -166,7 +169,9 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   statements and manifest-derived signatures with consistent indentation and small readability passes
   like compound assignments and optional single-use temp inlining. When ABI offsets are present,
   each manifest method is decompiled within its own offset range; methods
-  without offsets are still emitted as stubs for completeness.
+  without offsets are still emitted as stubs for completeness, and script
+  entry bytecode is preserved via a synthetic `script_entry`/`ScriptEntry`
+  method when ABI offsets do not align with the actual script entry.
 - Control Flow Graph (CFG) construction with DOT export (`Decompilation::cfg_to_dot`) and
   reachability helpers for dead-code detection (`Cfg::unreachable_blocks`)
 - SSA (Static Single Assignment) transformation via `cfg.to_ssa()` or `Decompilation::compute_ssa()`:
@@ -237,6 +242,9 @@ cargo build --release
 
 # Enforce strict manifest validation (reject non-canonical wildcard-like values)
 ./target/release/neo-decompiler --strict-manifest info --manifest path/to/contract.manifest.json path/to/contract.nef
+
+# Strict mode applies to decompilation too
+./target/release/neo-decompiler --strict-manifest decompile --manifest path/to/contract.manifest.json path/to/contract.nef
 ```
 
 ### Strict manifest validation
@@ -618,7 +626,7 @@ Recent project history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Minimum supported Rust version
 
-The MSRV is Rust `1.74`. CI runs the test suite on the MSRV plus stable/beta/nightly
+The MSRV is Rust `1.83`. CI runs the test suite on the MSRV plus stable/beta/nightly
 to catch regressions early.
 
 ## License
