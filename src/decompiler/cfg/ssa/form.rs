@@ -642,4 +642,136 @@ mod tests {
         };
         assert_eq!(format!("{}", ternary), "true ? 1 : 2");
     }
+
+    #[test]
+    fn phi_placement_diamond_cfg() {
+        use crate::decompiler::cfg::{BasicBlock, EdgeKind, Terminator};
+        use super::super::dominance;
+
+        // Build diamond CFG: BB0 -> (BB1, BB2) -> BB3
+        let mut cfg = Cfg::new();
+
+        let entry = BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::Branch {
+                then_target: BlockId(1),
+                else_target: BlockId(2),
+            },
+        );
+        cfg.add_block(entry);
+
+        let left = BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Jump {
+                target: BlockId(3),
+            },
+        );
+        cfg.add_block(left);
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::ConditionalTrue);
+
+        let right = BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            2..3,
+            Terminator::Jump {
+                target: BlockId(3),
+            },
+        );
+        cfg.add_block(right);
+        cfg.add_edge(BlockId(0), BlockId(2), EdgeKind::ConditionalFalse);
+
+        let exit = BasicBlock::new(BlockId(3), 3, 4, 3..4, Terminator::Return);
+        cfg.add_block(exit);
+        cfg.add_edge(BlockId(1), BlockId(3), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(2), BlockId(3), EdgeKind::Unconditional);
+
+        // Compute dominance and verify frontiers
+        let dom = dominance::compute(&cfg);
+        assert_eq!(
+            dom.dominance_frontier_vec(BlockId(1)),
+            vec![BlockId(3)],
+        );
+        assert_eq!(
+            dom.dominance_frontier_vec(BlockId(2)),
+            vec![BlockId(3)],
+        );
+
+        // Simulate phi placement: variable "x" defined in BB1 and BB2.
+        // Dominance frontier of both is {BB3}, so BB3 needs a phi node for "x".
+        let mut ssa = SsaForm::new(cfg, dom);
+
+        // BB0: entry, no definitions of x
+        ssa.add_block(BlockId(0), SsaBlock::new());
+
+        // BB1: defines x_0
+        let mut bb1 = SsaBlock::new();
+        let x0 = SsaVariable::new("x".to_string(), 0);
+        bb1.add_stmt(SsaStmt::assign(
+            x0.clone(),
+            SsaExpr::lit(Literal::Int(1)),
+        ));
+        ssa.add_block(BlockId(1), bb1);
+        ssa.add_definition(x0, BlockId(1));
+
+        // BB2: defines x_1
+        let mut bb2 = SsaBlock::new();
+        let x1 = SsaVariable::new("x".to_string(), 1);
+        bb2.add_stmt(SsaStmt::assign(
+            x1.clone(),
+            SsaExpr::lit(Literal::Int(2)),
+        ));
+        ssa.add_block(BlockId(2), bb2);
+        ssa.add_definition(x1, BlockId(2));
+
+        // BB3: merge point -- place phi node for x
+        let mut bb3 = SsaBlock::new();
+        let mut phi = PhiNode::new(SsaVariable::new("x".to_string(), 2));
+        phi.operands.insert(
+            BlockId(1),
+            SsaVariable::new("x".to_string(), 0),
+        );
+        phi.operands.insert(
+            BlockId(2),
+            SsaVariable::new("x".to_string(), 1),
+        );
+        bb3.add_phi(phi);
+        ssa.add_block(BlockId(3), bb3);
+
+        // Verify: BB3 has exactly one phi node targeting x
+        let merge_block = ssa.block(BlockId(3)).expect("BB3 must exist");
+        assert_eq!(merge_block.phi_count(), 1, "BB3 should have 1 phi node");
+        assert_eq!(
+            merge_block.phi_nodes[0].target.base, "x",
+            "phi target should be variable x"
+        );
+        assert_eq!(
+            merge_block.phi_nodes[0].operands.len(),
+            2,
+            "phi should have 2 operands (one per predecessor)"
+        );
+
+        // Verify no phi nodes in non-merge blocks
+        assert_eq!(
+            ssa.block(BlockId(0)).unwrap().phi_count(),
+            0,
+            "entry should have no phi nodes"
+        );
+        assert_eq!(
+            ssa.block(BlockId(1)).unwrap().phi_count(),
+            0,
+            "BB1 should have no phi nodes"
+        );
+        assert_eq!(
+            ssa.block(BlockId(2)).unwrap().phi_count(),
+            0,
+            "BB2 should have no phi nodes"
+        );
+    }
 }

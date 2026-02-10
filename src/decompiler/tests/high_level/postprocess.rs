@@ -170,3 +170,70 @@ fn rewrite_switch_statements_skips_non_literal_cases() {
         .iter()
         .any(|line| line.trim_start().starts_with("switch ")));
 }
+
+#[test]
+fn rewrite_switch_statements_collapses_consecutive_standalone_ifs() {
+    let mut statements = vec![
+        "if loc0 == 0 {".to_string(),
+        "    do0;".to_string(),
+        "}".to_string(),
+        "if loc0 == 1 {".to_string(),
+        "    do1;".to_string(),
+        "}".to_string(),
+        "if loc0 == 2 {".to_string(),
+        "    do2;".to_string(),
+        "}".to_string(),
+    ];
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    assert_eq!(statements[0], "switch loc0 {");
+    assert!(statements.iter().any(|line| line.trim() == "case 0 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case 1 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case 2 {"));
+    assert!(statements.iter().any(|line| line.trim() == "do0;"));
+    assert!(statements.iter().any(|line| line.trim() == "do1;"));
+    assert!(statements.iter().any(|line| line.trim() == "do2;"));
+}
+
+#[test]
+fn rewrite_switch_statements_skips_two_consecutive_standalone_ifs() {
+    let mut statements = vec![
+        "if loc0 == 0 {".to_string(),
+        "    do0;".to_string(),
+        "}".to_string(),
+        "if loc0 == 1 {".to_string(),
+        "    do1;".to_string(),
+        "}".to_string(),
+    ];
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    // Only 2 cases — below the 3-case threshold for standalone ifs.
+    assert_eq!(statements[0], "if loc0 == 0 {");
+    assert!(!statements
+        .iter()
+        .any(|line| line.trim_start().starts_with("switch ")));
+}
+
+#[test]
+fn rewrite_switch_statements_skips_consecutive_ifs_with_different_scrutinee() {
+    let mut statements = vec![
+        "if loc0 == 0 {".to_string(),
+        "    do0;".to_string(),
+        "}".to_string(),
+        "if loc1 == 1 {".to_string(),
+        "    do1;".to_string(),
+        "}".to_string(),
+        "if loc0 == 2 {".to_string(),
+        "    do2;".to_string(),
+        "}".to_string(),
+    ];
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    assert_eq!(statements[0], "if loc0 == 0 {");
+    assert!(!statements
+        .iter()
+        .any(|line| line.trim_start().starts_with("switch ")));
+}
