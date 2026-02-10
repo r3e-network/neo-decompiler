@@ -64,3 +64,7 @@ local_config.toml
 # Vendored neo_csharp build outputs
 neo_csharp/**/bin/
 neo_csharp/**/obj/
+
+# Fuzz workspace artifacts
+/fuzz/Cargo.lock
+/fuzz/target/
