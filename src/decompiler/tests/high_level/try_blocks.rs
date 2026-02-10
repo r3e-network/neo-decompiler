@@ -127,12 +127,12 @@ fn high_level_lifts_try_finally_with_throw_inside() {
     // RET
     let script = [
         0x3B, 0x00, 0x04, // TRY (catch=0, finally=+4)
-        0x11,             // PUSH1
-        0x3A,             // THROW
-        0x3D, 0x02,       // ENDTRY +2
-        0x12,             // PUSH2
-        0x3F,             // ENDFINALLY
-        0x40,             // RET
+        0x11, // PUSH1
+        0x3A, // THROW
+        0x3D, 0x02, // ENDTRY +2
+        0x12, // PUSH2
+        0x3F, // ENDFINALLY
+        0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
     let decompilation = Decompiler::new()
@@ -168,11 +168,11 @@ fn high_level_lifts_try_catch_with_abort_in_catch() {
     // RET
     let script = [
         0x3B, 0x03, 0x00, // TRY (catch=+3, finally=0)
-        0x11,             // PUSH1
-        0x3D, 0x03,       // ENDTRY +3
-        0x38,             // ABORT
-        0x3D, 0x00,       // ENDTRY +0
-        0x40,             // RET
+        0x11, // PUSH1
+        0x3D, 0x03, // ENDTRY +3
+        0x38, // ABORT
+        0x3D, 0x00, // ENDTRY +0
+        0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
     let decompilation = Decompiler::new()

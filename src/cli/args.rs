@@ -24,6 +24,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub(super) json_compact: bool,
 
+    /// Enforce strict manifest validation (reject non-canonical wildcard-like values).
+    #[arg(long, global = true)]
+    pub(super) strict_manifest: bool,
+
     #[command(subcommand)]
     pub(super) command: Command,
 }

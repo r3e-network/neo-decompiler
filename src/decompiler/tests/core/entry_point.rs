@@ -43,8 +43,9 @@ fn renames_script_entry_using_manifest_signature() {
 }
 
 #[test]
-fn entry_point_falls_back_to_manifest_method_when_offset_mismatches() {
-    let nef_bytes = sample_nef();
+fn mismatch_offset_emits_synthetic_entry_and_keeps_manifest_method() {
+    // Script: PUSH1; RET; PUSH2; RET
+    let nef_bytes = build_nef(&[0x11, 0x40, 0x12, 0x40]);
     let manifest = ContractManifest::from_json_str(
         r#"
             {
@@ -52,10 +53,10 @@ fn entry_point_falls_back_to_manifest_method_when_offset_mismatches() {
                 "abi": {
                     "methods": [
                         {
-                            "name": "deploy",
-                            "parameters": [{ "name": "owner", "type": "Hash160" }],
-                            "returntype": "Void",
-                            "offset": 42
+                            "name": "helper",
+                            "parameters": [],
+                            "returntype": "Integer",
+                            "offset": 2
                         }
                     ],
                     "events": []
@@ -71,12 +72,30 @@ fn entry_point_falls_back_to_manifest_method_when_offset_mismatches() {
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+
     assert!(
-        decompilation
-            .high_level
-            .as_deref()
-            .expect("high-level output")
-            .contains("fn deploy(owner: hash160) {"),
-        "entry point should use manifest method even when offsets do not align"
+        high_level.contains("fn script_entry() {"),
+        "script entry should stay synthetic when ABI offsets do not include bytecode entry"
+    );
+    assert!(
+        high_level.contains("fn helper() -> int {"),
+        "manifest method should still be emitted"
+    );
+
+    let before_helper = high_level
+        .split("fn helper() -> int {")
+        .next()
+        .expect("entry section present");
+    assert!(
+        before_helper.contains("0000: PUSH1"),
+        "entry section should contain bytecode from script start"
+    );
+    assert!(
+        !before_helper.contains("0002: PUSH2"),
+        "entry section should stop before helper method offset"
     );
 }

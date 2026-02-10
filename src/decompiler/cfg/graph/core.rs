@@ -99,10 +99,7 @@ impl Cfg {
     /// This operation is O(1) due to pre-computed adjacency lists.
     #[must_use]
     pub fn successors(&self, id: BlockId) -> &[BlockId] {
-        self.successors
-            .get(&id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+        self.successors.get(&id).map(Vec::as_slice).unwrap_or(&[])
     }
 
     /// Get predecessors of a block.
@@ -111,10 +108,7 @@ impl Cfg {
     /// This operation is O(1) due to pre-computed adjacency lists.
     #[must_use]
     pub fn predecessors(&self, id: BlockId) -> &[BlockId] {
-        self.predecessors
-            .get(&id)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+        self.predecessors.get(&id).map(Vec::as_slice).unwrap_or(&[])
     }
 
     /// Get exit blocks.

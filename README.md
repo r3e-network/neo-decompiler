@@ -234,7 +234,27 @@ cargo build --release
 
 # Use --json-compact alongside any JSON format to minimise whitespace
 ./target/release/neo-decompiler info --format json --json-compact path/to/contract.nef
+
+# Enforce strict manifest validation (reject non-canonical wildcard-like values)
+./target/release/neo-decompiler --strict-manifest info --manifest path/to/contract.manifest.json path/to/contract.nef
 ```
+
+### Strict manifest validation
+
+By default, manifest parsing is permissive to maximize compatibility with
+real-world manifests. If you want stricter checks, use `--strict-manifest`
+(global flag) to reject non-canonical wildcard-like values.
+
+Current strict checks include:
+
+- `permissions[*].contract` wildcard strings must be exactly `"*"`
+- `permissions[*].methods` wildcard strings must be exactly `"*"`
+- `trusts` wildcard string must be exactly `"*"`
+
+Library callers can opt into the same behavior via:
+
+- `ContractManifest::from_json_str_strict(...)`
+- `ContractManifest::from_file_strict(...)`
 
 ### Permissions example
 
@@ -473,6 +493,9 @@ into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
 - **Manifest path missing in text/JSON output** – both views show the detected
   path (look for `Manifest path:` in text, or `manifest_path` in JSON). If it is
   absent/`null`, pass `--manifest path/to/contract.manifest.json` explicitly.
+- **"manifest validation error"** – when using `--strict-manifest`, one or more
+  wildcard-like fields were non-canonical (for example `"all"` instead of `"*"`).
+  Remove `--strict-manifest` for permissive parsing, or normalize those values.
 - **Checksum mismatch errors** – the CLI re-computes the NEF hash; re-build the
   contract to regenerate the NEF or verify you are pointing at the correct file.
 - **Unsupported opcode warnings** – the disassembler prints comments for

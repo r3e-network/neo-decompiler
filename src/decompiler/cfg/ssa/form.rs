@@ -645,8 +645,8 @@ mod tests {
 
     #[test]
     fn phi_placement_diamond_cfg() {
-        use crate::decompiler::cfg::{BasicBlock, EdgeKind, Terminator};
         use super::super::dominance;
+        use crate::decompiler::cfg::{BasicBlock, EdgeKind, Terminator};
 
         // Build diamond CFG: BB0 -> (BB1, BB2) -> BB3
         let mut cfg = Cfg::new();
@@ -668,9 +668,7 @@ mod tests {
             1,
             2,
             1..2,
-            Terminator::Jump {
-                target: BlockId(3),
-            },
+            Terminator::Jump { target: BlockId(3) },
         );
         cfg.add_block(left);
         cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::ConditionalTrue);
@@ -680,9 +678,7 @@ mod tests {
             2,
             3,
             2..3,
-            Terminator::Jump {
-                target: BlockId(3),
-            },
+            Terminator::Jump { target: BlockId(3) },
         );
         cfg.add_block(right);
         cfg.add_edge(BlockId(0), BlockId(2), EdgeKind::ConditionalFalse);
@@ -694,14 +690,8 @@ mod tests {
 
         // Compute dominance and verify frontiers
         let dom = dominance::compute(&cfg);
-        assert_eq!(
-            dom.dominance_frontier_vec(BlockId(1)),
-            vec![BlockId(3)],
-        );
-        assert_eq!(
-            dom.dominance_frontier_vec(BlockId(2)),
-            vec![BlockId(3)],
-        );
+        assert_eq!(dom.dominance_frontier_vec(BlockId(1)), vec![BlockId(3)],);
+        assert_eq!(dom.dominance_frontier_vec(BlockId(2)), vec![BlockId(3)],);
 
         // Simulate phi placement: variable "x" defined in BB1 and BB2.
         // Dominance frontier of both is {BB3}, so BB3 needs a phi node for "x".
@@ -713,34 +703,24 @@ mod tests {
         // BB1: defines x_0
         let mut bb1 = SsaBlock::new();
         let x0 = SsaVariable::new("x".to_string(), 0);
-        bb1.add_stmt(SsaStmt::assign(
-            x0.clone(),
-            SsaExpr::lit(Literal::Int(1)),
-        ));
+        bb1.add_stmt(SsaStmt::assign(x0.clone(), SsaExpr::lit(Literal::Int(1))));
         ssa.add_block(BlockId(1), bb1);
         ssa.add_definition(x0, BlockId(1));
 
         // BB2: defines x_1
         let mut bb2 = SsaBlock::new();
         let x1 = SsaVariable::new("x".to_string(), 1);
-        bb2.add_stmt(SsaStmt::assign(
-            x1.clone(),
-            SsaExpr::lit(Literal::Int(2)),
-        ));
+        bb2.add_stmt(SsaStmt::assign(x1.clone(), SsaExpr::lit(Literal::Int(2))));
         ssa.add_block(BlockId(2), bb2);
         ssa.add_definition(x1, BlockId(2));
 
         // BB3: merge point -- place phi node for x
         let mut bb3 = SsaBlock::new();
         let mut phi = PhiNode::new(SsaVariable::new("x".to_string(), 2));
-        phi.operands.insert(
-            BlockId(1),
-            SsaVariable::new("x".to_string(), 0),
-        );
-        phi.operands.insert(
-            BlockId(2),
-            SsaVariable::new("x".to_string(), 1),
-        );
+        phi.operands
+            .insert(BlockId(1), SsaVariable::new("x".to_string(), 0));
+        phi.operands
+            .insert(BlockId(2), SsaVariable::new("x".to_string(), 1));
         bb3.add_phi(phi);
         ssa.add_block(BlockId(3), bb3);
 

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::disassembler::{Disassembler, UnknownHandling};
+use crate::disassembler::{Disassembler, DisassemblyOutput, UnknownHandling};
 use crate::error::Result;
 use crate::manifest::ContractManifest;
 use crate::nef::NefParser;
@@ -69,6 +69,19 @@ impl Decompiler {
     /// Returns an error if the NEF container is malformed or disassembly fails.
     pub fn decompile_bytes(&self, bytes: &[u8]) -> Result<Decompilation> {
         self.decompile_bytes_with_manifest(bytes, None, OutputFormat::All)
+    }
+
+    /// Disassemble a NEF blob already loaded in memory.
+    ///
+    /// This fast path parses the NEF container and decodes instructions only;
+    /// it skips CFG construction, analysis passes, and renderers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the NEF container is malformed or disassembly fails.
+    pub fn disassemble_bytes(&self, bytes: &[u8]) -> Result<DisassemblyOutput> {
+        let nef = self.parser.parse(bytes)?;
+        self.disassembler.disassemble_with_warnings(&nef.script)
     }
 
     /// Decompile a NEF blob using an optional manifest.
@@ -150,6 +163,19 @@ impl Decompiler {
     /// malformed, or disassembly fails.
     pub fn decompile_file<P: AsRef<std::path::Path>>(&self, path: P) -> Result<Decompilation> {
         self.io_decompile_file(path)
+    }
+
+    /// Disassemble a NEF file from disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read, the NEF container is
+    /// malformed, or disassembly fails.
+    pub fn disassemble_file<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+    ) -> Result<DisassemblyOutput> {
+        self.io_disassemble_file(path)
     }
 
     /// Decompile a NEF file alongside an optional manifest file.

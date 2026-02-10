@@ -1,9 +1,11 @@
+use std::fs;
 use std::io::Write as _;
 use std::path::PathBuf;
 
-use crate::decompiler::{Decompiler, OutputFormat};
+use crate::decompiler::{Decompiler, OutputFormat, MAX_NEF_FILE_SIZE};
 use crate::disassembler::UnknownHandling;
-use crate::error::Result;
+use crate::error::{NefError, Result};
+use crate::manifest::ContractManifest;
 use crate::util;
 
 use super::super::args::{Cli, DecompileFormat};
@@ -34,11 +36,26 @@ impl Cli {
         } else {
             output_format
         };
-        let result = decompiler.decompile_file_with_manifest(
-            path,
-            manifest_path.as_ref(),
-            effective_output_format,
-        )?;
+
+        let size = fs::metadata(path)?.len();
+        if size > MAX_NEF_FILE_SIZE {
+            return Err(NefError::FileTooLarge {
+                size,
+                max: MAX_NEF_FILE_SIZE,
+            }
+            .into());
+        }
+        let data = fs::read(path)?;
+        let manifest = match manifest_path.as_ref() {
+            Some(path) => Some(if self.strict_manifest {
+                ContractManifest::from_file_strict(path)?
+            } else {
+                ContractManifest::from_file(path)?
+            }),
+            None => None,
+        };
+        let result =
+            decompiler.decompile_bytes_with_manifest(&data, manifest, effective_output_format)?;
 
         match format {
             DecompileFormat::Pseudocode => {

@@ -146,3 +146,33 @@ fn info_command_rejects_large_nef() {
         .stderr(contains("file size"))
         .stderr(contains("exceeds maximum"));
 }
+
+#[test]
+fn info_command_strict_manifest_rejects_invalid_manifest_values() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    let manifest_path = dir.path().join("contract.manifest.json");
+
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(
+        &manifest_path,
+        r#"
+        {
+            "name": "InvalidTrusts",
+            "abi": { "methods": [], "events": [] },
+            "trusts": "invalid"
+        }
+        "#,
+    )
+    .unwrap();
+
+    neo_decompiler_cmd()
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("--strict-manifest")
+        .arg("info")
+        .arg(&nef_path)
+        .assert()
+        .failure()
+        .stderr(contains("manifest validation error"));
+}

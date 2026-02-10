@@ -138,3 +138,47 @@ fn parses_wildcard_permission_variants() {
         Some(ManifestTrusts::Wildcard(ref value)) if value == "*"
     ));
 }
+
+#[test]
+fn strict_manifest_parsing_accepts_valid_sample() {
+    let manifest = ContractManifest::from_json_str_strict(sample_manifest_json())
+        .expect("strict manifest parsed");
+    assert_eq!(manifest.name, "ExampleContract");
+}
+
+#[test]
+fn strict_manifest_parsing_rejects_non_wildcard_permission_methods() {
+    let json = r#"
+        {
+            "name": "InvalidStrict",
+            "abi": { "methods": [], "events": [] },
+            "permissions": [
+                { "contract": "*", "methods": "all" }
+            ],
+            "trusts": "*"
+        }
+    "#;
+
+    let err = ContractManifest::from_json_str_strict(json).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Manifest(crate::error::ManifestError::Validation { .. })
+    ));
+}
+
+#[test]
+fn strict_manifest_parsing_rejects_non_wildcard_trusts_string() {
+    let json = r#"
+        {
+            "name": "InvalidTrusts",
+            "abi": { "methods": [], "events": [] },
+            "trusts": "invalid"
+        }
+    "#;
+
+    let err = ContractManifest::from_json_str_strict(json).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Manifest(crate::error::ManifestError::Validation { .. })
+    ));
+}

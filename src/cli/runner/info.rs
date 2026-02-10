@@ -25,7 +25,11 @@ impl Cli {
         let nef = NefParser::new().parse(&data)?;
         let manifest_path = self.resolve_manifest_path(path);
         let manifest = match manifest_path.as_ref() {
-            Some(p) => Some(ContractManifest::from_file(p)?),
+            Some(p) => Some(if self.strict_manifest {
+                ContractManifest::from_file_strict(p)?
+            } else {
+                ContractManifest::from_file(p)?
+            }),
             None => None,
         };
 

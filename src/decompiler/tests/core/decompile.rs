@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn disassemble_bytes_returns_instruction_stream_without_rendering() {
+    let nef_bytes = sample_nef();
+    let output = Decompiler::new()
+        .disassemble_bytes(&nef_bytes)
+        .expect("disassembly succeeds");
+
+    assert_eq!(output.instructions.len(), 4);
+    assert!(output.warnings.is_empty());
+    assert_eq!(output.instructions[0].offset, 0);
+    assert_eq!(output.instructions[1].offset, 1);
+}
+
+#[test]
 fn decompile_end_to_end() {
     let nef_bytes = sample_nef();
     let decompilation = Decompiler::new()
@@ -264,13 +277,13 @@ fn decompile_nested_loop_in_if() {
     //   [7] JMP -6         -- back-edge to [3]
     //   [9] RET
     let nef_bytes = build_nef(&[
-        0x10,       // PUSH0
+        0x10, // PUSH0
         0x26, 0x06, // JMPIFNOT +6
-        0x10,       // PUSH0
+        0x10, // PUSH0
         0x26, 0x03, // JMPIFNOT +3
-        0x21,       // NOP
+        0x21, // NOP
         0x22, 0xFA, // JMP -6
-        0x40,       // RET
+        0x40, // RET
     ]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
@@ -308,15 +321,15 @@ fn decompile_try_in_loop() {
     //   [11] JMP -13          -- back-edge to [0]
     //   [13] RET
     let nef_bytes = build_nef(&[
-        0x10,             // PUSH0
-        0x26, 0x0A,       // JMPIFNOT +10
+        0x10, // PUSH0
+        0x26, 0x0A, // JMPIFNOT +10
         0x3B, 0x04, 0x00, // TRY catch=+4, finally=0
-        0x21,             // NOP
-        0x3D, 0x04,       // ENDTRY +4
-        0x21,             // NOP
-        0x3F,             // ENDFINALLY
-        0x22, 0xF3,       // JMP -13
-        0x40,             // RET
+        0x21, // NOP
+        0x3D, 0x04, // ENDTRY +4
+        0x21, // NOP
+        0x3F, // ENDFINALLY
+        0x22, 0xF3, // JMP -13
+        0x40, // RET
     ]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
@@ -350,15 +363,15 @@ fn decompile_nested_if_else() {
     //   [10] NOP            -- padding
     //   [11] RET
     let nef_bytes = build_nef(&[
-        0x10,       // PUSH0
+        0x10, // PUSH0
         0x26, 0x08, // JMPIFNOT +8
-        0x10,       // PUSH0
+        0x10, // PUSH0
         0x26, 0x03, // JMPIFNOT +3
-        0x21,       // NOP
+        0x21, // NOP
         0x22, 0x02, // JMP +2
-        0x21,       // NOP
-        0x21,       // NOP
-        0x40,       // RET
+        0x21, // NOP
+        0x21, // NOP
+        0x40, // RET
     ]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
@@ -411,7 +424,7 @@ fn decompile_all_comparison_jumps() {
         0x10, 0x11, 0x2E, 0x01, 0x21, // PUSH0, PUSH1, JMPGE +1, NOP
         0x10, 0x11, 0x30, 0x01, 0x21, // PUSH0, PUSH1, JMPLT +1, NOP
         0x10, 0x11, 0x32, 0x01, 0x21, // PUSH0, PUSH1, JMPLE +1, NOP
-        0x40,                          // RET
+        0x40, // RET
     ]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)

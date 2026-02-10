@@ -6,25 +6,24 @@ pub(in super::super) fn find_manifest_entry_method(
     manifest: &ContractManifest,
     entry_offset: usize,
 ) -> Option<(&ManifestMethod, bool)> {
-    if let Some(method) = manifest
+    manifest
         .abi
         .methods
         .iter()
         .find(|method| method.offset.map(|value| value as usize) == Some(entry_offset))
-    {
-        return Some((method, true));
-    }
+        .map(|method| (method, true))
+}
 
-    let fallback = manifest
+/// Return `true` when at least one manifest method starts at `offset`.
+pub(in super::super) fn has_manifest_method_at_offset(
+    manifest: &ContractManifest,
+    offset: usize,
+) -> bool {
+    manifest
         .abi
         .methods
         .iter()
-        .filter_map(|method| method.offset.map(|offset| (offset as usize, method)))
-        .min_by_key(|(offset, _)| *offset)
-        .map(|(_, method)| method)
-        .or_else(|| manifest.abi.methods.first())?;
-
-    Some((fallback, false))
+        .any(|method| method.offset.map(|value| value as usize) == Some(offset))
 }
 
 /// Compute the next ABI method offset after the given one.

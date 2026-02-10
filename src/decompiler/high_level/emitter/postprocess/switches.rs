@@ -118,8 +118,7 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
         // Consecutive standalone `if` comparing the same scrutinee.
         if is_if_open(next_line) {
             if let Some(cond) = extract_if_condition(next_line) {
-                if let Some(resolved) =
-                    resolve_condition_expression(statements, next_header, cond)
+                if let Some(resolved) = resolve_condition_expression(statements, next_header, cond)
                 {
                     if let Some((peek_scrutinee, _)) = parse_case_sides(resolved.as_str()) {
                         if scrutinee.as_deref() == Some(peek_scrutinee.as_str()) {

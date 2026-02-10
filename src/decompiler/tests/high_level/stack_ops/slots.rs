@@ -106,10 +106,10 @@ fn high_level_lifts_indexed_local_slot() {
     // Script: INITSLOT 8,0; PUSH1; STLOC 7; LDLOC 7; RET
     let script = [
         0x57, 0x08, 0x00, // INITSLOT 8 locals, 0 args
-        0x11,       // PUSH1
+        0x11, // PUSH1
         0x77, 0x07, // STLOC 7
         0x6F, 0x07, // LDLOC 7
-        0x40,       // RET
+        0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
     let decompilation = Decompiler::new()
@@ -133,9 +133,9 @@ fn high_level_lifts_indexed_argument_slot() {
     let script = [
         0x57, 0x00, 0x08, // INITSLOT 0 locals, 8 args
         0x7F, 0x07, // LDARG 7
-        0x11,       // PUSH1
+        0x11, // PUSH1
         0x87, 0x07, // STARG 7
-        0x40,       // RET
+        0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
     let decompilation = Decompiler::new()

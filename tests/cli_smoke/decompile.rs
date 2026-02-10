@@ -190,3 +190,36 @@ fn decompile_command_uses_manifest_when_provided() {
         .stdout(contains("permissions {"))
         .stdout(contains("trusts = ["));
 }
+
+#[test]
+fn decompile_command_strict_manifest_rejects_invalid_manifest_values() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    let manifest_path = dir.path().join("invalid.manifest.json");
+
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(
+        &manifest_path,
+        r#"
+        {
+            "name": "InvalidPermissionMethods",
+            "abi": { "methods": [], "events": [] },
+            "permissions": [
+                { "contract": "*", "methods": "all" }
+            ],
+            "trusts": "*"
+        }
+        "#,
+    )
+    .unwrap();
+
+    neo_decompiler_cmd()
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("--strict-manifest")
+        .arg("decompile")
+        .arg(&nef_path)
+        .assert()
+        .failure()
+        .stderr(contains("manifest validation error"));
+}

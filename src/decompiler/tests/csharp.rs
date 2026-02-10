@@ -199,3 +199,57 @@ fn csharp_uses_label_style_for_transfer_placeholders() {
         "C# should not emit non-C# leave statements: {csharp}"
     );
 }
+
+#[test]
+fn csharp_mismatch_offset_emits_script_entry_and_manifest_method() {
+    // Script: PUSH1; RET; PUSH2; RET
+    let nef_bytes = build_nef(&[0x11, 0x40, 0x12, 0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "OffsetMismatch",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "helper",
+                            "parameters": [],
+                            "returntype": "Integer",
+                            "offset": 2
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("public static void ScriptEntry()"),
+        "C# output should keep a synthetic script-entry method when ABI offsets do not include bytecode entry"
+    );
+    assert!(
+        csharp.contains("public static BigInteger helper()"),
+        "C# output should still emit the manifest method"
+    );
+
+    let before_helper = csharp
+        .split("public static BigInteger helper")
+        .next()
+        .expect("entry section present");
+    assert!(
+        before_helper.contains("// 0000: PUSH1"),
+        "script-entry body should contain bytecode from script start"
+    );
+    assert!(
+        !before_helper.contains("// 0002: PUSH2"),
+        "script-entry body should stop before helper method offset"
+    );
+}

@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- New global CLI flag `--strict-manifest` to enforce strict manifest validation in commands that load manifests (for example `info` and `decompile`).
+- New strict parsing helpers in the public API:
+  - `ContractManifest::from_json_str_strict(...)`
+  - `ContractManifest::from_file_strict(...)`
+
+### Changed
+
+- Added a dedicated manifest validation error path (`manifest validation error: ...`) for strict-mode failures so malformed wildcard-like values are clearly reported.
+
 ## [0.5.1] - 2026-02-07
 
 ### Added

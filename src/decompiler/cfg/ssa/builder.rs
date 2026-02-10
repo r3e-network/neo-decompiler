@@ -90,9 +90,7 @@ impl<'a> SsaBuilder<'a> {
     ///
     /// Returns the built blocks, definitions, and uses separately so the
     /// caller can assemble `SsaForm` without cloning `dominance`.
-    fn build_ssa_blocks(
-        &mut self,
-    ) -> SsaBuildResult {
+    fn build_ssa_blocks(&mut self) -> SsaBuildResult {
         let mut ssa_blocks = BTreeMap::new();
         let mut definitions = BTreeMap::new();
         let mut uses = BTreeMap::new();

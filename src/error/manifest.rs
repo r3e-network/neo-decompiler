@@ -31,4 +31,11 @@ pub enum ManifestError {
         #[source]
         source: Utf8Error,
     },
+
+    /// The manifest passed JSON parsing but failed strict semantic validation.
+    #[error("manifest validation error: {message}")]
+    Validation {
+        /// Human-readable validation failure details.
+        message: String,
+    },
 }

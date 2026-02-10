@@ -4,7 +4,7 @@ use std::fmt::Write;
 use crate::instruction::Instruction;
 use crate::manifest::{ContractManifest, ManifestMethod};
 
-use super::super::super::helpers::next_method_offset;
+use super::super::super::helpers::{has_manifest_method_at_offset, next_method_offset};
 use super::super::helpers::{
     collect_csharp_parameters, escape_csharp_string, format_csharp_parameters,
     format_manifest_type_csharp, format_method_signature, sanitize_csharp_identifier,
@@ -17,6 +17,8 @@ pub(super) fn write_manifest_methods(
     instructions: &[Instruction],
     warnings: &mut Vec<String>,
 ) {
+    write_script_entry_if_needed(output, manifest, instructions, warnings);
+
     let mut used_signatures: HashSet<(String, String)> = HashSet::new();
     let mut sorted_methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
     sorted_methods.sort_by_key(|m| m.offset.unwrap_or(u32::MAX));
@@ -87,6 +89,55 @@ pub(super) fn write_manifest_methods(
         writeln!(output, "        }}").unwrap();
         writeln!(output).unwrap();
     }
+}
+
+fn write_script_entry_if_needed(
+    output: &mut String,
+    manifest: &ContractManifest,
+    instructions: &[Instruction],
+    warnings: &mut Vec<String>,
+) {
+    let Some(entry_offset) = instructions.first().map(|ins| ins.offset) else {
+        return;
+    };
+
+    if has_manifest_method_at_offset(manifest, entry_offset) {
+        return;
+    }
+
+    let end = manifest
+        .abi
+        .methods
+        .iter()
+        .filter_map(|method| method.offset.map(|value| value as usize))
+        .filter(|offset| *offset > entry_offset)
+        .min();
+    let slice: Vec<Instruction> = match end {
+        Some(end) => instructions
+            .iter()
+            .filter(|ins| ins.offset >= entry_offset && ins.offset < end)
+            .cloned()
+            .collect(),
+        None => instructions.to_vec(),
+    };
+
+    let slice = if slice.is_empty() {
+        instructions.to_vec()
+    } else {
+        slice
+    };
+
+    writeln!(
+        output,
+        "        // warning: manifest entry offset did not match script entry at 0x{entry_offset:04X}; using synthetic ScriptEntry"
+    )
+    .unwrap();
+    let entry_signature = format_method_signature("ScriptEntry", "", "void");
+    writeln!(output, "        {entry_signature}").unwrap();
+    writeln!(output, "        {{").unwrap();
+    body::write_lifted_body(output, &slice, None, warnings);
+    writeln!(output, "        }}").unwrap();
+    writeln!(output).unwrap();
 }
 
 pub(super) fn write_fallback_entry(

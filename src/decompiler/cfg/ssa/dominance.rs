@@ -596,9 +596,7 @@ mod tests {
             0,
             1,
             0..1,
-            Terminator::Jump {
-                target: BlockId(1),
-            },
+            Terminator::Jump { target: BlockId(1) },
         );
         cfg.add_block(pre_header);
 
@@ -626,9 +624,7 @@ mod tests {
             2,
             3,
             2..3,
-            Terminator::Jump {
-                target: BlockId(1),
-            },
+            Terminator::Jump { target: BlockId(1) },
         );
         cfg.add_block(body);
         cfg.add_edge(

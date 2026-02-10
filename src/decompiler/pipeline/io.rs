@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::disassembler::DisassemblyOutput;
 use crate::error::{NefError, Result};
 use crate::manifest::ContractManifest;
 
@@ -23,6 +24,11 @@ impl Decompiler {
     pub(super) fn io_decompile_file<P: AsRef<Path>>(&self, path: P) -> Result<Decompilation> {
         let data = read_nef_file(path.as_ref())?;
         self.decompile_bytes(&data)
+    }
+
+    pub(super) fn io_disassemble_file<P: AsRef<Path>>(&self, path: P) -> Result<DisassemblyOutput> {
+        let data = read_nef_file(path.as_ref())?;
+        self.disassemble_bytes(&data)
     }
 
     pub(super) fn io_decompile_file_with_manifest<P, Q>(
