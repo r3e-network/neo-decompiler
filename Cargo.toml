@@ -41,3 +41,15 @@ required-features = ["cli"]
 [lib]
 name = "neo_decompiler"
 path = "src/lib.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.bench]
+inherits = "release"
