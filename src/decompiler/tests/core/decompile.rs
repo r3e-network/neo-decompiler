@@ -87,8 +87,8 @@ fn decompile_lifts_indirect_calls_without_not_yet_translated_warning() {
 
 #[test]
 fn decompile_lifts_relative_calls_without_control_flow_warning() {
-    // Script: CALL +0, CALL_L +0, RET
-    let nef_bytes = build_nef(&[0x34, 0x00, 0x35, 0x00, 0x00, 0x00, 0x00, 0x40]);
+    // Script: CALL +2, CALL_L +5, RET
+    let nef_bytes = build_nef(&[0x34, 0x02, 0x35, 0x05, 0x00, 0x00, 0x00, 0x40]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -114,8 +114,8 @@ fn decompile_lifts_relative_calls_without_control_flow_warning() {
 
 #[test]
 fn decompile_lifts_unconditional_jumps_without_control_flow_warning() {
-    // Script: JMP +0 (to JMP_L), JMP_L +0 (to RET), RET
-    let nef_bytes = build_nef(&[0x22, 0x00, 0x23, 0x00, 0x00, 0x00, 0x00, 0x40]);
+    // Script: JMP +2 (to JMP_L), JMP_L +5 (to RET), RET
+    let nef_bytes = build_nef(&[0x22, 0x02, 0x23, 0x05, 0x00, 0x00, 0x00, 0x40]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -149,8 +149,8 @@ fn decompile_lifts_unconditional_jumps_without_control_flow_warning() {
 
 #[test]
 fn decompile_lifts_endtry_transfers_without_control_flow_warning() {
-    // Script: ENDTRY +0 (to ENDTRY_L), ENDTRY_L +0 (to RET), RET
-    let nef_bytes = build_nef(&[0x3D, 0x00, 0x3E, 0x00, 0x00, 0x00, 0x00, 0x40]);
+    // Script: ENDTRY +2 (to ENDTRY_L), ENDTRY_L +5 (to RET), RET
+    let nef_bytes = build_nef(&[0x3D, 0x02, 0x3E, 0x05, 0x00, 0x00, 0x00, 0x40]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -184,8 +184,8 @@ fn decompile_lifts_endtry_transfers_without_control_flow_warning() {
 
 #[test]
 fn decompile_uses_label_style_for_unresolved_jump_targets() {
-    // Script: JMP +3 (to 0x0005, no decoded instruction there), RET
-    let nef_bytes = build_nef(&[0x22, 0x03, 0x40]);
+    // Script: JMP +5 (to 0x0005, no decoded instruction there), RET
+    let nef_bytes = build_nef(&[0x22, 0x05, 0x40]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -207,8 +207,8 @@ fn decompile_uses_label_style_for_unresolved_jump_targets() {
 
 #[test]
 fn decompile_uses_label_style_for_unresolved_endtry_targets() {
-    // Script: ENDTRY +3 (to 0x0005, no decoded instruction there), RET
-    let nef_bytes = build_nef(&[0x3D, 0x03, 0x40]);
+    // Script: ENDTRY +5 (to 0x0005, no decoded instruction there), RET
+    let nef_bytes = build_nef(&[0x3D, 0x05, 0x40]);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -270,19 +270,19 @@ fn decompile_multiple_sequential_calls() {
 fn decompile_nested_loop_in_if() {
     // Script layout (offsets in brackets):
     //   [0] PUSH0          -- condition for outer if
-    //   [1] JMPIFNOT +6    -- target = 9 (RET), outer if
+    //   [1] JMPIFNOT +8    -- target = 9 (RET), outer if
     //   [3] PUSH0          -- condition for while loop
-    //   [4] JMPIFNOT +3    -- target = 9 (RET), loop exit
+    //   [4] JMPIFNOT +5    -- target = 9 (RET), loop exit
     //   [6] NOP            -- loop body
-    //   [7] JMP -6         -- back-edge to [3]
+    //   [7] JMP -4         -- back-edge to [3]
     //   [9] RET
     let nef_bytes = build_nef(&[
         0x10, // PUSH0
-        0x26, 0x06, // JMPIFNOT +6
+        0x26, 0x08, // JMPIFNOT +8
         0x10, // PUSH0
-        0x26, 0x03, // JMPIFNOT +3
+        0x26, 0x05, // JMPIFNOT +5
         0x21, // NOP
-        0x22, 0xFA, // JMP -6
+        0x22, 0xFC, // JMP -4
         0x40, // RET
     ]);
     let decompilation = Decompiler::new()
@@ -312,23 +312,23 @@ fn decompile_nested_loop_in_if() {
 fn decompile_try_in_loop() {
     // Script layout (offsets in brackets):
     //   [0]  PUSH0            -- condition for while loop
-    //   [1]  JMPIFNOT +10     -- target = 13 (RET), loop exit
-    //   [3]  TRY (catch=+4, finally=0) -- catch at 10, no finally
+    //   [1]  JMPIFNOT +12     -- target = 13 (RET), loop exit
+    //   [3]  TRY (catch=+7, finally=0) -- catch at 10, no finally
     //   [6]  NOP              -- try body
-    //   [7]  ENDTRY +4        -- leave to 13 (RET)
+    //   [7]  ENDTRY +6        -- leave to 13 (RET)
     //   [9]  NOP              -- padding
     //   [10] ENDFINALLY       -- catch handler
-    //   [11] JMP -13          -- back-edge to [0]
+    //   [11] JMP -11          -- back-edge to [0]
     //   [13] RET
     let nef_bytes = build_nef(&[
         0x10, // PUSH0
-        0x26, 0x0A, // JMPIFNOT +10
-        0x3B, 0x04, 0x00, // TRY catch=+4, finally=0
+        0x26, 0x0C, // JMPIFNOT +12
+        0x3B, 0x07, 0x00, // TRY catch=+7, finally=0
         0x21, // NOP
-        0x3D, 0x04, // ENDTRY +4
+        0x3D, 0x06, // ENDTRY +6
         0x21, // NOP
         0x3F, // ENDFINALLY
-        0x22, 0xF3, // JMP -13
+        0x22, 0xF5, // JMP -11
         0x40, // RET
     ]);
     let decompilation = Decompiler::new()
@@ -354,21 +354,21 @@ fn decompile_try_in_loop() {
 fn decompile_nested_if_else() {
     // Script layout (offsets in brackets):
     //   [0]  PUSH0          -- condition for outer if
-    //   [1]  JMPIFNOT +8    -- target = 11 (RET), outer if
+    //   [1]  JMPIFNOT +10   -- target = 11 (RET), outer if
     //   [3]  PUSH0          -- condition for inner if
-    //   [4]  JMPIFNOT +3    -- target = 9 (inner else body)
+    //   [4]  JMPIFNOT +5    -- target = 9 (inner else body)
     //   [6]  NOP            -- inner if-true body
-    //   [7]  JMP +2         -- skip inner else, target = 11 (RET)
+    //   [7]  JMP +4         -- skip inner else, target = 11 (RET)
     //   [9]  NOP            -- inner else body
     //   [10] NOP            -- padding
     //   [11] RET
     let nef_bytes = build_nef(&[
         0x10, // PUSH0
-        0x26, 0x08, // JMPIFNOT +8
+        0x26, 0x0A, // JMPIFNOT +10
         0x10, // PUSH0
-        0x26, 0x03, // JMPIFNOT +3
+        0x26, 0x05, // JMPIFNOT +5
         0x21, // NOP
-        0x22, 0x02, // JMP +2
+        0x22, 0x04, // JMP +4
         0x21, // NOP
         0x21, // NOP
         0x40, // RET

@@ -4,13 +4,15 @@ use super::super::super::HighLevelEmitter;
 
 impl HighLevelEmitter {
     pub(super) fn find_endtry_target(&self, start: usize, end: usize) -> Option<(usize, usize)> {
+        if start >= end {
+            return None;
+        }
         for (&offset, &index) in self.index_by_offset.range(start..end) {
             let instruction = self.program.get(index)?;
             if !matches!(instruction.opcode, OpCode::Endtry | OpCode::EndtryL) {
                 continue;
             }
-            let width = Self::branch_width(instruction.opcode);
-            if let Some(target) = self.forward_jump_target(instruction, width) {
+            if let Some(target) = self.forward_jump_target(instruction) {
                 if target > instruction.offset {
                     return Some((offset, target));
                 }

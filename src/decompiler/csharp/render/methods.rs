@@ -15,9 +15,10 @@ pub(super) fn write_manifest_methods(
     output: &mut String,
     manifest: &ContractManifest,
     instructions: &[Instruction],
+    callt_labels: &[String],
     warnings: &mut Vec<String>,
 ) {
-    write_script_entry_if_needed(output, manifest, instructions, warnings);
+    write_script_entry_if_needed(output, manifest, instructions, callt_labels, warnings);
 
     let mut used_signatures: HashSet<(String, String)> = HashSet::new();
     let mut sorted_methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
@@ -61,7 +62,7 @@ pub(super) fn write_manifest_methods(
             writeln!(output, "            throw new NotImplementedException();").unwrap();
         } else {
             let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-            body::write_lifted_body(output, &slice, Some(&labels), warnings);
+            body::write_lifted_body(output, &slice, Some(&labels), callt_labels, warnings);
         }
 
         writeln!(output, "        }}").unwrap();
@@ -94,6 +95,7 @@ fn write_script_entry_if_needed(
     output: &mut String,
     manifest: &ContractManifest,
     instructions: &[Instruction],
+    callt_labels: &[String],
     warnings: &mut Vec<String>,
 ) {
     let Some(entry_offset) = instructions.first().map(|ins| ins.offset) else {
@@ -134,7 +136,7 @@ fn write_script_entry_if_needed(
     let entry_signature = format_method_signature("ScriptEntry", "", "void");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, &slice, None, warnings);
+    body::write_lifted_body(output, &slice, None, callt_labels, warnings);
     writeln!(output, "        }}").unwrap();
     writeln!(output).unwrap();
 }
@@ -142,13 +144,14 @@ fn write_script_entry_if_needed(
 pub(super) fn write_fallback_entry(
     output: &mut String,
     instructions: &[Instruction],
+    callt_labels: &[String],
     warnings: &mut Vec<String>,
 ) {
     let entry_method_name = "ScriptEntry".to_string();
     let entry_signature = format_method_signature(&entry_method_name, "", "void");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, instructions, None, warnings);
+    body::write_lifted_body(output, instructions, None, callt_labels, warnings);
     writeln!(output, "        }}").unwrap();
 }
 

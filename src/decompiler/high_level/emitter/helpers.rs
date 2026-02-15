@@ -16,7 +16,39 @@ pub(super) fn literal_from_operand(operand: Option<&Operand>) -> Option<LiteralV
         Some(Operand::U16(v)) => Some(LiteralValue::Integer(*v as i64)),
         Some(Operand::U32(v)) => Some(LiteralValue::Integer(*v as i64)),
         Some(Operand::Bool(v)) => Some(LiteralValue::Boolean(*v)),
+        Some(Operand::Bytes(bytes)) => try_decode_string_literal(bytes)
+            .map(LiteralValue::String),
         _ => None,
+    }
+}
+
+/// Try to decode a byte slice as a printable UTF-8 string literal.
+/// Returns `Some(decoded)` only when the bytes are valid UTF-8 and every
+/// character is printable ASCII (0x20..=0x7E) or common whitespace (\n, \r, \t).
+/// A minimum length of 1 is required to avoid false positives with empty data.
+pub(super) fn try_decode_string_literal(bytes: &[u8]) -> Option<String> {
+    if bytes.is_empty() {
+        return None;
+    }
+    let s = std::str::from_utf8(bytes).ok()?;
+    let all_printable = s.chars().all(|c| matches!(c, ' '..='~' | '\n' | '\r' | '\t'));
+    if all_printable {
+        Some(s.to_string())
+    } else {
+        None
+    }
+}
+
+/// Format a PUSHDATA operand for display: decode as a quoted string literal
+/// when the bytes are printable UTF-8, otherwise fall back to hex.
+pub(super) fn format_pushdata(bytes: &[u8]) -> String {
+    if bytes.is_empty() {
+        return "\"\"".to_string();
+    }
+    if let Some(s) = try_decode_string_literal(bytes) {
+        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+    } else {
+        format!("0x{}", hex::encode_upper(bytes))
     }
 }
 

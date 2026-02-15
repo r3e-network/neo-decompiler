@@ -169,8 +169,8 @@ fn csharp_escapes_reserved_keywords() {
 
 #[test]
 fn csharp_uses_label_style_for_transfer_placeholders() {
-    // Script: ENDTRY +0 (to ENDTRY_L), ENDTRY_L +0 (to RET), RET
-    let nef_bytes = build_nef(&[0x3D, 0x00, 0x3E, 0x00, 0x00, 0x00, 0x00, 0x40]);
+    // Script: ENDTRY +2 (to ENDTRY_L), ENDTRY_L +5 (to RET), RET
+    let nef_bytes = build_nef(&[0x3D, 0x02, 0x3E, 0x05, 0x00, 0x00, 0x00, 0x40]);
 
     let decompilation = Decompiler::new()
         .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)

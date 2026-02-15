@@ -21,6 +21,10 @@ impl HighLevelEmitter {
         }
     }
 
+    pub(crate) fn set_callt_labels(&mut self, labels: Vec<String>) {
+        self.callt_labels = labels;
+    }
+
     pub(crate) fn set_inline_single_use_temps(&mut self, enabled: bool) {
         self.inline_single_use_temps = enabled;
     }
@@ -29,6 +33,15 @@ impl HighLevelEmitter {
         if let Some(count) = self.pending_closers.remove(&offset) {
             for _ in 0..count {
                 self.statements.push("}".into());
+            }
+            // Restore the stack state saved before the branch body.
+            // This handles cases where the branch body terminated
+            // (throw/return/abort) and cleared the stack — the code
+            // after the branch still needs the pre-branch stack.
+            if let Some(saved) = self.branch_saved_stacks.remove(&offset) {
+                if self.stack.is_empty() && !saved.is_empty() {
+                    self.stack = saved;
+                }
             }
         }
 

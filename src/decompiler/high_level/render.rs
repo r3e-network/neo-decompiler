@@ -1,5 +1,6 @@
 use crate::instruction::Instruction;
 use crate::manifest::ContractManifest;
+use crate::native_contracts;
 use crate::nef::NefFile;
 
 use std::collections::HashSet;
@@ -28,6 +29,21 @@ pub(crate) fn render_high_level(
     let mut output = String::new();
     let mut warnings = Vec::new();
     let mut used_method_names = HashSet::new();
+
+    // Pre-resolve CALLT method-token labels so the emitter can emit friendly names.
+    let callt_labels: Vec<String> = nef
+        .method_tokens
+        .iter()
+        .map(|token| {
+            if let Some(hint) = native_contracts::describe_method_token(&token.hash, &token.method)
+            {
+                hint.formatted_label(&token.method)
+            } else {
+                token.method.clone()
+            }
+        })
+        .collect();
+
     header::write_contract_header(&mut output, nef, manifest);
 
     let entry_method = entry::write_entry_method(
@@ -35,6 +51,7 @@ pub(crate) fn render_high_level(
         instructions,
         manifest,
         inline_single_use_temps,
+        &callt_labels,
         &mut warnings,
         &mut used_method_names,
     );
@@ -45,6 +62,7 @@ pub(crate) fn render_high_level(
             manifest,
             entry_method.as_ref(),
             inline_single_use_temps,
+            &callt_labels,
             &mut warnings,
             &mut used_method_names,
         );

@@ -16,18 +16,18 @@ impl HighLevelEmitter {
         instruction: &Instruction,
         symbol: &str,
     ) {
-        let width = Self::branch_width(instruction.opcode);
         let delta = match instruction.operand {
             Some(Operand::Jump(value)) => value as isize,
             Some(Operand::Jump32(value)) => value as isize,
             _ => {
-                self.emit_relative(instruction, width, &format!("jump-if-{symbol}"));
+                self.emit_relative(instruction, &format!("jump-if-{symbol}"));
                 return;
             }
         };
-        let target = instruction.offset as isize + width + delta;
+        // Neo VM: target = opcode_offset + delta (offset is relative to instruction start).
+        let target = instruction.offset as isize + delta;
         if target <= instruction.offset as isize {
-            self.emit_relative(instruction, width, &format!("jump-if-{symbol}"));
+            self.emit_relative(instruction, &format!("jump-if-{symbol}"));
             return;
         }
 
@@ -46,6 +46,13 @@ impl HighLevelEmitter {
         self.statements.push(format!("if {condition} {{"));
 
         let false_target = target as usize;
+        // Save stack state so it can be restored when the if-body closes.
+        // This handles cases where the if-body terminates (throw/return/abort)
+        // and clears the stack — the code after the if-block still needs the
+        // pre-branch stack state.
+        self.branch_saved_stacks
+            .entry(false_target)
+            .or_insert_with(|| self.stack.clone());
         let closer_entry = self.pending_closers.entry(false_target).or_insert(0);
         *closer_entry += 1;
 
@@ -74,18 +81,18 @@ impl HighLevelEmitter {
         negate_condition: bool,
         fallback_label: &str,
     ) {
-        let width = Self::branch_width(instruction.opcode);
         let delta = match instruction.operand {
             Some(Operand::Jump(value)) => value as isize,
             Some(Operand::Jump32(value)) => value as isize,
             _ => {
-                self.emit_relative(instruction, width, fallback_label);
+                self.emit_relative(instruction, fallback_label);
                 return;
             }
         };
-        let target = instruction.offset as isize + width + delta;
+        // Neo VM: target = opcode_offset + delta (offset is relative to instruction start).
+        let target = instruction.offset as isize + delta;
         if target <= instruction.offset as isize {
-            self.emit_relative(instruction, width, fallback_label);
+            self.emit_relative(instruction, fallback_label);
             return;
         }
 
@@ -114,6 +121,10 @@ impl HighLevelEmitter {
         } else {
             self.statements.push(format!("if {condition} {{"));
         }
+        // Save stack state so it can be restored when the if/while-body closes.
+        self.branch_saved_stacks
+            .entry(false_target)
+            .or_insert_with(|| self.stack.clone());
         let closer_entry = self.pending_closers.entry(false_target).or_insert(0);
         *closer_entry += 1;
 
@@ -136,8 +147,7 @@ impl HighLevelEmitter {
             return None;
         }
         let jump = self.program.get(target_index.checked_sub(1)?)?;
-        let width = Self::branch_width(jump.opcode);
-        let target = self.forward_jump_target(jump, width)?;
+        let target = self.forward_jump_target(jump)?;
         if target > false_offset {
             Some((jump.offset, target))
         } else {

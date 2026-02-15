@@ -9,12 +9,14 @@ pub(super) fn write_lifted_body(
     output: &mut String,
     instructions: &[Instruction],
     argument_labels: Option<&[String]>,
+    callt_labels: &[String],
     warnings: &mut Vec<String>,
 ) {
     let mut emitter = HighLevelEmitter::with_program(instructions);
     if let Some(labels) = argument_labels {
         emitter.set_argument_labels(labels);
     }
+    emitter.set_callt_labels(callt_labels.to_vec());
     for instruction in instructions {
         emitter.advance_to(instruction.offset);
         emitter.emit_instruction(instruction);

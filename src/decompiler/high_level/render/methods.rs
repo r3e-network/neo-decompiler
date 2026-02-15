@@ -16,6 +16,7 @@ pub(super) fn write_manifest_methods(
     manifest: &ContractManifest,
     entry_method: Option<&(String, Option<i32>)>,
     inline_single_use_temps: bool,
+    callt_labels: &[String],
     warnings: &mut Vec<String>,
     used_method_names: &mut HashSet<String>,
 ) {
@@ -71,6 +72,7 @@ pub(super) fn write_manifest_methods(
                     slice,
                     Some(&labels),
                     inline_single_use_temps,
+                    callt_labels,
                     warnings,
                 );
             }

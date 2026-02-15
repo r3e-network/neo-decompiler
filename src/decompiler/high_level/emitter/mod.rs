@@ -12,7 +12,7 @@ mod stack;
 mod types;
 mod util;
 
-use helpers::{convert_target_name, literal_from_operand};
+use helpers::{convert_target_name, format_pushdata, literal_from_operand};
 use types::{DoWhileLoop, LiteralValue, LoopContext, LoopJump, SlotKind};
 
 #[derive(Debug, Default)]
@@ -38,6 +38,13 @@ pub(crate) struct HighLevelEmitter {
     initialized_statics: BTreeSet<usize>,
     argument_labels: BTreeMap<usize, String>,
     literal_values: BTreeMap<String, LiteralValue>,
+    /// Pre-resolved labels for CALLT method-token indices.
+    /// Index `i` corresponds to method-token index `i` in the NEF file.
+    callt_labels: Vec<String>,
+    /// Stack snapshots saved before entering if-bodies so that the stack can
+    /// be restored when the closing brace is emitted.  Keyed by the offset
+    /// where the closer will be placed (i.e. the false-target of the branch).
+    branch_saved_stacks: BTreeMap<usize, Vec<String>>,
 }
 
 pub(crate) struct HighLevelOutput {

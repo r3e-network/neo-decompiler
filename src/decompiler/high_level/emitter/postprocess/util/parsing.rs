@@ -28,11 +28,21 @@ impl HighLevelEmitter {
         if lhs_raw.is_empty() || rhs.is_empty() {
             return None;
         }
+        // Reject if we split inside a compound operator (==, !=, <=, >=).
+        if rhs.starts_with('=') || lhs_raw.ends_with('!') || lhs_raw.ends_with('<') || lhs_raw.ends_with('>') {
+            return None;
+        }
         let lhs = if let Some(stripped) = lhs_raw.strip_prefix("let ") {
             stripped.trim().to_string()
         } else {
             lhs_raw.to_string()
         };
+        // LHS must be a valid identifier (e.g. `t12`, `loc0`), not an
+        // arbitrary expression like `assert((t10` that results from
+        // splitting on the `=` inside `==`.
+        if !is_valid_lhs(&lhs) {
+            return None;
+        }
         Some(Assignment {
             full: body.to_string(),
             lhs,
@@ -60,4 +70,17 @@ impl HighLevelEmitter {
             parts[2].to_string(),
         ))
     }
+}
+
+/// A valid LHS is a simple identifier: starts with a letter or underscore,
+/// followed by alphanumeric characters or underscores.
+fn is_valid_lhs(s: &str) -> bool {
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if first != '_' && !first.is_ascii_alphabetic() {
+        return false;
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }

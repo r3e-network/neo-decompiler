@@ -55,7 +55,7 @@ pub const NATIVE_CONTRACTS: &[NativeContractInfo] = &[
     NativeContractInfo {
         name: "GasToken",
         script_hash: [0xCF, 0x76, 0xE2, 0x8B, 0xD0, 0x06, 0x2C, 0x4A, 0x47, 0x8E, 0xE3, 0x55, 0x61, 0x01, 0x13, 0x19, 0xF3, 0xCF, 0xA4, 0xD2],
-        methods: &["BalanceOf", "OnManifestCompose", "TotalSupply", "Transfer"],
+        methods: &["BalanceOf", "Decimals", "OnManifestCompose", "Symbol", "TotalSupply", "Transfer"],
     },
     NativeContractInfo {
         name: "RoleManagement",
@@ -65,7 +65,7 @@ pub const NATIVE_CONTRACTS: &[NativeContractInfo] = &[
     NativeContractInfo {
         name: "NeoToken",
         script_hash: [0xF5, 0x63, 0xEA, 0x40, 0xBC, 0x28, 0x3D, 0x4D, 0x0E, 0x05, 0xC4, 0x8E, 0xA3, 0x05, 0xB3, 0xF2, 0xA0, 0x73, 0x40, 0xEF],
-        methods: &["BalanceOf", "GetAccountState", "GetAllCandidates", "GetCandidateVote", "GetCommittee", "GetCommitteeAddress", "GetGasPerBlock", "GetNextBlockValidators", "GetRegisterPrice", "OnManifestCompose", "OnNEP17Payment", "RegisterCandidate", "SetGasPerBlock", "SetRegisterPrice", "TotalSupply", "Transfer", "UnclaimedGas", "UnregisterCandidate", "Vote"],
+        methods: &["BalanceOf", "Decimals", "GetAccountState", "GetAllCandidates", "GetCandidateVote", "GetCommittee", "GetCommitteeAddress", "GetGasPerBlock", "GetNextBlockValidators", "GetRegisterPrice", "OnManifestCompose", "OnNEP17Payment", "RegisterCandidate", "SetGasPerBlock", "SetRegisterPrice", "Symbol", "TotalSupply", "Transfer", "UnclaimedGas", "UnregisterCandidate", "Vote"],
     },
     NativeContractInfo {
         name: "ContractManagement",

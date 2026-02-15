@@ -6,6 +6,7 @@
 
 use crate::instruction::Instruction;
 use crate::manifest::ContractManifest;
+use crate::native_contracts;
 use crate::nef::NefFile;
 
 use super::super::helpers::extract_contract_name;
@@ -33,13 +34,33 @@ pub(crate) fn render_csharp(
 
     let contract_name = extract_contract_name(manifest, sanitize_csharp_identifier);
 
+    // Pre-resolve CALLT method-token labels.
+    let callt_labels: Vec<String> = nef
+        .method_tokens
+        .iter()
+        .map(|token| {
+            if let Some(hint) = native_contracts::describe_method_token(&token.hash, &token.method)
+            {
+                hint.formatted_label(&token.method)
+            } else {
+                token.method.clone()
+            }
+        })
+        .collect();
+
     header::write_contract_open(&mut output, &contract_name, nef, manifest);
 
     if let Some(manifest) = manifest {
         events::write_events(&mut output, manifest);
-        methods::write_manifest_methods(&mut output, manifest, instructions, &mut warnings);
+        methods::write_manifest_methods(
+            &mut output,
+            manifest,
+            instructions,
+            &callt_labels,
+            &mut warnings,
+        );
     } else {
-        methods::write_fallback_entry(&mut output, instructions, &mut warnings);
+        methods::write_fallback_entry(&mut output, instructions, &callt_labels, &mut warnings);
     }
 
     header::write_contract_close(&mut output);

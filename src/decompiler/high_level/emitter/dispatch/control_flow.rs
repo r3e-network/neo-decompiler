@@ -23,8 +23,8 @@ impl HighLevelEmitter {
             }
             Assertmsg => self.emit_call(instruction, "assert", 2, false),
             Syscall => self.emit_syscall(instruction),
-            Jmp => self.emit_jump(instruction, 2),
-            Jmp_L => self.emit_jump(instruction, 5),
+            Jmp => self.emit_jump(instruction),
+            Jmp_L => self.emit_jump(instruction),
             Jmpif => {
                 if !self.try_emit_do_while_tail(instruction) {
                     self.emit_jmpif_block(instruction);
@@ -35,17 +35,51 @@ impl HighLevelEmitter {
                     self.emit_jmpif_block(instruction);
                 }
             }
-            Jmpifnot | Jmpifnot_L => self.emit_if_block(instruction),
-            JmpEq | JmpEq_L => self.emit_comparison_if_block(instruction, "=="),
-            JmpNe | JmpNe_L => self.emit_comparison_if_block(instruction, "!="),
-            JmpGt | JmpGt_L => self.emit_comparison_if_block(instruction, ">"),
-            JmpGe | JmpGe_L => self.emit_comparison_if_block(instruction, ">="),
-            JmpLt | JmpLt_L => self.emit_comparison_if_block(instruction, "<"),
-            JmpLe | JmpLe_L => self.emit_comparison_if_block(instruction, "<="),
-            Endtry => self.emit_endtry(instruction, 2),
-            EndtryL => self.emit_endtry(instruction, 5),
-            Call => self.emit_relative_call(instruction, 2),
-            Call_L => self.emit_relative_call(instruction, 5),
+            Jmpifnot | Jmpifnot_L => {
+                if !self.try_emit_do_while_negated_tail(instruction) {
+                    self.emit_if_block(instruction);
+                }
+            }
+            // Comparison jumps branch when the condition is TRUE, so the
+            // fall-through (if-body) executes when the condition is FALSE.
+            // We therefore pass the NEGATED operator to emit_comparison_if_block.
+            // For backward jumps registered as do-while tails, we use the
+            // ORIGINAL operator since the loop continues while the condition
+            // is true.
+            JmpEq | JmpEq_L => {
+                if !self.try_emit_do_while_comparison_tail(instruction, "==") {
+                    self.emit_comparison_if_block(instruction, "!=");
+                }
+            }
+            JmpNe | JmpNe_L => {
+                if !self.try_emit_do_while_comparison_tail(instruction, "!=") {
+                    self.emit_comparison_if_block(instruction, "==");
+                }
+            }
+            JmpGt | JmpGt_L => {
+                if !self.try_emit_do_while_comparison_tail(instruction, ">") {
+                    self.emit_comparison_if_block(instruction, "<=");
+                }
+            }
+            JmpGe | JmpGe_L => {
+                if !self.try_emit_do_while_comparison_tail(instruction, ">=") {
+                    self.emit_comparison_if_block(instruction, "<");
+                }
+            }
+            JmpLt | JmpLt_L => {
+                if !self.try_emit_do_while_comparison_tail(instruction, "<") {
+                    self.emit_comparison_if_block(instruction, ">=");
+                }
+            }
+            JmpLe | JmpLe_L => {
+                if !self.try_emit_do_while_comparison_tail(instruction, "<=") {
+                    self.emit_comparison_if_block(instruction, ">");
+                }
+            }
+            Endtry => self.emit_endtry(instruction),
+            EndtryL => self.emit_endtry(instruction),
+            Call => self.emit_relative_call(instruction),
+            Call_L => self.emit_relative_call(instruction),
             CallA => self.emit_indirect_call(instruction, "calla"),
             CallT => self.emit_indirect_call(instruction, "callt"),
             Try | TryL => self.emit_try_block(instruction),

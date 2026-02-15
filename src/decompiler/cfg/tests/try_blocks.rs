@@ -3,7 +3,7 @@ use super::{make_instr, BlockId, CfgBuilder, OpCode, Operand, Terminator};
 #[test]
 fn try_entry_adds_exception_and_finally_edges() {
     let instructions = vec![
-        make_instr(0, OpCode::Try, Some(Operand::Bytes(vec![3, 6]))),
+        make_instr(0, OpCode::Try, Some(Operand::Bytes(vec![6, 9]))),
         make_instr(3, OpCode::Push1, None),
         make_instr(4, OpCode::Ret, None),
         make_instr(6, OpCode::Push2, None),

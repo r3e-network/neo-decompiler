@@ -17,6 +17,7 @@ pub(super) fn write_entry_method(
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
     inline_single_use_temps: bool,
+    callt_labels: &[String],
     warnings: &mut Vec<String>,
     used_method_names: &mut HashSet<String>,
 ) -> Option<(String, Option<i32>)> {
@@ -121,6 +122,7 @@ pub(super) fn write_entry_method(
         &entry_instructions,
         entry_param_labels.as_deref(),
         inline_single_use_temps,
+        callt_labels,
         warnings,
     );
     writeln!(output, "    }}").unwrap();

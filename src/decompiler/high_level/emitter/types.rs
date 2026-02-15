@@ -27,4 +27,5 @@ pub(super) struct LoopJump {
 pub(super) enum LiteralValue {
     Integer(i64),
     Boolean(bool),
+    String(String),
 }

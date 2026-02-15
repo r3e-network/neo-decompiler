@@ -13,11 +13,29 @@ use super::super::{DoWhileLoop, HighLevelEmitter, LoopJump};
 impl HighLevelEmitter {
     pub(in super::super) fn analyze_do_while_loops(&mut self) {
         for instruction in &self.program {
-            if !matches!(instruction.opcode, OpCode::Jmpif | OpCode::Jmpif_L) {
+            if !matches!(
+                instruction.opcode,
+                OpCode::Jmpif
+                    | OpCode::Jmpif_L
+                    | OpCode::Jmpifnot
+                    | OpCode::Jmpifnot_L
+                    | OpCode::JmpEq
+                    | OpCode::JmpEq_L
+                    | OpCode::JmpNe
+                    | OpCode::JmpNe_L
+                    | OpCode::JmpGt
+                    | OpCode::JmpGt_L
+                    | OpCode::JmpGe
+                    | OpCode::JmpGe_L
+                    | OpCode::JmpLt
+                    | OpCode::JmpLt_L
+                    | OpCode::JmpLe
+                    | OpCode::JmpLe_L
+            ) {
                 continue;
             }
             let width = Self::branch_width(instruction.opcode);
-            if let Some(target) = self.forward_jump_target(instruction, width) {
+            if let Some(target) = self.forward_jump_target(instruction) {
                 if target < instruction.offset {
                     let break_offset = instruction.offset as isize + width;
                     if break_offset >= 0 {
@@ -49,6 +67,54 @@ impl HighLevelEmitter {
         true
     }
 
+    /// Like `try_emit_do_while_tail` but for `Jmpifnot` backward jumps.
+    /// The jump fires when the condition is FALSE, so the loop continues
+    /// while the condition is false → `} while (!condition);`.
+    pub(in super::super) fn try_emit_do_while_negated_tail(
+        &mut self,
+        instruction: &Instruction,
+    ) -> bool {
+        if !self.active_do_while_tails.remove(&instruction.offset) {
+            return false;
+        }
+        let Some(condition) = self.stack.pop() else {
+            self.push_comment(instruction);
+            self.stack_underflow(instruction, 1);
+            return true;
+        };
+        self.push_comment(instruction);
+        self.statements
+            .push(format!("}} while (!{condition});"));
+        self.pop_loops_with_continue(instruction.offset);
+        true
+    }
+
+    /// Like `try_emit_do_while_tail` but for comparison jumps that pop two
+    /// operands.  `original_op` is the UN-negated operator (the jump condition),
+    /// e.g. `"<"` for `JmpLt`.  The loop continues while the condition is true.
+    pub(in super::super) fn try_emit_do_while_comparison_tail(
+        &mut self,
+        instruction: &Instruction,
+        original_op: &str,
+    ) -> bool {
+        if !self.active_do_while_tails.remove(&instruction.offset) {
+            return false;
+        }
+        if self.stack.len() < 2 {
+            self.push_comment(instruction);
+            self.stack_underflow(instruction, 2);
+            return true;
+        }
+        let (Some(right), Some(left)) = (self.stack.pop(), self.stack.pop()) else {
+            return true;
+        };
+        self.push_comment(instruction);
+        self.statements
+            .push(format!("}} while ({left} {original_op} {right});"));
+        self.pop_loops_with_continue(instruction.offset);
+        true
+    }
+
     pub(super) fn detect_loop_back(
         &self,
         false_offset: usize,
@@ -58,8 +124,7 @@ impl HighLevelEmitter {
         let jump_instruction = self.program.get(index)?;
         match jump_instruction.opcode {
             OpCode::Jmp | OpCode::Jmp_L => {
-                let width = Self::branch_width(jump_instruction.opcode);
-                let target = self.forward_jump_target(jump_instruction, width)?;
+                let target = self.forward_jump_target(jump_instruction)?;
                 if target <= condition_offset
                     && !self
                         .loop_stack

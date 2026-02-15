@@ -8,15 +8,7 @@ pub(crate) struct KnownUnsupported {
 }
 
 pub(crate) fn load_known_unsupported(artifacts_dir: &Path) -> Vec<KnownUnsupported> {
-    const DEFAULT: &[&str] = &["Contract_Delegate", "Contract_Lambda"];
-
-    let mut entries = DEFAULT
-        .iter()
-        .map(|s| KnownUnsupported {
-            id: s.to_string(),
-            expected: None,
-        })
-        .collect::<Vec<KnownUnsupported>>();
+    let mut entries = Vec::new();
 
     let path = artifacts_dir.join("known_unsupported.txt");
     if let Ok(contents) = fs::read_to_string(&path) {

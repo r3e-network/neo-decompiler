@@ -49,3 +49,17 @@ fn temp_replacement_respects_identifier_boundaries() {
     assert_eq!(statements[0], "");
     assert_eq!(statements[1], "let x = t10 + 1;");
 }
+
+#[test]
+fn chained_inline_preserves_equality_operator() {
+    let mut statements = vec![
+        "let t11 = 0x01;".to_string(),
+        "let t12 = t10 == t11;".to_string(),
+        "assert(t12);".to_string(),
+    ];
+
+    HighLevelEmitter::inline_single_use_temps(&mut statements);
+
+    // t12 inlined first (higher def_line), then t11
+    assert_eq!(statements[2], "assert((t10 == 0x01));");
+}

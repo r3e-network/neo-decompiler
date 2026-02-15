@@ -39,6 +39,12 @@ pub(crate) fn collect_artifacts(artifacts_dir: &Path, output_dir: &Path) -> Vec<
                 continue;
             }
             if entry.file_type().expect("file type").is_dir() {
+                // Skip "sources" and "decompiled" directories — they contain
+                // plain C# reference/output files, not artifacts with embedded NEF.
+                match path.file_name().and_then(OsStr::to_str) {
+                    Some("sources" | "decompiled") => continue,
+                    _ => {}
+                }
                 stack.push(path);
                 continue;
             }

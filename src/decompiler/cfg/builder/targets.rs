@@ -12,17 +12,17 @@ use crate::instruction::{Instruction, OpCode, Operand};
 use super::CfgBuilder;
 
 impl<'a> CfgBuilder<'a> {
-    pub(super) fn jump_target(&self, index: usize, instr: &Instruction) -> Option<usize> {
+    /// Resolve a jump target offset.  Neo VM jump offsets are relative to the
+    /// **opcode position** (start of the instruction), NOT the end.
+    /// Reference: neo-vm `ExecuteJumpOffset` → `IP + offset`.
+    pub(super) fn jump_target(&self, _index: usize, instr: &Instruction) -> Option<usize> {
         let delta = match &instr.operand {
             Some(Operand::Jump(v)) => *v as isize,
             Some(Operand::Jump32(v)) => *v as isize,
             _ => return None,
         };
 
-        let base = self
-            .instruction_end_offset(index)
-            .unwrap_or_else(|| instr.offset + self.instruction_len_fallback(instr));
-        let target = base as isize + delta;
+        let target = instr.offset as isize + delta;
         if target < 0 {
             return None;
         }
@@ -32,7 +32,7 @@ impl<'a> CfgBuilder<'a> {
 
     pub(super) fn try_targets(
         &self,
-        index: usize,
+        _index: usize,
         instr: &Instruction,
     ) -> Option<(Option<usize>, Option<usize>)> {
         let bytes = match &instr.operand {
@@ -40,9 +40,9 @@ impl<'a> CfgBuilder<'a> {
             _ => return None,
         };
 
-        let base = self
-            .instruction_end_offset(index)
-            .unwrap_or_else(|| instr.offset + self.instruction_len_fallback(instr));
+        // Neo VM: try handler offsets are relative to the **opcode position**
+        // (start of the instruction), NOT the end.
+        let base = instr.offset as isize;
 
         match instr.opcode {
             OpCode::Try => {
@@ -53,12 +53,12 @@ impl<'a> CfgBuilder<'a> {
                 let finally_delta = bytes[1] as i8 as isize;
 
                 let catch_target = (catch_delta != 0)
-                    .then(|| base as isize + catch_delta)
+                    .then(|| base + catch_delta)
                     .filter(|target| *target >= 0)
                     .map(|target| target as usize)
                     .filter(|target| self.offset_to_index.contains_key(target));
                 let finally_target = (finally_delta != 0)
-                    .then(|| base as isize + finally_delta)
+                    .then(|| base + finally_delta)
                     .filter(|target| *target >= 0)
                     .map(|target| target as usize)
                     .filter(|target| self.offset_to_index.contains_key(target));
@@ -73,12 +73,12 @@ impl<'a> CfgBuilder<'a> {
                 let finally_delta = i32::from_le_bytes(bytes[4..8].try_into().unwrap()) as isize;
 
                 let catch_target = (catch_delta != 0)
-                    .then(|| base as isize + catch_delta)
+                    .then(|| base + catch_delta)
                     .filter(|target| *target >= 0)
                     .map(|target| target as usize)
                     .filter(|target| self.offset_to_index.contains_key(target));
                 let finally_target = (finally_delta != 0)
-                    .then(|| base as isize + finally_delta)
+                    .then(|| base + finally_delta)
                     .filter(|target| *target >= 0)
                     .map(|target| target as usize)
                     .filter(|target| self.offset_to_index.contains_key(target));

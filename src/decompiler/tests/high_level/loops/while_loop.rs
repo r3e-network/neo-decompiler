@@ -2,8 +2,8 @@ use super::*;
 
 #[test]
 fn high_level_lifts_simple_while_loop() {
-    // Script: PUSH1, JMPIFNOT +3 (to RET), NOP, JMP -6 (to PUSH1), RET
-    let script = [0x11, 0x26, 0x03, 0x21, 0x22, 0xFA, 0x40];
+    // Script: PUSH1, JMPIFNOT +5 (to RET), NOP, JMP -4 (to PUSH1), RET
+    let script = [0x11, 0x26, 0x05, 0x21, 0x22, 0xFC, 0x40];
     let nef_bytes = build_nef(&script);
     let decompilation = Decompiler::new()
         .decompile_bytes(&nef_bytes)

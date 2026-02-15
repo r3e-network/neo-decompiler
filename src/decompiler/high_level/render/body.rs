@@ -9,6 +9,7 @@ pub(super) fn write_method_body(
     instructions: &[Instruction],
     argument_labels: Option<&[String]>,
     inline_single_use_temps: bool,
+    callt_labels: &[String],
     warnings: &mut Vec<String>,
 ) {
     let mut emitter = HighLevelEmitter::with_program(instructions);
@@ -16,6 +17,7 @@ pub(super) fn write_method_body(
         emitter.set_argument_labels(labels);
     }
     emitter.set_inline_single_use_temps(inline_single_use_temps);
+    emitter.set_callt_labels(callt_labels.to_vec());
     for instruction in instructions {
         emitter.advance_to(instruction.offset);
         emitter.emit_instruction(instruction);

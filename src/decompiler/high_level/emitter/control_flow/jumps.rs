@@ -3,9 +3,9 @@ use crate::instruction::{Instruction, Operand};
 use super::super::HighLevelEmitter;
 
 impl HighLevelEmitter {
-    pub(in super::super) fn emit_relative_call(&mut self, instruction: &Instruction, width: isize) {
+    pub(in super::super) fn emit_relative_call(&mut self, instruction: &Instruction) {
         self.push_comment(instruction);
-        if let Some(target) = self.jump_target(instruction, width) {
+        if let Some(target) = self.jump_target(instruction) {
             // Target method signatures are not available here, so model the
             // call as a conservative placeholder that returns a value.
             let temp = self.next_temp();
@@ -20,13 +20,12 @@ impl HighLevelEmitter {
     pub(in super::super) fn emit_relative(
         &mut self,
         instruction: &Instruction,
-        width: isize,
         label: &str,
     ) {
         if self.skip_jumps.remove(&instruction.offset) {
             return;
         }
-        if let Some(target) = self.jump_target(instruction, width) {
+        if let Some(target) = self.jump_target(instruction) {
             self.warn(
                 instruction,
                 &format!("{label} -> 0x{target:04X} (control flow not yet lifted)"),
@@ -44,9 +43,16 @@ impl HighLevelEmitter {
         match instruction.operand {
             Some(Operand::U16(value)) => {
                 // CALLT: token-based indirect call with a U16 operand.
+                // Resolve the method-token index to a friendly label when available.
+                let resolved = self.callt_labels.get(value as usize).cloned();
                 let temp = self.next_temp();
-                self.statements
-                    .push(format!("let {temp} = {label}(0x{value:04X});"));
+                if let Some(name) = resolved {
+                    self.statements
+                        .push(format!("let {temp} = {name}();"));
+                } else {
+                    self.statements
+                        .push(format!("let {temp} = {label}(0x{value:04X});"));
+                }
                 self.stack.push(temp);
             }
             None => {
@@ -62,12 +68,12 @@ impl HighLevelEmitter {
         }
     }
 
-    pub(in super::super) fn emit_jump(&mut self, instruction: &Instruction, width: isize) {
+    pub(in super::super) fn emit_jump(&mut self, instruction: &Instruction) {
         if self.skip_jumps.remove(&instruction.offset) {
             // jump consumed by structured if/else handling
             return;
         }
-        match self.jump_target(instruction, width) {
+        match self.jump_target(instruction) {
             Some(target) => {
                 if self.try_emit_loop_jump(instruction, target) {
                     return;
@@ -83,13 +89,13 @@ impl HighLevelEmitter {
         }
     }
 
-    pub(in super::super) fn emit_endtry(&mut self, instruction: &Instruction, width: isize) {
+    pub(in super::super) fn emit_endtry(&mut self, instruction: &Instruction) {
         if self.skip_jumps.remove(&instruction.offset) {
             return;
         }
 
         self.push_comment(instruction);
-        match self.jump_target(instruction, width) {
+        match self.jump_target(instruction) {
             Some(target) => {
                 if self.index_by_offset.contains_key(&target) {
                     self.transfer_labels.insert(target);

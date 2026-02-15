@@ -32,13 +32,15 @@ impl HighLevelEmitter {
         let width = 1 + bytes.len();
         let body_start = instruction.offset + width;
         let catch_target = if catch_delta != 0 {
-            let target = instruction.offset as isize + width as isize + catch_delta;
+            // Neo VM: target = opcode_offset + delta (relative to instruction start).
+            let target = instruction.offset as isize + catch_delta;
             (target > instruction.offset as isize).then_some(target as usize)
         } else {
             None
         };
         let finally_target = if finally_delta != 0 {
-            let target = instruction.offset as isize + width as isize + finally_delta;
+            // Neo VM: target = opcode_offset + delta (relative to instruction start).
+            let target = instruction.offset as isize + finally_delta;
             (target > instruction.offset as isize).then_some(target as usize)
         } else {
             None
