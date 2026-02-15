@@ -1,9 +1,7 @@
-use std::fs;
 use std::io::Write as _;
 use std::path::PathBuf;
 
-use crate::decompiler::MAX_NEF_FILE_SIZE;
-use crate::error::{NefError, Result};
+use crate::error::Result;
 use crate::nef::NefParser;
 
 use super::super::args::{Cli, TokensFormat};
@@ -11,15 +9,7 @@ use super::super::reports::{self, TokensReport};
 
 impl Cli {
     pub(super) fn run_tokens(&self, path: &PathBuf, format: TokensFormat) -> Result<()> {
-        let size = fs::metadata(path)?.len();
-        if size > MAX_NEF_FILE_SIZE {
-            return Err(NefError::FileTooLarge {
-                size,
-                max: MAX_NEF_FILE_SIZE,
-            }
-            .into());
-        }
-        let data = fs::read(path)?;
+        let data = Self::read_nef_bytes(path)?;
         let nef = NefParser::new().parse(&data)?;
 
         if nef.method_tokens.is_empty() {

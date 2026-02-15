@@ -8,9 +8,9 @@ import json
 import re
 import urllib.error
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOCAL_BASE = REPO_ROOT / "neo_csharp" / "core" / "src" / "Neo" / "SmartContract"
@@ -33,6 +33,7 @@ class Syscall:
     price: str
     call_flags: str
     returns_value: bool
+    param_count: int
 
     @property
     def hash_value(self) -> int:
@@ -47,6 +48,7 @@ class Syscall:
             "call_flags": self.call_flags,
             "hash": self.hash_value,
             "returns_value": self.returns_value,
+            "param_count": self.param_count,
         }
 
 
@@ -116,6 +118,54 @@ def load_sources(path: str) -> list[str]:
     return dedupe_preserve_order(sources)
 
 
+# Number of evaluation-stack arguments each syscall consumes.
+# Derived from the Neo C# handler method signatures (excluding the implicit
+# ApplicationEngine `this` parameter).
+PARAM_COUNTS: dict[str, int] = {
+    "System.Runtime.Platform": 0,
+    "System.Runtime.GetNetwork": 0,
+    "System.Runtime.GetAddressVersion": 0,
+    "System.Runtime.GetTrigger": 0,
+    "System.Runtime.GetTime": 0,
+    "System.Runtime.GetScriptContainer": 0,
+    "System.Runtime.GetExecutingScriptHash": 0,
+    "System.Runtime.GetCallingScriptHash": 0,
+    "System.Runtime.GetEntryScriptHash": 0,
+    "System.Runtime.LoadScript": 3,
+    "System.Runtime.CheckWitness": 1,
+    "System.Runtime.GetInvocationCounter": 0,
+    "System.Runtime.GetRandom": 0,
+    "System.Runtime.Log": 1,
+    "System.Runtime.Notify": 2,
+    "System.Runtime.GetNotifications": 1,
+    "System.Runtime.GasLeft": 0,
+    "System.Runtime.BurnGas": 1,
+    "System.Runtime.CurrentSigners": 0,
+    "System.Contract.Call": 4,
+    "System.Contract.CallNative": 1,
+    "System.Contract.GetCallFlags": 0,
+    "System.Contract.CreateStandardAccount": 1,
+    "System.Contract.CreateMultisigAccount": 2,
+    "System.Contract.NativeOnPersist": 0,
+    "System.Contract.NativePostPersist": 0,
+    "System.Storage.GetContext": 0,
+    "System.Storage.GetReadOnlyContext": 0,
+    "System.Storage.AsReadOnly": 1,
+    "System.Storage.Get": 2,
+    "System.Storage.Find": 3,
+    "System.Storage.Put": 3,
+    "System.Storage.Delete": 2,
+    "System.Storage.Local.Get": 1,
+    "System.Storage.Local.Find": 2,
+    "System.Storage.Local.Put": 2,
+    "System.Storage.Local.Delete": 1,
+    "System.Crypto.CheckSig": 2,
+    "System.Crypto.CheckMultisig": 2,
+    "System.Iterator.Next": 1,
+    "System.Iterator.Value": 1,
+}
+
+
 def parse_registers(text: str) -> Iterable[Syscall]:
     for match in REGISTER_PATTERN.finditer(text):
         name = match.group("name")
@@ -129,6 +179,7 @@ def parse_registers(text: str) -> Iterable[Syscall]:
             price=price,
             call_flags=flags,
             returns_value=returns_value,
+            param_count=PARAM_COUNTS.get(name, 0),
         )
 
 
@@ -150,6 +201,8 @@ pub struct SyscallInfo {{
     pub price: &'static str,
     pub call_flags: &'static str,
     pub returns_value: bool,
+    /// Number of evaluation-stack arguments consumed by this syscall.
+    pub param_count: u8,
 }}
 
 pub const SYSCALLS: &[SyscallInfo] = &[
@@ -165,7 +218,8 @@ def render_entry(syscall: Syscall) -> str:
         f"handler: \"{syscall.handler}\", "
         f"price: \"{syscall.price}\", "
         f"call_flags: \"{syscall.call_flags}\", "
-        f"returns_value: {str(syscall.returns_value).lower()} }},"
+        f"returns_value: {str(syscall.returns_value).lower()}, "
+        f"param_count: {syscall.param_count} }},"
     )
 
 

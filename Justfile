@@ -21,6 +21,9 @@ clippy-no-default:
 package:
 	cargo package --allow-dirty --no-verify
 
+deny:
+	cargo deny check
+
 doc:
 	cargo doc --no-deps
 
@@ -31,7 +34,7 @@ msrv:
 	cargo +1.83.0 test
 	cargo +1.83.0 test --no-default-features
 
-ci: fmt-check test clippy test-no-default clippy-no-default doc-check msrv
+ci: fmt-check test clippy test-no-default clippy-no-default doc-check deny msrv
 
 artifact-sweep:
 	bash tools/ci/artifact_sweep.sh

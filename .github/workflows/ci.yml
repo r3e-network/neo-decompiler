@@ -95,6 +95,17 @@ jobs:
       - name: Run benchmarks
         run: cargo bench
 
+  deny:
+    name: Cargo deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+      - name: Run cargo deny
+        run: cargo deny check
+
   security:
     name: Security audit
     runs-on: ubuntu-latest

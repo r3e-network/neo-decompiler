@@ -63,7 +63,7 @@ pub(in crate::cli) struct MethodSummary {
     pub(super) parameters: Vec<ParameterSummary>,
     pub(super) return_type: String,
     pub(super) safe: bool,
-    pub(super) offset: Option<u32>,
+    pub(super) offset: Option<i32>,
 }
 
 #[derive(Serialize)]

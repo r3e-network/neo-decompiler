@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use crate::manifest::ManifestParameter;
 
+pub(super) use super::super::helpers::make_unique_identifier;
 use super::super::helpers::sanitize_identifier;
 
 #[derive(Clone)]
@@ -93,24 +94,6 @@ pub(super) fn sanitize_csharp_identifier(input: &str) -> String {
         format!("@{ident}")
     } else {
         ident
-    }
-}
-
-pub(super) fn make_unique_identifier(base: String, used: &mut HashSet<String>) -> String {
-    if used.insert(base.clone()) {
-        return base;
-    }
-    let (prefix, stem) = match base.strip_prefix('@') {
-        Some(stem) => ("@", stem),
-        None => ("", base.as_str()),
-    };
-    let mut index = 1usize;
-    loop {
-        let candidate = format!("{prefix}{stem}_{index}");
-        if used.insert(candidate.clone()) {
-            return candidate;
-        }
-        index += 1;
     }
 }
 

@@ -1,6 +1,7 @@
 //! Neo N3 contract manifest parsing and helpers.
 
-const MAX_MANIFEST_SIZE: u64 = 1024 * 1024;
+/// Neo N3 specifies `MaxManifestSize = 0xFFFF` (65535 bytes).
+const MAX_MANIFEST_SIZE: u64 = 0xFFFF;
 
 mod describe;
 mod model;

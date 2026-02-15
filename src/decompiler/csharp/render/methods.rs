@@ -4,7 +4,7 @@ use std::fmt::Write;
 use crate::instruction::Instruction;
 use crate::manifest::{ContractManifest, ManifestMethod};
 
-use super::super::super::helpers::{has_manifest_method_at_offset, next_method_offset};
+use super::super::super::helpers::{has_manifest_method_at_offset, next_method_offset, offset_as_usize};
 use super::super::helpers::{
     collect_csharp_parameters, escape_csharp_string, format_csharp_parameters,
     format_manifest_type_csharp, format_method_signature, sanitize_csharp_identifier,
@@ -21,17 +21,16 @@ pub(super) fn write_manifest_methods(
 
     let mut used_signatures: HashSet<(String, String)> = HashSet::new();
     let mut sorted_methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
-    sorted_methods.sort_by_key(|m| m.offset.unwrap_or(u32::MAX));
+    sorted_methods.sort_by_key(|m| m.offset.unwrap_or(i32::MAX));
 
     let (with_offsets, without_offsets): (Vec<_>, Vec<_>) =
         sorted_methods.into_iter().partition(|m| m.offset.is_some());
 
     for (idx, method) in with_offsets.iter().enumerate() {
-        let start = method.offset.unwrap_or(0) as usize;
+        let start = offset_as_usize(method.offset).unwrap_or(0);
         let end = with_offsets
             .get(idx + 1)
-            .and_then(|m| m.offset)
-            .map(|v| v as usize)
+            .and_then(|m| offset_as_usize(m.offset))
             .unwrap_or_else(|| {
                 next_method_offset(manifest, method.offset)
                     .unwrap_or_else(|| instructions.last().map(|i| i.offset + 1).unwrap_or(0))
@@ -109,7 +108,7 @@ fn write_script_entry_if_needed(
         .abi
         .methods
         .iter()
-        .filter_map(|method| method.offset.map(|value| value as usize))
+        .filter_map(|method| offset_as_usize(method.offset))
         .filter(|offset| *offset > entry_offset)
         .min();
     let slice: Vec<Instruction> = match end {

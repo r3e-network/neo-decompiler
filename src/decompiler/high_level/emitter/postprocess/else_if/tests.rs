@@ -1,4 +1,5 @@
-use super::*;
+use super::super::super::HighLevelEmitter;
+use super::super::util::extract_if_condition;
 
 #[test]
 fn collapses_else_if_chain() {
@@ -34,13 +35,7 @@ fn preserves_simple_else() {
 
 #[test]
 fn extracts_if_condition() {
-    assert_eq!(
-        HighLevelEmitter::extract_if_condition("if x > 0 {"),
-        Some("x > 0")
-    );
-    assert_eq!(
-        HighLevelEmitter::extract_if_condition("if foo && bar {"),
-        Some("foo && bar")
-    );
-    assert_eq!(HighLevelEmitter::extract_if_condition("while x {"), None);
+    assert_eq!(extract_if_condition("if x > 0 {"), Some("x > 0"));
+    assert_eq!(extract_if_condition("if foo && bar {"), Some("foo && bar"));
+    assert_eq!(extract_if_condition("while x {"), None);
 }

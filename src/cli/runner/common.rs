@@ -1,9 +1,14 @@
+use std::fmt;
+use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::error::Result;
+use crate::decompiler::MAX_NEF_FILE_SIZE;
+use crate::disassembler::UnknownHandling;
+use crate::error::{NefError, Result};
+use crate::manifest::ContractManifest;
 
 use super::super::args::{CatalogKind, Cli};
 use super::super::catalog::CatalogReport;
@@ -61,5 +66,54 @@ impl Cli {
             entries,
         };
         self.print_json(&report)
+    }
+
+    /// Read a NEF file after validating its size against [`MAX_NEF_FILE_SIZE`].
+    pub(super) fn read_nef_bytes(path: &Path) -> Result<Vec<u8>> {
+        let size = fs::metadata(path)?.len();
+        if size > MAX_NEF_FILE_SIZE {
+            return Err(NefError::FileTooLarge {
+                size,
+                max: MAX_NEF_FILE_SIZE,
+            }
+            .into());
+        }
+        Ok(fs::read(path)?)
+    }
+
+    /// Convert a `--fail-on-unknown-opcodes` flag into [`UnknownHandling`].
+    pub(super) fn unknown_handling(fail_on_unknown: bool) -> UnknownHandling {
+        if fail_on_unknown {
+            UnknownHandling::Error
+        } else {
+            UnknownHandling::Permit
+        }
+    }
+
+    /// Resolve and load the contract manifest, respecting `--strict-manifest`.
+    pub(super) fn load_manifest(&self, nef_path: &Path) -> Result<Option<ContractManifest>> {
+        match self.resolve_manifest_path(nef_path) {
+            Some(p) => Ok(Some(if self.strict_manifest {
+                ContractManifest::from_file_strict(&p)?
+            } else {
+                ContractManifest::from_file(&p)?
+            })),
+            None => Ok(None),
+        }
+    }
+
+    /// Write a `Warnings:` block to `out` if `warnings` is non-empty.
+    pub(super) fn write_warnings<W: fmt::Display>(
+        out: &mut impl io::Write,
+        warnings: &[W],
+    ) -> io::Result<()> {
+        if !warnings.is_empty() {
+            writeln!(out)?;
+            writeln!(out, "Warnings:")?;
+            for warning in warnings {
+                writeln!(out, "- {warning}")?;
+            }
+        }
+        Ok(())
     }
 }

@@ -56,8 +56,12 @@ impl HighLevelEmitter {
             }
         }
 
+        // Dynamic index: we cannot resolve the stack position statically.
+        // Emit a temp so downstream consumers see a value on the stack.
+        let temp = self.next_temp();
         self.statements
-            .push(format!("// roll stack[{index_name}] to top"));
+            .push(format!("let {temp} = roll({index_name}); // dynamic roll"));
+        self.stack.push(temp);
     }
 
     pub(in super::super::super) fn emit_xdrop(&mut self, instruction: &Instruction) {
@@ -83,10 +87,9 @@ impl HighLevelEmitter {
             }
         }
 
-        if let Some(removed) = self.stack.pop() {
-            self.literal_values.remove(&removed);
-            self.statements
-                .push(format!("// xdrop stack[{index_name}] (removed {removed})"));
-        }
+        // Dynamic index: we cannot resolve the stack position statically.
+        // Do not pop an arbitrary item — that would corrupt the stack model.
+        self.statements
+            .push(format!("// xdrop stack[{index_name}] (dynamic index, stack may be imprecise)"));
     }
 }

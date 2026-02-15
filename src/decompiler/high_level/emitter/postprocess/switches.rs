@@ -8,6 +8,7 @@
 //! - Consecutive standalone `if` blocks comparing the same variable (minimum 3 cases)
 
 use super::super::HighLevelEmitter;
+use super::util::{extract_any_if_condition, is_else_if_open, is_else_open, is_if_open};
 
 impl HighLevelEmitter {
     /// Rewrite eligible `if` / `else if` chains into `switch` blocks.
@@ -41,7 +42,7 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
 
     loop {
         let header_line = statements.get(current_header)?.trim();
-        let condition = extract_if_condition(header_line)?;
+        let condition = extract_any_if_condition(header_line)?;
         let resolved = resolve_condition_expression(statements, current_header, condition)?;
         let (next_scrutinee, case_token) = parse_case_sides(resolved.as_str())?;
 
@@ -117,7 +118,7 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
 
         // Consecutive standalone `if` comparing the same scrutinee.
         if is_if_open(next_line) {
-            if let Some(cond) = extract_if_condition(next_line) {
+            if let Some(cond) = extract_any_if_condition(next_line) {
                 if let Some(resolved) = resolve_condition_expression(statements, next_header, cond)
                 {
                     if let Some((peek_scrutinee, _)) = parse_case_sides(resolved.as_str()) {
@@ -167,30 +168,6 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
     Some((output, overall_end))
 }
 
-fn is_if_open(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("if ") && trimmed.ends_with(" {")
-}
-
-fn is_else_if_open(line: &str) -> bool {
-    let trimmed = line.trim();
-    let trimmed = trimmed.strip_prefix("} ").unwrap_or(trimmed);
-    trimmed.starts_with("else if ") && trimmed.ends_with(" {")
-}
-
-fn extract_if_condition(line: &str) -> Option<&str> {
-    let trimmed = line.trim();
-    let trimmed = trimmed.strip_prefix("} ").unwrap_or(trimmed);
-    let without_prefix = trimmed
-        .strip_prefix("if ")
-        .or_else(|| trimmed.strip_prefix("else if "))?;
-    without_prefix.strip_suffix(" {")
-}
-
-fn is_else_open(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed == "else {" || trimmed == "} else {"
-}
 
 fn extract_block_body(statements: &[String], header_index: usize) -> Option<(Vec<String>, usize)> {
     let end = HighLevelEmitter::find_block_end(statements, header_index)?;

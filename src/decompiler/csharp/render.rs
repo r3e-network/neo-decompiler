@@ -8,6 +8,7 @@ use crate::instruction::Instruction;
 use crate::manifest::ContractManifest;
 use crate::nef::NefFile;
 
+use super::super::helpers::extract_contract_name;
 use super::helpers::sanitize_csharp_identifier;
 
 mod body;
@@ -30,18 +31,7 @@ pub(crate) fn render_csharp(
     let mut warnings = Vec::new();
     header::write_preamble(&mut output);
 
-    let contract_name = manifest
-        .and_then(|m| {
-            let trimmed = m.name.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
-        })
-        .map(sanitize_csharp_identifier)
-        .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "NeoContract".to_string());
+    let contract_name = extract_contract_name(manifest, sanitize_csharp_identifier);
 
     header::write_contract_open(&mut output, &contract_name, nef, manifest);
 

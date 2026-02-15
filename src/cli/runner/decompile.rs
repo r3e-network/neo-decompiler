@@ -1,11 +1,8 @@
-use std::fs;
 use std::io::Write as _;
 use std::path::PathBuf;
 
-use crate::decompiler::{Decompiler, OutputFormat, MAX_NEF_FILE_SIZE};
-use crate::disassembler::UnknownHandling;
-use crate::error::{NefError, Result};
-use crate::manifest::ContractManifest;
+use crate::decompiler::{Decompiler, OutputFormat};
+use crate::error::Result;
 use crate::util;
 
 use super::super::args::{Cli, DecompileFormat};
@@ -22,11 +19,7 @@ impl Cli {
         fail_on_unknown_opcodes: bool,
         inline_single_use_temps: bool,
     ) -> Result<()> {
-        let handling = if fail_on_unknown_opcodes {
-            UnknownHandling::Error
-        } else {
-            UnknownHandling::Permit
-        };
+        let handling = Self::unknown_handling(fail_on_unknown_opcodes);
         let decompiler = Decompiler::with_unknown_handling(handling)
             .with_inline_single_use_temps(inline_single_use_temps);
         let manifest_path = self.resolve_manifest_path(path);
@@ -37,23 +30,8 @@ impl Cli {
             output_format
         };
 
-        let size = fs::metadata(path)?.len();
-        if size > MAX_NEF_FILE_SIZE {
-            return Err(NefError::FileTooLarge {
-                size,
-                max: MAX_NEF_FILE_SIZE,
-            }
-            .into());
-        }
-        let data = fs::read(path)?;
-        let manifest = match manifest_path.as_ref() {
-            Some(path) => Some(if self.strict_manifest {
-                ContractManifest::from_file_strict(path)?
-            } else {
-                ContractManifest::from_file(path)?
-            }),
-            None => None,
-        };
+        let data = Self::read_nef_bytes(path)?;
+        let manifest = self.load_manifest(path)?;
         let result =
             decompiler.decompile_bytes_with_manifest(&data, manifest, effective_output_format)?;
 
@@ -61,27 +39,13 @@ impl Cli {
             DecompileFormat::Pseudocode => {
                 self.write_stdout(|out| {
                     write!(out, "{}", result.pseudocode.as_deref().unwrap_or_default())?;
-                    if !result.warnings.is_empty() {
-                        writeln!(out)?;
-                        writeln!(out, "Warnings:")?;
-                        for warning in &result.warnings {
-                            writeln!(out, "- {warning}")?;
-                        }
-                    }
-                    Ok(())
+                    Self::write_warnings(out, &result.warnings)
                 })?;
             }
             DecompileFormat::HighLevel => {
                 self.write_stdout(|out| {
                     write!(out, "{}", result.high_level.as_deref().unwrap_or_default())?;
-                    if !result.warnings.is_empty() {
-                        writeln!(out)?;
-                        writeln!(out, "Warnings:")?;
-                        for warning in &result.warnings {
-                            writeln!(out, "- {warning}")?;
-                        }
-                    }
-                    Ok(())
+                    Self::write_warnings(out, &result.warnings)
                 })?;
             }
             DecompileFormat::Both => {
@@ -90,27 +54,13 @@ impl Cli {
                     writeln!(out, "{}", result.high_level.as_deref().unwrap_or_default())?;
                     writeln!(out, "// Pseudocode view")?;
                     write!(out, "{}", result.pseudocode.as_deref().unwrap_or_default())?;
-                    if !result.warnings.is_empty() {
-                        writeln!(out)?;
-                        writeln!(out, "Warnings:")?;
-                        for warning in &result.warnings {
-                            writeln!(out, "- {warning}")?;
-                        }
-                    }
-                    Ok(())
+                    Self::write_warnings(out, &result.warnings)
                 })?;
             }
             DecompileFormat::Csharp => {
                 self.write_stdout(|out| {
                     write!(out, "{}", result.csharp.as_deref().unwrap_or_default())?;
-                    if !result.warnings.is_empty() {
-                        writeln!(out)?;
-                        writeln!(out, "Warnings:")?;
-                        for warning in &result.warnings {
-                            writeln!(out, "- {warning}")?;
-                        }
-                    }
-                    Ok(())
+                    Self::write_warnings(out, &result.warnings)
                 })?;
             }
             DecompileFormat::Json => {

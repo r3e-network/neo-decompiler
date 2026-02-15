@@ -7,7 +7,7 @@ use crate::manifest::ContractManifest;
 
 use super::super::super::helpers::{
     find_manifest_entry_method, format_manifest_parameters, format_manifest_type,
-    has_manifest_method_at_offset, make_unique_identifier, sanitize_identifier,
+    has_manifest_method_at_offset, make_unique_identifier, offset_as_usize, sanitize_identifier,
     sanitize_parameter_names,
 };
 use super::body;
@@ -19,7 +19,7 @@ pub(super) fn write_entry_method(
     inline_single_use_temps: bool,
     warnings: &mut Vec<String>,
     used_method_names: &mut HashSet<String>,
-) -> Option<(String, Option<u32>)> {
+) -> Option<(String, Option<i32>)> {
     let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
     let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
     let use_manifest_entry = entry_method
@@ -32,7 +32,7 @@ pub(super) fn write_entry_method(
         m.abi
             .methods
             .iter()
-            .filter_map(|method| method.offset.map(|value| value as usize))
+            .filter_map(|method| offset_as_usize(method.offset))
             .filter(|offset| *offset > entry_start)
             .min()
     });

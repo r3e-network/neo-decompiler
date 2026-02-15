@@ -21,7 +21,7 @@ impl HighLevelEmitter {
             Xor => self.binary_op(instruction, "^"),
             Shl => self.binary_op(instruction, "<<"),
             Shr => self.binary_op(instruction, ">>"),
-            Not => self.unary_op(instruction, |val| format!("!{val}")),
+            Not => self.unary_op(instruction, |val| format!("~{val}")),
             Nz => self.unary_op(instruction, |val| format!("{val} != 0")),
             Inc => self.unary_op(instruction, |val| format!("{val} + 1")),
             Dec => self.unary_op(instruction, |val| format!("{val} - 1")),
@@ -43,7 +43,7 @@ impl HighLevelEmitter {
             Substr => self.emit_call(instruction, "substr", 3, true),
             Left => self.binary_op(instruction, "left"),
             Right => self.binary_op(instruction, "right"),
-            Invert => self.unary_op(instruction, |val| format!("invert({val})")),
+            Invert => self.unary_op(instruction, |val| format!("~{val}")),
             _ => return false,
         }
 

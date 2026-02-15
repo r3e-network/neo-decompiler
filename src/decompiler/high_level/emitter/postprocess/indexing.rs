@@ -1,6 +1,7 @@
 //! Rewrite collection ops into more idiomatic indexing syntax.
 
 use super::super::HighLevelEmitter;
+use super::util::{extract_else_if_condition, extract_if_condition};
 
 impl HighLevelEmitter {
     /// Rewrite `get`/`set_item`/`has_key` patterns into bracket/function forms.
@@ -60,19 +61,6 @@ impl HighLevelEmitter {
             }
         }
     }
-}
-
-fn extract_if_condition(line: &str) -> Option<&str> {
-    let trimmed = line.trim();
-    let without_prefix = trimmed.strip_prefix("if ")?;
-    without_prefix.strip_suffix(" {")
-}
-
-fn extract_else_if_condition(line: &str) -> Option<&str> {
-    let trimmed = line.trim();
-    let trimmed = trimmed.strip_prefix("} ").unwrap_or(trimmed);
-    let without_prefix = trimmed.strip_prefix("else if ")?;
-    without_prefix.strip_suffix(" {")
 }
 
 fn rewrite_set_item(line: &str) -> Option<String> {

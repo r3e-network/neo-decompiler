@@ -32,9 +32,15 @@ pub(in super::super) fn make_unique_identifier(base: String, used: &mut HashSet<
     if used.insert(base.clone()) {
         return base;
     }
+    // Preserve a leading `@` prefix (C# verbatim identifiers) so that
+    // the suffix is appended to the stem, not after the prefix.
+    let (prefix, stem) = match base.strip_prefix('@') {
+        Some(stem) => ("@", stem),
+        None => ("", base.as_str()),
+    };
     let mut index = 1usize;
     loop {
-        let candidate = format!("{base}_{index}");
+        let candidate = format!("{prefix}{stem}_{index}");
         if used.insert(candidate.clone()) {
             return candidate;
         }

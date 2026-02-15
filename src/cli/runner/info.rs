@@ -1,9 +1,6 @@
-use std::fs;
 use std::path::PathBuf;
 
-use crate::decompiler::MAX_NEF_FILE_SIZE;
-use crate::error::{NefError, Result};
-use crate::manifest::ContractManifest;
+use crate::error::Result;
 use crate::nef::NefParser;
 
 use super::super::args::{Cli, InfoFormat};
@@ -13,25 +10,10 @@ mod text;
 
 impl Cli {
     pub(super) fn run_info(&self, path: &PathBuf, format: InfoFormat) -> Result<()> {
-        let size = fs::metadata(path)?.len();
-        if size > MAX_NEF_FILE_SIZE {
-            return Err(NefError::FileTooLarge {
-                size,
-                max: MAX_NEF_FILE_SIZE,
-            }
-            .into());
-        }
-        let data = fs::read(path)?;
+        let data = Self::read_nef_bytes(path)?;
         let nef = NefParser::new().parse(&data)?;
+        let manifest = self.load_manifest(path)?;
         let manifest_path = self.resolve_manifest_path(path);
-        let manifest = match manifest_path.as_ref() {
-            Some(p) => Some(if self.strict_manifest {
-                ContractManifest::from_file_strict(p)?
-            } else {
-                ContractManifest::from_file(p)?
-            }),
-            None => None,
-        };
 
         match format {
             InfoFormat::Text => {

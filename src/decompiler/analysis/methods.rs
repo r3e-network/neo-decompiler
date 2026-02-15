@@ -66,7 +66,10 @@ impl MethodTable {
                 .methods
                 .iter()
                 .enumerate()
-                .filter_map(|(idx, method)| method.offset.map(|off| (off as usize, idx, method)))
+                .filter_map(|(idx, method)| {
+                    super::super::helpers::offset_as_usize(method.offset)
+                        .map(|off| (off, idx, method))
+                })
                 .collect();
             methods.sort_by_key(|(off, _, _)| *off);
 

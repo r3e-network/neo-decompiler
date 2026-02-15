@@ -10,7 +10,7 @@ pub(in super::super) fn find_manifest_entry_method(
         .abi
         .methods
         .iter()
-        .find(|method| method.offset.map(|value| value as usize) == Some(entry_offset))
+        .find(|method| offset_as_usize(method.offset) == Some(entry_offset))
         .map(|method| (method, true))
 }
 
@@ -23,21 +23,26 @@ pub(in super::super) fn has_manifest_method_at_offset(
         .abi
         .methods
         .iter()
-        .any(|method| method.offset.map(|value| value as usize) == Some(offset))
+        .any(|method| offset_as_usize(method.offset) == Some(offset))
 }
 
 /// Compute the next ABI method offset after the given one.
 pub(in super::super) fn next_method_offset(
     manifest: &ContractManifest,
-    current_offset: Option<u32>,
+    current_offset: Option<i32>,
 ) -> Option<usize> {
-    let current = current_offset?;
+    let current = offset_as_usize(current_offset)?;
     manifest
         .abi
         .methods
         .iter()
-        .filter_map(|method| method.offset)
+        .filter_map(|method| offset_as_usize(method.offset))
         .filter(|offset| *offset > current)
         .min()
-        .map(|offset| offset as usize)
+}
+
+/// Convert a manifest offset (`Option<i32>`) to `Option<usize>`, treating
+/// negative values (e.g. `-1` for abstract methods) as `None`.
+pub(in super::super) fn offset_as_usize(offset: Option<i32>) -> Option<usize> {
+    offset.and_then(|v| usize::try_from(v).ok())
 }

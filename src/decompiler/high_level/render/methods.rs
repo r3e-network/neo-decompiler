@@ -6,7 +6,7 @@ use crate::manifest::{ContractManifest, ManifestMethod};
 
 use super::super::super::helpers::{
     format_manifest_parameters, format_manifest_type, make_unique_identifier, next_method_offset,
-    sanitize_identifier, sanitize_parameter_names,
+    offset_as_usize, sanitize_identifier, sanitize_parameter_names,
 };
 use super::body;
 
@@ -14,13 +14,13 @@ pub(super) fn write_manifest_methods(
     output: &mut String,
     instructions: &[Instruction],
     manifest: &ContractManifest,
-    entry_method: Option<&(String, Option<u32>)>,
+    entry_method: Option<&(String, Option<i32>)>,
     inline_single_use_temps: bool,
     warnings: &mut Vec<String>,
     used_method_names: &mut HashSet<String>,
 ) {
     let mut methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
-    methods.sort_by_key(|m| m.offset.unwrap_or(u32::MAX));
+    methods.sort_by_key(|m| m.offset.unwrap_or(i32::MAX));
 
     for (idx, method) in methods.iter().enumerate() {
         if entry_method
@@ -43,12 +43,10 @@ pub(super) fn write_manifest_methods(
         writeln!(output).unwrap();
         writeln!(output, "    {signature} {{").unwrap();
 
-        if let Some(offset) = method.offset {
-            let start = offset as usize;
+        if let Some(start) = offset_as_usize(method.offset) {
             let end = methods
                 .get(idx + 1)
-                .and_then(|m| m.offset)
-                .map(|v| v as usize)
+                .and_then(|m| offset_as_usize(m.offset))
                 .or_else(|| next_method_offset(manifest, method.offset));
             let end = end
                 .or_else(|| instructions.last().map(|i| i.offset + 1))

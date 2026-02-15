@@ -2,7 +2,6 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use crate::decompiler::Decompiler;
-use crate::disassembler::UnknownHandling;
 use crate::error::Result;
 
 use super::super::args::{Cli, DisasmFormat};
@@ -15,11 +14,7 @@ impl Cli {
         format: DisasmFormat,
         fail_on_unknown_opcodes: bool,
     ) -> Result<()> {
-        let handling = if fail_on_unknown_opcodes {
-            UnknownHandling::Error
-        } else {
-            UnknownHandling::Permit
-        };
+        let handling = Self::unknown_handling(fail_on_unknown_opcodes);
         let decompiler = Decompiler::with_unknown_handling(handling);
         let result = decompiler.disassemble_file(path)?;
         match format {
@@ -43,14 +38,7 @@ impl Cli {
                             }
                         }
                     }
-                    if !result.warnings.is_empty() {
-                        writeln!(out)?;
-                        writeln!(out, "Warnings:")?;
-                        for warning in &result.warnings {
-                            writeln!(out, "- {warning}")?;
-                        }
-                    }
-                    Ok(())
+                    Self::write_warnings(out, &result.warnings)
                 })?;
             }
             DisasmFormat::Json => {

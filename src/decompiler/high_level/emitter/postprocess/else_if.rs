@@ -1,6 +1,7 @@
 //! Collapse `} else { if condition {` into `} else if condition {`.
 
 use super::super::HighLevelEmitter;
+use super::util::{extract_if_condition, is_else_open, is_if_open};
 
 impl HighLevelEmitter {
     /// Rewrite else-if chains to use idiomatic `else if` syntax.
@@ -18,9 +19,9 @@ impl HighLevelEmitter {
         let mut index = 0;
         while index + 1 < statements.len() {
             // Look for "else {" followed by "if condition {"
-            if Self::is_else_open(&statements[index]) && Self::is_if_open(&statements[index + 1]) {
+            if is_else_open(&statements[index]) && is_if_open(&statements[index + 1]) {
                 // Extract the condition from the if statement
-                if let Some(condition) = Self::extract_if_condition(&statements[index + 1]) {
+                if let Some(condition) = extract_if_condition(&statements[index + 1]) {
                     // Replace "else {" with "else if condition {"
                     statements[index] = format!("else if {condition} {{");
                     // Remove the standalone "if condition {"
@@ -36,23 +37,6 @@ impl HighLevelEmitter {
             }
             index += 1;
         }
-    }
-
-    fn is_else_open(s: &str) -> bool {
-        let trimmed = s.trim();
-        trimmed == "else {" || trimmed == "} else {"
-    }
-
-    fn is_if_open(s: &str) -> bool {
-        let trimmed = s.trim();
-        trimmed.starts_with("if ") && trimmed.ends_with(" {")
-    }
-
-    fn extract_if_condition(s: &str) -> Option<&str> {
-        let trimmed = s.trim();
-        let without_prefix = trimmed.strip_prefix("if ")?;
-        let without_suffix = without_prefix.strip_suffix(" {")?;
-        Some(without_suffix)
     }
 
     fn find_matching_close(statements: &[String], start: usize) -> Option<usize> {

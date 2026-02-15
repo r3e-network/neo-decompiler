@@ -26,8 +26,12 @@ pub struct ManifestMethod {
     #[serde(rename = "returntype")]
     pub return_type: String,
     /// Optional bytecode offset for the method entry point.
+    ///
+    /// Neo N3 uses `-1` to indicate "no implementation" (abstract/interface).
+    /// We deserialize as `i32` so that `-1` round-trips correctly, and treat
+    /// negative values as "no offset" in downstream consumers.
     #[serde(default)]
-    pub offset: Option<u32>,
+    pub offset: Option<i32>,
     /// Whether the method is declared as safe.
     #[serde(default)]
     pub safe: bool,

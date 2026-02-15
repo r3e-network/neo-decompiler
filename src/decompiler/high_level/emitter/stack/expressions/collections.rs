@@ -46,11 +46,21 @@ impl HighLevelEmitter {
     pub(in super::super::super) fn emit_unpack(&mut self, instruction: &Instruction) {
         self.push_comment(instruction);
         if let Some(value) = self.pop_stack_value() {
-            // Unpack pushes each element; represent as a single temp to preserve stack shape.
-            let temp = self.next_temp();
-            self.statements
-                .push(format!("let {temp} = unpack({value});"));
-            self.stack.push(temp);
+            // Neo VM UNPACK: pops a compound type, pushes each element, then pushes the count.
+            // We cannot know the element count statically, so we emit two temps:
+            //   - one representing the spread of elements
+            //   - one representing the count (pushed last = top of stack)
+            let elements_temp = self.next_temp();
+            self.statements.push(format!(
+                "let {elements_temp} = unpack({value}); // elements spread onto stack"
+            ));
+            self.stack.push(elements_temp);
+
+            let count_temp = self.next_temp();
+            self.statements.push(format!(
+                "let {count_temp} = len({value}); // unpack also pushes element count"
+            ));
+            self.stack.push(count_temp);
         } else {
             self.stack_underflow(instruction, 1);
         }
