@@ -122,3 +122,31 @@ fn high_level_lifts_jmpif_l_forward_branch() {
         "JMPIF_L should no longer emit raw jump-if warnings: {high_level}"
     );
 }
+
+#[test]
+fn high_level_else_branch_restores_pre_branch_stack_snapshot() {
+    // Script:
+    // PUSH1, PUSH2, PUSH3, PUSH1(cond), JMPIFNOT +6, DROP, DROP, JMP +3, REVERSE3, RET
+    // Without else-entry stack restoration, REVERSE3 underflows because the then-branch
+    // drops values before the emitter reaches the else block.
+    let script = [
+        0x11, 0x12, 0x13, 0x11, 0x26, 0x06, 0x45, 0x45, 0x22, 0x03, 0x53, 0x40,
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("reverse top 3 stack values"),
+        "else branch should retain the pre-branch stack shape: {high_level}"
+    );
+    assert!(
+        !high_level.contains("insufficient values on stack for REVERSE3"),
+        "else entry should restore the pre-branch stack snapshot before REVERSE3: {high_level}"
+    );
+}

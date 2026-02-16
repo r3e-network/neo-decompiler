@@ -92,3 +92,26 @@ fn high_level_rewrites_haskey_as_function_call() {
         "infix has_key should not appear after rewrite: {high_level}"
     );
 }
+
+#[test]
+fn high_level_istype_respects_operand_tag() {
+    // Script: PUSH1, ISTYPE array (0x40), RET
+    let script = [0x11, 0xD9, 0x40, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("is_type_array("),
+        "ISTYPE should map to a helper named for the operand tag: {high_level}"
+    );
+    assert!(
+        !high_level.contains("is_type("),
+        "High-level output should not use the two-argument shorthand: {high_level}"
+    );
+}

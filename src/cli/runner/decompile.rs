@@ -1,7 +1,7 @@
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::Path;
 
-use crate::decompiler::{Decompiler, OutputFormat};
+use crate::decompiler::{Decompilation, Decompiler, OutputFormat};
 use crate::error::Result;
 use crate::util;
 
@@ -13,7 +13,7 @@ use super::super::reports::{
 impl Cli {
     pub(super) fn run_decompile(
         &self,
-        path: &PathBuf,
+        path: &Path,
         format: DecompileFormat,
         output_format: OutputFormat,
         fail_on_unknown_opcodes: bool,
@@ -64,15 +64,27 @@ impl Cli {
                 })?;
             }
             DecompileFormat::Json => {
-                let script_hash = result.nef.script_hash();
-                let method_tokens: Vec<MethodTokenReport> = result
-                    .nef
+                let Decompilation {
+                    nef,
+                    manifest,
+                    warnings: decompile_warnings,
+                    instructions,
+                    call_graph,
+                    xrefs,
+                    types,
+                    pseudocode,
+                    high_level,
+                    csharp,
+                    ..
+                } = result;
+                let script_hash = nef.script_hash();
+                let method_tokens: Vec<MethodTokenReport> = nef
                     .method_tokens
                     .iter()
                     .map(reports::build_method_token_report)
                     .collect();
                 let mut warnings = reports::collect_warnings(&method_tokens);
-                for warning in &result.warnings {
+                for warning in &decompile_warnings {
                     if !warnings.contains(warning) {
                         warnings.push(warning.clone());
                     }
@@ -84,20 +96,16 @@ impl Cli {
                         .map(|p| p.display().to_string()),
                     script_hash_le: util::format_hash(&script_hash),
                     script_hash_be: util::format_hash_be(&script_hash),
-                    csharp: result.csharp.clone().unwrap_or_default(),
-                    high_level: result.high_level.clone().unwrap_or_default(),
-                    pseudocode: result.pseudocode.clone().unwrap_or_default(),
-                    instructions: result
-                        .instructions
-                        .iter()
-                        .map(InstructionReport::from)
-                        .collect(),
+                    csharp: csharp.unwrap_or_default(),
+                    high_level: high_level.unwrap_or_default(),
+                    pseudocode: pseudocode.unwrap_or_default(),
+                    instructions: instructions.iter().map(InstructionReport::from).collect(),
                     method_tokens,
-                    manifest: result.manifest.as_ref().map(reports::summarize_manifest),
+                    manifest: manifest.as_ref().map(reports::summarize_manifest),
                     analysis: AnalysisReport {
-                        call_graph: result.call_graph.clone(),
-                        xrefs: result.xrefs.clone(),
-                        types: result.types.clone(),
+                        call_graph,
+                        xrefs,
+                        types,
                     },
                     warnings,
                 };

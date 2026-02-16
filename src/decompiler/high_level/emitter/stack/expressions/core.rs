@@ -1,15 +1,19 @@
-use crate::instruction::Instruction;
+use crate::instruction::{Instruction, OpCode, Operand};
 
-use super::super::super::{literal_from_operand, HighLevelEmitter};
+use super::super::super::{literal_from_operand, HighLevelEmitter, LiteralValue};
 
 impl HighLevelEmitter {
-    pub(super) fn pop_stack_value(&mut self) -> Option<String> {
-        if let Some(name) = self.stack.pop() {
-            self.literal_values.remove(&name);
-            Some(name)
-        } else {
-            None
-        }
+    pub(in super::super::super) fn pop_stack_value_with_literal(
+        &mut self,
+    ) -> Option<(String, Option<LiteralValue>)> {
+        self.stack.pop().map(|name| {
+            let literal = self.literal_values.remove(&name);
+            (name, literal)
+        })
+    }
+
+    pub(in super::super::super) fn pop_stack_value(&mut self) -> Option<String> {
+        self.pop_stack_value_with_literal().map(|(name, _)| name)
     }
 
     pub(in super::super::super) fn emit_call(
@@ -52,7 +56,11 @@ impl HighLevelEmitter {
         self.push_comment(instruction);
         let temp = self.next_temp();
         self.statements.push(format!("let {temp} = {value};"));
-        if let Some(literal) = literal_from_operand(instruction.operand.as_ref()) {
+        let literal = match instruction.opcode {
+            OpCode::PushA => pusha_target(instruction).map(LiteralValue::Pointer),
+            _ => literal_from_operand(instruction.operand.as_ref()),
+        };
+        if let Some(literal) = literal {
             self.literal_values.insert(temp.clone(), literal);
         }
         self.stack.push(temp);
@@ -88,4 +96,13 @@ impl HighLevelEmitter {
             self.stack_underflow(instruction, 1);
         }
     }
+}
+
+fn pusha_target(instruction: &Instruction) -> Option<usize> {
+    let delta = match instruction.operand {
+        Some(Operand::U32(value)) => i32::from_le_bytes(value.to_le_bytes()) as isize,
+        Some(Operand::I32(value)) => value as isize,
+        _ => return None,
+    };
+    instruction.offset.checked_add_signed(delta)
 }

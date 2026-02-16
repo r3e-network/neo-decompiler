@@ -4,21 +4,28 @@ use std::fmt::Write;
 use crate::instruction::Instruction;
 use crate::manifest::{ContractManifest, ManifestMethod};
 
-use super::super::super::helpers::{has_manifest_method_at_offset, next_method_offset, offset_as_usize};
+use super::super::super::helpers::{
+    has_manifest_method_at_offset, next_inferred_method_offset, offset_as_usize,
+};
 use super::super::helpers::{
     collect_csharp_parameters, escape_csharp_string, format_csharp_parameters,
     format_manifest_type_csharp, format_method_signature, sanitize_csharp_identifier,
 };
 use super::body;
 
+pub(super) struct MethodsContext<'a> {
+    pub(super) instructions: &'a [Instruction],
+    pub(super) inferred_method_starts: &'a [usize],
+    pub(super) body_context: body::LiftedBodyContext<'a>,
+}
+
 pub(super) fn write_manifest_methods(
     output: &mut String,
     manifest: &ContractManifest,
-    instructions: &[Instruction],
-    callt_labels: &[String],
+    context: &MethodsContext<'_>,
     warnings: &mut Vec<String>,
 ) {
-    write_script_entry_if_needed(output, manifest, instructions, callt_labels, warnings);
+    write_script_entry_if_needed(output, manifest, context, warnings);
 
     let mut used_signatures: HashSet<(String, String)> = HashSet::new();
     let mut sorted_methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
@@ -27,16 +34,13 @@ pub(super) fn write_manifest_methods(
     let (with_offsets, without_offsets): (Vec<_>, Vec<_>) =
         sorted_methods.into_iter().partition(|m| m.offset.is_some());
 
-    for (idx, method) in with_offsets.iter().enumerate() {
+    for method in with_offsets.iter() {
         let start = offset_as_usize(method.offset).unwrap_or(0);
-        let end = with_offsets
-            .get(idx + 1)
-            .and_then(|m| offset_as_usize(m.offset))
-            .unwrap_or_else(|| {
-                next_method_offset(manifest, method.offset)
-                    .unwrap_or_else(|| instructions.last().map(|i| i.offset + 1).unwrap_or(0))
-            });
-        let slice: Vec<Instruction> = instructions
+        let end = next_inferred_method_offset(context.inferred_method_starts, start)
+            .or_else(|| context.instructions.last().map(|i| i.offset + 1))
+            .unwrap_or(start);
+        let slice: Vec<Instruction> = context
+            .instructions
             .iter()
             .filter(|ins| ins.offset >= start && ins.offset < end)
             .cloned()
@@ -62,7 +66,13 @@ pub(super) fn write_manifest_methods(
             writeln!(output, "            throw new NotImplementedException();").unwrap();
         } else {
             let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-            body::write_lifted_body(output, &slice, Some(&labels), callt_labels, warnings);
+            body::write_lifted_body(
+                output,
+                &slice,
+                Some(&labels),
+                warnings,
+                &context.body_context,
+            );
         }
 
         writeln!(output, "        }}").unwrap();
@@ -94,11 +104,10 @@ pub(super) fn write_manifest_methods(
 fn write_script_entry_if_needed(
     output: &mut String,
     manifest: &ContractManifest,
-    instructions: &[Instruction],
-    callt_labels: &[String],
+    context: &MethodsContext<'_>,
     warnings: &mut Vec<String>,
 ) {
-    let Some(entry_offset) = instructions.first().map(|ins| ins.offset) else {
+    let Some(entry_offset) = context.instructions.first().map(|ins| ins.offset) else {
         return;
     };
 
@@ -106,24 +115,19 @@ fn write_script_entry_if_needed(
         return;
     }
 
-    let end = manifest
-        .abi
-        .methods
-        .iter()
-        .filter_map(|method| offset_as_usize(method.offset))
-        .filter(|offset| *offset > entry_offset)
-        .min();
+    let end = next_inferred_method_offset(context.inferred_method_starts, entry_offset);
     let slice: Vec<Instruction> = match end {
-        Some(end) => instructions
+        Some(end) => context
+            .instructions
             .iter()
             .filter(|ins| ins.offset >= entry_offset && ins.offset < end)
             .cloned()
             .collect(),
-        None => instructions.to_vec(),
+        None => context.instructions.to_vec(),
     };
 
     let slice = if slice.is_empty() {
-        instructions.to_vec()
+        context.instructions.to_vec()
     } else {
         slice
     };
@@ -136,22 +140,41 @@ fn write_script_entry_if_needed(
     let entry_signature = format_method_signature("ScriptEntry", "", "void");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, &slice, None, callt_labels, warnings);
+    body::write_lifted_body(output, &slice, None, warnings, &context.body_context);
     writeln!(output, "        }}").unwrap();
     writeln!(output).unwrap();
 }
 
 pub(super) fn write_fallback_entry(
     output: &mut String,
-    instructions: &[Instruction],
-    callt_labels: &[String],
+    context: &MethodsContext<'_>,
     warnings: &mut Vec<String>,
 ) {
+    let entry_offset = context
+        .instructions
+        .first()
+        .map(|ins| ins.offset)
+        .unwrap_or(0);
+    let end = next_inferred_method_offset(context.inferred_method_starts, entry_offset)
+        .or_else(|| context.instructions.last().map(|i| i.offset + 1))
+        .unwrap_or(entry_offset);
+    let slice: Vec<Instruction> = context
+        .instructions
+        .iter()
+        .filter(|ins| ins.offset >= entry_offset && ins.offset < end)
+        .cloned()
+        .collect();
+    let slice = if slice.is_empty() {
+        context.instructions.to_vec()
+    } else {
+        slice
+    };
+
     let entry_method_name = "ScriptEntry".to_string();
     let entry_signature = format_method_signature(&entry_method_name, "", "void");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, instructions, None, callt_labels, warnings);
+    body::write_lifted_body(output, &slice, None, warnings, &context.body_context);
     writeln!(output, "        }}").unwrap();
 }
 

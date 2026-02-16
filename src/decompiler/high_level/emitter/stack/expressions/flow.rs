@@ -43,8 +43,7 @@ impl HighLevelEmitter {
                         .push(format!("let {temp} = {call}; // 0x{hash:08X}"));
                     self.stack.push(temp);
                 } else {
-                    self.statements
-                        .push(format!("{call}; // 0x{hash:08X}"));
+                    self.statements.push(format!("{call}; // 0x{hash:08X}"));
                 }
             } else {
                 let call = format!("syscall(0x{hash:08X})");
@@ -54,8 +53,7 @@ impl HighLevelEmitter {
                         .push(format!("let {temp} = {call}; // unknown syscall"));
                     self.stack.push(temp);
                 } else {
-                    self.statements
-                        .push(format!("{call}; // unknown syscall"));
+                    self.statements.push(format!("{call}; // unknown syscall"));
                 }
             }
         } else {

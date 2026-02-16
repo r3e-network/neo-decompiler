@@ -20,8 +20,11 @@ impl HighLevelEmitter {
             self.statements
                 .push(format!("let {temp} = {value}; // duplicate top of stack"));
             self.stack.push(temp.clone());
+            if let Some(elements) = self.packed_values_by_name.get(&value).cloned() {
+                self.packed_values_by_name.insert(temp.clone(), elements);
+            }
             if let Some(literal) = self.literal_values.get(&value).cloned() {
-                self.literal_values.insert(temp, literal);
+                self.literal_values.insert(temp.clone(), literal);
             }
         } else {
             self.stack_underflow(instruction, 1);
@@ -39,16 +42,23 @@ impl HighLevelEmitter {
         self.statements
             .push(format!("let {temp} = {value}; // copy second stack value"));
         self.stack.push(temp.clone());
+        if let Some(elements) = self.packed_values_by_name.get(&value).cloned() {
+            self.packed_values_by_name.insert(temp.clone(), elements);
+        }
         if let Some(literal) = self.literal_values.get(&value).cloned() {
-            self.literal_values.insert(temp, literal);
+            self.literal_values.insert(temp.clone(), literal);
         }
     }
 
     pub(in super::super::super) fn swap_top(&mut self, instruction: &Instruction) {
         self.push_comment(instruction);
-        if self.stack.len() < 2 {
-            self.stack_underflow(instruction, 2);
-            return;
+        while self.stack.len() < 2 {
+            let missing = self.next_temp();
+            self.statements.push(format!(
+                "let {missing} = missing_stack_item(); // synthetic missing stack value"
+            ));
+            // Missing values belong below currently known top-of-stack values.
+            self.stack.insert(0, missing);
         }
         let len = self.stack.len();
         self.stack.swap(len - 1, len - 2);

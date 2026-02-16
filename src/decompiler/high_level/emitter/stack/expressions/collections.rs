@@ -1,6 +1,8 @@
 use crate::instruction::Instruction;
 
-use super::super::super::{convert_target_name, HighLevelEmitter};
+use super::super::super::{
+    convert_target_name, format_type_operand, HighLevelEmitter, LiteralValue,
+};
 
 impl HighLevelEmitter {
     pub(in super::super::super) fn emit_pack(&mut self, instruction: &Instruction, kind: &str) {
@@ -13,14 +15,16 @@ impl HighLevelEmitter {
         let count_literal = self.take_usize_literal(&count_name);
 
         if let Some(need) = count_literal {
-            if self.stack.len() < need {
-                self.stack_underflow(instruction, need);
-                return;
-            }
             let mut elements = Vec::with_capacity(need);
             for _ in 0..need {
                 if let Some(val) = self.pop_stack_value() {
                     elements.push(val);
+                } else {
+                    let missing_temp = self.next_temp();
+                    self.statements.push(format!(
+                        "let {missing_temp} = missing_pack_item(); // synthetic missing element for literal pack"
+                    ));
+                    elements.push(missing_temp);
                 }
             }
             elements.reverse();
@@ -33,12 +37,15 @@ impl HighLevelEmitter {
             };
             self.statements
                 .push(format!("let {temp} = {ctor}; // pack {need} element(s)"));
+            self.packed_values_by_name
+                .insert(temp.clone(), elements.clone());
             self.stack.push(temp);
         } else {
             let temp = self.next_temp();
             self.statements.push(format!(
                 "let {temp} = pack_dynamic({count_name}); // pack with dynamic count"
             ));
+            self.packed_values_by_name.remove(&temp);
             self.stack.push(temp);
         }
     }
@@ -46,15 +53,37 @@ impl HighLevelEmitter {
     pub(in super::super::super) fn emit_unpack(&mut self, instruction: &Instruction) {
         self.push_comment(instruction);
         if let Some(value) = self.pop_stack_value() {
+            if let Some(elements) = self.packed_values_by_name.get(&value).cloned() {
+                for element in &elements {
+                    self.stack.push(element.clone());
+                }
+                let count_temp = self.next_temp();
+                let count = elements.len() as i64;
+                self.statements.push(format!(
+                    "let {count_temp} = len({value}); // unpack also pushes element count"
+                ));
+                self.literal_values
+                    .insert(count_temp.clone(), LiteralValue::Integer(count));
+                self.stack.push(count_temp);
+                return;
+            }
+
             // Neo VM UNPACK: pops a compound type, pushes each element, then pushes the count.
-            // We cannot know the element count statically, so we emit two temps:
-            //   - one representing the spread of elements
-            //   - one representing the count (pushed last = top of stack)
+            // For unknown shapes, synthesize a small placeholder stack shape plus count.
+            // Four placeholders cover common tuple/map-entry patterns without requiring
+            // brittle lookahead over downstream stack consumers.
+            const UNKNOWN_UNPACK_PLACEHOLDER_COUNT: usize = 4;
             let elements_temp = self.next_temp();
             self.statements.push(format!(
-                "let {elements_temp} = unpack({value}); // elements spread onto stack"
+                "let {elements_temp} = unpack({value}); // unknown unpack source"
             ));
-            self.stack.push(elements_temp);
+            for index in 0..UNKNOWN_UNPACK_PLACEHOLDER_COUNT {
+                let element_temp = self.next_temp();
+                self.statements.push(format!(
+                    "let {element_temp} = unpack_item({elements_temp}, {index}); // synthetic unpack element"
+                ));
+                self.stack.push(element_temp);
+            }
 
             let count_temp = self.next_temp();
             self.statements.push(format!(
@@ -80,6 +109,27 @@ impl HighLevelEmitter {
                     .push(format!("let {temp} = convert({value});"));
                 self.stack.push(temp);
             }
+        } else {
+            self.stack_underflow(instruction, 1);
+        }
+    }
+
+    pub(in super::super::super) fn emit_is_type(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        if let Some(value) = self.pop_stack_value() {
+            let temp = self.next_temp();
+            if let Some(target) = instruction.operand.as_ref().and_then(convert_target_name) {
+                self.statements
+                    .push(format!("let {temp} = is_type_{target}({value});"));
+            } else if let Some(operand) = instruction.operand.as_ref() {
+                let literal = format_type_operand(operand);
+                self.statements
+                    .push(format!("let {temp} = is_type({value}, {literal});"));
+            } else {
+                self.statements
+                    .push(format!("let {temp} = is_type({value});"));
+            }
+            self.stack.push(temp);
         } else {
             self.stack_underflow(instruction, 1);
         }

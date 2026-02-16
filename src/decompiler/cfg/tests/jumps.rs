@@ -92,7 +92,7 @@ fn edge_count_matches_terminators() {
 fn long_jump_creates_blocks() {
     let instructions = vec![
         make_instr(0, OpCode::Jmp_L, Some(Operand::Jump32(10))), // jumps to offset 10
-        make_instr(5, OpCode::Push0, None),                     // skipped
+        make_instr(5, OpCode::Push0, None),                      // skipped
         make_instr(6, OpCode::Ret, None),
         make_instr(10, OpCode::Push1, None), // target
         make_instr(11, OpCode::Ret, None),

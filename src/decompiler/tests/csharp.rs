@@ -253,3 +253,27 @@ fn csharp_mismatch_offset_emits_script_entry_and_manifest_method() {
         "script-entry body should stop before helper method offset"
     );
 }
+
+#[test]
+fn csharp_trims_initslot_boundaries() {
+    let nef_bytes = load_testing_nef("Contract_Delegate.nef");
+    let manifest = load_testing_manifest("Contract_Delegate.manifest.json");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("// 0000: INITSLOT"),
+        "sumFunc should still show its entry INITSLOT"
+    );
+    assert!(
+        !csharp.contains("// 000C: INITSLOT"),
+        "should not serialize the appended block starting at offset 0x000C"
+    );
+    assert!(
+        !csharp.contains("return t23;"),
+        "duplicate return from appended block should not appear"
+    );
+}

@@ -86,6 +86,40 @@ fn decompile_lifts_indirect_calls_without_not_yet_translated_warning() {
 }
 
 #[test]
+fn decompile_uses_method_token_signature_for_callt_arguments_and_returns() {
+    // Script: PUSH1; CALLT 0x0000; RET
+    // Token: foo(param_count=1, returns=false)
+    let nef_bytes = build_nef_with_single_token(
+        &[0x11, 0x37, 0x00, 0x00, 0x40],
+        [0u8; 20],
+        "foo",
+        1,
+        false,
+        0x0F,
+    );
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("foo(t0);"),
+        "CALLT should consume declared token argument and emit call expression: {high_level}"
+    );
+    assert!(
+        !high_level.contains("let t1 = foo("),
+        "CALLT token marked non-returning should not push a synthetic return temp: {high_level}"
+    );
+    assert!(
+        high_level.contains("return;"),
+        "script entry should end with a bare return after non-returning CALLT: {high_level}"
+    );
+}
+
+#[test]
 fn decompile_lifts_relative_calls_without_control_flow_warning() {
     // Script: CALL +2, CALL_L +5, RET
     let nef_bytes = build_nef(&[0x34, 0x02, 0x35, 0x05, 0x00, 0x00, 0x00, 0x40]);
@@ -109,6 +143,73 @@ fn decompile_lifts_relative_calls_without_control_flow_warning() {
     assert!(
         !high_level.contains("control flow not yet lifted"),
         "relative calls should no longer use control-flow-not-lifted warnings: {high_level}"
+    );
+}
+
+#[test]
+fn decompile_resolves_relative_call_target_to_inferred_method_name() {
+    // Script layout:
+    // 0x0000: CALL +5  (target = 0x0005)
+    // 0x0002: RET
+    // 0x0003..0x0004: NOP padding
+    // 0x0005: INITSLOT 0,0
+    // 0x0008: RET
+    let nef_bytes = build_nef(&[
+        0x34, 0x05, // CALL +5
+        0x40, // RET
+        0x21, 0x21, // NOP x2
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ]);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+
+    assert!(
+        high_level.contains("sub_0x0005()"),
+        "relative CALL should use inferred callee name when target matches method start: {high_level}"
+    );
+}
+
+#[test]
+fn decompile_relative_call_passes_known_method_arguments() {
+    // Script layout:
+    // 0x0000: PUSH1
+    // 0x0001: CALL +7  (target = 0x0008)
+    // 0x0003: RET
+    // 0x0004..0x0007: NOP padding
+    // 0x0008: INITSLOT 0,1
+    // 0x000B: LDARG0
+    // 0x000C: RET
+    let nef_bytes = build_nef(&[
+        0x11, // PUSH1
+        0x34, 0x07, // CALL +7
+        0x40, // RET
+        0x21, 0x21, 0x21, 0x21, // NOP x4
+        0x57, 0x00, 0x01, // INITSLOT 0,1
+        0x78, // LDARG0
+        0x40, // RET
+    ]);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("sub_0x0008("),
+        "relative CALL should target inferred method call syntax: {high_level}"
+    );
+    assert!(
+        !high_level.contains("sub_0x0008()"),
+        "relative CALL into one-arg method should pass argument expression: {high_level}"
     );
 }
 
@@ -244,6 +345,118 @@ fn decompile_calla_with_stack_setup() {
     assert!(
         high_level.contains("calla("),
         "CALLA should produce an indirect call expression: {high_level}"
+    );
+}
+
+#[test]
+fn decompile_resolves_pusha_calla_to_internal_call_placeholder() {
+    // Script layout:
+    // 0x0000: PUSHA +10  (target = 0x000A)
+    // 0x0005: CALLA
+    // 0x0006: RET
+    // 0x0007..0x0009: NOP padding
+    // 0x000A: INITSLOT 0,0
+    // 0x000D: RET
+    let nef_bytes = build_nef(&[
+        0x0A, 0x0A, 0x00, 0x00, 0x00, // PUSHA +10
+        0x36, // CALLA
+        0x40, // RET
+        0x21, 0x21, 0x21, // NOP x3
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ]);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("sub_0x000A()"),
+        "PUSHA+CALLA should resolve to the inferred method name when available: {high_level}"
+    );
+    assert!(
+        !high_level.contains("calla("),
+        "resolved PUSHA+CALLA should not remain as generic indirect call: {high_level}"
+    );
+}
+
+#[test]
+fn decompile_resolves_local_pointer_flow_into_calla() {
+    // Script layout:
+    // 0x0000: PUSHA +9  (target = 0x0009)
+    // 0x0005: STLOC0
+    // 0x0006: LDLOC0
+    // 0x0007: CALLA
+    // 0x0008: RET
+    // 0x0009: INITSLOT 0,0
+    // 0x000C: RET
+    let nef_bytes = build_nef(&[
+        0x0A, 0x09, 0x00, 0x00, 0x00, // PUSHA +9
+        0x70, // STLOC0
+        0x68, // LDLOC0
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ]);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("sub_0x0009()"),
+        "local pointer flow should resolve CALLA to inferred method name: {high_level}"
+    );
+    assert!(
+        !high_level.contains("calla(loc0)"),
+        "resolved local pointer flow should not remain generic CALLA: {high_level}"
+    );
+}
+
+#[test]
+fn decompile_resolves_static_pointer_flow_into_calla() {
+    // Script layout:
+    // 0x0000: PUSHA +9  (target = 0x0009)
+    // 0x0005: STSFLD0
+    // 0x0006: LDSFLD0
+    // 0x0007: CALLA
+    // 0x0008: RET
+    // 0x0009: INITSLOT 0,0
+    // 0x000C: RET
+    let nef_bytes = build_nef(&[
+        0x0A, 0x09, 0x00, 0x00, 0x00, // PUSHA +9
+        0x60, // STSFLD0
+        0x58, // LDSFLD0
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ]);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("sub_0x0009()"),
+        "static pointer flow should resolve CALLA to inferred method name: {high_level}"
+    );
+    assert!(
+        !high_level.contains("calla(static0)"),
+        "resolved static pointer flow should not remain generic CALLA: {high_level}"
     );
 }
 

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::error::Result;
 use crate::nef::NefParser;
@@ -9,7 +9,7 @@ mod json;
 mod text;
 
 impl Cli {
-    pub(super) fn run_info(&self, path: &PathBuf, format: InfoFormat) -> Result<()> {
+    pub(super) fn run_info(&self, path: &Path, format: InfoFormat) -> Result<()> {
         let data = Self::read_nef_bytes(path)?;
         let nef = NefParser::new().parse(&data)?;
         let manifest = self.load_manifest(path)?;

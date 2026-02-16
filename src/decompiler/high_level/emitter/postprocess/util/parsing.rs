@@ -29,7 +29,11 @@ impl HighLevelEmitter {
             return None;
         }
         // Reject if we split inside a compound operator (==, !=, <=, >=).
-        if rhs.starts_with('=') || lhs_raw.ends_with('!') || lhs_raw.ends_with('<') || lhs_raw.ends_with('>') {
+        if rhs.starts_with('=')
+            || lhs_raw.ends_with('!')
+            || lhs_raw.ends_with('<')
+            || lhs_raw.ends_with('>')
+        {
             return None;
         }
         let lhs = if let Some(stripped) = lhs_raw.strip_prefix("let ") {

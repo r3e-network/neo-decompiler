@@ -83,8 +83,7 @@ impl HighLevelEmitter {
             return true;
         };
         self.push_comment(instruction);
-        self.statements
-            .push(format!("}} while (!{condition});"));
+        self.statements.push(format!("}} while (!{condition});"));
         self.pop_loops_with_continue(instruction.offset);
         true
     }

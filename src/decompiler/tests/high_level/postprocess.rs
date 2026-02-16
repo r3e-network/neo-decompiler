@@ -104,6 +104,200 @@ fn rewrite_switch_statements_supports_temp_case_values() {
 }
 
 #[test]
+fn rewrite_switch_statements_supports_string_literal_case_values() {
+    let mut statements = vec![
+        "let t0 = \"0\";".to_string(),
+        "let t1 = loc0 == t0;".to_string(),
+        "if t1 {".to_string(),
+        "    do0;".to_string(),
+        "}".to_string(),
+        "let t2 = \"1\";".to_string(),
+        "let t3 = loc0 == t2;".to_string(),
+        "if t3 {".to_string(),
+        "    do1;".to_string(),
+        "}".to_string(),
+        "let t4 = \"2\";".to_string(),
+        "let t5 = loc0 == t4;".to_string(),
+        "if t5 {".to_string(),
+        "    do2;".to_string(),
+        "}".to_string(),
+    ];
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    assert!(statements.iter().any(|line| line.trim() == "switch loc0 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case \"0\" {"));
+    assert!(statements.iter().any(|line| line.trim() == "case \"1\" {"));
+    assert!(statements.iter().any(|line| line.trim() == "case \"2\" {"));
+}
+
+#[test]
+fn rewrite_switch_statements_rewrites_long_guarded_goto_chains() {
+    let mut statements = vec![
+        "let loc0 = input;".to_string(),
+        "let t0 = loc0 == 0;".to_string(),
+        "if t0 { goto label_case_0; }".to_string(),
+        "let t1 = loc0 == 1;".to_string(),
+        "if t1 { goto label_case_1; }".to_string(),
+        "let t2 = loc0 == 2;".to_string(),
+        "if t2 { goto label_case_2; }".to_string(),
+        "let t3 = loc0 == 3;".to_string(),
+        "if t3 { goto label_case_3; }".to_string(),
+        "let t4 = loc0 == 4;".to_string(),
+        "if t4 { goto label_case_4; }".to_string(),
+        "let t5 = loc0 == 5;".to_string(),
+        "if t5 { goto label_case_5; }".to_string(),
+        "let t6 = loc0 == 6;".to_string(),
+        "if t6 { goto label_case_6; }".to_string(),
+        "let t7 = loc0 == 7;".to_string(),
+        "if !t7 {".to_string(),
+        "    goto label_default;".to_string(),
+        "    label_case_0:".to_string(),
+        "    return 0;".to_string(),
+        "    label_case_1:".to_string(),
+        "    return 1;".to_string(),
+        "    label_case_2:".to_string(),
+        "    return 2;".to_string(),
+        "    label_case_3:".to_string(),
+        "    return 3;".to_string(),
+        "    label_case_4:".to_string(),
+        "    return 4;".to_string(),
+        "    label_case_5:".to_string(),
+        "    return 5;".to_string(),
+        "    label_case_6:".to_string(),
+        "    return 6;".to_string(),
+        "}".to_string(),
+        "return 7;".to_string(),
+        "label_default:".to_string(),
+        "return 99;".to_string(),
+    ];
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    assert!(statements.iter().any(|line| line.trim() == "switch loc0 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case 0 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case 7 {"));
+    assert!(statements.iter().any(|line| line.trim() == "default {"));
+    assert!(!statements
+        .iter()
+        .any(|line| line.trim() == "if t0 { goto label_case_0; }"));
+}
+
+#[test]
+fn rewrite_switch_statements_rewrites_guarded_chain_with_else_embedded_default_label() {
+    let mut statements = vec![
+        "let loc0 = input;".to_string(),
+        "let t0 = loc0 == 0;".to_string(),
+        "if t0 { goto label_case_0; }".to_string(),
+        "let t1 = loc0 == 1;".to_string(),
+        "if t1 { goto label_case_1; }".to_string(),
+        "let t2 = loc0 == 2;".to_string(),
+        "if t2 { goto label_case_2; }".to_string(),
+        "let t3 = loc0 == 3;".to_string(),
+        "if t3 { goto label_case_3; }".to_string(),
+        "let t4 = loc0 == 4;".to_string(),
+        "if t4 { goto label_case_4; }".to_string(),
+        "let t5 = loc0 == 5;".to_string(),
+        "if !t5 {".to_string(),
+        "    goto label_default;".to_string(),
+        "    label_case_0:".to_string(),
+        "    do0;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_case_1:".to_string(),
+        "    do1;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_case_2:".to_string(),
+        "    do2;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_case_3:".to_string(),
+        "    do3;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_case_4:".to_string(),
+        "    do4;".to_string(),
+        "    goto label_end;".to_string(),
+        "}".to_string(),
+        "else {".to_string(),
+        "    do5;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_default:".to_string(),
+        "    do_default;".to_string(),
+        "}".to_string(),
+        "label_end:".to_string(),
+        "return;".to_string(),
+    ];
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    assert!(statements.iter().any(|line| line.trim() == "switch loc0 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case 0 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case 5 {"));
+    assert!(statements.iter().any(|line| line.trim() == "default {"));
+    assert!(statements.iter().any(|line| line.trim() == "do5;"));
+    assert!(statements.iter().any(|line| line.trim() == "do_default;"));
+    assert!(
+        !statements.iter().any(|line| line.trim() == "else {"),
+        "switch rewrite should not leave dangling else wrappers in case bodies"
+    );
+}
+
+#[test]
+fn rewrite_switch_statements_rewrites_guarded_chain_with_else_case_and_external_default_label() {
+    let mut statements = vec![
+        "let loc0 = input;".to_string(),
+        "let t0 = loc0 == 0;".to_string(),
+        "if t0 { goto label_case_0; }".to_string(),
+        "let t1 = loc0 == 1;".to_string(),
+        "if t1 { goto label_case_1; }".to_string(),
+        "let t2 = loc0 == 2;".to_string(),
+        "if t2 { goto label_case_2; }".to_string(),
+        "let t3 = loc0 == 3;".to_string(),
+        "if t3 { goto label_case_3; }".to_string(),
+        "let t4 = loc0 == 4;".to_string(),
+        "if t4 { goto label_case_4; }".to_string(),
+        "let t5 = loc0 == 5;".to_string(),
+        "if !t5 {".to_string(),
+        "    goto label_default;".to_string(),
+        "    label_case_0:".to_string(),
+        "    do0;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_case_1:".to_string(),
+        "    do1;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_case_2:".to_string(),
+        "    do2;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_case_3:".to_string(),
+        "    do3;".to_string(),
+        "    goto label_end;".to_string(),
+        "    label_case_4:".to_string(),
+        "    do4;".to_string(),
+        "    goto label_end;".to_string(),
+        "}".to_string(),
+        "else {".to_string(),
+        "    do5;".to_string(),
+        "    goto label_end;".to_string(),
+        "}".to_string(),
+        "label_default:".to_string(),
+        "do_default;".to_string(),
+        "label_end:".to_string(),
+        "return;".to_string(),
+    ];
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    assert!(statements.iter().any(|line| line.trim() == "switch loc0 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case 0 {"));
+    assert!(statements.iter().any(|line| line.trim() == "case 5 {"));
+    assert!(statements.iter().any(|line| line.trim() == "default {"));
+    assert!(statements.iter().any(|line| line.trim() == "do5;"));
+    assert!(statements.iter().any(|line| line.trim() == "do_default;"));
+    assert!(
+        !statements.iter().any(|line| line.trim() == "else {"),
+        "switch rewrite should not leave dangling else wrappers in case bodies"
+    );
+}
+
+#[test]
 fn rewrite_switch_statements_flattens_else_blocks_with_nested_chains() {
     let mut statements = vec![
         "if loc0 == 0 {".to_string(),

@@ -41,7 +41,7 @@ fn high_level_lifts_try_finally_blocks() {
 #[test]
 fn high_level_lifts_try_catch_blocks() {
     // Script models:
-    // TRY (catch at +3)
+    // TRY (catch at +6)
     //   PUSH1
     //   ENDTRY +3 (skip catch)
     // CATCH:
@@ -194,5 +194,47 @@ fn high_level_lifts_try_catch_with_abort_in_catch() {
     assert!(
         high_level.contains("abort()"),
         "ABORT inside catch should be lifted: {high_level}"
+    );
+}
+
+#[test]
+fn high_level_models_catch_entry_stack_with_exception_value() {
+    // TRY (catch at +3)
+    //   PUSH1
+    //   ENDTRY +4 (skip catch)
+    // CATCH:
+    //   STLOC0  // consume exception object
+    //   LDLOC0
+    //   ENDTRY +0
+    // RET
+    let script = [
+        0x3B, 0x06, 0x00, // TRY (catch=+6, finally=0)
+        0x11, // PUSH1
+        0x3D, 0x06, // ENDTRY +6
+        0x70, // STLOC0
+        0x68, // LDLOC0
+        0x3D, 0x00, // ENDTRY +0
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("catch {"),
+        "missing catch header: {high_level}"
+    );
+    assert!(
+        high_level.contains("let loc0 = exception;"),
+        "catch entry should model exception object stack item for STLOC0: {high_level}"
+    );
+    assert!(
+        !high_level.contains("insufficient values on stack"),
+        "catch entry STLOC0 should not underflow the stack: {high_level}"
     );
 }

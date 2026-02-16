@@ -1,23 +1,23 @@
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use crate::instruction::Instruction;
-use std::collections::HashSet;
 
 use crate::manifest::ContractManifest;
 
 use super::super::super::helpers::{
     find_manifest_entry_method, format_manifest_parameters, format_manifest_type,
-    has_manifest_method_at_offset, make_unique_identifier, offset_as_usize, sanitize_identifier,
-    sanitize_parameter_names,
+    has_manifest_method_at_offset, make_unique_identifier, next_inferred_method_offset,
+    sanitize_identifier, sanitize_parameter_names,
 };
 use super::body;
 
 pub(super) fn write_entry_method(
     output: &mut String,
     instructions: &[Instruction],
+    inferred_method_starts: &[usize],
     manifest: Option<&ContractManifest>,
-    inline_single_use_temps: bool,
-    callt_labels: &[String],
+    body_context: &body::MethodBodyContext<'_>,
     warnings: &mut Vec<String>,
     used_method_names: &mut HashSet<String>,
 ) -> Option<(String, Option<i32>)> {
@@ -29,14 +29,7 @@ pub(super) fn write_entry_method(
         .unwrap_or(false);
 
     let entry_start = entry_offset;
-    let entry_end = manifest.and_then(|m| {
-        m.abi
-            .methods
-            .iter()
-            .filter_map(|method| offset_as_usize(method.offset))
-            .filter(|offset| *offset > entry_start)
-            .min()
-    });
+    let entry_end = next_inferred_method_offset(inferred_method_starts, entry_start);
 
     let entry_instructions: Vec<Instruction> = match entry_end {
         Some(end) => instructions
@@ -121,9 +114,8 @@ pub(super) fn write_entry_method(
         output,
         &entry_instructions,
         entry_param_labels.as_deref(),
-        inline_single_use_temps,
-        callt_labels,
         warnings,
+        body_context,
     );
     writeln!(output, "    }}").unwrap();
 

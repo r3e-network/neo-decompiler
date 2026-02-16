@@ -124,6 +124,7 @@ impl Decompiler {
                 &nef,
                 &instructions,
                 manifest.as_ref(),
+                &call_graph,
                 self.inline_single_use_temps,
             );
             for warning in render.warnings {
@@ -132,7 +133,7 @@ impl Decompiler {
             render.text
         });
         let csharp = output_format.wants_csharp().then(|| {
-            let render = csharp::render_csharp(&nef, &instructions, manifest.as_ref());
+            let render = csharp::render_csharp(&nef, &instructions, manifest.as_ref(), &call_graph);
             for warning in render.warnings {
                 push_warning(warning);
             }

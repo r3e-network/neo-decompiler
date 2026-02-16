@@ -1,5 +1,5 @@
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::error::Result;
 use crate::nef::NefParser;
@@ -8,7 +8,7 @@ use super::super::args::{Cli, TokensFormat};
 use super::super::reports::{self, TokensReport};
 
 impl Cli {
-    pub(super) fn run_tokens(&self, path: &PathBuf, format: TokensFormat) -> Result<()> {
+    pub(super) fn run_tokens(&self, path: &Path, format: TokensFormat) -> Result<()> {
         let data = Self::read_nef_bytes(path)?;
         let nef = NefParser::new().parse(&data)?;
 

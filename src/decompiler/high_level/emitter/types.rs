@@ -26,6 +26,7 @@ pub(super) struct LoopJump {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum LiteralValue {
     Integer(i64),
+    Pointer(usize),
     Boolean(bool),
     String(String),
 }

@@ -15,15 +15,186 @@ impl HighLevelEmitter {
     pub(crate) fn rewrite_switch_statements(statements: &mut Vec<String>) {
         let mut index = 0usize;
         while index < statements.len() {
-            let Some((replacement, end)) = try_build_switch(statements, index) else {
+            if let Some((replacement, end)) = try_build_guarded_goto_switch(statements, index) {
+                statements.splice(index..=end, replacement);
                 index += 1;
                 continue;
-            };
-
-            statements.splice(index..=end, replacement);
+            }
+            if let Some((replacement, end)) = try_build_switch(statements, index) {
+                statements.splice(index..=end, replacement);
+                index += 1;
+                continue;
+            }
             index += 1;
         }
     }
+}
+
+const MIN_GUARDED_GOTO_CASES: usize = 6;
+
+fn try_build_guarded_goto_switch(
+    statements: &[String],
+    start: usize,
+) -> Option<(Vec<String>, usize)> {
+    let mut current_header = start;
+    let mut labeled_cases: Vec<(String, String)> = Vec::new();
+    let mut scrutinee: Option<String> = None;
+
+    loop {
+        let header_line = statements.get(current_header)?.trim();
+        if let Some((condition, label)) = parse_inline_if_goto(header_line) {
+            let resolved =
+                resolve_condition_expression(statements, current_header, condition.as_str())?;
+            let (next_scrutinee, case_token) = parse_case_sides(resolved.as_str())?;
+            let case_value = resolve_case_value(statements, current_header, case_token)?;
+            if !is_literal(case_value.as_str()) {
+                return None;
+            }
+            if let Some(existing) = &scrutinee {
+                if existing != &next_scrutinee {
+                    return None;
+                }
+            } else {
+                scrutinee = Some(next_scrutinee);
+            }
+            labeled_cases.push((case_value, label));
+
+            let next_header =
+                find_next_guarded_header_after_case_prelude(statements, current_header + 1)?;
+            current_header = next_header;
+            continue;
+        }
+        break;
+    }
+
+    let header_line = statements.get(current_header)?.trim();
+    if !is_if_open(header_line) {
+        return None;
+    }
+    let condition = extract_any_if_condition(header_line)?;
+    let resolved = resolve_condition_expression(statements, current_header, condition)?;
+    let (next_scrutinee, case_token) = parse_case_sides(resolved.as_str())?;
+    let final_case_value = resolve_case_value(statements, current_header, case_token)?;
+    if !is_literal(final_case_value.as_str()) {
+        return None;
+    }
+    if let Some(existing) = &scrutinee {
+        if existing != &next_scrutinee {
+            return None;
+        }
+    } else {
+        scrutinee = Some(next_scrutinee);
+    }
+
+    let final_if_end = HighLevelEmitter::find_block_end(statements, current_header)?;
+    let (default_label, label_blocks_start) =
+        parse_guarded_switch_body_header(statements, current_header + 1, final_if_end)?;
+    let label_bodies = collect_label_bodies(statements, label_blocks_start, final_if_end)?;
+
+    let mut cases: Vec<(String, Vec<String>)> = Vec::new();
+    for (case_value, label) in &labeled_cases {
+        let body = label_bodies.get(label)?;
+        if body.is_empty() {
+            return None;
+        }
+        cases.push((case_value.clone(), body.clone()));
+    }
+
+    let (final_case_body, default_body, rewrite_end) = if let Some((else_header, else_end)) =
+        find_else_block_after(statements, final_if_end + 1)
+    {
+        if let Some(default_label_index) = find_label_in_range(
+            statements,
+            else_header + 1,
+            else_end,
+            default_label.as_str(),
+        ) {
+            let final_case_body = statements
+                .get(else_header + 1..default_label_index)
+                .unwrap_or_default()
+                .to_vec();
+            if final_case_body.is_empty() {
+                return None;
+            }
+            let default_body = statements
+                .get(default_label_index + 1..else_end)
+                .unwrap_or_default()
+                .to_vec();
+            if default_body.is_empty() {
+                return None;
+            }
+            (final_case_body, default_body, else_end)
+        } else {
+            let final_case_body = statements
+                .get(else_header + 1..else_end)
+                .unwrap_or_default()
+                .to_vec();
+            if final_case_body.is_empty() {
+                return None;
+            }
+            let default_label_index =
+                find_label_after(statements, else_end + 1, default_label.as_str())?;
+            let default_end = find_label_body_end(statements, default_label_index + 1);
+            if default_end < default_label_index + 1 {
+                return None;
+            }
+            let default_body = statements
+                .get(default_label_index + 1..=default_end)
+                .unwrap_or_default()
+                .to_vec();
+            if default_body.is_empty() {
+                return None;
+            }
+            (final_case_body, default_body, default_end)
+        }
+    } else {
+        let default_label_index =
+            find_label_after(statements, final_if_end + 1, default_label.as_str())?;
+        let final_case_body = statements
+            .get(final_if_end + 1..default_label_index)
+            .unwrap_or_default()
+            .to_vec();
+        if final_case_body.is_empty() {
+            return None;
+        }
+        let default_end = find_label_body_end(statements, default_label_index + 1);
+        if default_end < default_label_index + 1 {
+            return None;
+        }
+        let default_body = statements
+            .get(default_label_index + 1..=default_end)
+            .unwrap_or_default()
+            .to_vec();
+        if default_body.is_empty() {
+            return None;
+        }
+        (final_case_body, default_body, default_end)
+    };
+
+    cases.push((final_case_value, final_case_body));
+
+    if cases.len() < MIN_GUARDED_GOTO_CASES {
+        return None;
+    }
+
+    let mut seen = std::collections::BTreeSet::new();
+    if !cases.iter().all(|(value, _)| seen.insert(value.clone())) {
+        return None;
+    }
+
+    let mut output = Vec::new();
+    output.push(format!("switch {} {{", scrutinee?));
+    for (value, body) in &cases {
+        output.push(format!("case {value} {{"));
+        output.extend(body.iter().cloned());
+        output.push("}".into());
+    }
+    output.push("default {".into());
+    output.extend(default_body);
+    output.push("}".into());
+    output.push("}".into());
+
+    Some((output, rewrite_end))
 }
 
 fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>, usize)> {
@@ -117,13 +288,15 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
         }
 
         // Consecutive standalone `if` comparing the same scrutinee.
-        if is_if_open(next_line) {
-            if let Some(cond) = extract_any_if_condition(next_line) {
-                if let Some(resolved) = resolve_condition_expression(statements, next_header, cond)
+        if let Some(next_if_header) = find_next_if_after_case_prelude(statements, if_end + 1) {
+            let next_if_line = statements[next_if_header].trim();
+            if let Some(cond) = extract_any_if_condition(next_if_line) {
+                if let Some(resolved) =
+                    resolve_condition_expression(statements, next_if_header, cond)
                 {
                     if let Some((peek_scrutinee, _)) = parse_case_sides(resolved.as_str()) {
                         if scrutinee.as_deref() == Some(peek_scrutinee.as_str()) {
-                            current_header = next_header;
+                            current_header = next_if_header;
                             continue;
                         }
                     }
@@ -168,7 +341,6 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
     Some((output, overall_end))
 }
 
-
 fn extract_block_body(statements: &[String], header_index: usize) -> Option<(Vec<String>, usize)> {
     let end = HighLevelEmitter::find_block_end(statements, header_index)?;
     let body = statements
@@ -200,9 +372,14 @@ fn resolve_condition_expression(
     if condition.contains("==") {
         return Some(condition.trim().to_string());
     }
+    let condition = condition.trim();
+    let condition = condition
+        .strip_prefix('!')
+        .map(str::trim)
+        .unwrap_or(condition);
     let prev = HighLevelEmitter::previous_code_line(statements, header_index)?;
     let assign = HighLevelEmitter::parse_assignment(statements[prev].as_str())?;
-    (assign.lhs == condition.trim()).then_some(assign.rhs)
+    (assign.lhs == condition).then_some(assign.rhs)
 }
 
 fn parse_case_sides(condition: &str) -> Option<(String, &str)> {
@@ -263,6 +440,12 @@ fn is_literal(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
+    if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+        return true;
+    }
+    if value.starts_with('\'') && value.ends_with('\'') && value.len() >= 3 {
+        return true;
+    }
     if matches!(value, "true" | "false" | "null") {
         return true;
     }
@@ -291,6 +474,184 @@ fn find_first_if_in_range(statements: &[String], start: usize, end: usize) -> Op
         index += 1;
     }
     None
+}
+
+fn find_next_if_after_case_prelude(statements: &[String], start: usize) -> Option<usize> {
+    let mut index = start;
+    while index < statements.len() {
+        let trimmed = statements[index].trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            index += 1;
+            continue;
+        }
+        if is_if_open(trimmed) {
+            return Some(index);
+        }
+        if HighLevelEmitter::parse_assignment(statements[index].as_str()).is_some() {
+            index += 1;
+            continue;
+        }
+        return None;
+    }
+    None
+}
+
+fn find_next_guarded_header_after_case_prelude(
+    statements: &[String],
+    start: usize,
+) -> Option<usize> {
+    let mut index = start;
+    while index < statements.len() {
+        let trimmed = statements[index].trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            index += 1;
+            continue;
+        }
+        if parse_inline_if_goto(trimmed).is_some() || is_if_open(trimmed) {
+            return Some(index);
+        }
+        if HighLevelEmitter::parse_assignment(statements[index].as_str()).is_some() {
+            index += 1;
+            continue;
+        }
+        return None;
+    }
+    None
+}
+
+fn parse_inline_if_goto(line: &str) -> Option<(String, String)> {
+    let line = line.trim();
+    let rest = line.strip_prefix("if ")?;
+    let (condition, suffix) = rest.split_once(" { goto ")?;
+    let label = suffix.strip_suffix("; }")?.trim();
+    if label.is_empty() {
+        return None;
+    }
+    Some((condition.trim().to_string(), label.to_string()))
+}
+
+fn parse_plain_goto_label(line: &str) -> Option<String> {
+    let line = line.trim();
+    let label = line.strip_prefix("goto ")?.strip_suffix(';')?.trim();
+    if label.is_empty() {
+        return None;
+    }
+    Some(label.to_string())
+}
+
+fn parse_label_line(line: &str) -> Option<String> {
+    let line = line.trim();
+    let label = line.strip_suffix(':')?.trim();
+    if !label.starts_with("label_") {
+        return None;
+    }
+    Some(label.to_string())
+}
+
+fn parse_guarded_switch_body_header(
+    statements: &[String],
+    start: usize,
+    end: usize,
+) -> Option<(String, usize)> {
+    let (_, first_code) = collect_trivia(statements, start);
+    if first_code >= end {
+        return None;
+    }
+    let default_label = parse_plain_goto_label(statements[first_code].as_str())?;
+    let (_, body_start) = collect_trivia(statements, first_code + 1);
+    if body_start >= end {
+        return None;
+    }
+    parse_label_line(statements[body_start].as_str())?;
+    Some((default_label, body_start))
+}
+
+fn collect_label_bodies(
+    statements: &[String],
+    start: usize,
+    end: usize,
+) -> Option<std::collections::BTreeMap<String, Vec<String>>> {
+    let mut bodies: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    let mut current_label: Option<String> = None;
+    let mut index = start;
+
+    while index < end {
+        let trimmed = statements[index].trim();
+        if let Some(label) = parse_label_line(trimmed) {
+            if bodies.contains_key(&label) {
+                return None;
+            }
+            current_label = Some(label.clone());
+            bodies.insert(label, Vec::new());
+            index += 1;
+            continue;
+        }
+
+        let Some(label) = current_label.as_ref() else {
+            if trimmed.is_empty() || trimmed.starts_with("//") {
+                index += 1;
+                continue;
+            }
+            return None;
+        };
+        bodies
+            .entry(label.clone())
+            .or_default()
+            .push(statements[index].clone());
+        index += 1;
+    }
+
+    Some(bodies)
+}
+
+fn find_label_after(statements: &[String], start: usize, label: &str) -> Option<usize> {
+    let needle = format!("{label}:");
+    let mut index = start;
+    while index < statements.len() {
+        if statements[index].trim() == needle {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn find_label_in_range(
+    statements: &[String],
+    start: usize,
+    end: usize,
+    label: &str,
+) -> Option<usize> {
+    let needle = format!("{label}:");
+    let mut index = start;
+    while index < end {
+        if statements[index].trim() == needle {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+fn find_else_block_after(statements: &[String], start: usize) -> Option<(usize, usize)> {
+    let (_, header) = collect_trivia(statements, start);
+    if header >= statements.len() || !is_else_open(statements[header].trim()) {
+        return None;
+    }
+    let end = HighLevelEmitter::find_block_end(statements, header)?;
+    Some((header, end))
+}
+
+fn find_label_body_end(statements: &[String], start: usize) -> usize {
+    let mut index = start;
+    while index < statements.len() {
+        if index > start && parse_label_line(statements[index].as_str()).is_some() {
+            break;
+        }
+        index += 1;
+    }
+    index.saturating_sub(1)
 }
 
 fn end_of_if_chain(statements: &[String], start: usize) -> Option<usize> {

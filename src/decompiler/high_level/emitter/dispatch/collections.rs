@@ -35,7 +35,7 @@ impl HighLevelEmitter {
             Clearitems => self.emit_call(instruction, "clear_items", 1, false),
             Popitem => self.emit_call(instruction, "pop_item", 2, true),
             Isnull => self.unary_op(instruction, |val| format!("is_null({val})")),
-            Istype => self.emit_call(instruction, "is_type", 2, true),
+            Istype => self.emit_is_type(instruction),
             Haskey => self.binary_op(instruction, "has_key"),
             Keys => self.unary_op(instruction, |val| format!("keys({val})")),
             Values => self.unary_op(instruction, |val| format!("values({val})")),

@@ -49,3 +49,38 @@ fn high_level_limits_instructions_to_entry_range() {
         "entry section should not contain helper instructions"
     );
 }
+
+#[test]
+fn high_level_trims_initslot_boundaries() {
+    let nef_bytes = load_testing_nef("Contract_Delegate.nef");
+    let manifest = load_testing_manifest("Contract_Delegate.manifest.json");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("// 0000: INITSLOT"),
+        "entry block should still be rendered"
+    );
+    let sum_block = high_level
+        .split("\n    fn testDelegate(")
+        .next()
+        .expect("sumFunc section");
+    assert!(
+        !sum_block.contains("// 000C: INITSLOT"),
+        "should stop at the first INITSLOT boundary for sumFunc"
+    );
+    assert!(
+        !sum_block.contains("return t23;"),
+        "duplicate return from appended block should not appear"
+    );
+    assert!(
+        high_level.contains("fn sub_0x000C(arg0, arg1)"),
+        "inferred private helper should be rendered as a separate method"
+    );
+}

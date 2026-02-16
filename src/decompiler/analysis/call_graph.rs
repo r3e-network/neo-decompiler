@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
+use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::ContractManifest;
 use crate::nef::NefFile;
 use crate::{syscalls, util};
@@ -125,7 +125,7 @@ pub fn build_call_graph(
             }
             OpCode::Call | OpCode::Call_L => {
                 let caller = table.method_for_offset(instr.offset);
-                match relative_target_isize(instructions, index, instr) {
+                match relative_target_isize(instr) {
                     Some(target) if target >= 0 => {
                         let target = target as usize;
                         let callee = table.resolve_internal_target(target);
@@ -185,15 +185,28 @@ pub fn build_call_graph(
             }
             OpCode::CallA => {
                 // CALLA takes no operand — it pops a Pointer from the stack.
-                edges.push(CallEdge {
-                    caller: table.method_for_offset(instr.offset),
-                    call_offset: instr.offset,
-                    opcode: instr.opcode.to_string(),
-                    target: CallTarget::Indirect {
+                // Resolve direct PUSHA + CALLA sequences to internal call edges.
+                let caller = table.method_for_offset(instr.offset);
+                if let Some(target) = calla_target_from_pusha(instructions, index) {
+                    let callee = table.resolve_internal_target(target);
+                    methods.insert(callee.offset, callee.clone());
+                    edges.push(CallEdge {
+                        caller,
+                        call_offset: instr.offset,
                         opcode: instr.opcode.to_string(),
-                        operand: None,
-                    },
-                });
+                        target: CallTarget::Internal { method: callee },
+                    });
+                } else {
+                    edges.push(CallEdge {
+                        caller,
+                        call_offset: instr.offset,
+                        opcode: instr.opcode.to_string(),
+                        target: CallTarget::Indirect {
+                            opcode: instr.opcode.to_string(),
+                            operand: None,
+                        },
+                    });
+                }
             }
             _ => {}
         }
@@ -205,43 +218,126 @@ pub fn build_call_graph(
     }
 }
 
-fn relative_target_isize(
-    instructions: &[Instruction],
-    index: usize,
-    instr: &Instruction,
-) -> Option<isize> {
+fn relative_target_isize(instr: &Instruction) -> Option<isize> {
     let delta = match &instr.operand {
         Some(Operand::Jump(v)) => *v as isize,
         Some(Operand::Jump32(v)) => *v as isize,
         _ => return None,
     };
-    let base = instructions
-        .get(index + 1)
-        .map(|ins| ins.offset)
-        .unwrap_or_else(|| instr.offset + instr_len_fallback(instr));
-    Some(base as isize + delta)
+    Some(instr.offset as isize + delta)
 }
 
-fn instr_len_fallback(instr: &Instruction) -> usize {
-    match instr.opcode.operand_encoding() {
-        OperandEncoding::None => 1,
-        OperandEncoding::I8 | OperandEncoding::U8 | OperandEncoding::Jump8 => 2,
-        OperandEncoding::I16 | OperandEncoding::U16 => 3,
-        OperandEncoding::I32
-        | OperandEncoding::U32
-        | OperandEncoding::Jump32
-        | OperandEncoding::Syscall => 5,
-        OperandEncoding::I64 => 9,
-        OperandEncoding::Bytes(n) => 1 + n,
-        OperandEncoding::Data1 => 1 + 1 + bytes_len(instr),
-        OperandEncoding::Data2 => 1 + 2 + bytes_len(instr),
-        OperandEncoding::Data4 => 1 + 4 + bytes_len(instr),
+fn calla_target_from_pusha(instructions: &[Instruction], index: usize) -> Option<usize> {
+    let mut cursor = index.checked_sub(1)?;
+    loop {
+        let prev = instructions.get(cursor)?;
+        if prev.opcode == OpCode::Nop {
+            cursor = cursor.checked_sub(1)?;
+            continue;
+        }
+        if prev.opcode == OpCode::PushA {
+            return pusha_absolute_target(prev);
+        }
+        if let Some(slot) = local_load_index(prev) {
+            return resolve_slot_pointer_target(instructions, cursor, SlotDomain::Local(slot));
+        }
+        if let Some(slot) = static_load_index(prev) {
+            return resolve_slot_pointer_target(instructions, cursor, SlotDomain::Static(slot));
+        }
+        return None;
     }
 }
 
-fn bytes_len(instr: &Instruction) -> usize {
-    match &instr.operand {
-        Some(Operand::Bytes(bytes)) => bytes.len(),
-        _ => 0,
+fn pusha_absolute_target(instruction: &Instruction) -> Option<usize> {
+    let delta = match instruction.operand {
+        Some(Operand::U32(value)) => i32::from_le_bytes(value.to_le_bytes()) as isize,
+        Some(Operand::I32(value)) => value as isize,
+        _ => return None,
+    };
+    instruction.offset.checked_add_signed(delta)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SlotDomain {
+    Local(u8),
+    Static(u8),
+}
+
+fn local_load_index(instruction: &Instruction) -> Option<u8> {
+    match instruction.opcode {
+        OpCode::Ldloc0 => Some(0),
+        OpCode::Ldloc1 => Some(1),
+        OpCode::Ldloc2 => Some(2),
+        OpCode::Ldloc3 => Some(3),
+        OpCode::Ldloc4 => Some(4),
+        OpCode::Ldloc5 => Some(5),
+        OpCode::Ldloc6 => Some(6),
+        OpCode::Ldloc => match instruction.operand {
+            Some(Operand::U8(index)) => Some(index),
+            _ => None,
+        },
+        _ => None,
     }
+}
+
+fn static_load_index(instruction: &Instruction) -> Option<u8> {
+    match instruction.opcode {
+        OpCode::Ldsfld0 => Some(0),
+        OpCode::Ldsfld1 => Some(1),
+        OpCode::Ldsfld2 => Some(2),
+        OpCode::Ldsfld3 => Some(3),
+        OpCode::Ldsfld4 => Some(4),
+        OpCode::Ldsfld5 => Some(5),
+        OpCode::Ldsfld6 => Some(6),
+        OpCode::Ldsfld => match instruction.operand {
+            Some(Operand::U8(index)) => Some(index),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn slot_store_domain(instruction: &Instruction) -> Option<SlotDomain> {
+    match instruction.opcode {
+        OpCode::Stloc0 => Some(SlotDomain::Local(0)),
+        OpCode::Stloc1 => Some(SlotDomain::Local(1)),
+        OpCode::Stloc2 => Some(SlotDomain::Local(2)),
+        OpCode::Stloc3 => Some(SlotDomain::Local(3)),
+        OpCode::Stloc4 => Some(SlotDomain::Local(4)),
+        OpCode::Stloc5 => Some(SlotDomain::Local(5)),
+        OpCode::Stloc6 => Some(SlotDomain::Local(6)),
+        OpCode::Stloc => match instruction.operand {
+            Some(Operand::U8(index)) => Some(SlotDomain::Local(index)),
+            _ => None,
+        },
+        OpCode::Stsfld0 => Some(SlotDomain::Static(0)),
+        OpCode::Stsfld1 => Some(SlotDomain::Static(1)),
+        OpCode::Stsfld2 => Some(SlotDomain::Static(2)),
+        OpCode::Stsfld3 => Some(SlotDomain::Static(3)),
+        OpCode::Stsfld4 => Some(SlotDomain::Static(4)),
+        OpCode::Stsfld5 => Some(SlotDomain::Static(5)),
+        OpCode::Stsfld6 => Some(SlotDomain::Static(6)),
+        OpCode::Stsfld => match instruction.operand {
+            Some(Operand::U8(index)) => Some(SlotDomain::Static(index)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn resolve_slot_pointer_target(
+    instructions: &[Instruction],
+    before_index: usize,
+    domain: SlotDomain,
+) -> Option<usize> {
+    for index in (0..before_index).rev() {
+        let instruction = instructions.get(index)?;
+        if slot_store_domain(instruction) != Some(domain) {
+            continue;
+        }
+
+        let source = index.checked_sub(1).and_then(|prev| instructions.get(prev));
+        return source.and_then(pusha_absolute_target);
+    }
+    None
 }

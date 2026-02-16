@@ -16,8 +16,7 @@ pub(super) fn literal_from_operand(operand: Option<&Operand>) -> Option<LiteralV
         Some(Operand::U16(v)) => Some(LiteralValue::Integer(*v as i64)),
         Some(Operand::U32(v)) => Some(LiteralValue::Integer(*v as i64)),
         Some(Operand::Bool(v)) => Some(LiteralValue::Boolean(*v)),
-        Some(Operand::Bytes(bytes)) => try_decode_string_literal(bytes)
-            .map(LiteralValue::String),
+        Some(Operand::Bytes(bytes)) => try_decode_string_literal(bytes).map(LiteralValue::String),
         _ => None,
     }
 }
@@ -31,7 +30,9 @@ pub(super) fn try_decode_string_literal(bytes: &[u8]) -> Option<String> {
         return None;
     }
     let s = std::str::from_utf8(bytes).ok()?;
-    let all_printable = s.chars().all(|c| matches!(c, ' '..='~' | '\n' | '\r' | '\t'));
+    let all_printable = s
+        .chars()
+        .all(|c| matches!(c, ' '..='~' | '\n' | '\r' | '\t'));
     if all_printable {
         Some(s.to_string())
     } else {
@@ -71,5 +72,19 @@ pub(super) fn convert_target_name(operand: &Operand) -> Option<&'static str> {
         0x48 => Some("map"),
         0x60 => Some("interopinterface"),
         _ => None,
+    }
+}
+
+pub(super) fn format_type_operand(operand: &Operand) -> String {
+    match operand {
+        Operand::U8(value) => format!("0x{value:02X}"),
+        Operand::I8(value) => format!("0x{value:02X}"),
+        Operand::U16(value) => format!("{value}"),
+        Operand::I16(value) => format!("{value}"),
+        Operand::U32(value) => format!("{value}"),
+        Operand::I32(value) => format!("{value}"),
+        Operand::I64(value) => format!("{value}"),
+        Operand::Bytes(bytes) => format!("0x{}", hex::encode_upper(bytes)),
+        _ => operand.to_string(),
     }
 }

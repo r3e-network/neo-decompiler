@@ -15,3 +15,6 @@ mod process;
 
 #[path = "decompile_artifacts/test.rs"]
 mod test;
+
+#[path = "decompile_artifacts/parity.rs"]
+mod parity;

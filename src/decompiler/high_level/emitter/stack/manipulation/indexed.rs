@@ -19,8 +19,11 @@ impl HighLevelEmitter {
                 self.statements
                     .push(format!("let {temp} = {source}; // pick stack[{index}]"));
                 self.stack.push(temp.clone());
+                if let Some(elements) = self.packed_values_by_name.get(&source).cloned() {
+                    self.packed_values_by_name.insert(temp.clone(), elements);
+                }
                 if let Some(literal) = self.literal_values.get(&source).cloned() {
-                    self.literal_values.insert(temp, literal);
+                    self.literal_values.insert(temp.clone(), literal);
                 }
                 return;
             }
@@ -89,7 +92,8 @@ impl HighLevelEmitter {
 
         // Dynamic index: we cannot resolve the stack position statically.
         // Do not pop an arbitrary item — that would corrupt the stack model.
-        self.statements
-            .push(format!("// xdrop stack[{index_name}] (dynamic index, stack may be imprecise)"));
+        self.statements.push(format!(
+            "// xdrop stack[{index_name}] (dynamic index, stack may be imprecise)"
+        ));
     }
 }

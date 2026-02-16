@@ -6,11 +6,78 @@
     clippy::cast_sign_loss
 )]
 
+use crate::instruction::OpCode;
 use crate::instruction::{Instruction, Operand};
 
 use super::super::{HighLevelEmitter, LoopContext};
 
 impl HighLevelEmitter {
+    fn is_conditional_branch(opcode: OpCode) -> bool {
+        matches!(
+            opcode,
+            OpCode::Jmpif
+                | OpCode::Jmpif_L
+                | OpCode::Jmpifnot
+                | OpCode::Jmpifnot_L
+                | OpCode::JmpEq
+                | OpCode::JmpEq_L
+                | OpCode::JmpNe
+                | OpCode::JmpNe_L
+                | OpCode::JmpGt
+                | OpCode::JmpGt_L
+                | OpCode::JmpGe
+                | OpCode::JmpGe_L
+                | OpCode::JmpLt
+                | OpCode::JmpLt_L
+                | OpCode::JmpLe
+                | OpCode::JmpLe_L
+        )
+    }
+
+    fn has_internal_crossing_branch(&self, branch_offset: usize, false_target: usize) -> bool {
+        let start_index = self
+            .index_by_offset
+            .range((branch_offset + 1)..false_target)
+            .next()
+            .map(|(_, index)| *index);
+        let Some(start_index) = start_index else {
+            return false;
+        };
+        let end_index = self
+            .index_by_offset
+            .range(false_target..)
+            .next()
+            .map(|(_, index)| *index)
+            .unwrap_or(self.program.len());
+
+        self.program[start_index..end_index].iter().any(|inner| {
+            Self::is_conditional_branch(inner.opcode)
+                && self
+                    .forward_jump_target(inner)
+                    .map(|target| target > false_target)
+                    .unwrap_or(false)
+        })
+    }
+
+    fn has_crossing_closer(&self, target: usize) -> bool {
+        self.pending_closers
+            .keys()
+            .next()
+            .map(|next_close| target > *next_close)
+            .unwrap_or(false)
+    }
+
+    fn emit_conditional_goto(&mut self, instruction: &Instruction, condition: &str, target: usize) {
+        self.push_comment(instruction);
+        if self.index_by_offset.contains_key(&target) {
+            self.transfer_labels.insert(target);
+        }
+        self.statements.push(format!(
+            "if {condition} {{ goto {}; }}",
+            Self::transfer_label_name(target)
+        ));
+    }
+
     pub(in super::super) fn emit_comparison_if_block(
         &mut self,
         instruction: &Instruction,
@@ -96,7 +163,7 @@ impl HighLevelEmitter {
             return;
         }
 
-        let mut condition = match self.stack.pop() {
+        let raw_condition = match self.stack.pop() {
             Some(value) => value,
             None => {
                 self.push_comment(instruction);
@@ -104,12 +171,25 @@ impl HighLevelEmitter {
                 return;
             }
         };
+        let mut condition = raw_condition.clone();
         if negate_condition {
             condition = format!("!{condition}");
         }
 
-        self.push_comment(instruction);
         let false_target = target as usize;
+        if self.has_crossing_closer(false_target)
+            || self.has_internal_crossing_branch(instruction.offset, false_target)
+        {
+            let jump_condition = if negate_condition {
+                raw_condition
+            } else {
+                format!("!{raw_condition}")
+            };
+            self.emit_conditional_goto(instruction, &jump_condition, false_target);
+            return;
+        }
+
+        self.push_comment(instruction);
         let loop_jump = self.detect_loop_back(false_target, instruction.offset);
         if let Some(loop_jump) = loop_jump.as_ref() {
             self.statements.push(format!("while {condition} {{"));

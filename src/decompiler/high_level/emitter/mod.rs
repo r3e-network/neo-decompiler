@@ -12,7 +12,7 @@ mod stack;
 mod types;
 mod util;
 
-use helpers::{convert_target_name, format_pushdata, literal_from_operand};
+use helpers::{convert_target_name, format_pushdata, format_type_operand, literal_from_operand};
 use types::{DoWhileLoop, LiteralValue, LoopContext, LoopJump, SlotKind};
 
 #[derive(Debug, Default)]
@@ -36,15 +36,36 @@ pub(crate) struct HighLevelEmitter {
     loop_stack: Vec<LoopContext>,
     initialized_locals: BTreeSet<usize>,
     initialized_statics: BTreeSet<usize>,
+    local_pointer_values: BTreeMap<usize, usize>,
+    static_pointer_values: BTreeMap<usize, usize>,
     argument_labels: BTreeMap<usize, String>,
     literal_values: BTreeMap<String, LiteralValue>,
+    /// Concrete element lists for values emitted by PACK with literal count.
+    /// Enables precise UNPACK stack modeling when those values are loaded later.
+    packed_values_by_name: BTreeMap<String, Vec<String>>,
     /// Pre-resolved labels for CALLT method-token indices.
     /// Index `i` corresponds to method-token index `i` in the NEF file.
     callt_labels: Vec<String>,
+    /// Declared parameter counts for CALLT method-token indices.
+    callt_param_counts: Vec<usize>,
+    /// Declared return-value flags for CALLT method-token indices.
+    callt_returns_value: Vec<bool>,
     /// Stack snapshots saved before entering if-bodies so that the stack can
     /// be restored when the closing brace is emitted.  Keyed by the offset
     /// where the closer will be placed (i.e. the false-target of the branch).
     branch_saved_stacks: BTreeMap<usize, Vec<String>>,
+    /// Pre-resolved method names keyed by method start offset.
+    /// Used to replace `call_0xXXXX()` placeholders when a stable symbol exists.
+    method_labels_by_offset: BTreeMap<usize, String>,
+    /// Resolved argument counts keyed by method start offset.
+    /// Used to preserve call-site argument expressions for internal calls.
+    method_arg_counts_by_offset: BTreeMap<usize, usize>,
+    /// Resolved internal CALL/CALL_L targets keyed by call instruction offset.
+    /// Used when the immediate call target lands inside a method body.
+    call_targets_by_offset: BTreeMap<usize, usize>,
+    /// Resolved internal targets keyed by CALLA instruction offset.
+    /// Used when pointer provenance is outside the current method body.
+    calla_targets_by_offset: BTreeMap<usize, usize>,
 }
 
 pub(crate) struct HighLevelOutput {

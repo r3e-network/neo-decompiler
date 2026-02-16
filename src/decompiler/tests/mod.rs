@@ -4,6 +4,7 @@ use super::high_level::HighLevelEmitter;
 use super::*;
 use crate::disassembler::UnknownHandling;
 use crate::{ContractManifest, NefParser};
+use std::{fs, path::PathBuf};
 
 fn write_varint(buf: &mut Vec<u8>, value: u32) {
     match value {
@@ -100,6 +101,37 @@ fn sample_manifest() -> ContractManifest {
     .expect("manifest parsed")
 }
 
+fn testing_artifact_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("TestingArtifacts")
+        .join("devpack")
+}
+
+fn load_testing_nef(name: &str) -> Vec<u8> {
+    fs::read(testing_artifact_dir().join(name)).expect("failed to read NEF artifact")
+}
+
+fn load_testing_manifest(name: &str) -> ContractManifest {
+    let path = testing_artifact_dir().join(name);
+    let data = fs::read_to_string(&path).expect("failed to read manifest artifact");
+    ContractManifest::from_json_str(&data).expect("manifest parsed")
+}
+
 mod core;
 mod csharp;
 mod high_level;
+
+#[test]
+#[ignore]
+fn debug_inferred_method_starts_contract_delegate() {
+    let nef_bytes = load_testing_nef("Contract_Delegate.nef");
+    let manifest = load_testing_manifest("Contract_Delegate.manifest.json");
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest.clone()), OutputFormat::All)
+        .expect("decompile succeeds");
+    let inferred = crate::decompiler::helpers::inferred_method_starts(
+        &decompilation.instructions,
+        decompilation.manifest.as_ref(),
+    );
+    eprintln!("inferred starts: {inferred:?}");
+}

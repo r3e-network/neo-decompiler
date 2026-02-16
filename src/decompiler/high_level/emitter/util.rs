@@ -44,6 +44,7 @@ impl HighLevelEmitter {
     pub(super) fn take_usize_literal(&mut self, name: &str) -> Option<usize> {
         match self.literal_values.remove(name) {
             Some(LiteralValue::Integer(value)) => usize::try_from(value).ok(),
+            Some(LiteralValue::Pointer(value)) => Some(value),
             _ => None,
         }
     }

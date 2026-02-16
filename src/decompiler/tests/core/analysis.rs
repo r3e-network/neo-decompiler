@@ -39,11 +39,11 @@ fn decompilation_includes_call_graph_syscalls() {
 #[test]
 fn decompilation_includes_call_graph_internal_calls() {
     // Script layout:
-    // 0x0000: CALL +2 (target=0x0004)
+    // 0x0000: CALL +4 (target=0x0004)
     // 0x0002: RET
     // 0x0003: NOP
     // 0x0004: RET
-    let script = [0x34, 0x02, 0x40, 0x21, 0x40];
+    let script = [0x34, 0x04, 0x40, 0x21, 0x40];
     let nef_bytes = build_nef(&script);
     let manifest = ContractManifest::from_json_str(
         r#"
@@ -97,6 +97,30 @@ fn decompilation_includes_call_graph_internal_calls() {
         CallTarget::Internal { method } => {
             assert_eq!(method.offset, 4);
             assert_eq!(method.name, "helper");
+        }
+        other => panic!("unexpected call target: {other:?}"),
+    }
+}
+
+#[test]
+fn call_graph_resolves_relative_call_from_opcode_offset() {
+    // Neo VM relative call offsets are resolved from opcode position.
+    // 0x0000: CALL +2 (target=0x0002)
+    // 0x0002: RET
+    let script = [0x34, 0x02, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    assert_eq!(decompilation.call_graph.edges.len(), 1);
+    let edge = &decompilation.call_graph.edges[0];
+    assert_eq!(edge.opcode, "CALL");
+    assert_eq!(edge.call_offset, 0);
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 2);
+            assert_eq!(method.name, "sub_0x0002");
         }
         other => panic!("unexpected call target: {other:?}"),
     }
@@ -175,6 +199,129 @@ fn decompilation_includes_indirect_calls() {
             assert_eq!(*operand, Some(1));
         }
         other => panic!("unexpected call target: {other:?}"),
+    }
+}
+
+#[test]
+fn decompilation_resolves_pusha_calla_to_internal_call_edge() {
+    // Script layout:
+    // 0x0000: PUSHA +10 (target = 0x000A)
+    // 0x0005: CALLA
+    // 0x0006: RET
+    // 0x0007..0x0009: NOP padding
+    // 0x000A: INITSLOT 0,0
+    // 0x000D: RET
+    let script = [
+        0x0A, 0x0A, 0x00, 0x00, 0x00, // PUSHA +10
+        0x36, // CALLA
+        0x40, // RET
+        0x21, 0x21, 0x21, // NOP x3
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x000A);
+            assert_eq!(method.name, "sub_0x000A");
+        }
+        other => panic!("expected resolved internal CALLA target, got: {other:?}"),
+    }
+}
+
+#[test]
+fn decompilation_resolves_local_pointer_flow_into_calla_edge() {
+    // Script layout:
+    // 0x0000: PUSHA +9  (target = 0x0009)
+    // 0x0005: STLOC0
+    // 0x0006: LDLOC0
+    // 0x0007: CALLA
+    // 0x0008: RET
+    // 0x0009: INITSLOT 0,0
+    // 0x000C: RET
+    let script = [
+        0x0A, 0x09, 0x00, 0x00, 0x00, // PUSHA +9
+        0x70, // STLOC0
+        0x68, // LDLOC0
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x0009);
+            assert_eq!(method.name, "sub_0x0009");
+        }
+        other => panic!("expected resolved local-flow CALLA target, got: {other:?}"),
+    }
+}
+
+#[test]
+fn decompilation_resolves_local_pointer_flow_with_nop_before_calla() {
+    // Script layout:
+    // 0x0000: PUSHA +10 (target = 0x000A)
+    // 0x0005: STLOC0
+    // 0x0006: LDLOC0
+    // 0x0007: NOP
+    // 0x0008: CALLA
+    // 0x0009: RET
+    // 0x000A: INITSLOT 0,0
+    // 0x000D: RET
+    let script = [
+        0x0A, 0x0A, 0x00, 0x00, 0x00, // PUSHA +10
+        0x70, // STLOC0
+        0x68, // LDLOC0
+        0x21, // NOP
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x000A);
+            assert_eq!(method.name, "sub_0x000A");
+        }
+        other => panic!("expected resolved local-flow CALLA target, got: {other:?}"),
     }
 }
 

@@ -5,9 +5,13 @@ use super::super::super::HighLevelEmitter;
 impl HighLevelEmitter {
     pub(in super::super::super) fn emit_rot(&mut self, instruction: &Instruction) {
         self.push_comment(instruction);
-        if self.stack.len() < 3 {
-            self.stack_underflow(instruction, 3);
-            return;
+        while self.stack.len() < 3 {
+            let missing = self.next_temp();
+            self.statements.push(format!(
+                "let {missing} = missing_stack_item(); // synthetic missing stack value"
+            ));
+            // Missing values belong below currently known top-of-stack values.
+            self.stack.insert(0, missing);
         }
         let (Some(top), Some(mid), Some(bottom)) =
             (self.stack.pop(), self.stack.pop(), self.stack.pop())
@@ -36,6 +40,9 @@ impl HighLevelEmitter {
         let dup = self.next_temp();
         self.statements
             .push(format!("let {dup} = {top}; // tuck top of stack"));
+        if let Some(elements) = self.packed_values_by_name.get(&top).cloned() {
+            self.packed_values_by_name.insert(dup.clone(), elements);
+        }
         if let Some(literal) = self.literal_values.get(&top).cloned() {
             self.literal_values.insert(dup.clone(), literal);
         }
