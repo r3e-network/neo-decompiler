@@ -124,12 +124,19 @@ impl HighLevelEmitter {
         *closer_entry += 1;
 
         if let Some((jump_offset, jump_target)) = self.detect_else(false_target) {
-            if !self.is_loop_control_target(jump_target) {
+            if !self.is_loop_control_target(jump_target)
+                && !self.else_targets.contains_key(&false_target)
+            {
                 self.skip_jumps.insert(jump_offset);
                 let else_entry = self.else_targets.entry(false_target).or_insert(0);
                 *else_entry += 1;
                 let closer = self.pending_closers.entry(jump_target).or_insert(0);
                 *closer += 1;
+                // Record pre-branch stack depth at the merge offset so that
+                // merge-time logic can detect branch-produced stack values.
+                self.pre_branch_stack_depth
+                    .entry(jump_target)
+                    .or_insert(self.stack.len());
             }
         }
     }
@@ -210,12 +217,19 @@ impl HighLevelEmitter {
 
         if loop_jump.is_none() {
             if let Some((jump_offset, jump_target)) = self.detect_else(false_target) {
-                if !self.is_loop_control_target(jump_target) {
+                if !self.is_loop_control_target(jump_target)
+                    && !self.else_targets.contains_key(&false_target)
+                {
                     self.skip_jumps.insert(jump_offset);
                     let else_entry = self.else_targets.entry(false_target).or_insert(0);
                     *else_entry += 1;
                     let closer = self.pending_closers.entry(jump_target).or_insert(0);
                     *closer += 1;
+                    // Record pre-branch stack depth at the merge offset so that
+                    // merge-time logic can detect branch-produced stack values.
+                    self.pre_branch_stack_depth
+                        .entry(jump_target)
+                        .or_insert(self.stack.len());
                 }
             }
         }
@@ -227,6 +241,13 @@ impl HighLevelEmitter {
             return None;
         }
         let jump = self.program.get(target_index.checked_sub(1)?)?;
+        // Only unconditional JMP/JMP_L indicate an else branch.  Other opcodes
+        // that share the Jump8/Jump32 operand encoding (CALL, ENDTRY, etc.)
+        // must not be mistaken for else jumps — doing so nests catch/finally
+        // blocks inside spurious else branches.
+        if !matches!(jump.opcode, OpCode::Jmp | OpCode::Jmp_L) {
+            return None;
+        }
         let target = self.forward_jump_target(jump)?;
         if target > false_offset {
             Some((jump.offset, target))

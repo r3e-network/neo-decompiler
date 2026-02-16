@@ -5,7 +5,10 @@ use super::super::super::HighLevelEmitter;
 impl HighLevelEmitter {
     pub(in super::super::super) fn emit_return(&mut self, instruction: &Instruction) {
         self.push_comment(instruction);
-        if let Some(value) = self.pop_stack_value() {
+        if self.returns_void {
+            // Void method: discard any leftover stack values.
+            self.statements.push("return;".into());
+        } else if let Some(value) = self.pop_stack_value() {
             self.statements.push(format!("return {value};"));
         } else {
             self.statements.push("return;".into());

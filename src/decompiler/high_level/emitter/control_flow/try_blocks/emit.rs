@@ -42,17 +42,26 @@ impl HighLevelEmitter {
             let catch_entry = self.catch_targets.entry(catch).or_insert(0);
             *catch_entry += 1;
 
-            let catch_end = finally_target.or(resume_target);
-            if let Some(end) = catch_end {
-                let closer_entry = self.pending_closers.entry(end).or_insert(0);
-                *closer_entry += 1;
+            let mut catch_end = finally_target.or(resume_target);
+
+            // Search the catch body for its ENDTRY.  When catch_end is already
+            // known (from a finally target or the try-body's ENDTRY), use it as
+            // the search bound.  Otherwise the try body always terminates
+            // (throw/abort) so there was no ENDTRY — search forward from the
+            // catch target to find the catch body's own ENDTRY.
+            let search_bound = catch_end.unwrap_or_else(|| {
+                self.program.last().map(|i| i.offset + 1).unwrap_or(catch)
+            });
+            if let Some((endtry_offset, target)) = self.find_endtry_target(catch, search_bound)
+            {
+                self.skip_jumps.insert(endtry_offset);
+                resume_target.get_or_insert(target);
+                catch_end.get_or_insert(target);
             }
 
             if let Some(end) = catch_end {
-                if let Some((endtry_offset, target)) = self.find_endtry_target(catch, end) {
-                    self.skip_jumps.insert(endtry_offset);
-                    resume_target.get_or_insert(target);
-                }
+                let closer_entry = self.pending_closers.entry(end).or_insert(0);
+                *closer_entry += 1;
             }
         }
 
@@ -66,7 +75,16 @@ impl HighLevelEmitter {
                 endfinally_end = Some(end);
             }
 
-            let finally_end = resume_target.or(endfinally_end);
+            // The finally closer belongs at the instruction after ENDFINALLY,
+            // not at the try/catch resume point.  In nested try blocks these
+            // can differ (resume_target may precede the finally block).
+            //
+            // When neither ENDFINALLY nor a resume target exists, the finally
+            // block terminates unconditionally (RET/THROW/ABORT).  Register
+            // the closer past the last instruction so `finish()` flushes it.
+            let finally_end = endfinally_end
+                .or(resume_target)
+                .or_else(|| self.program.last().map(|i| i.offset + 1));
             if let Some(end) = finally_end {
                 let closer_entry = self.pending_closers.entry(end).or_insert(0);
                 *closer_entry += 1;

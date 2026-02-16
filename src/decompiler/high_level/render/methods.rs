@@ -69,12 +69,14 @@ pub(super) fn write_manifest_methods(
                 .unwrap();
             } else {
                 let labels = sanitize_parameter_names(&method.parameters);
+                let is_void = method.return_type == "Void";
                 body::write_method_body(
                     output,
                     slice,
                     Some(&labels),
                     warnings,
                     context.body_context,
+                    is_void,
                 );
             }
         } else {
@@ -152,6 +154,7 @@ pub(super) fn write_inferred_methods(
             (!argument_labels.is_empty()).then_some(argument_labels.as_slice()),
             warnings,
             context.body_context,
+            false, // inferred methods: return type unknown
         );
         writeln!(output, "    }}").unwrap();
     }

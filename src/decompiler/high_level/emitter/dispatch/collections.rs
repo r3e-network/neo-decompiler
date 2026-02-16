@@ -8,7 +8,7 @@ impl HighLevelEmitter {
 
         match instruction.opcode {
             Newbuffer => self.unary_op(instruction, |val| format!("new_buffer({val})")),
-            Memcpy => self.emit_call(instruction, "memcpy", 3, false),
+            Memcpy => self.emit_call(instruction, "memcpy", 5, false),
             Newarray0 => self.push_literal(instruction, "[]".into()),
             Newarray => self.unary_op(instruction, |val| format!("new_array({val})")),
             NewarrayT => {
@@ -33,7 +33,7 @@ impl HighLevelEmitter {
             Reverseitems => self.emit_call(instruction, "reverse_items", 1, false),
             Remove => self.emit_call(instruction, "remove_item", 2, false),
             Clearitems => self.emit_call(instruction, "clear_items", 1, false),
-            Popitem => self.emit_call(instruction, "pop_item", 2, true),
+            Popitem => self.emit_call(instruction, "pop_item", 1, true),
             Isnull => self.unary_op(instruction, |val| format!("is_null({val})")),
             Istype => self.emit_is_type(instruction),
             Haskey => self.binary_op(instruction, "has_key"),

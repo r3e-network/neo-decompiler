@@ -8,5 +8,6 @@ mod else_if;
 mod for_loops;
 mod indexing;
 mod inline;
+mod overflow_collapse;
 mod switches;
 mod util;

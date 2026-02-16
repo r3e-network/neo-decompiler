@@ -61,6 +61,10 @@ impl HighLevelEmitter {
         self.inline_single_use_temps = enabled;
     }
 
+    pub(crate) fn set_returns_void(&mut self, value: bool) {
+        self.returns_void = value;
+    }
+
     pub(crate) fn advance_to(&mut self, offset: usize) {
         let entering_else = self.else_targets.contains_key(&offset);
         if let Some(count) = self.pending_closers.remove(&offset) {
@@ -84,12 +88,47 @@ impl HighLevelEmitter {
                     self.stack = saved;
                 }
             } else {
-                // Restore the stack state saved before the branch body.
-                // This handles cases where the branch body terminated
-                // (throw/return/abort) and cleared the stack — the code
-                // after the branch still needs the pre-branch stack.
+                // Merge point after an if/else (or plain if).  Reconcile the
+                // stack states from both branches.
                 if let Some(saved) = self.branch_saved_stacks.remove(&offset) {
+                    let pre_depth = self
+                        .pre_branch_stack_depth
+                        .remove(&offset)
+                        .unwrap_or(0);
+
                     if self.stack.is_empty() && !saved.is_empty() {
+                        // Branch body terminated (throw/return/abort) and
+                        // cleared the stack — restore the saved state.
+                        self.stack = saved;
+                    } else if !self.stack.is_empty()
+                        && !saved.is_empty()
+                        && self.stack.len() == saved.len()
+                        && self.stack.len() > pre_depth
+                    {
+                        // Both branches produced stack values beyond the
+                        // pre-branch depth.  Unify them: emit assignments
+                        // inside the else-branch to rename its values to
+                        // match the then-branch names, then adopt the
+                        // then-branch stack so subsequent code references
+                        // the correct variable names regardless of which
+                        // branch was taken at runtime.
+                        let close_idx = self
+                            .statements
+                            .iter()
+                            .rposition(|s| s.trim() == "}")
+                            .unwrap_or(self.statements.len());
+                        let mut inserts = Vec::new();
+                        for i in pre_depth..self.stack.len() {
+                            if self.stack[i] != saved[i] {
+                                inserts.push(format!(
+                                    "let {} = {};",
+                                    saved[i], self.stack[i]
+                                ));
+                            }
+                        }
+                        for (j, stmt) in inserts.into_iter().enumerate() {
+                            self.statements.insert(close_idx + j, stmt);
+                        }
                         self.stack = saved;
                     }
                 }
@@ -98,15 +137,9 @@ impl HighLevelEmitter {
 
         self.close_loops_at(offset);
 
-        if let Some(count) = self.else_targets.remove(&offset) {
-            for _ in 0..count {
-                self.statements.push("else {".into());
-            }
-            // Keep the saved pre-branch snapshot until the else block closes.
-            // If the else branch terminates (throw/abort/return), merge-time
-            // restoration still needs this snapshot.
-        }
-
+        // Catch/finally MUST be emitted before else so that exception handlers
+        // appear as siblings of the try block rather than nesting inside an
+        // else branch when both targets share the same offset.
         if let Some(count) = self.catch_targets.remove(&offset) {
             for _ in 0..count {
                 self.statements.push("catch {".into());
@@ -121,6 +154,15 @@ impl HighLevelEmitter {
             for _ in 0..count {
                 self.statements.push("finally {".into());
             }
+        }
+
+        if let Some(count) = self.else_targets.remove(&offset) {
+            for _ in 0..count {
+                self.statements.push("else {".into());
+            }
+            // Keep the saved pre-branch snapshot until the else block closes.
+            // If the else branch terminates (throw/abort/return), merge-time
+            // restoration still needs this snapshot.
         }
 
         if let Some(entries) = self.do_while_headers.remove(&offset) {
@@ -153,8 +195,9 @@ impl HighLevelEmitter {
                 self.statements.push("}".into());
             }
         }
-        Self::rewrite_for_loops(&mut self.statements);
         Self::rewrite_else_if_chains(&mut self.statements);
+        Self::collapse_overflow_checks(&mut self.statements);
+        Self::rewrite_for_loops(&mut self.statements);
         // Note: inline_single_use_temps is available but disabled by default
         // as it can be too aggressive for some use cases. Enable selectively.
         Self::inline_condition_temps(&mut self.statements);

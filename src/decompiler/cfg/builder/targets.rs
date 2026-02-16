@@ -69,8 +69,8 @@ impl<'a> CfgBuilder<'a> {
                 if bytes.len() != 8 {
                     return None;
                 }
-                let catch_delta = i32::from_le_bytes(bytes[0..4].try_into().unwrap()) as isize;
-                let finally_delta = i32::from_le_bytes(bytes[4..8].try_into().unwrap()) as isize;
+                let catch_delta = i32::from_le_bytes(bytes[0..4].try_into().ok()?) as isize;
+                let finally_delta = i32::from_le_bytes(bytes[4..8].try_into().ok()?) as isize;
 
                 let catch_target = (catch_delta != 0)
                     .then(|| base + catch_delta)

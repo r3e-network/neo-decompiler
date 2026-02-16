@@ -66,12 +66,14 @@ pub(super) fn write_manifest_methods(
             writeln!(output, "            throw new NotImplementedException();").unwrap();
         } else {
             let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+            let is_void = method.return_type == "Void";
             body::write_lifted_body(
                 output,
                 &slice,
                 Some(&labels),
                 warnings,
                 &context.body_context,
+                is_void,
             );
         }
 
@@ -140,7 +142,7 @@ fn write_script_entry_if_needed(
     let entry_signature = format_method_signature("ScriptEntry", "", "void");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, &slice, None, warnings, &context.body_context);
+    body::write_lifted_body(output, &slice, None, warnings, &context.body_context, true);
     writeln!(output, "        }}").unwrap();
     writeln!(output).unwrap();
 }
@@ -174,7 +176,7 @@ pub(super) fn write_fallback_entry(
     let entry_signature = format_method_signature(&entry_method_name, "", "void");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, &slice, None, warnings, &context.body_context);
+    body::write_lifted_body(output, &slice, None, warnings, &context.body_context, true);
     writeln!(output, "        }}").unwrap();
 }
 

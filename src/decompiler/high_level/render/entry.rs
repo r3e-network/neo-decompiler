@@ -82,6 +82,11 @@ pub(super) fn write_entry_method(
         None
     };
 
+    // Only mark void when the manifest explicitly declares Void return.
+    // Without manifest info we cannot know, so default to non-void (preserve
+    // stack-based return values).
+    let entry_is_void = use_manifest_entry && entry_return.is_none();
+
     let signature = match entry_return {
         Some(ret) => format!("fn {entry_name}({entry_params}) -> {ret}"),
         None => format!("fn {entry_name}({entry_params})"),
@@ -116,6 +121,7 @@ pub(super) fn write_entry_method(
         entry_param_labels.as_deref(),
         warnings,
         body_context,
+        entry_is_void,
     );
     writeln!(output, "    }}").unwrap();
 

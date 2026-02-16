@@ -22,6 +22,7 @@ pub(super) fn write_method_body(
     argument_labels: Option<&[String]>,
     warnings: &mut Vec<String>,
     context: &MethodBodyContext<'_>,
+    returns_void: bool,
 ) {
     let mut emitter = HighLevelEmitter::with_program(instructions);
     if let Some(labels) = argument_labels {
@@ -35,6 +36,7 @@ pub(super) fn write_method_body(
     emitter.set_method_arg_counts_by_offset(context.method_arg_counts_by_offset);
     emitter.set_call_targets_by_offset(context.call_targets_by_offset);
     emitter.set_calla_targets_by_offset(context.calla_targets_by_offset);
+    emitter.set_returns_void(returns_void);
     for instruction in instructions {
         emitter.advance_to(instruction.offset);
         emitter.emit_instruction(instruction);

@@ -80,7 +80,8 @@ impl HighLevelEmitter {
             let mut args = Vec::with_capacity(arg_count);
             for _ in 0..arg_count {
                 if let Some(value) = self.pop_stack_value() {
-                    // Neo internal calls consume arguments from the top of stack first.
+                    // Internal calls use right-to-left push order (C convention),
+                    // so popping yields arguments in correct left-to-right display order.
                     args.push(value);
                 }
             }

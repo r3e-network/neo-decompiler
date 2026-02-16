@@ -66,6 +66,13 @@ pub(crate) struct HighLevelEmitter {
     /// Resolved internal targets keyed by CALLA instruction offset.
     /// Used when pointer provenance is outside the current method body.
     calla_targets_by_offset: BTreeMap<usize, usize>,
+    /// Pre-branch stack depths keyed by merge offset.  Used to detect
+    /// when both branches of an if/else produce stack values that must
+    /// be unified at the merge point (phi-variable reconciliation).
+    pre_branch_stack_depth: BTreeMap<usize, usize>,
+    /// When true, the current method is declared void in the manifest.
+    /// `emit_return` will emit `return;` instead of `return <value>;`.
+    returns_void: bool,
 }
 
 pub(crate) struct HighLevelOutput {

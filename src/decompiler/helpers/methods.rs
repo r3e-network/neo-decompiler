@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::{ContractManifest, ManifestMethod};
@@ -116,6 +116,17 @@ fn collect_post_ret_method_offsets(
 ) -> Vec<usize> {
     let known_offsets: BTreeSet<usize> = instructions.iter().map(|ins| ins.offset).collect();
     let control_flow_edges = collect_control_flow_edges(instructions, &known_offsets);
+
+    // Build HashMap indices for O(1) lookups instead of 3× O(n) linear scans.
+    // edges_by_target: target_offset -> list of source offsets
+    let mut edges_by_target: HashMap<usize, Vec<usize>> = HashMap::new();
+    // edges_by_source: source_offset -> list of target offsets
+    let mut edges_by_source: HashMap<usize, Vec<usize>> = HashMap::new();
+    for &(source, target) in &control_flow_edges {
+        edges_by_target.entry(target).or_default().push(source);
+        edges_by_source.entry(source).or_default().push(target);
+    }
+
     let mut starts = instructions
         .windows(2)
         .filter_map(|pair| {
@@ -131,21 +142,27 @@ fn collect_post_ret_method_offsets(
                 .next()
                 .copied()
                 .unwrap_or(usize::MAX);
-            let has_incoming_from_same_baseline_method =
-                control_flow_edges.iter().any(|(source, target)| {
-                    *target == next.offset && *source >= method_start && *source < method_end
-                });
-            let has_incoming_from_other_baseline_method =
-                control_flow_edges.iter().any(|(source, target)| {
-                    *target == next.offset && (*source < method_start || *source >= method_end)
-                });
+
+            let incoming = edges_by_target.get(&next.offset);
+            let has_incoming_from_same_baseline_method = incoming.is_some_and(|sources| {
+                sources
+                    .iter()
+                    .any(|&s| s >= method_start && s < method_end)
+            });
+            let has_incoming_from_other_baseline_method = incoming.is_some_and(|sources| {
+                sources
+                    .iter()
+                    .any(|&s| s < method_start || s >= method_end)
+            });
             let has_same_baseline_incoming_later_in_range =
-                control_flow_edges.iter().any(|(source, target)| {
-                    *source >= method_start
-                        && *source < method_end
-                        && *target > next.offset
-                        && *target < method_end
+                known_offsets.range(method_start..method_end).any(|&src_off| {
+                    edges_by_source.get(&src_off).is_some_and(|targets| {
+                        targets
+                            .iter()
+                            .any(|&t| t > next.offset && t < method_end)
+                    })
                 });
+
             let detached_tail_after_terminator = has_incoming_from_other_baseline_method
                 || (!has_incoming_from_same_baseline_method
                     && !has_same_baseline_incoming_later_in_range);

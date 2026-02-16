@@ -30,7 +30,7 @@ impl HighLevelEmitter {
     }
 }
 
-const MIN_GUARDED_GOTO_CASES: usize = 6;
+const MIN_GUARDED_GOTO_CASES: usize = 2;
 
 fn try_build_guarded_goto_switch(
     statements: &[String],
