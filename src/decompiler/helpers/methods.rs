@@ -66,6 +66,7 @@ pub(in super::super) fn inferred_method_starts(
     }
 
     starts.extend(collect_initslot_offsets(instructions));
+    starts.extend(collect_call_targets(instructions));
     let baseline_starts = starts.clone();
     starts.extend(collect_post_ret_method_offsets(
         instructions,
@@ -108,6 +109,27 @@ pub(in super::super) fn collect_initslot_offsets(instructions: &[Instruction]) -
     offsets.sort_unstable();
     offsets.dedup();
     offsets
+}
+
+/// Collect targets of internal `CALL` / `CALL_L` instructions.
+///
+/// Each CALL target is a method entry point that may lack an `INITSLOT`
+/// prologue (e.g. simple helpers that use no locals/arguments).  Adding
+/// these as baseline method starts prevents their bodies from being
+/// inlined into the caller's method body.
+fn collect_call_targets(instructions: &[Instruction]) -> Vec<usize> {
+    let known_offsets: BTreeSet<usize> = instructions.iter().map(|ins| ins.offset).collect();
+    let mut targets = Vec::new();
+    for instruction in instructions {
+        if matches!(instruction.opcode, OpCode::Call | OpCode::Call_L) {
+            if let Some(target) = relative_target(instruction, &known_offsets) {
+                targets.push(target);
+            }
+        }
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    targets
 }
 
 fn collect_post_ret_method_offsets(

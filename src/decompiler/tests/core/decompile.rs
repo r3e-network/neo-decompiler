@@ -133,12 +133,12 @@ fn decompile_lifts_relative_calls_without_control_flow_warning() {
         .expect("high-level output");
 
     assert!(
-        high_level.contains("call_0x0002()"),
-        "CALL should be lifted to a relative call placeholder: {high_level}"
+        high_level.contains("sub_0x0002()"),
+        "CALL should resolve to inferred method name: {high_level}"
     );
     assert!(
-        high_level.contains("call_0x0007()"),
-        "CALL_L should be lifted to a relative call placeholder: {high_level}"
+        high_level.contains("sub_0x0007()"),
+        "CALL_L should resolve to inferred method name: {high_level}"
     );
     assert!(
         !high_level.contains("control flow not yet lifted"),
@@ -474,8 +474,8 @@ fn decompile_multiple_sequential_calls() {
         .as_deref()
         .expect("high-level output");
     assert!(
-        high_level.contains("call_"),
-        "sequential CALL instructions should each produce a call placeholder: {high_level}"
+        high_level.contains("sub_0x") || high_level.contains("call_"),
+        "sequential CALL instructions should each produce a call expression: {high_level}"
     );
 }
 
