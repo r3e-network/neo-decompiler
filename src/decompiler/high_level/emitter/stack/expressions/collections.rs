@@ -27,7 +27,10 @@ impl HighLevelEmitter {
                     elements.push(missing_temp);
                 }
             }
-            elements.reverse();
+            // Neo VM PACK: first popped item becomes array[0], second becomes
+            // array[1], etc.  Since we pop in stack order (top-first), the
+            // elements vector is already in correct array-index order — do NOT
+            // reverse.
             let temp = self.next_temp();
             let body = elements.join(", ");
             let ctor = match kind {
@@ -54,7 +57,10 @@ impl HighLevelEmitter {
         self.push_comment(instruction);
         if let Some(value) = self.pop_stack_value() {
             if let Some(elements) = self.packed_values_by_name.get(&value).cloned() {
-                for element in &elements {
+                // Neo VM UNPACK pushes array[n-1] first, array[0] last (on top).
+                // Our elements vector is in array-index order [0..n-1], so push
+                // in reverse so that elements[0] ends up on top of the stack.
+                for element in elements.iter().rev() {
                     self.stack.push(element.clone());
                 }
                 let count_temp = self.next_temp();

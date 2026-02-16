@@ -73,6 +73,10 @@ pub(crate) struct HighLevelEmitter {
     /// When true, the current method is declared void in the manifest.
     /// `emit_return` will emit `return;` instead of `return <value>;`.
     returns_void: bool,
+    /// Ranges `[start, end)` of finally bodies already registered.
+    /// Used to suppress duplicate `finally {` when an outer TRY's finally
+    /// target falls inside an inner TRY's already-registered finally body.
+    finally_body_ranges: Vec<(usize, usize)>,
 }
 
 pub(crate) struct HighLevelOutput {
