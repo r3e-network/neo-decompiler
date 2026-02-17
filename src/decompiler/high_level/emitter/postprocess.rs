@@ -11,3 +11,4 @@ mod inline;
 mod overflow_collapse;
 mod switches;
 mod util;
+mod while_loops;
