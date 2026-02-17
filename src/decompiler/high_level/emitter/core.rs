@@ -128,17 +128,15 @@ impl HighLevelEmitter {
                         self.stack = saved;
                     }
                 }
-
-                // Restore try block's exit stack at the resume point after
-                // a try-catch.  The catch handler cleared the stack, but
-                // the normal (non-exception) path carries values through
-                // ENDTRY that must be visible to subsequent instructions.
-                if let Some(saved) = self.try_exit_stacks.remove(&offset) {
-                    if self.stack.is_empty() {
-                        self.stack = saved;
-                    }
-                }
             }
+        }
+
+        // Restore try block's exit stack at the resume point after a
+        // try-catch.  This must live outside the pending_closers gate
+        // because the catch closer may be registered at the finally
+        // offset rather than the ENDTRY target offset.
+        if let Some(saved) = self.try_exit_stacks.remove(&offset) {
+            self.stack = saved;
         }
 
         self.close_loops_at(offset);
