@@ -133,6 +133,76 @@ impl HighLevelEmitter {
         }
     }
 
+    /// Converts `label_X: <setup> if COND { <body> goto label_X; <phi> }` into
+    /// `<setup> while COND { <body> <phi> <setup> }` — recovering while-loop
+    /// semantics from backward unconditional JMPs inside if-blocks.
+    pub(crate) fn rewrite_if_goto_to_while(statements: &mut Vec<String>) {
+        let mut index = 0;
+        while index < statements.len() {
+            let trimmed = statements[index].trim().to_string();
+
+            // Match: label_0xXXXX:
+            let Some(label) = trimmed.strip_suffix(':') else {
+                index += 1;
+                continue;
+            };
+            if !label.starts_with("label_") {
+                index += 1;
+                continue;
+            }
+
+            // Find next `if ... {` after the label
+            let Some(if_idx) = Self::next_if_line(statements, index) else {
+                index += 1;
+                continue;
+            };
+
+            // Find the matching `}`
+            let Some(end_idx) = Self::find_block_end(statements, if_idx) else {
+                index += 1;
+                continue;
+            };
+            if statements[end_idx].trim() != "}" {
+                index += 1;
+                continue;
+            }
+
+            // Find `goto label_X;` inside the if-block
+            let goto_target = format!("goto {label};");
+            let Some(goto_idx) = (if_idx + 1..end_idx)
+                .find(|&i| statements[i].trim() == goto_target)
+            else {
+                index += 1;
+                continue;
+            };
+
+            // Collect setup lines (non-empty, non-comment) between label and if
+            let setup_lines: Vec<String> = (index + 1..if_idx)
+                .filter(|&i| {
+                    let t = statements[i].trim();
+                    !t.is_empty() && !t.starts_with("//")
+                })
+                .map(|i| statements[i].clone())
+                .collect();
+
+            // Transform: remove label, change if→while, remove goto,
+            // append setup copies at end of loop body
+            statements[index].clear(); // remove label
+            let if_line = statements[if_idx].trim().to_string();
+            statements[if_idx] = if_line.replacen("if ", "while ", 1);
+            statements[goto_idx].clear(); // remove goto
+
+            // Insert setup copies before closing `}`
+            if !setup_lines.is_empty() {
+                for (j, line) in setup_lines.into_iter().enumerate() {
+                    statements.insert(end_idx + j, line);
+                }
+            }
+
+            index += 1;
+        }
+    }
+
     /// Removes `goto label_X;` when the very next code line is `label_X:`.
     pub(crate) fn eliminate_fallthrough_gotos(statements: &mut [String]) {
         let mut index = 0;
@@ -154,6 +224,13 @@ impl HighLevelEmitter {
             }
             index += 1;
         }
+    }
+
+    fn next_if_line(statements: &[String], start: usize) -> Option<usize> {
+        (start + 1..statements.len()).find(|&i| {
+            let t = statements[i].trim();
+            t.starts_with("if ") && t.ends_with('{')
+        })
     }
 
     fn next_code_line(statements: &[String], start: usize) -> Option<usize> {

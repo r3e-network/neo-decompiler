@@ -194,4 +194,19 @@ impl HighLevelEmitter {
             .iter()
             .any(|ctx| ctx.break_offset == target || ctx.continue_offset == target)
     }
+
+    /// Pre-register labels for backward unconditional JMP targets so that
+    /// `advance_to` emits them before the target instruction is processed.
+    pub(in super::super) fn pre_register_backward_jump_labels(&mut self) {
+        for instruction in &self.program {
+            if !matches!(instruction.opcode, OpCode::Jmp | OpCode::Jmp_L) {
+                continue;
+            }
+            if let Some(target) = self.jump_target(instruction) {
+                if target < instruction.offset && self.index_by_offset.contains_key(&target) {
+                    self.transfer_labels.insert(target);
+                }
+            }
+        }
+    }
 }

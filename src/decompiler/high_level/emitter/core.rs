@@ -13,6 +13,7 @@ impl HighLevelEmitter {
             emitter.index_by_offset.insert(instruction.offset, index);
         }
         emitter.analyze_do_while_loops();
+        emitter.pre_register_backward_jump_labels();
         emitter
     }
 
@@ -214,6 +215,7 @@ impl HighLevelEmitter {
         Self::rewrite_else_if_chains(&mut self.statements);
         Self::collapse_overflow_checks(&mut self.statements);
         Self::rewrite_goto_do_while(&mut self.statements);
+        Self::rewrite_if_goto_to_while(&mut self.statements);
         Self::eliminate_fallthrough_gotos(&mut self.statements);
         Self::rewrite_for_loops(&mut self.statements);
         // Note: inline_single_use_temps is available but disabled by default
