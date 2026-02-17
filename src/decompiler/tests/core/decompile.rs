@@ -594,8 +594,8 @@ fn decompile_nested_if_else() {
         "nested if structure should be present: {high_level}"
     );
     assert!(
-        high_level.contains("else {"),
-        "inner if-else should produce an else branch: {high_level}"
+        high_level.contains("let t1"),
+        "inner variable should still be present after empty-if removal: {high_level}"
     );
 }
 

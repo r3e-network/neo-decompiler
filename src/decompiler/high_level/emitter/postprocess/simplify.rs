@@ -2,8 +2,6 @@ use super::super::HighLevelEmitter;
 
 impl HighLevelEmitter {
     /// Collapses `if true { ... }` blocks into their body.
-    /// The Neo C# compiler emits `PUSHT; JMPIFNOT` for unconditional
-    /// default branches (e.g. switch defaults, enum parse fallbacks).
     pub(crate) fn collapse_if_true(statements: &mut Vec<String>) {
         let mut index = 0;
         while index < statements.len() {
@@ -19,10 +17,109 @@ impl HighLevelEmitter {
                 index += 1;
                 continue;
             }
-            // Remove the `if true {` and closing `}`
             statements.remove(end);
             statements.remove(index);
+        }
+    }
+
+    /// Inverts `if cond { } else { ... }` → `if !(cond) { ... }`.
+    /// The Neo compiler emits JMPNE/JMPEQ patterns that produce empty
+    /// if-bodies with all logic in the else branch.
+    pub(crate) fn invert_empty_if_else(statements: &mut Vec<String>) {
+        let mut index = 0;
+        while index < statements.len() {
+            let trimmed = statements[index].trim();
+            if !trimmed.starts_with("if ") || !trimmed.ends_with('{') {
+                index += 1;
+                continue;
+            }
+            // Check if body is empty (only comments between `if` and `}`)
+            let mut j = index + 1;
+            while j < statements.len() {
+                let t = statements[j].trim();
+                if !t.is_empty() && !t.starts_with("//") {
+                    break;
+                }
+                j += 1;
+            }
+            if j >= statements.len() || statements[j].trim() != "}" {
+                index += 1;
+                continue;
+            }
+            let close_if = j;
+            // Next line must be `else {`
+            if close_if + 1 >= statements.len() || statements[close_if + 1].trim() != "else {" {
+                index += 1;
+                continue;
+            }
+            let else_line = close_if + 1;
+            let Some(else_end) = Self::find_block_end(statements, else_line) else {
+                index += 1;
+                continue;
+            };
+            // Extract and negate condition
+            let indent = &statements[index][..statements[index].len() - trimmed.len()];
+            let cond = &trimmed[3..trimmed.len() - 2]; // strip "if " and " {"
+            let negated = Self::negate_condition(cond);
+            // Replace: remove empty if body + else wrapper, rewrite header
+            statements[index] = format!("{indent}if {negated} {{");
+            // Remove closing `}` of else block, then the `}` and `else {` lines.
+            // Comments from the empty if-body are kept as bytecode annotations.
+            statements.remove(else_end);
+            statements.drain(close_if..=else_line);
             // Don't advance — re-check at same index
         }
+    }
+
+    /// Removes `if cond { }` blocks with no else branch (dead no-op conditionals).
+    pub(crate) fn remove_empty_if(statements: &mut Vec<String>) {
+        let mut index = 0;
+        while index < statements.len() {
+            let trimmed = statements[index].trim();
+            if !trimmed.starts_with("if ") || !trimmed.ends_with('{') {
+                index += 1;
+                continue;
+            }
+            let mut j = index + 1;
+            while j < statements.len() {
+                let t = statements[j].trim();
+                if !t.is_empty() && !t.starts_with("//") {
+                    break;
+                }
+                j += 1;
+            }
+            if j >= statements.len() || statements[j].trim() != "}" {
+                index += 1;
+                continue;
+            }
+            // Must NOT be followed by else
+            if j + 1 < statements.len() && statements[j + 1].trim().starts_with("else") {
+                index += 1;
+                continue;
+            }
+            statements.drain(index..=j);
+        }
+    }
+
+    fn negate_condition(cond: &str) -> String {
+        let cond = cond.trim();
+        // Flip comparison operators
+        for (op, neg) in [
+            (" == ", " != "),
+            (" != ", " == "),
+            (" >= ", " < "),
+            (" <= ", " > "),
+            (" > ", " <= "),
+            (" < ", " >= "),
+        ] {
+            if let Some(pos) = cond.find(op) {
+                return format!("{}{}{}", &cond[..pos], neg, &cond[pos + op.len()..]);
+            }
+        }
+        // Strip leading `!`
+        if let Some(inner) = cond.strip_prefix('!') {
+            return inner.to_string();
+        }
+        format!("!({cond})")
     }
 }
