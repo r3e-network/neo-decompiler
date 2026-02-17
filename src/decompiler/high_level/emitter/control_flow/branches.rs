@@ -123,7 +123,7 @@ impl HighLevelEmitter {
         let closer_entry = self.pending_closers.entry(false_target).or_insert(0);
         *closer_entry += 1;
 
-        if let Some((jump_offset, jump_target)) = self.detect_else(false_target) {
+        if let Some((jump_offset, jump_target)) = self.detect_else(instruction.offset, false_target) {
             if !self.is_loop_control_target(jump_target)
                 && !self.else_targets.contains_key(&false_target)
             {
@@ -138,7 +138,7 @@ impl HighLevelEmitter {
                     .entry(jump_target)
                     .or_insert(self.stack.len());
             }
-        } else if let Some(else_end) = self.detect_implicit_else(false_target) {
+        } else if let Some(else_end) = self.detect_implicit_else(instruction.offset, false_target) {
             if !self.else_targets.contains_key(&false_target) {
                 let else_entry = self.else_targets.entry(false_target).or_insert(0);
                 *else_entry += 1;
@@ -223,7 +223,7 @@ impl HighLevelEmitter {
         *closer_entry += 1;
 
         if loop_jump.is_none() {
-            if let Some((jump_offset, jump_target)) = self.detect_else(false_target) {
+            if let Some((jump_offset, jump_target)) = self.detect_else(instruction.offset, false_target) {
                 if !self.is_loop_control_target(jump_target)
                     && !self.else_targets.contains_key(&false_target)
                 {
@@ -238,7 +238,7 @@ impl HighLevelEmitter {
                         .entry(jump_target)
                         .or_insert(self.stack.len());
                 }
-            } else if let Some(else_end) = self.detect_implicit_else(false_target) {
+            } else if let Some(else_end) = self.detect_implicit_else(instruction.offset, false_target) {
                 if !self.else_targets.contains_key(&false_target) {
                     let else_entry = self.else_targets.entry(false_target).or_insert(0);
                     *else_entry += 1;
@@ -249,7 +249,11 @@ impl HighLevelEmitter {
         }
     }
 
-    fn detect_else(&self, false_offset: usize) -> Option<(usize, usize)> {
+    fn detect_else(
+        &self,
+        branch_offset: usize,
+        false_offset: usize,
+    ) -> Option<(usize, usize)> {
         let target_index = *self.index_by_offset.get(&false_offset)?;
         if target_index == 0 {
             return None;
@@ -263,11 +267,29 @@ impl HighLevelEmitter {
             return None;
         }
         let target = self.forward_jump_target(jump)?;
-        if target > false_offset {
-            Some((jump.offset, target))
-        } else {
-            None
+        if target <= false_offset {
+            return None;
         }
+
+        // Guard against guarded-goto switch patterns: if any conditional branch
+        // outside the current branch has a forward target that lands between
+        // `branch_offset` (exclusive) and `jump.offset` (inclusive), the JMP
+        // belongs to that branch's case body — not to our if-body.  Treating
+        // it as an else-jump would swallow the case's break goto.
+        let jump_offset = jump.offset;
+        let has_external_entry = self.program.iter().any(|ins| {
+            Self::is_conditional_branch(ins.opcode)
+                && ins.offset < branch_offset
+                && self
+                    .forward_jump_target(ins)
+                    .map(|t| t > branch_offset && t <= jump_offset)
+                    .unwrap_or(false)
+        });
+        if has_external_entry {
+            return None;
+        }
+
+        Some((jump_offset, target))
     }
 
     /// Detect an implicit else branch when the if-true body ends with a
@@ -278,7 +300,11 @@ impl HighLevelEmitter {
     /// Returns `Some(else_end_offset)` — the offset where the else closer `}`
     /// should be placed.  The caller must NOT insert a `skip_jumps` entry
     /// (there is no JMP to skip).
-    fn detect_implicit_else(&self, false_offset: usize) -> Option<usize> {
+    fn detect_implicit_else(
+        &self,
+        branch_offset: usize,
+        false_offset: usize,
+    ) -> Option<usize> {
         let target_index = *self.index_by_offset.get(&false_offset)?;
         if target_index == 0 {
             return None;
@@ -307,6 +333,37 @@ impl HighLevelEmitter {
         // Don't create an else around catch/finally handlers.
         if self.catch_targets.contains_key(&false_offset)
             || self.finally_targets.contains_key(&false_offset)
+        {
+            return None;
+        }
+
+        // Don't create an implicit else when an inner conditional branch
+        // within the if-body also targets false_offset.  Such an escape
+        // path means the if-body does NOT always terminate — the inner
+        // branch can skip the terminator and reach false_offset directly.
+        // Wrapping the continuation in else { } would be structurally wrong.
+        let has_inner_escape = self.program.iter().any(|ins| {
+            ins.offset > branch_offset
+                && ins.offset < false_offset
+                && Self::is_conditional_branch(ins.opcode)
+                && self.forward_jump_target(ins) == Some(false_offset)
+        });
+        if has_inner_escape {
+            return None;
+        }
+
+        // Don't create an implicit else when multiple if-blocks close at
+        // the same offset (pending_closers count > 1).  The current
+        // if-block already incremented the closer count before this call,
+        // so count > 1 means an enclosing if also closes here.  The
+        // continuation code belongs to the enclosing scope, not just this
+        // inner if — wrapping it in else { } would be structurally wrong.
+        if self
+            .pending_closers
+            .get(&false_offset)
+            .copied()
+            .unwrap_or(0)
+            > 1
         {
             return None;
         }
@@ -345,6 +402,26 @@ impl HighLevelEmitter {
         });
         if !body_has_substance {
             return None;
+        }
+
+        // Don't create an implicit else inside a finally block when the
+        // else body contains sequential cleanup code (has ENDFINALLY).
+        // Code after an if inside finally is normally sequential — wrapping
+        // it in else { } would make the post-if code conditional when it
+        // should be unconditional.  However, when the compiler omits
+        // ENDFINALLY because all paths abort/throw, the else IS genuine
+        // (both branches are noreturn), so we allow it.
+        let inside_finally = self
+            .finally_body_ranges
+            .iter()
+            .any(|&(start, end)| false_offset >= start && false_offset < end);
+        if inside_finally {
+            let has_endfinally = self.program[target_index..end_index]
+                .iter()
+                .any(|ins| matches!(ins.opcode, OpCode::Endfinally));
+            if has_endfinally {
+                return None;
+            }
         }
 
         Some(else_end)

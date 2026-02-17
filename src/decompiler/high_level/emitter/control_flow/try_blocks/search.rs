@@ -17,6 +17,7 @@ impl HighLevelEmitter {
         // To avoid grabbing ENDTRYs from sibling or nested TRY blocks, we
         // track TRY nesting depth: only consider ENDTRYs at depth 0.
         let mut first_forward = None;
+        let mut last_escaping = None;
         let mut try_depth: usize = 0;
         for (&offset, &index) in self.index_by_offset.range(start..end) {
             let instruction = self.program.get(index)?;
@@ -48,7 +49,12 @@ impl HighLevelEmitter {
             if let Some(target) = self.forward_jump_target(instruction) {
                 if target > instruction.offset {
                     if target >= end {
-                        return Some((offset, target));
+                        // Prefer the LAST escaping ENDTRY — that is the
+                        // normal try-body exit sitting right before the
+                        // catch/finally handler.  Earlier escaping ENDTRYs
+                        // are early exits (break/return inside loops) and
+                        // should be emitted, not silently consumed.
+                        last_escaping = Some((offset, target));
                     }
                     if first_forward.is_none() {
                         first_forward = Some((offset, target));
@@ -56,7 +62,7 @@ impl HighLevelEmitter {
                 }
             }
         }
-        first_forward
+        last_escaping.or(first_forward)
     }
 
     pub(super) fn find_endfinally_end(&self, start: usize) -> Option<(usize, usize)> {

@@ -230,6 +230,18 @@ impl HighLevelEmitter {
         self.push_comment(instruction);
         match self.jump_target(instruction) {
             Some(target) => {
+                // When an ENDTRY targets at or beyond a loop's break offset,
+                // it acts as a `break` — exiting both the try block and the
+                // enclosing loop.
+                if self
+                    .loop_stack
+                    .iter()
+                    .rev()
+                    .any(|ctx| target >= ctx.break_offset)
+                {
+                    self.statements.push("break;".into());
+                    return;
+                }
                 if self.index_by_offset.contains_key(&target) {
                     self.transfer_labels.insert(target);
                 }

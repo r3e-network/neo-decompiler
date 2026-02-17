@@ -1,4 +1,4 @@
-use crate::instruction::Instruction;
+use crate::instruction::{Instruction, OpCode};
 
 use super::super::super::{
     convert_target_name, format_type_operand, HighLevelEmitter, LiteralValue,
@@ -75,15 +75,16 @@ impl HighLevelEmitter {
             }
 
             // Neo VM UNPACK: pops a compound type, pushes each element, then pushes the count.
-            // For unknown shapes, synthesize a small placeholder stack shape plus count.
-            // Four placeholders cover common tuple/map-entry patterns without requiring
-            // brittle lookahead over downstream stack consumers.
-            const UNKNOWN_UNPACK_PLACEHOLDER_COUNT: usize = 4;
+            // Infer the actual element count by scanning forward: after UNPACK the
+            // typical pattern is DROP (count) followed by N single-pop instructions
+            // (STLOC/STARG/STSFLD/DROP) that consume the elements.  If DUP preceded
+            // UNPACK, one of those pops consumes the original (non-DUP'd) array.
+            let element_count = self.infer_unpack_element_count(instruction);
             let elements_temp = self.next_temp();
             self.statements.push(format!(
                 "let {elements_temp} = unpack({value}); // unknown unpack source"
             ));
-            for index in 0..UNKNOWN_UNPACK_PLACEHOLDER_COUNT {
+            for index in 0..element_count {
                 let element_temp = self.next_temp();
                 self.statements.push(format!(
                     "let {element_temp} = unpack_item({elements_temp}, {index}); // synthetic unpack element"
@@ -99,6 +100,82 @@ impl HighLevelEmitter {
         } else {
             self.stack_underflow(instruction, 1);
         }
+    }
+
+    /// Infer the actual element count for an UNPACK with unknown source by
+    /// scanning forward in the instruction stream.  The typical post-UNPACK
+    /// pattern is: DROP (count), then N × single-pop instructions (STLOC,
+    /// STARG, STSFLD, DROP) that consume the elements.  If DUP preceded
+    /// UNPACK, one of those trailing pops consumes the original array.
+    fn infer_unpack_element_count(&self, instruction: &Instruction) -> usize {
+        const DEFAULT_COUNT: usize = 4;
+
+        let Some(&unpack_index) = self.index_by_offset.get(&instruction.offset) else {
+            return DEFAULT_COUNT;
+        };
+
+        // Scan forward: first single-pop should be DROP (count).
+        let mut cursor = unpack_index + 1;
+        if cursor >= self.program.len() {
+            return DEFAULT_COUNT;
+        }
+        if self.program[cursor].opcode != OpCode::Drop {
+            return DEFAULT_COUNT;
+        }
+        cursor += 1; // skip the count DROP
+
+        // Count consecutive single-pop instructions after the count DROP.
+        let mut pops = 0usize;
+        while cursor < self.program.len() && Self::is_single_pop(self.program[cursor].opcode) {
+            pops += 1;
+            cursor += 1;
+        }
+
+        if pops == 0 {
+            return DEFAULT_COUNT;
+        }
+
+        // If DUP preceded UNPACK, one pop consumes the original array copy.
+        let has_dup_before = unpack_index > 0
+            && self.program[unpack_index - 1].opcode == OpCode::Dup;
+        let count = if has_dup_before {
+            pops.saturating_sub(1)
+        } else {
+            pops
+        };
+
+        if count == 0 { DEFAULT_COUNT } else { count }
+    }
+
+    fn is_single_pop(opcode: OpCode) -> bool {
+        matches!(
+            opcode,
+            OpCode::Drop
+                | OpCode::Stloc0
+                | OpCode::Stloc1
+                | OpCode::Stloc2
+                | OpCode::Stloc3
+                | OpCode::Stloc4
+                | OpCode::Stloc5
+                | OpCode::Stloc6
+                | OpCode::Stloc
+                | OpCode::Starg0
+                | OpCode::Starg1
+                | OpCode::Starg2
+                | OpCode::Starg3
+                | OpCode::Starg4
+                | OpCode::Starg5
+                | OpCode::Starg6
+                | OpCode::Starg
+                | OpCode::Stsfld0
+                | OpCode::Stsfld1
+                | OpCode::Stsfld2
+                | OpCode::Stsfld3
+                | OpCode::Stsfld4
+                | OpCode::Stsfld5
+                | OpCode::Stsfld6
+                | OpCode::Stsfld
+        )
     }
 
     pub(in super::super::super) fn emit_convert(&mut self, instruction: &Instruction) {

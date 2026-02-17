@@ -121,6 +121,14 @@ impl HighLevelEmitter {
                     .or(resume_target)
                     .or_else(|| self.program.last().map(|i| i.offset + 1));
                 if let Some(end) = finally_end {
+                    // Record the finally body range even when ENDFINALLY is
+                    // absent (the compiler omits it when all paths inside the
+                    // finally block terminate unconditionally via abort/throw).
+                    // This lets detect_implicit_else avoid wrapping sequential
+                    // code inside finally blocks in spurious else branches.
+                    if endfinally_end.is_none() {
+                        self.finally_body_ranges.push((finally, end));
+                    }
                     let closer_entry = self.pending_closers.entry(end).or_insert(0);
                     *closer_entry += 1;
                 }

@@ -39,6 +39,10 @@ const OVERFLOW_BOUNDS: &[&str] = &[
     "-2147483648",          // i32 min
     "0",                    // u32 min (unsigned range check)
     "-9223372036854775808", // i64 min
+    "2147483647",           // i32 max (upper bound check)
+    "4294967295",           // u32 max (upper bound check)
+    "9223372036854775807",  // i64 max (upper bound check)
+    "18446744073709551615", // u64 max (upper bound check)
 ];
 
 impl HighLevelEmitter {
@@ -75,6 +79,10 @@ struct OverflowCollapse {
     blank_end: usize,
     /// Whether this is a checked (throw on overflow) pattern.
     is_checked: bool,
+    /// For checked patterns: optional `(else_open_idx, else_close_idx)` to unwrap.
+    /// The `else {` line and its matching `}` are blanked, but the content inside
+    /// is preserved (it's the continuation of the function).
+    else_unwrap: Option<(usize, usize)>,
 }
 
 /// Return the index of the next non-empty, non-comment line at or after `start`.
@@ -125,12 +133,15 @@ fn try_match_overflow(statements: &[String], idx: usize) -> Option<OverflowColla
         return None;
     }
     // Verify the condition references our DUP variable
-    if !line3.contains(&format!("{dup_var} <")) && !line3.contains(&format!("{dup_var} ==")) {
+    if !line3.contains(&format!("{dup_var} <"))
+        && !line3.contains(&format!("{dup_var} =="))
+        && !line3.contains(&format!("{dup_var} >"))
+    {
         return None;
     }
 
-    // Find the end of the entire overflow block (if + optional else).
-    let block_end = find_overflow_block_end(statements, if_idx)?;
+    // Find the end of just the if-block (not including any else).
+    let if_block_end = find_matching_brace(statements, if_idx)?;
 
     // Determine checked vs unchecked by inspecting the first code statement
     // inside the if body.
@@ -145,16 +156,38 @@ fn try_match_overflow(statements: &[String], idx: usize) -> Option<OverflowColla
         .as_deref()
         .map_or(false, |s| s.starts_with("throw("));
 
-    // Blank from the line after the operation through the block end.
-    // This includes the DUP, bound, if-check, and all nested blocks,
-    // plus any interleaved comment lines.
+    // For checked patterns, only blank the if-block (the throw guard).
+    // The else block (if any) contains the continuation of the function
+    // and must be preserved — we just unwrap it by removing `else {` and `}`.
+    //
+    // For unchecked patterns, blank the entire if+else block (the masking
+    // and sign-extension logic is all dead weight).
+    let (blank_end, else_unwrap) = if is_checked {
+        // Check if there's an else block to unwrap.
+        let unwrap = next_code_line(statements, if_block_end + 1).and_then(|next| {
+            let trimmed = statements[next].trim();
+            if trimmed == "else {" || trimmed == "} else {" {
+                let else_end = find_matching_brace(statements, next)?;
+                Some((next, else_end))
+            } else {
+                None
+            }
+        });
+        (if_block_end, unwrap)
+    } else {
+        // Unchecked: consume the entire if+else block.
+        let block_end = find_overflow_block_end(statements, if_idx)?;
+        (block_end, None)
+    };
+
     Some(OverflowCollapse {
         op_line: idx,
         expr: expr.to_string(),
         result_var: result_var.to_string(),
         blank_start: idx + 1,
-        blank_end: block_end,
+        blank_end,
         is_checked,
+        else_unwrap,
     })
 }
 
@@ -165,14 +198,30 @@ fn apply_collapse(statements: &mut Vec<String>, collapse: &OverflowCollapse) {
 
     // Rewrite the operation line with optional `checked()` wrapper.
     if collapse.is_checked {
+        // Avoid double-wrapping when both lower and upper bound checks
+        // are collapsed sequentially (the first collapse already added `checked()`).
+        let wrapped = if collapse.expr.starts_with("checked(") {
+            collapse.expr.clone()
+        } else {
+            format!("checked({})", collapse.expr)
+        };
         statements[collapse.op_line] =
-            format!("{indent}let {} = checked({});", collapse.result_var, collapse.expr);
+            format!("{indent}let {} = {wrapped};", collapse.result_var);
     }
     // For unchecked, the original `let tA = <expr>;` is already correct.
 
     // Blank all lines from the DUP through the closing brace.
     for i in collapse.blank_start..=collapse.blank_end {
         statements[i].clear();
+    }
+
+    // For checked patterns with an else block: unwrap the else by blanking
+    // the `else {` line and its matching `}`, preserving the content inside.
+    // This content is the continuation of the function that was incorrectly
+    // nested inside the else branch by the control-flow reconstruction.
+    if let Some((else_open, else_close)) = collapse.else_unwrap {
+        statements[else_open].clear();
+        statements[else_close].clear();
     }
 
     // Fix up dangling references: the STLOC after the overflow block may

@@ -212,6 +212,10 @@ pub fn build_call_graph(
         }
     }
 
+    // Second pass: resolve CALLA targets that load function pointers from
+    // argument slots (LDARG) by tracing back through callers.
+    resolve_ldarg_calla_targets(instructions, &mut edges, &table, &mut methods);
+
     CallGraph {
         methods: methods.into_values().collect(),
         edges,
@@ -297,6 +301,23 @@ fn static_load_index(instruction: &Instruction) -> Option<u8> {
     }
 }
 
+fn arg_load_index(instruction: &Instruction) -> Option<u8> {
+    match instruction.opcode {
+        OpCode::Ldarg0 => Some(0),
+        OpCode::Ldarg1 => Some(1),
+        OpCode::Ldarg2 => Some(2),
+        OpCode::Ldarg3 => Some(3),
+        OpCode::Ldarg4 => Some(4),
+        OpCode::Ldarg5 => Some(5),
+        OpCode::Ldarg6 => Some(6),
+        OpCode::Ldarg => match instruction.operand {
+            Some(Operand::U8(index)) => Some(index),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn slot_store_domain(instruction: &Instruction) -> Option<SlotDomain> {
     match instruction.opcode {
         OpCode::Stloc0 => Some(SlotDomain::Local(0)),
@@ -340,4 +361,170 @@ fn resolve_slot_pointer_target(
         return source.and_then(pusha_absolute_target);
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Second-pass inter-procedural CALLA resolution for LDARG patterns
+// ---------------------------------------------------------------------------
+
+/// Check if a CALLA instruction is preceded by LDARG and return the arg index.
+fn calla_ldarg_index(instructions: &[Instruction], calla_index: usize) -> Option<u8> {
+    let mut cursor = calla_index.checked_sub(1)?;
+    loop {
+        let prev = instructions.get(cursor)?;
+        if prev.opcode == OpCode::Nop {
+            cursor = cursor.checked_sub(1)?;
+            continue;
+        }
+        return arg_load_index(prev);
+    }
+}
+
+/// Extract the argument count from an INITSLOT instruction at the given method offset.
+fn initslot_arg_count_at(instructions: &[Instruction], method_offset: usize) -> Option<usize> {
+    instructions
+        .iter()
+        .find(|i| i.offset == method_offset && i.opcode == OpCode::Initslot)
+        .and_then(|i| match &i.operand {
+            Some(Operand::Bytes(bytes)) if bytes.len() >= 2 => Some(bytes[1] as usize),
+            _ => None,
+        })
+}
+
+/// Trace backwards from a CALL instruction to find the PUSHA target that was
+/// pushed as the `arg_index`-th argument (0-indexed).
+///
+/// Neo VM pops arguments top-first: the top of stack becomes arg0, the next
+/// item becomes arg1, etc.  So `arg0` is the last item pushed (0 items to
+/// skip) and `arg N` requires skipping N single-push instructions.
+fn trace_call_arg_to_pusha(
+    instructions: &[Instruction],
+    call_index: usize,
+    arg_index: u8,
+    callee_arg_count: usize,
+) -> Option<usize> {
+    if (arg_index as usize) >= callee_arg_count {
+        return None;
+    }
+    let skip_count = arg_index as usize;
+
+    let mut cursor = call_index.checked_sub(1)?;
+    let mut remaining = skip_count;
+
+    loop {
+        let instr = instructions.get(cursor)?;
+        if instr.opcode == OpCode::Nop {
+            cursor = cursor.checked_sub(1)?;
+            continue;
+        }
+
+        if remaining == 0 {
+            // This instruction should push the target argument.
+            if instr.opcode == OpCode::PushA {
+                return pusha_absolute_target(instr);
+            }
+            if let Some(slot) = local_load_index(instr) {
+                return resolve_slot_pointer_target(instructions, cursor, SlotDomain::Local(slot));
+            }
+            if let Some(slot) = static_load_index(instr) {
+                return resolve_slot_pointer_target(
+                    instructions,
+                    cursor,
+                    SlotDomain::Static(slot),
+                );
+            }
+            return None;
+        }
+
+        // Assume each non-NOP instruction in the arg-push sequence produces
+        // exactly one stack item (LDLOC, LDARG, PUSHA, PUSH*, etc.).
+        remaining -= 1;
+        cursor = cursor.checked_sub(1)?;
+    }
+}
+
+/// Second pass over call edges: resolve CALLA targets that load their function
+/// pointer from an argument slot (LDARG N) by tracing back through callers.
+fn resolve_ldarg_calla_targets(
+    instructions: &[Instruction],
+    edges: &mut Vec<CallEdge>,
+    table: &MethodTable,
+    methods: &mut BTreeMap<usize, MethodRef>,
+) {
+    // Build offset → instruction-index map.
+    let offset_to_index: BTreeMap<usize, usize> = instructions
+        .iter()
+        .enumerate()
+        .map(|(i, instr)| (instr.offset, i))
+        .collect();
+
+    // Collect unresolved CALLA sites preceded by LDARG.
+    // NOTE: edge.caller.offset may be inaccurate for internal helpers discovered
+    // during the first pass (the MethodTable was built before those methods were
+    // found).  Use the `methods` map — which now contains all first-pass
+    // discoveries — to find the true containing method for each CALLA.
+    let mut sites: Vec<(usize, u8, usize)> = Vec::new(); // (edge_index, arg_index, method_offset)
+    for (edge_idx, edge) in edges.iter().enumerate() {
+        if edge.opcode != "CALLA" || !matches!(edge.target, CallTarget::Indirect { .. }) {
+            continue;
+        }
+        let Some(&calla_idx) = offset_to_index.get(&edge.call_offset) else {
+            continue;
+        };
+        if let Some(arg_idx) = calla_ldarg_index(instructions, calla_idx) {
+            // Find the actual method containing this CALLA by looking up the
+            // largest method offset <= the CALLA offset in the methods map.
+            let actual_method_offset = methods
+                .range(..=edge.call_offset)
+                .next_back()
+                .map(|(&offset, _)| offset)
+                .unwrap_or(edge.caller.offset);
+            sites.push((edge_idx, arg_idx, actual_method_offset));
+        }
+    }
+
+    if sites.is_empty() {
+        return;
+    }
+
+    // Build caller index: callee_method_offset → [call_instruction_offset, …]
+    let mut callers_by_target: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for edge in edges.iter() {
+        if let CallTarget::Internal { method } = &edge.target {
+            if edge.opcode == "CALL" || edge.opcode == "CALL_L" {
+                callers_by_target
+                    .entry(method.offset)
+                    .or_default()
+                    .push(edge.call_offset);
+            }
+        }
+    }
+
+    for (edge_idx, arg_idx, method_offset) in &sites {
+        let Some(call_sites) = callers_by_target.get(method_offset) else {
+            continue;
+        };
+        let Some(callee_arg_count) = initslot_arg_count_at(instructions, *method_offset) else {
+            continue;
+        };
+
+        let mut resolved = None;
+        for &call_offset in call_sites {
+            let Some(&call_idx) = offset_to_index.get(&call_offset) else {
+                continue;
+            };
+            if let Some(target) =
+                trace_call_arg_to_pusha(instructions, call_idx, *arg_idx, callee_arg_count)
+            {
+                resolved = Some(target);
+                break;
+            }
+        }
+
+        if let Some(target) = resolved {
+            let callee = table.resolve_internal_target(target);
+            methods.insert(callee.offset, callee.clone());
+            edges[*edge_idx].target = CallTarget::Internal { method: callee };
+        }
+    }
 }
