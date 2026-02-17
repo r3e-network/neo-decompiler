@@ -80,6 +80,12 @@ pub(crate) struct HighLevelEmitter {
     /// Used to suppress duplicate `finally {` when an outer TRY's finally
     /// target falls inside an inner TRY's already-registered finally body.
     finally_body_ranges: Vec<(usize, usize)>,
+    /// Maps catch_target offset → resume offset after try-catch.
+    /// Used to save the try block's exit stack before catch clears it.
+    try_catch_resume: BTreeMap<usize, usize>,
+    /// Stack snapshots saved at try block exit, keyed by resume offset.
+    /// Restored after the catch/finally block closes.
+    try_exit_stacks: BTreeMap<usize, Vec<String>>,
 }
 
 pub(crate) struct HighLevelOutput {

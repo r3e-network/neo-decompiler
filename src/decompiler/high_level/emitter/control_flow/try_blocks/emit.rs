@@ -42,6 +42,13 @@ impl HighLevelEmitter {
             let catch_entry = self.catch_targets.entry(catch).or_insert(0);
             *catch_entry += 1;
 
+            // Record where execution resumes after this try-catch so the
+            // stack state from the try block's normal exit can be saved
+            // before the catch handler clears it.
+            if let Some(rt) = resume_target {
+                self.try_catch_resume.insert(catch, rt);
+            }
+
             let mut catch_end = finally_target.or(resume_target);
 
             // Search the catch body for its ENDTRY.  When catch_end is already
@@ -118,7 +125,7 @@ impl HighLevelEmitter {
                 // block terminates unconditionally (RET/THROW/ABORT).  Register
                 // the closer past the last instruction so `finish()` flushes it.
                 let finally_end = endfinally_end
-                    .or(resume_target)
+                    .or(resume_target.filter(|&rt| rt > finally))
                     .or_else(|| self.program.last().map(|i| i.offset + 1));
                 if let Some(end) = finally_end {
                     // Record the finally body range even when ENDFINALLY is

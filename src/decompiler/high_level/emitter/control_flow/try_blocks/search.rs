@@ -47,17 +47,21 @@ impl HighLevelEmitter {
                 continue;
             }
             if let Some(target) = self.forward_jump_target(instruction) {
-                if target > instruction.offset {
-                    if target >= end {
-                        // Prefer the LAST escaping ENDTRY — that is the
-                        // normal try-body exit sitting right before the
-                        // catch/finally handler.  Earlier escaping ENDTRYs
-                        // are early exits (break/return inside loops) and
-                        // should be emitted, not silently consumed.
-                        last_escaping = Some((offset, target));
+                // Self-referencing ENDTRY (operand 0) is used in
+                // try-catch-finally: the VM always runs the finally
+                // block first, so the operand is a don't-care value.
+                // Treat it as escaping with target = end.
+                let effective_target = if target == instruction.offset {
+                    end
+                } else {
+                    target
+                };
+                if effective_target > instruction.offset {
+                    if effective_target >= end {
+                        last_escaping = Some((offset, effective_target));
                     }
                     if first_forward.is_none() {
-                        first_forward = Some((offset, target));
+                        first_forward = Some((offset, effective_target));
                     }
                 }
             }

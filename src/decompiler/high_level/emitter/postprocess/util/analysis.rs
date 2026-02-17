@@ -42,7 +42,8 @@ impl HighLevelEmitter {
     }
 
     pub(in super::super) fn should_inline_condition(rhs: &str) -> bool {
-        rhs.contains(' ')
+        matches!(rhs, "true" | "false")
+            || rhs.contains(' ')
             || rhs.chars().any(|ch| {
                 matches!(
                     ch,

@@ -101,21 +101,12 @@ impl HighLevelEmitter {
                         .unwrap_or(0);
 
                     if self.stack.is_empty() && !saved.is_empty() {
-                        // Branch body terminated (throw/return/abort) and
-                        // cleared the stack — restore the saved state.
                         self.stack = saved;
                     } else if !self.stack.is_empty()
                         && !saved.is_empty()
                         && self.stack.len() == saved.len()
                         && self.stack.len() > pre_depth
                     {
-                        // Both branches produced stack values beyond the
-                        // pre-branch depth.  Unify them: emit assignments
-                        // inside the else-branch to rename its values to
-                        // match the then-branch names, then adopt the
-                        // then-branch stack so subsequent code references
-                        // the correct variable names regardless of which
-                        // branch was taken at runtime.
                         let close_idx = self
                             .statements
                             .iter()
@@ -136,6 +127,16 @@ impl HighLevelEmitter {
                         self.stack = saved;
                     }
                 }
+
+                // Restore try block's exit stack at the resume point after
+                // a try-catch.  The catch handler cleared the stack, but
+                // the normal (non-exception) path carries values through
+                // ENDTRY that must be visible to subsequent instructions.
+                if let Some(saved) = self.try_exit_stacks.remove(&offset) {
+                    if self.stack.is_empty() {
+                        self.stack = saved;
+                    }
+                }
             }
         }
 
@@ -145,6 +146,17 @@ impl HighLevelEmitter {
         // appear as siblings of the try block rather than nesting inside an
         // else branch when both targets share the same offset.
         if let Some(count) = self.catch_targets.remove(&offset) {
+            // Save the try block's exit stack before the catch handler
+            // clears it.  This lets us restore the stack at the resume
+            // point after the try-catch so that values carried through
+            // ENDTRY (e.g. return values) are not lost.
+            if let Some(resume) = self.try_catch_resume.remove(&offset) {
+                if !self.stack.is_empty() {
+                    self.try_exit_stacks
+                        .entry(resume)
+                        .or_insert_with(|| self.stack.clone());
+                }
+            }
             for _ in 0..count {
                 self.statements.push("catch {".into());
             }

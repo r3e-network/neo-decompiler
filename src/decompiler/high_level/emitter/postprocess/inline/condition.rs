@@ -25,6 +25,15 @@ impl HighLevelEmitter {
                         }
                     }
                 }
+            } else if let Some(condition) = Self::extract_if_condition(&statements[index]) {
+                if let Some(idx) = Self::previous_code_line(statements, index) {
+                    if let Some(assign) = Self::parse_assignment(&statements[idx]) {
+                        if assign.lhs == condition && Self::should_inline_condition(&assign.rhs) {
+                            statements[index] = format!("if {} {{", assign.rhs);
+                            statements[idx].clear();
+                        }
+                    }
+                }
             }
             index += 1;
         }

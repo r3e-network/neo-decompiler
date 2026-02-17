@@ -211,6 +211,17 @@ impl HighLevelEmitter {
                 if self.try_emit_loop_jump(instruction, target) {
                     return;
                 }
+                // Tail-call: JMP to a known method entry point.
+                if self.method_labels_by_offset.contains_key(&target) {
+                    self.emit_internal_call(instruction, target);
+                    let result = self.stack.pop().unwrap_or_default();
+                    if result.is_empty() {
+                        self.statements.push("return;".into());
+                    } else {
+                        self.statements.push(format!("return {result};"));
+                    }
+                    return;
+                }
                 self.push_comment(instruction);
                 if self.index_by_offset.contains_key(&target) {
                     self.transfer_labels.insert(target);

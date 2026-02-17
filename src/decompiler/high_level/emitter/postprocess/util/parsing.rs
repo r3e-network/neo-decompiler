@@ -54,6 +54,17 @@ impl HighLevelEmitter {
         })
     }
 
+    pub(in super::super) fn extract_if_condition(line: &str) -> Option<String> {
+        let trimmed = line.trim();
+        let rest = trimmed.strip_prefix("if ")?.strip_suffix(" {")?;
+        let condition = rest.trim();
+        if condition.is_empty() {
+            None
+        } else {
+            Some(condition.to_string())
+        }
+    }
+
     pub(in super::super) fn parse_for_parts(line: &str) -> Option<(String, String, String)> {
         let trimmed = line.trim();
         if !trimmed.starts_with("for (") || !trimmed.ends_with('{') {
