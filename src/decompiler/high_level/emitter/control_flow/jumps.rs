@@ -241,6 +241,18 @@ impl HighLevelEmitter {
         self.push_comment(instruction);
         match self.jump_target(instruction) {
             Some(target) => {
+                // When an ENDTRY targets a loop's continue offset, it acts
+                // as `continue` — the VM executes the finally block first,
+                // then resumes at the loop condition.
+                if self
+                    .loop_stack
+                    .iter()
+                    .rev()
+                    .any(|ctx| target == ctx.continue_offset)
+                {
+                    self.statements.push("continue;".into());
+                    return;
+                }
                 // When an ENDTRY targets at or beyond a loop's break offset,
                 // it acts as a `break` — exiting both the try block and the
                 // enclosing loop.
