@@ -8,7 +8,7 @@ use crate::manifest::ContractManifest;
 use crate::native_contracts;
 use crate::nef::NefFile;
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 mod body;
 mod entry;
@@ -73,11 +73,14 @@ pub(crate) fn render_high_level(
         BTreeMap::new()
     };
     let calla_targets_by_offset = build_calla_targets_by_offset(call_graph);
+    let noreturn_method_offsets =
+        build_noreturn_method_offsets(instructions, &inferred_starts);
     let body_context = body::MethodBodyContext {
         method_labels_by_offset: &method_labels_by_offset,
         method_arg_counts_by_offset: &method_arg_counts_by_offset,
         call_targets_by_offset: &call_targets_by_offset,
         calla_targets_by_offset: &calla_targets_by_offset,
+        noreturn_method_offsets: &noreturn_method_offsets,
         inline_single_use_temps,
         callt_labels: &callt_labels,
         callt_param_counts: &callt_param_counts,
@@ -204,6 +207,50 @@ fn build_method_labels_by_offset(
     }
 
     labels
+}
+
+/// Compute the set of method start offsets whose bodies always terminate
+/// without returning (every exit path ends with ABORT, ABORTMSG, or THROW).
+///
+/// This is a conservative heuristic: a method is considered noreturn only if
+/// its last instruction is a terminating opcode and it contains no RET.
+fn build_noreturn_method_offsets(
+    instructions: &[Instruction],
+    inferred_starts: &[usize],
+) -> BTreeSet<usize> {
+    use crate::instruction::OpCode;
+
+    let mut noreturn = BTreeSet::new();
+    let all_starts: Vec<usize> = inferred_starts.to_vec();
+
+    for (idx, &start) in all_starts.iter().enumerate() {
+        let end = all_starts
+            .get(idx + 1)
+            .copied()
+            .or_else(|| instructions.last().map(|i| i.offset + 1))
+            .unwrap_or(start);
+
+        let lo = instructions.partition_point(|ins| ins.offset < start);
+        let hi = instructions.partition_point(|ins| ins.offset < end);
+        let slice = &instructions[lo..hi];
+        if slice.is_empty() {
+            continue;
+        }
+
+        let has_ret = slice.iter().any(|ins| ins.opcode == OpCode::Ret);
+        let last_is_terminator = slice.last().is_some_and(|ins| {
+            matches!(
+                ins.opcode,
+                OpCode::Abort | OpCode::Abortmsg | OpCode::Throw
+            )
+        });
+
+        if !has_ret && last_is_terminator {
+            noreturn.insert(start);
+        }
+    }
+
+    noreturn
 }
 
 fn build_calla_targets_by_offset(call_graph: &CallGraph) -> BTreeMap<usize, usize> {

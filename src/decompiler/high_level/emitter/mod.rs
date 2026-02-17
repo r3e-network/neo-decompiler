@@ -12,7 +12,7 @@ mod stack;
 mod types;
 mod util;
 
-use helpers::{convert_target_name, format_pushdata, format_type_operand, literal_from_operand};
+use helpers::{convert_target_name, format_int_bytes_as_decimal, format_pushdata, format_type_operand, literal_from_operand};
 use types::{DoWhileLoop, LiteralValue, LoopContext, LoopJump, SlotKind};
 
 #[derive(Debug, Default)]
@@ -66,6 +66,9 @@ pub(crate) struct HighLevelEmitter {
     /// Resolved internal targets keyed by CALLA instruction offset.
     /// Used when pointer provenance is outside the current method body.
     calla_targets_by_offset: BTreeMap<usize, usize>,
+    /// Method start offsets whose bodies always terminate without returning
+    /// (every exit path ends with ABORT, ABORTMSG, or THROW).
+    noreturn_method_offsets: BTreeSet<usize>,
     /// Pre-branch stack depths keyed by merge offset.  Used to detect
     /// when both branches of an if/else produce stack values that must
     /// be unified at the merge point (phi-variable reconciliation).

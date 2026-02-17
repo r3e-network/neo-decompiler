@@ -1,6 +1,6 @@
 use crate::instruction::{Instruction, OpCode, Operand};
 
-use super::super::{format_pushdata, HighLevelEmitter};
+use super::super::{format_int_bytes_as_decimal, format_pushdata, HighLevelEmitter};
 
 impl HighLevelEmitter {
     /// Resolve a PUSHA instruction's operand into a human-readable function
@@ -50,7 +50,20 @@ impl HighLevelEmitter {
                 self.push_literal(instruction, value);
                 true
             }
-            Pushint8 | Pushint16 | Pushint32 | Pushint64 | Pushint128 | Pushint256 | PushM1
+            Pushint128 | Pushint256 => {
+                if let Some(Operand::Bytes(bytes)) = &instruction.operand {
+                    self.push_literal(instruction, format_int_bytes_as_decimal(bytes));
+                } else if let Some(operand) = &instruction.operand {
+                    self.push_literal(instruction, operand.to_string());
+                } else {
+                    self.warn(
+                        instruction,
+                        "literal push missing operand (malformed instruction)",
+                    );
+                }
+                true
+            }
+            Pushint8 | Pushint16 | Pushint32 | Pushint64 | PushM1
             | Push0 | Push1 | Push2 | Push3 | Push4 | Push5 | Push6 | Push7 | Push8 | Push9
             | Push10 | Push11 | Push12 | Push13 | Push14 | Push15 | Push16 | PushT | PushF
             | PushNull => {

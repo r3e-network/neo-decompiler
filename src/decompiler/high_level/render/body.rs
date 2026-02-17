@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write;
 
 use crate::instruction::Instruction;
@@ -10,6 +10,7 @@ pub(super) struct MethodBodyContext<'a> {
     pub(super) method_arg_counts_by_offset: &'a BTreeMap<usize, usize>,
     pub(super) call_targets_by_offset: &'a BTreeMap<usize, usize>,
     pub(super) calla_targets_by_offset: &'a BTreeMap<usize, usize>,
+    pub(super) noreturn_method_offsets: &'a BTreeSet<usize>,
     pub(super) inline_single_use_temps: bool,
     pub(super) callt_labels: &'a [String],
     pub(super) callt_param_counts: &'a [usize],
@@ -36,6 +37,7 @@ pub(super) fn write_method_body(
     emitter.set_method_arg_counts_by_offset(context.method_arg_counts_by_offset);
     emitter.set_call_targets_by_offset(context.call_targets_by_offset);
     emitter.set_calla_targets_by_offset(context.calla_targets_by_offset);
+    emitter.set_noreturn_method_offsets(context.noreturn_method_offsets);
     emitter.set_returns_void(returns_void);
     for instruction in instructions {
         emitter.advance_to(instruction.offset);

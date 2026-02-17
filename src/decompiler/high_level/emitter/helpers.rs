@@ -75,6 +75,64 @@ pub(super) fn convert_target_name(operand: &Operand) -> Option<&'static str> {
     }
 }
 
+/// Convert a little-endian signed two's-complement byte slice into a decimal
+/// string.  Handles 16-byte (i128) natively and falls back to manual big-int
+/// division for 32-byte (PUSHINT256) values.
+pub(super) fn format_int_bytes_as_decimal(bytes: &[u8]) -> String {
+    if bytes.len() == 16 {
+        let value = i128::from_le_bytes(bytes.try_into().unwrap());
+        return value.to_string();
+    }
+    // General case: arbitrary-length little-endian signed two's complement.
+    let is_negative = bytes.last().map_or(false, |b| b & 0x80 != 0);
+    // Convert to big-endian unsigned magnitude.
+    let mut magnitude: Vec<u8> = if is_negative {
+        // Two's complement negate: invert all bits, then add 1.
+        let mut carry: u16 = 1;
+        bytes
+            .iter()
+            .map(|&b| {
+                let sum = (!b) as u16 + carry;
+                carry = sum >> 8;
+                sum as u8
+            })
+            .collect::<Vec<u8>>()
+            .into_iter()
+            .rev()
+            .collect()
+    } else {
+        bytes.iter().copied().rev().collect()
+    };
+    // Strip leading zeros.
+    while magnitude.len() > 1 && magnitude[0] == 0 {
+        magnitude.remove(0);
+    }
+    if magnitude == [0] {
+        return "0".to_string();
+    }
+    // Repeated division by 10 to extract decimal digits.
+    let mut digits = Vec::new();
+    while magnitude != [0] {
+        let mut remainder: u16 = 0;
+        for byte in magnitude.iter_mut() {
+            let dividend = (remainder << 8) | (*byte as u16);
+            *byte = (dividend / 10) as u8;
+            remainder = dividend % 10;
+        }
+        digits.push((remainder as u8) + b'0');
+        while magnitude.len() > 1 && magnitude[0] == 0 {
+            magnitude.remove(0);
+        }
+    }
+    digits.reverse();
+    let s = String::from_utf8(digits).unwrap();
+    if is_negative {
+        format!("-{s}")
+    } else {
+        s
+    }
+}
+
 pub(super) fn format_type_operand(operand: &Operand) -> String {
     match operand {
         Operand::U8(value) => format!("0x{value:02X}"),

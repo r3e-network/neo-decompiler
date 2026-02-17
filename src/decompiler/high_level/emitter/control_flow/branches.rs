@@ -138,6 +138,13 @@ impl HighLevelEmitter {
                     .entry(jump_target)
                     .or_insert(self.stack.len());
             }
+        } else if let Some(else_end) = self.detect_implicit_else(false_target) {
+            if !self.else_targets.contains_key(&false_target) {
+                let else_entry = self.else_targets.entry(false_target).or_insert(0);
+                *else_entry += 1;
+                let closer = self.pending_closers.entry(else_end).or_insert(0);
+                *closer += 1;
+            }
         }
     }
 
@@ -231,6 +238,13 @@ impl HighLevelEmitter {
                         .entry(jump_target)
                         .or_insert(self.stack.len());
                 }
+            } else if let Some(else_end) = self.detect_implicit_else(false_target) {
+                if !self.else_targets.contains_key(&false_target) {
+                    let else_entry = self.else_targets.entry(false_target).or_insert(0);
+                    *else_entry += 1;
+                    let closer = self.pending_closers.entry(else_end).or_insert(0);
+                    *closer += 1;
+                }
             }
         }
     }
@@ -254,5 +268,85 @@ impl HighLevelEmitter {
         } else {
             None
         }
+    }
+
+    /// Detect an implicit else branch when the if-true body ends with a
+    /// noreturn instruction.  The Neo C# compiler omits the JMP before the
+    /// false-target when the if-true branch always terminates (ABORT, ABORTMSG,
+    /// THROW, or CALL to a known noreturn method).
+    ///
+    /// Returns `Some(else_end_offset)` — the offset where the else closer `}`
+    /// should be placed.  The caller must NOT insert a `skip_jumps` entry
+    /// (there is no JMP to skip).
+    fn detect_implicit_else(&self, false_offset: usize) -> Option<usize> {
+        let target_index = *self.index_by_offset.get(&false_offset)?;
+        if target_index == 0 {
+            return None;
+        }
+        let prev = self.program.get(target_index.checked_sub(1)?)?;
+
+        // Check if the if-true body ends with a direct terminator.
+        let is_direct_terminator = matches!(
+            prev.opcode,
+            OpCode::Abort | OpCode::Abortmsg | OpCode::Throw
+        );
+
+        // Check if the if-true body ends with a CALL to a known noreturn method.
+        let is_noreturn_call = matches!(prev.opcode, OpCode::Call | OpCode::Call_L)
+            && self
+                .call_targets_by_offset
+                .get(&prev.offset)
+                .map_or(false, |target| {
+                    self.noreturn_method_offsets.contains(target)
+                });
+
+        if !is_direct_terminator && !is_noreturn_call {
+            return None;
+        }
+
+        // Don't create an else around catch/finally handlers.
+        if self.catch_targets.contains_key(&false_offset)
+            || self.finally_targets.contains_key(&false_offset)
+        {
+            return None;
+        }
+
+        // Find the else body end: the next structural boundary (catch/finally
+        // target) after false_offset, or the offset past the last instruction.
+        let next_boundary = self
+            .catch_targets
+            .keys()
+            .chain(self.finally_targets.keys())
+            .filter(|&&offset| offset > false_offset)
+            .min()
+            .copied();
+
+        let fallback = self.program.last().map(|ins| ins.offset + 1);
+        let else_end = next_boundary.unwrap_or_else(|| fallback.unwrap_or(false_offset + 1));
+
+        // Don't create an else when the body would be empty — i.e. every
+        // instruction between false_offset (inclusive) and else_end (exclusive)
+        // is purely structural control flow (ENDTRY, NOP, unconditional JMP).
+        let end_index = self
+            .index_by_offset
+            .range(else_end..)
+            .next()
+            .map(|(_, idx)| *idx)
+            .unwrap_or(self.program.len());
+        let body_has_substance = self.program[target_index..end_index].iter().any(|ins| {
+            !matches!(
+                ins.opcode,
+                OpCode::Endtry
+                    | OpCode::EndtryL
+                    | OpCode::Nop
+                    | OpCode::Jmp
+                    | OpCode::Jmp_L
+            )
+        });
+        if !body_has_substance {
+            return None;
+        }
+
+        Some(else_end)
     }
 }

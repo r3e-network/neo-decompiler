@@ -57,6 +57,10 @@ impl HighLevelEmitter {
         self.calla_targets_by_offset = targets.clone();
     }
 
+    pub(crate) fn set_noreturn_method_offsets(&mut self, offsets: &std::collections::BTreeSet<usize>) {
+        self.noreturn_method_offsets = offsets.clone();
+    }
+
     pub(crate) fn set_inline_single_use_temps(&mut self, enabled: bool) {
         self.inline_single_use_temps = enabled;
     }
