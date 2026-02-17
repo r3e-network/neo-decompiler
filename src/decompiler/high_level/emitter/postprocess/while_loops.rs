@@ -94,6 +94,45 @@ impl HighLevelEmitter {
         }
     }
 
+    /// Converts `goto label_X;` at end of switch cases to `break;` when
+    /// `label_X:` appears immediately after the switch block.
+    pub(crate) fn rewrite_switch_break_gotos(statements: &mut [String]) {
+        let mut index = 0;
+        while index < statements.len() {
+            if !statements[index].trim().starts_with("switch ") {
+                index += 1;
+                continue;
+            }
+            let Some(end) = Self::find_block_end(statements, index) else {
+                index += 1;
+                continue;
+            };
+            // Check if next code line after switch `}` is a label
+            let Some(label_idx) = Self::next_code_line(statements, end) else {
+                index += 1;
+                continue;
+            };
+            let label_trimmed = statements[label_idx].trim().to_string();
+            let Some(label) = label_trimmed.strip_suffix(':') else {
+                index += 1;
+                continue;
+            };
+            if !label.starts_with("label_") {
+                index += 1;
+                continue;
+            }
+            // Replace matching gotos inside the switch with break
+            let goto_target = format!("goto {label};");
+            for i in index + 1..end {
+                if statements[i].trim() == goto_target {
+                    let indent = &statements[i][..statements[i].len() - statements[i].trim_start().len()];
+                    statements[i] = format!("{indent}break;");
+                }
+            }
+            index = end + 1;
+        }
+    }
+
     /// Removes `goto label_X;` when the very next code line is `label_X:`.
     pub(crate) fn eliminate_fallthrough_gotos(statements: &mut [String]) {
         let mut index = 0;
