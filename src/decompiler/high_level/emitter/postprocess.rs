@@ -9,6 +9,7 @@ mod for_loops;
 mod indexing;
 mod inline;
 mod overflow_collapse;
+mod simplify;
 mod switches;
 mod util;
 mod while_loops;

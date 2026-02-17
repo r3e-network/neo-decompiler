@@ -225,6 +225,7 @@ impl HighLevelEmitter {
         }
         Self::rewrite_compound_assignments(&mut self.statements);
         Self::rewrite_indexing_syntax(&mut self.statements);
+        Self::collapse_if_true(&mut self.statements);
         Self::rewrite_switch_statements(&mut self.statements);
         Self::rewrite_switch_break_gotos(&mut self.statements);
         self.statements.retain(|line| !line.trim().is_empty());
