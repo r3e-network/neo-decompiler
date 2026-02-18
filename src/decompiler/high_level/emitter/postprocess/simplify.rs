@@ -101,6 +101,71 @@ impl HighLevelEmitter {
         }
     }
 
+    /// Eliminates identity assignments `let tN = tM;` by substituting tN→tM
+    /// in all subsequent code. These arise from branch reconciliation (phi nodes)
+    /// and DUP/OVER patterns where the copy is trivially aliased.
+    pub(crate) fn eliminate_identity_temps(statements: &mut Vec<String>) {
+        let mut index = 0;
+        while index < statements.len() {
+            let trimmed = statements[index].trim();
+            let Some(assign) = Self::parse_assignment(trimmed) else {
+                index += 1;
+                continue;
+            };
+            // Only target `let tN = tM;` where both are temp identifiers
+            if !trimmed.starts_with("let ") {
+                index += 1;
+                continue;
+            }
+            if !Self::is_temp_ident(&assign.lhs) || !Self::is_temp_ident(&assign.rhs) {
+                index += 1;
+                continue;
+            }
+            // Self-assignment (`let tN = tN;`) is dead code — just remove it
+            if assign.lhs == assign.rhs {
+                statements[index].clear();
+                index += 1;
+                continue;
+            }
+            // Substitute lhs → rhs in all subsequent lines
+            let lhs = assign.lhs.clone();
+            let rhs = assign.rhs.clone();
+            for stmt in statements.iter_mut().skip(index + 1) {
+                if Self::contains_identifier(stmt, &lhs) {
+                    *stmt = Self::replace_identifier(stmt, &lhs, &rhs);
+                }
+            }
+            statements[index].clear();
+            index += 1;
+        }
+    }
+
+    /// Strips VM-level stack operation comments that add noise to the output:
+    /// - Removes standalone `// drop ...` and `// remove second stack value` lines
+    /// - Strips trailing `// duplicate top of stack` and `// copy second stack value`
+    pub(crate) fn strip_stack_comments(statements: &mut Vec<String>) {
+        for stmt in statements.iter_mut() {
+            let trimmed = stmt.trim();
+            if trimmed.starts_with("// drop ") || trimmed.starts_with("// remove second") {
+                stmt.clear();
+                continue;
+            }
+            for suffix in [
+                " // duplicate top of stack",
+                " // copy second stack value",
+            ] {
+                if let Some(pos) = stmt.find(suffix) {
+                    stmt.truncate(pos);
+                }
+            }
+        }
+    }
+
+    fn is_temp_ident(s: &str) -> bool {
+        s.strip_prefix('t')
+            .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+    }
+
     fn negate_condition(cond: &str) -> String {
         let cond = cond.trim();
         // Flip comparison operators
