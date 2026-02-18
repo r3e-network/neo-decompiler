@@ -5,6 +5,44 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-02-16
+
+### Added
+
+- **Overflow collapse pass**: Automatically collapses verbose Neo C# compiler int32/int64 overflow-check patterns into clean expressions.
+- **While-loop recovery**: Backward `JMP` instructions are now recognized as `while` loops with proper condition extraction.
+- **Goto-to-while conversion**: Postprocess pass converts forward goto patterns into structured `while` loops.
+- **Switch-break goto elimination**: Removes residual `goto` statements inside recovered `switch` blocks.
+- **Continue-in-try detection**: `ENDTRY` instructions targeting loop conditions are now emitted as `continue` statements.
+- **Empty-if-else inversion**: Empty `if` bodies with non-empty `else` are inverted to remove the dead branch.
+- **Identity temp elimination**: Redundant `let tN = locM; locM = tN;` patterns are collapsed.
+- **Temp-into-store collapsing**: `let tN = expr; locM = tN;` is simplified to `let locM = expr;`.
+- **Temp-into-return collapsing**: `let tN = expr; return tN;` is simplified to `return expr;`.
+- **Stack comment stripping**: Verbose `// rotate top three stack values` comments are removed from output.
+- **`if true { }` collapse**: Constant-true conditionals are unwrapped to their body.
+- **CALL/CALL_L method boundary detection**: Internal call targets are now recognized as method entry points even without `INITSLOT`.
+- **PUSHA function pointer rendering**: `PUSHA` targets render as function pointer references instead of raw integers.
+- **Implicit else for noreturn branches**: Branches ending in `abort`/`throw` now correctly suppress else emission.
+- **PUSHINT128 decimal display**: 128-bit push immediates render in decimal for readability.
+
+### Fixed
+
+- **Try/catch nesting**: Catch/finally blocks no longer nest incorrectly inside else branches; processing order corrected in `advance_to()`.
+- **Try-exit stack restoration**: `ENDTRY` properly restores the try-exit stack outside the pending-closers gate.
+- **Nested try/catch brace balancing**: Deeply nested try/catch structures now produce correctly balanced braces.
+- **PACK/UNPACK element ordering**: Array pack/unpack operations emit elements in correct stack order.
+- **CALLA resolution**: `CALLA` (indirect call) now resolves to the correct target method.
+- **Break-in-try**: `break` statements inside try blocks are correctly detected.
+- **Tail-call JMP recognition**: JMP instructions at method boundaries are recognized as tail calls rather than control flow.
+- **Self-referencing ENDTRY**: ENDTRY instructions targeting themselves no longer cause infinite loops.
+- **If-condition inlining**: Condition temporaries are properly inlined into if-statement headers.
+
+### Changed
+
+- **Switch detection threshold**: Lowered minimum guarded-goto cases from 6 to 2 for better small-switch recovery.
+- **Edge lookup optimization**: `collect_post_ret_method_offsets` now uses HashMap indices for O(1) lookups instead of O(n×m) linear scans.
+- Comprehensive audit and validation against 101 Neo N3 devpack contracts.
+
 ## [0.5.2] - 2026-02-10
 
 ### Added

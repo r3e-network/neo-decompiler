@@ -36,8 +36,8 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | Opcode Coverage          | ✅     | 160+ Neo VM opcodes from upstream `OpCode.cs`                       |
 | Operand Decoding         | ✅     | I8/I16/I32/I64, variable-length bytes, jump targets, syscall hashes |
 | Unknown Opcode Handling  | ✅     | Tolerant mode (comments) or strict mode (fail-fast)                 |
-| Syscall Resolution       | ✅     | All published syscalls with handler names, prices, call flags      |
-| Native Contract Binding  | ✅     | Legacy + latest native contracts (GasToken/Governance/etc.)        |
+| Syscall Resolution       | ✅     | All published syscalls with handler names, prices, call flags       |
+| Native Contract Binding  | ✅     | Legacy + latest native contracts (GasToken/Governance/etc.)         |
 
 ### Decompilation Pipeline
 
@@ -114,18 +114,30 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | Cross-Reference Analysis  | ✅     | Track local/argument/static slot reads and writes by bytecode offset                 |
 | Switch Statement Recovery | ✅     | Rewrite equality-based `if`/`else` chains into `switch`/`case` blocks (conservative) |
 
+### Shipped Features (v0.6.x)
+
+| Feature                       | Status | Description                                                                  |
+| ----------------------------- | ------ | ---------------------------------------------------------------------------- |
+| Overflow Pattern Collapse     | ✅     | Collapse verbose int32/int64 overflow-check patterns into clean expressions  |
+| While-Loop Recovery           | ✅     | Backward JMP recognized as `while` loops with condition extraction           |
+| Goto Elimination              | ✅     | Forward gotos converted to structured `while` loops and switch-break cleanup |
+| Continue-in-Try Detection     | ✅     | `ENDTRY` targeting loop conditions emitted as `continue`                     |
+| Temp Variable Collapsing      | ✅     | Identity temps, temp-into-store, and temp-into-return patterns simplified    |
+| Try/Catch Nesting Fix         | ✅     | Correct catch/finally sibling ordering in control flow reconstruction        |
+| 101-Contract Audit Validation | ✅     | Comprehensive parity testing against full Neo N3 devpack                     |
+
 ### Shipped Features (v0.5.x)
 
-| Feature                    | Status | Description                                                                 |
-| -------------------------- | ------ | --------------------------------------------------------------------------- |
-| SSA Transformation         | ✅     | Static Single Assignment form with φ nodes and variable versions            |
-| Dominance Analysis         | ✅     | Immediate dominators, dominator tree, dominance frontiers                   |
-| SSA Rendering              | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars)           |
-| Strict Manifest Validation | ✅     | Global `--strict-manifest` flag plus strict manifest parser APIs            |
+| Feature                    | Status | Description                                                                  |
+| -------------------------- | ------ | ---------------------------------------------------------------------------- |
+| SSA Transformation         | ✅     | Static Single Assignment form with φ nodes and variable versions             |
+| Dominance Analysis         | ✅     | Immediate dominators, dominator tree, dominance frontiers                    |
+| SSA Rendering              | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars)            |
+| Strict Manifest Validation | ✅     | Global `--strict-manifest` flag plus strict manifest parser APIs             |
 | Entry-Offset Safety        | ✅     | Synthetic script-entry emission when ABI method offsets don't match entry    |
 | Disassembly Fast Path      | ✅     | `disasm` command decodes instruction streams without full decompile analysis |
 
-### Planned Features (v0.6.x+)
+### Planned Features (v0.7.x+)
 
 | Feature               | Priority | Description                                           |
 | --------------------- | -------- | ----------------------------------------------------- |
@@ -345,7 +357,7 @@ Download pre-built binaries from the [releases page](https://github.com/r3e-netw
 
 ```bash
 # Install from a tagged release (replace the tag as needed)
-cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.5.2 --locked
+cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.6.0 --locked
 
 # Or install the latest development version
 cargo install --git https://github.com/r3e-network/neo-decompiler --locked
@@ -361,7 +373,7 @@ APIs and want to avoid pulling in CLI-only dependencies, disable default
 features in your `Cargo.toml`:
 
 ```toml
-neo-decompiler = { version = "0.5.2", default-features = false }
+neo-decompiler = { version = "0.6.0", default-features = false }
 ```
 
 ```rust
