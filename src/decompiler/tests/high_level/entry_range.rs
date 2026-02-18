@@ -31,14 +31,14 @@ fn high_level_limits_instructions_to_entry_range() {
         .high_level
         .as_deref()
         .expect("high-level output");
-    assert!(high_level.contains("let t0 = 1;"), "entry body missing");
+    assert!(high_level.contains("return 1;"), "entry body should return 1: {high_level}");
     assert!(
         high_level.contains("fn other() -> int {"),
         "additional manifest methods should be emitted in high-level view"
     );
     assert!(
-        high_level.contains("return t0;"),
-        "additional method body should be decompiled"
+        high_level.contains("return 2;"),
+        "additional method body should be decompiled: {high_level}"
     );
     let before_other = high_level
         .split("fn other")

@@ -169,35 +169,45 @@ impl HighLevelEmitter {
                 continue;
             }
             let trimmed_next = statements[next].trim();
-            let Some(a2) = Self::parse_assignment(trimmed_next) else {
-                index += 1;
-                continue;
-            };
-            // RHS of second line must be exactly the temp from first line
-            if a2.rhs != a1.lhs {
-                index += 1;
-                continue;
-            }
-            // Verify temp is not used after the store line
             let temp = &a1.lhs;
-            let used_later = statements
-                .iter()
-                .skip(next + 1)
-                .any(|s| Self::contains_identifier(s, temp));
-            if used_later {
-                index += 1;
-                continue;
+            // Try assignment pattern: `[let] X = tN;`
+            if let Some(a2) = Self::parse_assignment(trimmed_next) {
+                if a2.rhs == *temp {
+                    let used_later = statements
+                        .iter()
+                        .skip(next + 1)
+                        .any(|s| Self::contains_identifier(s, temp));
+                    if !used_later {
+                        let indent =
+                            &statements[next][..statements[next].len() - trimmed_next.len()];
+                        let prefix = if trimmed_next.starts_with("let ") {
+                            "let "
+                        } else {
+                            ""
+                        };
+                        statements[next] = format!("{indent}{prefix}{} = {};", a2.lhs, a1.rhs);
+                        statements[index].clear();
+                        index = next + 1;
+                        continue;
+                    }
+                }
             }
-            // Collapse: rewrite store line with the original expression
-            let indent = &statements[next][..statements[next].len() - trimmed_next.len()];
-            let prefix = if trimmed_next.starts_with("let ") {
-                "let "
-            } else {
-                ""
-            };
-            statements[next] = format!("{indent}{prefix}{} = {};", a2.lhs, a1.rhs);
-            statements[index].clear();
-            index = next + 1;
+            // Try `return tN;` pattern
+            if trimmed_next == format!("return {};", temp) {
+                let used_later = statements
+                    .iter()
+                    .skip(next + 1)
+                    .any(|s| Self::contains_identifier(s, temp));
+                if !used_later {
+                    let indent =
+                        &statements[next][..statements[next].len() - trimmed_next.len()];
+                    statements[next] = format!("{indent}return {};", a1.rhs);
+                    statements[index].clear();
+                    index = next + 1;
+                    continue;
+                }
+            }
+            index += 1;
         }
     }
 
