@@ -230,6 +230,7 @@ impl HighLevelEmitter {
         Self::remove_empty_if(&mut self.statements);
         Self::strip_stack_comments(&mut self.statements);
         Self::eliminate_identity_temps(&mut self.statements);
+        Self::collapse_temp_into_store(&mut self.statements);
         Self::rewrite_switch_statements(&mut self.statements);
         Self::rewrite_switch_break_gotos(&mut self.statements);
         self.statements.retain(|line| !line.trim().is_empty());

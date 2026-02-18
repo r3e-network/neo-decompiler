@@ -14,7 +14,7 @@ fn high_level_lifts_local_slots() {
         .as_deref()
         .expect("high-level output");
     assert!(high_level.contains("// declare 1 locals, 0 arguments"));
-    assert!(high_level.contains("let loc0 = t0;"));
+    assert!(high_level.contains("let loc0 = 1;"), "expected collapsed store: {high_level}");
     assert!(high_level.contains("return loc0;"));
 }
 

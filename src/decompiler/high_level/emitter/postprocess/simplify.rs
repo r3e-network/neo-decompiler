@@ -140,6 +140,67 @@ impl HighLevelEmitter {
         }
     }
 
+    /// Collapses `let tN = <expr>; X = tN;` into `X = <expr>;` when tN is
+    /// not used anywhere else.  This pattern arises from stack-based codegen
+    /// where every VM instruction produces a temp that is immediately stored.
+    pub(crate) fn collapse_temp_into_store(statements: &mut Vec<String>) {
+        let mut index = 0;
+        while index + 1 < statements.len() {
+            let trimmed = statements[index].trim();
+            let Some(a1) = Self::parse_assignment(trimmed) else {
+                index += 1;
+                continue;
+            };
+            if !trimmed.starts_with("let ") || !Self::is_temp_ident(&a1.lhs) {
+                index += 1;
+                continue;
+            }
+            // Find next non-empty/non-comment line
+            let mut next = index + 1;
+            while next < statements.len() {
+                let t = statements[next].trim();
+                if !t.is_empty() && !t.starts_with("//") {
+                    break;
+                }
+                next += 1;
+            }
+            if next >= statements.len() {
+                index += 1;
+                continue;
+            }
+            let trimmed_next = statements[next].trim();
+            let Some(a2) = Self::parse_assignment(trimmed_next) else {
+                index += 1;
+                continue;
+            };
+            // RHS of second line must be exactly the temp from first line
+            if a2.rhs != a1.lhs {
+                index += 1;
+                continue;
+            }
+            // Verify temp is not used after the store line
+            let temp = &a1.lhs;
+            let used_later = statements
+                .iter()
+                .skip(next + 1)
+                .any(|s| Self::contains_identifier(s, temp));
+            if used_later {
+                index += 1;
+                continue;
+            }
+            // Collapse: rewrite store line with the original expression
+            let indent = &statements[next][..statements[next].len() - trimmed_next.len()];
+            let prefix = if trimmed_next.starts_with("let ") {
+                "let "
+            } else {
+                ""
+            };
+            statements[next] = format!("{indent}{prefix}{} = {};", a2.lhs, a1.rhs);
+            statements[index].clear();
+            index = next + 1;
+        }
+    }
+
     /// Strips VM-level stack operation comments that add noise to the output:
     /// - Removes standalone `// drop ...` and `// remove second stack value` lines
     /// - Strips trailing `// duplicate top of stack` and `// copy second stack value`
