@@ -110,3 +110,49 @@ fn rejects_too_many_method_tokens() {
         crate::error::Error::Nef(NefError::TooManyMethodTokens { .. })
     ));
 }
+
+#[test]
+fn rejects_oversized_u64_varint_for_method_token_count() {
+    let script = vec![0x40];
+    let mut data = Vec::new();
+    data.extend_from_slice(&MAGIC);
+    data.extend_from_slice(&[0u8; 64]);
+    data.push(0); // source
+    data.push(0); // reserved
+    data.push(0xFF);
+    data.extend_from_slice(&(u32::MAX as u64 + 1).to_le_bytes());
+    data.extend_from_slice(&0u16.to_le_bytes());
+    write_varint(&mut data, script.len() as u32);
+    data.extend_from_slice(&script);
+    let checksum = NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+
+    let err = NefParser::new().parse(&data).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Nef(NefError::IntegerOverflow { offset: 70 })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_varint_for_method_token_count() {
+    let script = vec![0x40];
+    let mut data = Vec::new();
+    data.extend_from_slice(&MAGIC);
+    data.extend_from_slice(&[0u8; 64]);
+    data.push(0); // source
+    data.push(0); // reserved
+    data.push(0xFD);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.extend_from_slice(&0u16.to_le_bytes());
+    write_varint(&mut data, script.len() as u32);
+    data.extend_from_slice(&script);
+    let checksum = NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+
+    let err = NefParser::new().parse(&data).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Nef(NefError::NonCanonicalVarInt { offset: 70 })
+    ));
+}

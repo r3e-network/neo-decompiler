@@ -25,7 +25,10 @@ fn high_level_handles_stack_manipulation_and_unary_ops() {
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
-    let hl = decompilation.high_level.as_deref().expect("high-level output");
+    let hl = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
     assert!(hl.contains("let t2 = t0 + t0;"), "expected t0+t0: {hl}");
     assert!(hl.contains("return t2 + 1;"), "expected return t2+1: {hl}");
 }

@@ -1,6 +1,12 @@
 use super::super::super::CHECKSUM_SIZE;
 use super::{NefError, NefParser, Result};
 
+fn read_u32_le(bytes: &[u8]) -> u32 {
+    let mut array = [0u8; 4];
+    array.copy_from_slice(bytes);
+    u32::from_le_bytes(array)
+}
+
 pub(super) fn read_checksum(bytes: &[u8], checksum_start: usize) -> Result<u32> {
     let checksum_end = checksum_start + CHECKSUM_SIZE;
     let checksum_bytes =
@@ -9,7 +15,7 @@ pub(super) fn read_checksum(bytes: &[u8], checksum_start: usize) -> Result<u32> 
             .ok_or(NefError::UnexpectedEof {
                 offset: checksum_start,
             })?;
-    Ok(u32::from_le_bytes(checksum_bytes.try_into().unwrap()))
+    Ok(read_u32_le(checksum_bytes))
 }
 
 pub(super) fn verify_checksum(bytes: &[u8], checksum_start: usize, checksum: u32) -> Result<()> {

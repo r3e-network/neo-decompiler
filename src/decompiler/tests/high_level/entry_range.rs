@@ -31,7 +31,10 @@ fn high_level_limits_instructions_to_entry_range() {
         .high_level
         .as_deref()
         .expect("high-level output");
-    assert!(high_level.contains("return 1;"), "entry body should return 1: {high_level}");
+    assert!(
+        high_level.contains("return 1;"),
+        "entry body should return 1: {high_level}"
+    );
     assert!(
         high_level.contains("fn other() -> int {"),
         "additional manifest methods should be emitted in high-level view"

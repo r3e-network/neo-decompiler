@@ -58,6 +58,85 @@ fn csharpize_statement_converts_known_forms() {
 }
 
 #[test]
+fn csharp_resolves_internal_calls_to_method_names() {
+    // Script layout:
+    // 0x0000: CALL +4 (target=0x0004)
+    // 0x0002: RET
+    // 0x0003: NOP
+    // 0x0004: RET
+    let script = [0x34, 0x04, 0x40, 0x21, 0x40];
+    let nef_bytes = build_nef(&script);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("sub_0x0004()"),
+        "C# output should resolve internal helper names instead of raw call placeholders: {csharp}"
+    );
+    assert!(
+        !csharp.contains("call_0x0004"),
+        "C# output should not emit raw call_0x placeholders when a helper name is known: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_emits_inferred_helper_methods() {
+    // Script layout:
+    // 0x0000: CALL +4 (target=0x0004)
+    // 0x0002: RET
+    // 0x0003: NOP
+    // 0x0004: RET
+    let script = [0x34, 0x04, 0x40, 0x21, 0x40];
+    let nef_bytes = build_nef(&script);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("private static dynamic sub_0x0004()")
+            || csharp.contains("private static void sub_0x0004()")
+            || csharp.contains("private static BigInteger sub_0x0004()")
+            || csharp.contains("private static object sub_0x0004()"),
+        "C# output should emit inferred helper method definitions for resolved internal calls: {csharp}"
+    );
+    assert!(
+        !csharp.contains("sub_0x0003"),
+        "C# output should not emit nop-only inferred helper methods: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_inferred_nonvoid_helpers_do_not_emit_bare_return() {
+    // Script layout:
+    // 0x0000: CALL +4 (target=0x0004)
+    // 0x0002: RET
+    // 0x0003: NOP
+    // 0x0004: RET
+    let script = [0x34, 0x04, 0x40, 0x21, 0x40];
+    let nef_bytes = build_nef(&script);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        !csharp.contains(
+            "private static dynamic sub_0x0004()
+        {
+            // 0004: RET
+            return;"
+        ),
+        "non-void inferred helper bodies should not emit bare return statements: {csharp}"
+    );
+}
+
+#[test]
 fn csharp_includes_offsetless_manifest_methods_as_stubs() {
     let nef_bytes = sample_nef();
     let manifest = ContractManifest::from_json_str(
@@ -255,6 +334,49 @@ fn csharp_mismatch_offset_emits_script_entry_and_manifest_method() {
 }
 
 #[test]
+fn csharp_missing_manifest_offset_uses_first_method_as_entry_signature() {
+    let nef_bytes = sample_nef();
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "OffsetMissing",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "main",
+                            "parameters": [],
+                            "returntype": "Integer"
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("public static BigInteger main()"),
+        "C# output should reuse the first manifest method signature when offsets are missing"
+    );
+    assert!(
+        !csharp.contains("public static void ScriptEntry()"),
+        "synthetic ScriptEntry should not be emitted when the manifest omits entry offsets entirely"
+    );
+    assert!(
+        !csharp.contains("NotImplementedException"),
+        "the fallback entry method should not also be emitted as an offset-less stub"
+    );
+}
+
+#[test]
 fn csharp_trims_initslot_boundaries() {
     let nef_bytes = load_testing_nef("Contract_Delegate.nef");
     let manifest = load_testing_manifest("Contract_Delegate.manifest.json");
@@ -264,16 +386,25 @@ fn csharp_trims_initslot_boundaries() {
         .expect("decompile succeeds");
 
     let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    let sum_block = csharp
+        .split("public static BigInteger sumFunc")
+        .nth(1)
+        .and_then(|rest| rest.split("private static dynamic sub_0x000C").next())
+        .expect("sumFunc block present");
     assert!(
-        csharp.contains("// 0000: INITSLOT"),
+        sum_block.contains("// 0000: INITSLOT"),
         "sumFunc should still show its entry INITSLOT"
     );
     assert!(
-        !csharp.contains("// 000C: INITSLOT"),
-        "should not serialize the appended block starting at offset 0x000C"
+        !sum_block.contains("// 000C: INITSLOT"),
+        "sumFunc body should stop before the inferred helper block"
     );
     assert!(
-        !csharp.contains("return t23;"),
-        "duplicate return from appended block should not appear"
+        !sum_block.contains("return t23;"),
+        "duplicate return from appended block should not appear in sumFunc"
+    );
+    assert!(
+        csharp.contains("private static dynamic sub_0x000C"),
+        "inferred helper should now be emitted separately"
     );
 }

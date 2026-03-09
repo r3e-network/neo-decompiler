@@ -8,7 +8,7 @@
     clippy::cast_sign_loss
 )]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
@@ -231,7 +231,7 @@ fn relative_target_isize(instr: &Instruction) -> Option<isize> {
     Some(instr.offset as isize + delta)
 }
 
-fn calla_target_from_pusha(instructions: &[Instruction], index: usize) -> Option<usize> {
+pub(super) fn calla_target_from_pusha(instructions: &[Instruction], index: usize) -> Option<usize> {
     let mut cursor = index.checked_sub(1)?;
     loop {
         let prev = instructions.get(cursor)?;
@@ -239,16 +239,7 @@ fn calla_target_from_pusha(instructions: &[Instruction], index: usize) -> Option
             cursor = cursor.checked_sub(1)?;
             continue;
         }
-        if prev.opcode == OpCode::PushA {
-            return pusha_absolute_target(prev);
-        }
-        if let Some(slot) = local_load_index(prev) {
-            return resolve_slot_pointer_target(instructions, cursor, SlotDomain::Local(slot));
-        }
-        if let Some(slot) = static_load_index(prev) {
-            return resolve_slot_pointer_target(instructions, cursor, SlotDomain::Static(slot));
-        }
-        return None;
+        return trace_pointer_target_from_value_source(instructions, cursor);
     }
 }
 
@@ -351,37 +342,273 @@ fn resolve_slot_pointer_target(
     before_index: usize,
     domain: SlotDomain,
 ) -> Option<usize> {
-    for index in (0..before_index).rev() {
-        let instruction = instructions.get(index)?;
-        if slot_store_domain(instruction) != Some(domain) {
+    let store_index = find_slot_store_before(instructions, before_index, domain)?;
+    let source_index = previous_non_nop_index(instructions, store_index.checked_sub(1)?)?;
+    trace_pointer_target_from_value_source(instructions, source_index)
+}
+
+fn trace_pointer_target_from_value_source(
+    instructions: &[Instruction],
+    mut source_index: usize,
+) -> Option<usize> {
+    loop {
+        let instruction = instructions.get(source_index)?;
+        if instruction.opcode == OpCode::Dup {
+            source_index = previous_non_nop_index(instructions, source_index.checked_sub(1)?)?;
             continue;
         }
+        if instruction.opcode == OpCode::PushA {
+            return pusha_absolute_target(instruction);
+        }
+        if instruction.opcode == OpCode::Pickitem {
+            return resolve_pickitem_pointer_target(instructions, source_index);
+        }
 
-        let source = index.checked_sub(1).and_then(|prev| instructions.get(prev));
-        return source.and_then(pusha_absolute_target);
+        let domain = if let Some(slot) = local_load_index(instruction) {
+            SlotDomain::Local(slot)
+        } else if let Some(slot) = static_load_index(instruction) {
+            SlotDomain::Static(slot)
+        } else {
+            return None;
+        };
+
+        let store_index = find_slot_store_before(instructions, source_index, domain)?;
+        source_index = previous_non_nop_index(instructions, store_index.checked_sub(1)?)?;
     }
-    None
 }
 
 // ---------------------------------------------------------------------------
 // Second-pass inter-procedural CALLA resolution for LDARG patterns
 // ---------------------------------------------------------------------------
 
-/// Check if a CALLA instruction is preceded by LDARG and return the arg index.
-fn calla_ldarg_index(instructions: &[Instruction], calla_index: usize) -> Option<u8> {
-    let mut cursor = calla_index.checked_sub(1)?;
+/// Check if a CALLA instruction ultimately loads its pointer from an argument
+/// slot and return that argument index.
+pub(super) fn calla_ldarg_index(instructions: &[Instruction], calla_index: usize) -> Option<u8> {
+    let producer_index = previous_non_nop_index(instructions, calla_index.checked_sub(1)?)?;
+    trace_argument_index_from_value_source(instructions, producer_index)
+}
+
+fn trace_argument_index_from_value_source(
+    instructions: &[Instruction],
+    mut source_index: usize,
+) -> Option<u8> {
     loop {
-        let prev = instructions.get(cursor)?;
-        if prev.opcode == OpCode::Nop {
-            cursor = cursor.checked_sub(1)?;
+        let instruction = instructions.get(source_index)?;
+        if instruction.opcode == OpCode::Dup {
+            source_index = previous_non_nop_index(instructions, source_index.checked_sub(1)?)?;
             continue;
         }
-        return arg_load_index(prev);
+        if let Some(arg_index) = arg_load_index(instruction) {
+            return Some(arg_index);
+        }
+
+        let domain = if let Some(slot) = local_load_index(instruction) {
+            SlotDomain::Local(slot)
+        } else if let Some(slot) = static_load_index(instruction) {
+            SlotDomain::Static(slot)
+        } else {
+            return None;
+        };
+
+        let store_index = find_slot_store_before(instructions, source_index, domain)?;
+        source_index = previous_non_nop_index(instructions, store_index.checked_sub(1)?)?;
+    }
+}
+
+fn resolve_pickitem_pointer_target(
+    instructions: &[Instruction],
+    pickitem_index: usize,
+) -> Option<usize> {
+    let index_source = previous_non_nop_index(instructions, pickitem_index.checked_sub(1)?)?;
+    let array_source_index = previous_non_nop_index(instructions, index_source.checked_sub(1)?)?;
+    let domain = trace_container_domain_from_value_source(instructions, array_source_index)?;
+
+    let scan_start = match domain {
+        SlotDomain::Local(_) => find_resolution_start_index(instructions, pickitem_index),
+        SlotDomain::Static(_) => 0,
+    };
+
+    let mut resolved_target = None;
+    for (index, instruction) in instructions
+        .iter()
+        .enumerate()
+        .take(pickitem_index)
+        .skip(scan_start)
+    {
+        if instruction.opcode != OpCode::Append {
+            continue;
+        }
+        let item_index = trace_stack_value_producer_before(instructions, index, 0)?;
+        let array_index = trace_stack_value_producer_before(instructions, index, 1)?;
+        let Some(array_domain) =
+            trace_container_domain_from_value_source(instructions, array_index)
+        else {
+            continue;
+        };
+        if array_domain != domain {
+            continue;
+        }
+        let target = trace_pointer_target_from_value_source(instructions, item_index)?;
+        if let Some(existing) = resolved_target {
+            if existing != target {
+                return None;
+            }
+        } else {
+            resolved_target = Some(target);
+        }
+    }
+    resolved_target
+}
+
+fn trace_container_domain_from_value_source(
+    instructions: &[Instruction],
+    mut source_index: usize,
+) -> Option<SlotDomain> {
+    loop {
+        let instruction = instructions.get(source_index)?;
+        if instruction.opcode == OpCode::Dup {
+            source_index = previous_non_nop_index(instructions, source_index.checked_sub(1)?)?;
+            continue;
+        }
+        if let Some(slot) = local_load_index(instruction) {
+            let domain = SlotDomain::Local(slot);
+            let Some(store_index) = find_slot_store_before(instructions, source_index, domain)
+            else {
+                return Some(domain);
+            };
+            let source = previous_non_nop_index(instructions, store_index.checked_sub(1)?)?;
+            let source_instruction = instructions.get(source)?;
+            if source_instruction.opcode == OpCode::Dup {
+                source_index = previous_non_nop_index(instructions, source.checked_sub(1)?)?;
+                continue;
+            }
+            if local_load_index(source_instruction).is_some()
+                || static_load_index(source_instruction).is_some()
+            {
+                source_index = source;
+                continue;
+            }
+            return Some(domain);
+        }
+        if let Some(slot) = static_load_index(instruction) {
+            let domain = SlotDomain::Static(slot);
+            let Some(store_index) = find_slot_store_before(instructions, source_index, domain)
+            else {
+                return Some(domain);
+            };
+            let source = previous_non_nop_index(instructions, store_index.checked_sub(1)?)?;
+            let source_instruction = instructions.get(source)?;
+            if source_instruction.opcode == OpCode::Dup {
+                source_index = previous_non_nop_index(instructions, source.checked_sub(1)?)?;
+                continue;
+            }
+            if local_load_index(source_instruction).is_some()
+                || static_load_index(source_instruction).is_some()
+            {
+                source_index = source;
+                continue;
+            }
+            return Some(domain);
+        }
+        return None;
+    }
+}
+
+fn trace_stack_value_producer_before(
+    instructions: &[Instruction],
+    before_index: usize,
+    mut depth: usize,
+) -> Option<usize> {
+    for index in (0..before_index).rev() {
+        let instruction = instructions.get(index)?;
+        let (pops, pushes) = stack_effect(instruction)?;
+        if depth < pushes {
+            return Some(index);
+        }
+        depth = depth.checked_add(pops)?.checked_sub(pushes)?;
+    }
+    None
+}
+
+fn stack_effect(instruction: &Instruction) -> Option<(usize, usize)> {
+    use OpCode::*;
+    let opcode = instruction.opcode;
+    match opcode {
+        Nop => Some((0, 0)),
+        PushA | PushNull | PushT | PushF | PushM1 | Push0 | Push1 | Push2 | Push3 | Push4
+        | Push5 | Push6 | Push7 | Push8 | Push9 | Push10 | Push11 | Push12 | Push13 | Push14
+        | Push15 | Push16 | Pushint8 | Pushint16 | Pushint32 | Pushint64 | Pushint128
+        | Pushint256 | Pushdata1 | Pushdata2 | Pushdata4 | Newarray0 | Newmap | Newstruct0
+        | Ldloc0 | Ldloc1 | Ldloc2 | Ldloc3 | Ldloc4 | Ldloc5 | Ldloc6 | Ldloc | Ldarg0
+        | Ldarg1 | Ldarg2 | Ldarg3 | Ldarg4 | Ldarg5 | Ldarg6 | Ldarg | Ldsfld0 | Ldsfld1
+        | Ldsfld2 | Ldsfld3 | Ldsfld4 | Ldsfld5 | Ldsfld6 | Ldsfld => Some((0, 1)),
+        Stloc0 | Stloc1 | Stloc2 | Stloc3 | Stloc4 | Stloc5 | Stloc6 | Stloc | Starg0 | Starg1
+        | Starg2 | Starg3 | Starg4 | Starg5 | Starg6 | Starg | Stsfld0 | Stsfld1 | Stsfld2
+        | Stsfld3 | Stsfld4 | Stsfld5 | Stsfld6 | Stsfld => Some((1, 0)),
+        Append => Some((2, 0)),
+        Pickitem => Some((2, 1)),
+        Dup => Some((1, 2)),
+        _ => None,
+    }
+}
+
+fn find_resolution_start_index(instructions: &[Instruction], before_index: usize) -> usize {
+    for index in (0..before_index).rev() {
+        if let Some(instruction) = instructions.get(index) {
+            if is_pointer_resolution_boundary(instruction.opcode) {
+                return index + 1;
+            }
+        }
+    }
+    0
+}
+
+fn find_slot_store_before(
+    instructions: &[Instruction],
+    before_index: usize,
+    domain: SlotDomain,
+) -> Option<usize> {
+    for index in (0..before_index).rev() {
+        let instruction = instructions.get(index)?;
+        if matches!(domain, SlotDomain::Local(_))
+            && is_pointer_resolution_boundary(instruction.opcode)
+        {
+            return None;
+        }
+        if slot_store_domain(instruction) == Some(domain) {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn is_pointer_resolution_boundary(opcode: OpCode) -> bool {
+    matches!(
+        opcode,
+        OpCode::Ret
+            | OpCode::Throw
+            | OpCode::Abort
+            | OpCode::Abortmsg
+            | OpCode::Initslot
+            | OpCode::Initsslot
+    )
+}
+
+fn previous_non_nop_index(instructions: &[Instruction], mut index: usize) -> Option<usize> {
+    loop {
+        let instruction = instructions.get(index)?;
+        if instruction.opcode != OpCode::Nop {
+            return Some(index);
+        }
+        index = index.checked_sub(1)?;
     }
 }
 
 /// Extract the argument count from an INITSLOT instruction at the given method offset.
-fn initslot_arg_count_at(instructions: &[Instruction], method_offset: usize) -> Option<usize> {
+pub(super) fn initslot_arg_count_at(
+    instructions: &[Instruction],
+    method_offset: usize,
+) -> Option<usize> {
     instructions
         .iter()
         .find(|i| i.offset == method_offset && i.opcode == OpCode::Initslot)
@@ -391,22 +618,33 @@ fn initslot_arg_count_at(instructions: &[Instruction], method_offset: usize) -> 
         })
 }
 
-/// Trace backwards from a CALL instruction to find the PUSHA target that was
-/// pushed as the `arg_index`-th argument (0-indexed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum CallArgSource {
+    Target(usize),
+    PassThrough(u8),
+}
+
+/// Trace backwards from a CALL instruction to find the source of the
+/// `arg_index`-th argument (0-indexed).
 ///
 /// Neo VM pops arguments top-first: the top of stack becomes arg0, the next
-/// item becomes arg1, etc.  So `arg0` is the last item pushed (0 items to
-/// skip) and `arg N` requires skipping N single-push instructions.
-fn trace_call_arg_to_pusha(
+/// item becomes arg1, etc. So `arg0` is the last item pushed (0 items to skip)
+/// and `arg N` requires skipping N single-push instructions.
+pub(super) fn trace_call_arg_source(
     instructions: &[Instruction],
     call_index: usize,
     arg_index: u8,
     callee_arg_count: usize,
-) -> Option<usize> {
+) -> Option<CallArgSource> {
     if (arg_index as usize) >= callee_arg_count {
         return None;
     }
-    let skip_count = arg_index as usize;
+    let call_instruction = instructions.get(call_index)?;
+    let skip_count = if call_instruction.opcode == OpCode::CallA {
+        arg_index as usize + 1
+    } else {
+        arg_index as usize
+    };
 
     let mut cursor = call_index.checked_sub(1)?;
     let mut remaining = skip_count;
@@ -419,25 +657,28 @@ fn trace_call_arg_to_pusha(
         }
 
         if remaining == 0 {
-            // This instruction should push the target argument.
             if instr.opcode == OpCode::PushA {
-                return pusha_absolute_target(instr);
+                return pusha_absolute_target(instr).map(CallArgSource::Target);
             }
             if let Some(slot) = local_load_index(instr) {
-                return resolve_slot_pointer_target(instructions, cursor, SlotDomain::Local(slot));
+                return resolve_slot_pointer_target(instructions, cursor, SlotDomain::Local(slot))
+                    .map(CallArgSource::Target)
+                    .or_else(|| {
+                        trace_argument_index_from_value_source(instructions, cursor)
+                            .map(CallArgSource::PassThrough)
+                    });
             }
             if let Some(slot) = static_load_index(instr) {
-                return resolve_slot_pointer_target(
-                    instructions,
-                    cursor,
-                    SlotDomain::Static(slot),
-                );
+                return resolve_slot_pointer_target(instructions, cursor, SlotDomain::Static(slot))
+                    .map(CallArgSource::Target)
+                    .or_else(|| {
+                        trace_argument_index_from_value_source(instructions, cursor)
+                            .map(CallArgSource::PassThrough)
+                    });
             }
-            return None;
+            return arg_load_index(instr).map(CallArgSource::PassThrough);
         }
 
-        // Assume each non-NOP instruction in the arg-push sequence produces
-        // exactly one stack item (LDLOC, LDARG, PUSHA, PUSH*, etc.).
         remaining -= 1;
         cursor = cursor.checked_sub(1)?;
     }
@@ -447,7 +688,7 @@ fn trace_call_arg_to_pusha(
 /// pointer from an argument slot (LDARG N) by tracing back through callers.
 fn resolve_ldarg_calla_targets(
     instructions: &[Instruction],
-    edges: &mut Vec<CallEdge>,
+    edges: &mut [CallEdge],
     table: &MethodTable,
     methods: &mut BTreeMap<usize, MethodRef>,
 ) {
@@ -487,44 +728,92 @@ fn resolve_ldarg_calla_targets(
         return;
     }
 
-    // Build caller index: callee_method_offset → [call_instruction_offset, …]
-    let mut callers_by_target: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for edge in edges.iter() {
-        if let CallTarget::Internal { method } = &edge.target {
-            if edge.opcode == "CALL" || edge.opcode == "CALL_L" {
-                callers_by_target
-                    .entry(method.offset)
-                    .or_default()
-                    .push(edge.call_offset);
+    loop {
+        let mut callers_by_target: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for edge in edges.iter() {
+            if let CallTarget::Internal { method } = &edge.target {
+                if edge.opcode == "CALL" || edge.opcode == "CALL_L" || edge.opcode == "CALLA" {
+                    callers_by_target
+                        .entry(method.offset)
+                        .or_default()
+                        .push(edge.call_offset);
+                }
             }
         }
-    }
 
-    for (edge_idx, arg_idx, method_offset) in &sites {
-        let Some(call_sites) = callers_by_target.get(method_offset) else {
-            continue;
-        };
-        let Some(callee_arg_count) = initslot_arg_count_at(instructions, *method_offset) else {
-            continue;
-        };
-
-        let mut resolved = None;
-        for &call_offset in call_sites {
-            let Some(&call_idx) = offset_to_index.get(&call_offset) else {
+        let mut progress = false;
+        for (edge_idx, arg_idx, method_offset) in &sites {
+            if !matches!(edges[*edge_idx].target, CallTarget::Indirect { .. }) {
                 continue;
-            };
-            if let Some(target) =
-                trace_call_arg_to_pusha(instructions, call_idx, *arg_idx, callee_arg_count)
-            {
-                resolved = Some(target);
-                break;
+            }
+
+            let mut visited = BTreeSet::new();
+            let resolved = resolve_argument_target_recursive(
+                instructions,
+                &offset_to_index,
+                &callers_by_target,
+                methods,
+                *method_offset,
+                *arg_idx,
+                &mut visited,
+            );
+
+            if let Some(target) = resolved {
+                let callee = table.resolve_internal_target(target);
+                methods.insert(callee.offset, callee.clone());
+                edges[*edge_idx].target = CallTarget::Internal { method: callee };
+                progress = true;
             }
         }
 
-        if let Some(target) = resolved {
-            let callee = table.resolve_internal_target(target);
-            methods.insert(callee.offset, callee.clone());
-            edges[*edge_idx].target = CallTarget::Internal { method: callee };
+        if !progress {
+            break;
         }
     }
+}
+
+fn resolve_argument_target_recursive(
+    instructions: &[Instruction],
+    offset_to_index: &BTreeMap<usize, usize>,
+    callers_by_target: &BTreeMap<usize, Vec<usize>>,
+    methods: &BTreeMap<usize, MethodRef>,
+    method_offset: usize,
+    arg_index: u8,
+    visited: &mut BTreeSet<(usize, u8)>,
+) -> Option<usize> {
+    if !visited.insert((method_offset, arg_index)) {
+        return None;
+    }
+
+    let call_sites = callers_by_target.get(&method_offset)?;
+    let callee_arg_count =
+        initslot_arg_count_at(instructions, method_offset).unwrap_or(arg_index as usize + 1);
+
+    for &call_offset in call_sites {
+        let &call_idx = offset_to_index.get(&call_offset)?;
+        match trace_call_arg_source(instructions, call_idx, arg_index, callee_arg_count) {
+            Some(CallArgSource::Target(target)) => return Some(target),
+            Some(CallArgSource::PassThrough(next_arg)) => {
+                let caller_method_offset = methods
+                    .range(..=call_offset)
+                    .next_back()
+                    .map(|(&offset, _)| offset)
+                    .unwrap_or(call_offset);
+                if let Some(target) = resolve_argument_target_recursive(
+                    instructions,
+                    offset_to_index,
+                    callers_by_target,
+                    methods,
+                    caller_method_offset,
+                    next_arg,
+                    visited,
+                ) {
+                    return Some(target);
+                }
+            }
+            None => {}
+        }
+    }
+
+    None
 }

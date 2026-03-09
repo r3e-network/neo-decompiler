@@ -50,10 +50,14 @@ fn high_level_lifts_if_else_block() {
         .expect("high-level output");
     assert!(high_level.contains("if t0 {"));
     assert!(high_level.contains("else {"));
-    assert!(high_level.contains("let t1 = 2;") || high_level.contains("return 2;"),
-        "if-branch value: {high_level}");
-    assert!(high_level.contains("let t2 = 3;") || high_level.contains("return 3;"),
-        "else-branch value: {high_level}");
+    assert!(
+        high_level.contains("let t1 = 2;") || high_level.contains("return 2;"),
+        "if-branch value: {high_level}"
+    );
+    assert!(
+        high_level.contains("let t2 = 3;") || high_level.contains("return 3;"),
+        "else-branch value: {high_level}"
+    );
 }
 
 #[test]

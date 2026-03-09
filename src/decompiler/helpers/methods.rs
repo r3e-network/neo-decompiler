@@ -4,29 +4,30 @@ use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::{ContractManifest, ManifestMethod};
 
 /// Return the ABI method that matches the script entry offset, falling back to
-/// the first ABI method when offsets are missing.
+/// the first ABI method when all ABI offsets are missing.
 pub(in super::super) fn find_manifest_entry_method(
     manifest: &ContractManifest,
     entry_offset: usize,
 ) -> Option<(&ManifestMethod, bool)> {
-    manifest
+    if let Some(method) = manifest
         .abi
         .methods
         .iter()
         .find(|method| offset_as_usize(method.offset) == Some(entry_offset))
-        .map(|method| (method, true))
-}
+    {
+        return Some((method, true));
+    }
 
-/// Return `true` when at least one manifest method starts at `offset`.
-pub(in super::super) fn has_manifest_method_at_offset(
-    manifest: &ContractManifest,
-    offset: usize,
-) -> bool {
-    manifest
+    if manifest
         .abi
         .methods
         .iter()
-        .any(|method| offset_as_usize(method.offset) == Some(offset))
+        .any(|method| offset_as_usize(method.offset).is_some())
+    {
+        return None;
+    }
+
+    manifest.abi.methods.first().map(|method| (method, false))
 }
 
 /// Convert a manifest offset (`Option<i32>`) to `Option<usize>`, treating
@@ -117,7 +118,7 @@ pub(in super::super) fn collect_initslot_offsets(instructions: &[Instruction]) -
 /// prologue (e.g. simple helpers that use no locals/arguments).  Adding
 /// these as baseline method starts prevents their bodies from being
 /// inlined into the caller's method body.
-fn collect_call_targets(instructions: &[Instruction]) -> Vec<usize> {
+pub(in super::super) fn collect_call_targets(instructions: &[Instruction]) -> Vec<usize> {
     let known_offsets: BTreeSet<usize> = instructions.iter().map(|ins| ins.offset).collect();
     let mut targets = Vec::new();
     for instruction in instructions {
@@ -167,21 +168,16 @@ fn collect_post_ret_method_offsets(
 
             let incoming = edges_by_target.get(&next.offset);
             let has_incoming_from_same_baseline_method = incoming.is_some_and(|sources| {
-                sources
-                    .iter()
-                    .any(|&s| s >= method_start && s < method_end)
+                sources.iter().any(|&s| s >= method_start && s < method_end)
             });
             let has_incoming_from_other_baseline_method = incoming.is_some_and(|sources| {
-                sources
-                    .iter()
-                    .any(|&s| s < method_start || s >= method_end)
+                sources.iter().any(|&s| s < method_start || s >= method_end)
             });
-            let has_same_baseline_incoming_later_in_range =
-                known_offsets.range(method_start..method_end).any(|&src_off| {
+            let has_same_baseline_incoming_later_in_range = known_offsets
+                .range(method_start..method_end)
+                .any(|&src_off| {
                     edges_by_source.get(&src_off).is_some_and(|targets| {
-                        targets
-                            .iter()
-                            .any(|&t| t > next.offset && t < method_end)
+                        targets.iter().any(|&t| t > next.offset && t < method_end)
                     })
                 });
 

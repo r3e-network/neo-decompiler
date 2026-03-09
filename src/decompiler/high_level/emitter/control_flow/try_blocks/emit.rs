@@ -56,11 +56,9 @@ impl HighLevelEmitter {
             // the search bound.  Otherwise the try body always terminates
             // (throw/abort) so there was no ENDTRY — search forward from the
             // catch target to find the catch body's own ENDTRY.
-            let search_bound = catch_end.unwrap_or_else(|| {
-                self.program.last().map(|i| i.offset + 1).unwrap_or(catch)
-            });
-            if let Some((endtry_offset, target)) = self.find_endtry_target(catch, search_bound)
-            {
+            let search_bound = catch_end
+                .unwrap_or_else(|| self.program.last().map(|i| i.offset + 1).unwrap_or(catch));
+            if let Some((endtry_offset, target)) = self.find_endtry_target(catch, search_bound) {
                 self.skip_jumps.insert(endtry_offset);
                 resume_target.get_or_insert(target);
                 catch_end.get_or_insert(target);

@@ -76,6 +76,13 @@ pub enum NefError {
         offset: usize,
     },
 
+    /// A variable-length integer used a longer representation than necessary.
+    #[error("varint is not canonically encoded at offset {offset}")]
+    NonCanonicalVarInt {
+        /// Offset where the overlong integer was read.
+        offset: usize,
+    },
+
     /// A variable-length string contained invalid UTF-8.
     #[error("varstring contains invalid utf-8 at offset {offset}")]
     InvalidUtf8String {

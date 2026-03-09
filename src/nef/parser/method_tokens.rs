@@ -1,6 +1,12 @@
 use crate::error::{NefError, Result};
 
 use super::super::encoding::read_varint;
+
+fn read_u16_le(bytes: &[u8]) -> u16 {
+    let mut array = [0u8; 2];
+    array.copy_from_slice(bytes);
+    u16::from_le_bytes(array)
+}
 use super::super::types::MethodToken;
 use super::NefParser;
 
@@ -53,7 +59,7 @@ impl NefParser {
             let params_bytes = bytes
                 .get(offset..offset + 2)
                 .ok_or(NefError::UnexpectedEof { offset })?;
-            let params = u16::from_le_bytes(params_bytes.try_into().unwrap());
+            let params = read_u16_le(params_bytes);
             offset += 2;
 
             let has_return_value = match bytes.get(offset) {

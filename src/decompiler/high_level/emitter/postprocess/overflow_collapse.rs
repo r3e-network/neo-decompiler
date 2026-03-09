@@ -51,7 +51,7 @@ impl HighLevelEmitter {
     /// Must run after `rewrite_else_if_chains` (which may restructure the
     /// blocks we need to match) and before `rewrite_compound_assignments`
     /// (which would obscure the DUP assignment pattern).
-    pub(crate) fn collapse_overflow_checks(statements: &mut Vec<String>) {
+    pub(crate) fn collapse_overflow_checks(statements: &mut [String]) {
         let mut index = 0;
         while index < statements.len() {
             if let Some(collapse) = try_match_overflow(statements, index) {
@@ -87,8 +87,8 @@ struct OverflowCollapse {
 
 /// Return the index of the next non-empty, non-comment line at or after `start`.
 fn next_code_line(statements: &[String], start: usize) -> Option<usize> {
-    for i in start..statements.len() {
-        let trimmed = statements[i].trim();
+    for (i, statement) in statements.iter().enumerate().skip(start) {
+        let trimmed = statement.trim();
         if trimmed.is_empty() || trimmed.starts_with("//") {
             continue;
         }
@@ -154,7 +154,7 @@ fn try_match_overflow(statements: &[String], idx: usize) -> Option<OverflowColla
 
     let is_checked = first_body
         .as_deref()
-        .map_or(false, |s| s.starts_with("throw("));
+        .is_some_and(|s| s.starts_with("throw("));
 
     // For checked patterns, only blank the if-block (the throw guard).
     // The else block (if any) contains the continuation of the function
@@ -192,7 +192,7 @@ fn try_match_overflow(statements: &[String], idx: usize) -> Option<OverflowColla
 }
 
 /// Apply the collapse: rewrite the operation line and blank the wrapper lines.
-fn apply_collapse(statements: &mut Vec<String>, collapse: &OverflowCollapse) {
+fn apply_collapse(statements: &mut [String], collapse: &OverflowCollapse) {
     // Preserve the leading whitespace (indentation) of the operation line.
     let indent = leading_whitespace(&statements[collapse.op_line]);
 
@@ -205,14 +205,17 @@ fn apply_collapse(statements: &mut Vec<String>, collapse: &OverflowCollapse) {
         } else {
             format!("checked({})", collapse.expr)
         };
-        statements[collapse.op_line] =
-            format!("{indent}let {} = {wrapped};", collapse.result_var);
+        statements[collapse.op_line] = format!("{indent}let {} = {wrapped};", collapse.result_var);
     }
     // For unchecked, the original `let tA = <expr>;` is already correct.
 
     // Blank all lines from the DUP through the closing brace.
-    for i in collapse.blank_start..=collapse.blank_end {
-        statements[i].clear();
+    for statement in statements
+        .iter_mut()
+        .take(collapse.blank_end + 1)
+        .skip(collapse.blank_start)
+    {
+        statement.clear();
     }
 
     // For checked patterns with an else block: unwrap the else by blanking
@@ -322,8 +325,8 @@ fn find_overflow_block_end(statements: &[String], if_idx: usize) -> Option<usize
 /// Find the index of the closing `}` that matches the `{` at `open_idx`.
 fn find_matching_brace(statements: &[String], open_idx: usize) -> Option<usize> {
     let mut depth = 1i32;
-    for i in (open_idx + 1)..statements.len() {
-        let trimmed = statements[i].trim();
+    for (i, statement) in statements.iter().enumerate().skip(open_idx + 1) {
+        let trimmed = statement.trim();
         if trimmed.is_empty() || trimmed.starts_with("//") {
             continue;
         }
@@ -368,8 +371,8 @@ mod tests {
         ]);
         HighLevelEmitter::collapse_overflow_checks(&mut s);
         assert_eq!(s[0], "let t0 = a + b;");
-        for i in 1..=11 {
-            assert!(s[i].is_empty(), "line {i} should be blank: {:?}", s[i]);
+        for (i, line) in s.iter().enumerate().take(12).skip(1) {
+            assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
     }
 
@@ -388,8 +391,8 @@ mod tests {
         ]);
         HighLevelEmitter::collapse_overflow_checks(&mut s);
         assert_eq!(s[0], "let t0 = checked(a + b);");
-        for i in 1..=8 {
-            assert!(s[i].is_empty(), "line {i} should be blank: {:?}", s[i]);
+        for (i, line) in s.iter().enumerate().take(9).skip(1) {
+            assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
     }
 
@@ -412,8 +415,8 @@ mod tests {
         ]);
         HighLevelEmitter::collapse_overflow_checks(&mut s);
         assert_eq!(s[0], "let t0 = a + b;");
-        for i in 1..=12 {
-            assert!(s[i].is_empty(), "line {i} should be blank: {:?}", s[i]);
+        for (i, line) in s.iter().enumerate().take(13).skip(1) {
+            assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
     }
 
@@ -429,8 +432,8 @@ mod tests {
         ]);
         HighLevelEmitter::collapse_overflow_checks(&mut s);
         assert_eq!(s[0], "let t0 = a + b;");
-        for i in 1..=5 {
-            assert!(s[i].is_empty(), "line {i} should be blank: {:?}", s[i]);
+        for (i, line) in s.iter().enumerate().take(6).skip(1) {
+            assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
     }
 
@@ -463,8 +466,8 @@ mod tests {
         ]);
         HighLevelEmitter::collapse_overflow_checks(&mut s);
         assert_eq!(s[0], "let t0 = checked(a);");
-        for i in 1..=6 {
-            assert!(s[i].is_empty(), "line {i} should be blank: {:?}", s[i]);
+        for (i, line) in s.iter().enumerate().take(7).skip(1) {
+            assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
     }
 
@@ -509,8 +512,8 @@ mod tests {
         HighLevelEmitter::collapse_overflow_checks(&mut s);
         assert_eq!(s[0], "let t5 = t4 + 1;");
         // Everything from line 1 through the final `}` should be blanked.
-        for i in 1..s.len() {
-            assert!(s[i].is_empty(), "line {i} should be blank: {:?}", s[i]);
+        for (i, line) in s.iter().enumerate().skip(1) {
+            assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
     }
 
@@ -534,8 +537,8 @@ mod tests {
         ]);
         HighLevelEmitter::collapse_overflow_checks(&mut s);
         assert_eq!(s[0], "let t0 = a + b;");
-        for i in 1..s.len() {
-            assert!(s[i].is_empty(), "line {i} should be blank: {:?}", s[i]);
+        for (i, line) in s.iter().enumerate().skip(1) {
+            assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
     }
 
@@ -551,8 +554,8 @@ mod tests {
         ]);
         HighLevelEmitter::collapse_overflow_checks(&mut s);
         assert_eq!(s[0], "        let t0 = checked(a + b);");
-        for i in 1..=5 {
-            assert!(s[i].is_empty(), "line {i} should be blank: {:?}", s[i]);
+        for (i, line) in s.iter().enumerate().take(6).skip(1) {
+            assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
     }
 }

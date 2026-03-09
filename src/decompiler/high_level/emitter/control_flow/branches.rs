@@ -123,7 +123,8 @@ impl HighLevelEmitter {
         let closer_entry = self.pending_closers.entry(false_target).or_insert(0);
         *closer_entry += 1;
 
-        if let Some((jump_offset, jump_target)) = self.detect_else(instruction.offset, false_target) {
+        if let Some((jump_offset, jump_target)) = self.detect_else(instruction.offset, false_target)
+        {
             if !self.is_loop_control_target(jump_target)
                 && !self.else_targets.contains_key(&false_target)
             {
@@ -223,7 +224,9 @@ impl HighLevelEmitter {
         *closer_entry += 1;
 
         if loop_jump.is_none() {
-            if let Some((jump_offset, jump_target)) = self.detect_else(instruction.offset, false_target) {
+            if let Some((jump_offset, jump_target)) =
+                self.detect_else(instruction.offset, false_target)
+            {
                 if !self.is_loop_control_target(jump_target)
                     && !self.else_targets.contains_key(&false_target)
                 {
@@ -238,7 +241,9 @@ impl HighLevelEmitter {
                         .entry(jump_target)
                         .or_insert(self.stack.len());
                 }
-            } else if let Some(else_end) = self.detect_implicit_else(instruction.offset, false_target) {
+            } else if let Some(else_end) =
+                self.detect_implicit_else(instruction.offset, false_target)
+            {
                 if !self.else_targets.contains_key(&false_target) {
                     let else_entry = self.else_targets.entry(false_target).or_insert(0);
                     *else_entry += 1;
@@ -249,11 +254,7 @@ impl HighLevelEmitter {
         }
     }
 
-    fn detect_else(
-        &self,
-        branch_offset: usize,
-        false_offset: usize,
-    ) -> Option<(usize, usize)> {
+    fn detect_else(&self, branch_offset: usize, false_offset: usize) -> Option<(usize, usize)> {
         let target_index = *self.index_by_offset.get(&false_offset)?;
         if target_index == 0 {
             return None;
@@ -300,11 +301,7 @@ impl HighLevelEmitter {
     /// Returns `Some(else_end_offset)` — the offset where the else closer `}`
     /// should be placed.  The caller must NOT insert a `skip_jumps` entry
     /// (there is no JMP to skip).
-    fn detect_implicit_else(
-        &self,
-        branch_offset: usize,
-        false_offset: usize,
-    ) -> Option<usize> {
+    fn detect_implicit_else(&self, branch_offset: usize, false_offset: usize) -> Option<usize> {
         let target_index = *self.index_by_offset.get(&false_offset)?;
         if target_index == 0 {
             return None;
@@ -322,9 +319,7 @@ impl HighLevelEmitter {
             && self
                 .call_targets_by_offset
                 .get(&prev.offset)
-                .map_or(false, |target| {
-                    self.noreturn_method_offsets.contains(target)
-                });
+                .is_some_and(|target| self.noreturn_method_offsets.contains(target));
 
         if !is_direct_terminator && !is_noreturn_call {
             return None;
@@ -393,11 +388,7 @@ impl HighLevelEmitter {
         let body_has_substance = self.program[target_index..end_index].iter().any(|ins| {
             !matches!(
                 ins.opcode,
-                OpCode::Endtry
-                    | OpCode::EndtryL
-                    | OpCode::Nop
-                    | OpCode::Jmp
-                    | OpCode::Jmp_L
+                OpCode::Endtry | OpCode::EndtryL | OpCode::Nop | OpCode::Jmp | OpCode::Jmp_L
             )
         });
         if !body_has_substance {

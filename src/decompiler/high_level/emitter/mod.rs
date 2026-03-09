@@ -12,7 +12,10 @@ mod stack;
 mod types;
 mod util;
 
-use helpers::{convert_target_name, format_int_bytes_as_decimal, format_pushdata, format_type_operand, literal_from_operand};
+use helpers::{
+    convert_target_name, format_int_bytes_as_decimal, format_pushdata, format_type_operand,
+    literal_from_operand,
+};
 use types::{DoWhileLoop, LiteralValue, LoopContext, LoopJump, SlotKind};
 
 #[derive(Debug, Default)]

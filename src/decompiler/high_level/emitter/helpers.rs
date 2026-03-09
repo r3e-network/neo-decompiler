@@ -84,7 +84,7 @@ pub(super) fn format_int_bytes_as_decimal(bytes: &[u8]) -> String {
         return value.to_string();
     }
     // General case: arbitrary-length little-endian signed two's complement.
-    let is_negative = bytes.last().map_or(false, |b| b & 0x80 != 0);
+    let is_negative = bytes.last().is_some_and(|b| b & 0x80 != 0);
     // Convert to big-endian unsigned magnitude.
     let mut magnitude: Vec<u8> = if is_negative {
         // Two's complement negate: invert all bits, then add 1.
@@ -125,7 +125,7 @@ pub(super) fn format_int_bytes_as_decimal(bytes: &[u8]) -> String {
         }
     }
     digits.reverse();
-    let s = String::from_utf8(digits).unwrap();
+    let s: String = digits.into_iter().map(char::from).collect();
     if is_negative {
         format!("-{s}")
     } else {

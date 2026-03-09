@@ -5,7 +5,7 @@ use crate::instruction::Instruction;
 use crate::manifest::{ContractManifest, ManifestMethod};
 
 use super::super::super::helpers::{
-    has_manifest_method_at_offset, next_inferred_method_offset, offset_as_usize,
+    find_manifest_entry_method, next_inferred_method_offset, offset_as_usize,
 };
 use super::super::helpers::{
     collect_csharp_parameters, escape_csharp_string, format_csharp_parameters,
@@ -25,7 +25,12 @@ pub(super) fn write_manifest_methods(
     context: &MethodsContext<'_>,
     warnings: &mut Vec<String>,
 ) {
-    write_script_entry_if_needed(output, manifest, context, warnings);
+    let entry_method = write_script_entry_if_needed(output, manifest, context, warnings);
+    let entry_offset = context
+        .instructions
+        .first()
+        .map(|ins| ins.offset)
+        .unwrap_or(0);
 
     let mut used_signatures: HashSet<(String, String)> = HashSet::new();
     let mut sorted_methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
@@ -97,24 +102,131 @@ pub(super) fn write_manifest_methods(
         write_method_attributes(output, &method_name, &method.name, method.safe);
         writeln!(output, "        {signature}").unwrap();
         writeln!(output, "        {{").unwrap();
-        writeln!(output, "            throw new NotImplementedException();").unwrap();
+
+        if entry_method
+            .as_ref()
+            .map(|(entry, _)| std::ptr::eq(*entry, method))
+            .unwrap_or(false)
+        {
+            let end = next_inferred_method_offset(context.inferred_method_starts, entry_offset);
+            let slice: Vec<Instruction> = match end {
+                Some(end) => context
+                    .instructions
+                    .iter()
+                    .filter(|ins| ins.offset >= entry_offset && ins.offset < end)
+                    .cloned()
+                    .collect(),
+                None => context.instructions.to_vec(),
+            };
+            let slice = if slice.is_empty() {
+                context.instructions.to_vec()
+            } else {
+                slice
+            };
+            let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+            let is_void = method.return_type == "Void";
+            body::write_lifted_body(
+                output,
+                &slice,
+                Some(&labels),
+                warnings,
+                &context.body_context,
+                is_void,
+            );
+        } else {
+            writeln!(output, "            throw new NotImplementedException();").unwrap();
+        }
+
         writeln!(output, "        }}").unwrap();
         writeln!(output).unwrap();
     }
 }
 
-fn write_script_entry_if_needed(
+pub(super) fn write_inferred_methods(
     output: &mut String,
-    manifest: &ContractManifest,
     context: &MethodsContext<'_>,
+    manifest: Option<&ContractManifest>,
     warnings: &mut Vec<String>,
 ) {
-    let Some(entry_offset) = context.instructions.first().map(|ins| ins.offset) else {
-        return;
-    };
+    let entry_offset = context.instructions.first().map(|ins| ins.offset);
+    let manifest_offsets: HashSet<usize> = manifest
+        .map(|manifest| {
+            manifest
+                .abi
+                .methods
+                .iter()
+                .filter_map(|method| offset_as_usize(method.offset))
+                .collect()
+        })
+        .unwrap_or_default();
 
-    if has_manifest_method_at_offset(manifest, entry_offset) {
-        return;
+    for start in context.inferred_method_starts {
+        if Some(*start) == entry_offset || manifest_offsets.contains(start) {
+            continue;
+        }
+
+        let end = next_inferred_method_offset(context.inferred_method_starts, *start)
+            .or_else(|| context.instructions.last().map(|ins| ins.offset + 1))
+            .unwrap_or(*start);
+        let slice: Vec<Instruction> = context
+            .instructions
+            .iter()
+            .filter(|ins| ins.offset >= *start && ins.offset < end)
+            .cloned()
+            .collect();
+        if slice.is_empty()
+            || slice
+                .iter()
+                .all(|ins| ins.opcode == crate::instruction::OpCode::Nop)
+        {
+            continue;
+        }
+
+        let arg_count = context
+            .body_context
+            .method_arg_counts_by_offset
+            .get(start)
+            .copied()
+            .unwrap_or(0);
+        let params = (0..arg_count)
+            .map(|index| format!("dynamic arg{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        writeln!(output).unwrap();
+        writeln!(
+            output,
+            "        private static dynamic sub_0x{start:04X}({params})"
+        )
+        .unwrap();
+        writeln!(output, "        {{").unwrap();
+        let labels = (0..arg_count)
+            .map(|index| format!("arg{index}"))
+            .collect::<Vec<_>>();
+        body::write_lifted_body(
+            output,
+            &slice,
+            (!labels.is_empty()).then_some(labels.as_slice()),
+            warnings,
+            &context.body_context,
+            false,
+        );
+        writeln!(output, "        }}").unwrap();
+        writeln!(output).unwrap();
+    }
+}
+
+fn write_script_entry_if_needed<'a>(
+    output: &mut String,
+    manifest: &'a ContractManifest,
+    context: &MethodsContext<'_>,
+    warnings: &mut Vec<String>,
+) -> Option<(&'a ManifestMethod, bool)> {
+    let entry_offset = context.instructions.first().map(|ins| ins.offset)?;
+
+    let entry_method = find_manifest_entry_method(manifest, entry_offset);
+    if entry_method.is_some() {
+        return entry_method;
     }
 
     let end = next_inferred_method_offset(context.inferred_method_starts, entry_offset);
@@ -145,6 +257,7 @@ fn write_script_entry_if_needed(
     body::write_lifted_body(output, &slice, None, warnings, &context.body_context, true);
     writeln!(output, "        }}").unwrap();
     writeln!(output).unwrap();
+    None
 }
 
 pub(super) fn write_fallback_entry(

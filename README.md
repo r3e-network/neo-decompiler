@@ -181,9 +181,11 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   statements and manifest-derived signatures with consistent indentation and small readability passes
   like compound assignments and optional single-use temp inlining. When ABI offsets are present,
   each manifest method is decompiled within its own offset range; methods
-  without offsets are still emitted as stubs for completeness, and script
-  entry bytecode is preserved via a synthetic `script_entry`/`ScriptEntry`
-  method when ABI offsets do not align with the actual script entry.
+  without offsets are still emitted as stubs for completeness. When all ABI
+  offsets are missing, the first ABI method is used as the entry
+  signature/body. Script entry bytecode is preserved via a synthetic
+  `script_entry`/`ScriptEntry` method when ABI offsets do not align with the
+  actual script entry.
 - Control Flow Graph (CFG) construction with DOT export (`Decompilation::cfg_to_dot`) and
   reachability helpers for dead-code detection (`Cfg::unreachable_blocks`)
 - SSA (Static Single Assignment) transformation via `cfg.to_ssa()` or `Decompilation::compute_ssa()`:

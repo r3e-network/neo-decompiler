@@ -64,3 +64,82 @@ fn rejects_trailing_bytes() {
         crate::error::Error::Nef(NefError::TrailingData { extra: 1 })
     ));
 }
+
+#[test]
+fn rejects_nonzero_reserved_byte() {
+    let mut bytes = build_sample(&[0x40]);
+    bytes[69] = 0x01;
+
+    let err = NefParser::new().parse(&bytes).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Nef(NefError::ReservedByteNonZero {
+            offset: 69,
+            value: 0x01
+        })
+    ));
+}
+
+#[test]
+fn rejects_nonzero_reserved_word() {
+    let mut bytes = build_sample(&[0x40]);
+    let reserved_word_offset = 4 + 64 + 1 + 1 + 1;
+    bytes[reserved_word_offset] = 0x34;
+    bytes[reserved_word_offset + 1] = 0x12;
+    let checksum = NefParser::calculate_checksum(&bytes[..bytes.len() - 4]);
+    let checksum_offset = bytes.len() - 4;
+    bytes[checksum_offset..].copy_from_slice(&checksum.to_le_bytes());
+
+    let err = NefParser::new().parse(&bytes).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Nef(NefError::ReservedWordNonZero { offset, value: 0x1234 })
+            if offset == reserved_word_offset
+    ));
+}
+
+#[test]
+fn rejects_oversized_u64_varint_for_source_length() {
+    let script = vec![0x40];
+    let mut data = Vec::new();
+    data.extend_from_slice(&MAGIC);
+    data.extend_from_slice(&[0u8; 64]);
+    data.push(0xFF);
+    data.extend_from_slice(&(u32::MAX as u64 + 1).to_le_bytes());
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    write_varint(&mut data, script.len() as u32);
+    data.extend_from_slice(&script);
+    let checksum = NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+
+    let err = NefParser::new().parse(&data).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Nef(NefError::IntegerOverflow { offset: 68 })
+    ));
+}
+
+#[test]
+fn rejects_non_canonical_varint_for_source_length() {
+    let script = vec![0x40];
+    let mut data = Vec::new();
+    data.extend_from_slice(&MAGIC);
+    data.extend_from_slice(&[0u8; 64]);
+    data.push(0xFD);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(0);
+    data.push(0);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    write_varint(&mut data, script.len() as u32);
+    data.extend_from_slice(&script);
+    let checksum = NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+
+    let err = NefParser::new().parse(&data).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Nef(NefError::NonCanonicalVarInt { offset: 68 })
+    ));
+}

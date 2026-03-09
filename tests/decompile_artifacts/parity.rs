@@ -95,15 +95,15 @@ fn delegate_manifest_methods_do_not_swallow_private_initslot_bodies() {
         "private static BigInteger sub_0x000C(",
     );
     assert!(
-        csharp_delegate.contains("call_0x0041("),
+        csharp_delegate.contains("sub_0x0041("),
         "C# output should resolve stored local pointer CALLA target: {csharp_delegate}"
     );
     assert!(
-        csharp_delegate.contains("call_0x0041(t2, t1)"),
+        csharp_delegate.contains("sub_0x0041(t2, t1)"),
         "C# output should preserve CALLA helper arguments: {csharp_delegate}"
     );
     assert!(
-        !csharp_delegate.contains("call_0x0041()"),
+        !csharp_delegate.contains("sub_0x0041()"),
         "C# output should not drop CALLA helper arguments: {csharp_delegate}"
     );
     assert!(
@@ -495,7 +495,11 @@ fn foreach_pack_helpers_do_not_emit_literal_pack_underflow_warnings() {
         .expect("decompile succeeds");
 
     let high_level = result.high_level.as_deref().expect("high-level output");
-    let helper_049e_block = method_block(high_level, "\n    fn sub_0x049E() {", "\n}");
+    let helper_049e_block = method_block(
+        high_level,
+        "\n    fn sub_0x049E(arg0, arg1, arg2, arg3) {",
+        "\n}",
+    );
     assert!(
         !helper_049e_block.contains("// 049F: insufficient values on stack for PACKSTRUCT (needs 2)"),
         "sub_0x049E should model PACKSTRUCT at 0x049F without underflow warnings: {helper_049e_block}"
@@ -511,6 +515,10 @@ fn foreach_pack_helpers_do_not_emit_literal_pack_underflow_warnings() {
     assert!(
         !high_level.contains("// 04B8: insufficient values on stack for STLOC4 (needs 1)"),
         "PACK placeholder modeling should not regress the STLOC4 stack check at 0x04B8: {high_level}"
+    );
+    assert!(
+        !helper_049e_block.contains("missing_pack_item()"),
+        "sub_0x049E should infer entry-stack values for PACK/PACKSTRUCT instead of synthesizing missing pack items: {helper_049e_block}"
     );
 }
 
@@ -1155,6 +1163,77 @@ fn recursion_internal_calls_preserve_argument_expressions() {
 }
 
 #[test]
+fn recursion_even_odd_uses_branch_local_value_in_recursive_call() {
+    let artifacts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("TestingArtifacts/devpack");
+    if !artifacts_dir.is_dir() {
+        eprintln!(
+            "Skipping devpack parity test: {} not found",
+            artifacts_dir.display()
+        );
+        return;
+    }
+
+    let nef_path = artifacts_dir.join("Contract_Recursion.nef");
+    let manifest_path = artifacts_dir.join("Contract_Recursion.manifest.json");
+    if !nef_path.is_file() || !manifest_path.is_file() {
+        eprintln!(
+            "Skipping devpack parity test: missing {} or {}",
+            nef_path.display(),
+            manifest_path.display()
+        );
+        return;
+    }
+
+    let nef_bytes = fs::read(&nef_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", nef_path.display()));
+    let manifest_json = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    let manifest = ContractManifest::from_json_str(&manifest_json)
+        .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
+
+    let result = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let high_level = result.high_level.as_deref().expect("high-level output");
+    let even_block = method_block(
+        high_level,
+        "
+    fn even(n: int) -> bool {",
+        "
+    fn odd(n: int) -> bool {",
+    );
+    let odd_block = method_block(
+        high_level,
+        "
+    fn odd(n: int) -> bool {",
+        "
+}",
+    );
+
+    assert!(
+        !even_block.contains("return odd(t6);"),
+        "even() should not always call odd(t6) after the branch merge: {even_block}"
+    );
+    assert!(
+        !odd_block.contains("return even(t6);"),
+        "odd() should not always call even(t6) after the branch merge: {odd_block}"
+    );
+    assert!(
+        even_block.contains("return odd(")
+            && even_block.contains("n + 1")
+            && even_block.contains("n - 1"),
+        "even() should preserve both branch-specific recursive arguments: {even_block}"
+    );
+    assert!(
+        odd_block.contains("return even(")
+            && odd_block.contains("n + 1")
+            && odd_block.contains("n - 1"),
+        "odd() should preserve both branch-specific recursive arguments: {odd_block}"
+    );
+}
+
+#[test]
 fn lambda_static_delegate_recursion_resolves_to_internal_calls() {
     let artifacts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("TestingArtifacts/devpack");
     if !artifacts_dir.is_dir() {
@@ -1312,5 +1391,76 @@ fn tuple_unknown_unpack_preserves_stack_for_drop_stloc_drop_sequence() {
     assert!(
         !high_level.contains("// 002F: insufficient values on stack for DROP (needs 1)"),
         "UNPACK should preserve enough stack entries for DROP at 0x002F in Contract_Tuple::t1: {high_level}"
+    );
+}
+
+#[test]
+fn initializer_anonymous_object_logs_use_emitted_getter_helpers_without_warnings() {
+    let artifacts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("TestingArtifacts/devpack");
+    if !artifacts_dir.is_dir() {
+        eprintln!(
+            "Skipping devpack parity test: {} not found",
+            artifacts_dir.display()
+        );
+        return;
+    }
+
+    let nef_path = artifacts_dir.join("Contract_Initializer.nef");
+    let manifest_path = artifacts_dir.join("Contract_Initializer.manifest.json");
+    if !nef_path.is_file() || !manifest_path.is_file() {
+        eprintln!(
+            "Skipping devpack parity test: missing {} or {}",
+            nef_path.display(),
+            manifest_path.display()
+        );
+        return;
+    }
+
+    let nef_bytes = fs::read(&nef_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", nef_path.display()));
+    let manifest_json = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    let manifest = ContractManifest::from_json_str(&manifest_json)
+        .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
+
+    let result = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let high_level = result.high_level.as_deref().expect("high-level output");
+    let high_level_block =
+        method_block(high_level, "\n    fn anonymousObjectCreation() {", "\n}\n");
+    assert!(
+        !high_level_block.contains("???"),
+        "anonymousObjectCreation should no longer contain missing syscall placeholders: {high_level_block}"
+    );
+    assert!(
+        high_level_block.contains("sub_0x010E(loc0)") && high_level_block.contains("sub_0x0115(t16)"),
+        "anonymousObjectCreation should call the compiler-emitted anonymous getter helpers: {high_level_block}"
+    );
+    assert!(
+        high_level.contains("fn sub_0x0108(arg0)")
+            && high_level.contains("syscall(\"System.Runtime.Log\", arg0)"),
+        "Runtime.Log wrapper helper should infer its entry-stack argument: {high_level}"
+    );
+    assert!(
+        result.warnings.is_empty(),
+        "corrected initializer artifact should decompile without warnings: {:?}",
+        result.warnings
+    );
+
+    let csharp = result.csharp.as_deref().expect("csharp output");
+    let csharp_block = method_block(
+        csharp,
+        "\n        public static void anonymousObjectCreation()",
+        "\n    }\n}\n",
+    );
+    assert!(
+        !csharp_block.contains("???"),
+        "C# output should not contain missing syscall placeholders: {csharp_block}"
+    );
+    assert!(
+        csharp.contains("sub_0x0108(") && csharp.contains("syscall(\"System.Runtime.Log\", arg0)"),
+        "C# output should render the Runtime.Log helper with its inferred argument: {csharp}"
     );
 }

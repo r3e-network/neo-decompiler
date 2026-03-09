@@ -104,7 +104,7 @@ impl HighLevelEmitter {
     /// Eliminates identity assignments `let tN = tM;` by substituting tN→tM
     /// in all subsequent code. These arise from branch reconciliation (phi nodes)
     /// and DUP/OVER patterns where the copy is trivially aliased.
-    pub(crate) fn eliminate_identity_temps(statements: &mut Vec<String>) {
+    pub(crate) fn eliminate_identity_temps(statements: &mut [String]) {
         let mut index = 0;
         while index < statements.len() {
             let trimmed = statements[index].trim();
@@ -127,9 +127,17 @@ impl HighLevelEmitter {
                 index += 1;
                 continue;
             }
-            // Substitute lhs → rhs in all subsequent lines
             let lhs = assign.lhs.clone();
             let rhs = assign.rhs.clone();
+            let lhs_seen_earlier = statements
+                .iter()
+                .take(index)
+                .any(|stmt| Self::contains_identifier(stmt, &lhs));
+            if lhs_seen_earlier {
+                index += 1;
+                continue;
+            }
+            // Substitute lhs → rhs in all subsequent lines
             for stmt in statements.iter_mut().skip(index + 1) {
                 if Self::contains_identifier(stmt, &lhs) {
                     *stmt = Self::replace_identifier(stmt, &lhs, &rhs);
@@ -143,7 +151,7 @@ impl HighLevelEmitter {
     /// Collapses `let tN = <expr>; X = tN;` into `X = <expr>;` when tN is
     /// not used anywhere else.  This pattern arises from stack-based codegen
     /// where every VM instruction produces a temp that is immediately stored.
-    pub(crate) fn collapse_temp_into_store(statements: &mut Vec<String>) {
+    pub(crate) fn collapse_temp_into_store(statements: &mut [String]) {
         let mut index = 0;
         while index + 1 < statements.len() {
             let trimmed = statements[index].trim();
@@ -199,8 +207,7 @@ impl HighLevelEmitter {
                     .skip(next + 1)
                     .any(|s| Self::contains_identifier(s, temp));
                 if !used_later {
-                    let indent =
-                        &statements[next][..statements[next].len() - trimmed_next.len()];
+                    let indent = &statements[next][..statements[next].len() - trimmed_next.len()];
                     statements[next] = format!("{indent}return {};", a1.rhs);
                     statements[index].clear();
                     index = next + 1;
@@ -214,17 +221,14 @@ impl HighLevelEmitter {
     /// Strips VM-level stack operation comments that add noise to the output:
     /// - Removes standalone `// drop ...` and `// remove second stack value` lines
     /// - Strips trailing `// duplicate top of stack` and `// copy second stack value`
-    pub(crate) fn strip_stack_comments(statements: &mut Vec<String>) {
+    pub(crate) fn strip_stack_comments(statements: &mut [String]) {
         for stmt in statements.iter_mut() {
             let trimmed = stmt.trim();
             if trimmed.starts_with("// drop ") || trimmed.starts_with("// remove second") {
                 stmt.clear();
                 continue;
             }
-            for suffix in [
-                " // duplicate top of stack",
-                " // copy second stack value",
-            ] {
+            for suffix in [" // duplicate top of stack", " // copy second stack value"] {
                 if let Some(pos) = stmt.find(suffix) {
                     stmt.truncate(pos);
                 }

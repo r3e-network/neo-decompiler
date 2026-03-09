@@ -326,6 +326,630 @@ fn decompilation_resolves_local_pointer_flow_with_nop_before_calla() {
 }
 
 #[test]
+fn decompilation_resolves_multi_hop_local_pointer_flow_into_calla_edge() {
+    // Script layout:
+    // 0x0000: PUSHA +12 (target = 0x000C)
+    // 0x0005: STLOC0
+    // 0x0006: LDLOC0
+    // 0x0007: STLOC1
+    // 0x0008: LDLOC1
+    // 0x0009: CALLA
+    // 0x000A: RET
+    // 0x000B: NOP
+    // 0x000C: INITSLOT 0,0
+    // 0x000F: RET
+    let script = [
+        0x0A, 0x0C, 0x00, 0x00, 0x00, // PUSHA +12
+        0x70, // STLOC0
+        0x68, // LDLOC0
+        0x71, // STLOC1
+        0x69, // LDLOC1
+        0x36, // CALLA
+        0x40, // RET
+        0x21, // NOP
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x000C);
+            assert_eq!(method.name, "sub_0x000C");
+        }
+        other => panic!("expected resolved multi-hop local CALLA target, got: {other:?}"),
+    }
+}
+
+#[test]
+fn decompilation_does_not_resolve_local_pointer_across_method_boundary() {
+    // Script layout:
+    // 0x0000: INITSLOT 1,0
+    // 0x0003: PUSHA +14 (target = 0x0011)
+    // 0x0008: STLOC0
+    // 0x0009: RET
+    // 0x000A: INITSLOT 1,0
+    // 0x000D: LDLOC0
+    // 0x000E: CALLA
+    // 0x000F: RET
+    // 0x0010: NOP
+    // 0x0011: INITSLOT 0,0
+    // 0x0014: RET
+    let script = [
+        0x57, 0x01, 0x00, // INITSLOT 1,0
+        0x0A, 0x0E, 0x00, 0x00, 0x00, // PUSHA +14
+        0x70, // STLOC0
+        0x40, // RET
+        0x57, 0x01, 0x00, // INITSLOT 1,0
+        0x68, // LDLOC0
+        0x36, // CALLA
+        0x40, // RET
+        0x21, // NOP
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+
+    match &edge.target {
+        CallTarget::Indirect { opcode, operand } => {
+            assert_eq!(opcode, "CALLA");
+            assert_eq!(*operand, None);
+        }
+        other => panic!("expected cross-method local CALLA to remain indirect, got: {other:?}"),
+    }
+}
+
+#[test]
+fn type_inference_uses_manifest_parameter_types_for_offsetless_entry_method() {
+    // Script: LDARG0; STARG0; RET
+    // No INITSLOT prologue, so the entry shape must come from the manifest.
+    let script = [0x78, 0x80, 0x40];
+    let nef_bytes = build_nef(&script);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+        {
+            "name": "OffsetlessTypes",
+            "supportedstandards": [],
+            "features": {"storage": false, "payable": false},
+            "abi": {
+                "methods": [
+                    {
+                        "name": "main",
+                        "parameters": [
+                            {"name": "owner", "type": "Hash160"}
+                        ],
+                        "returntype": "Void",
+                        "safe": false
+                    }
+                ],
+                "events": []
+            },
+            "permissions": [],
+            "trusts": "*"
+        }
+        "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let method = &decompilation.types.methods[0];
+    assert_eq!(method.method.name, "main");
+    assert_eq!(method.arguments.len(), 1);
+    assert_eq!(method.arguments[0], ValueType::ByteString);
+}
+
+#[test]
+fn type_inference_tracks_read_only_fixed_argument_slots_without_initslot() {
+    // Script: LDARG0; RET
+    let script = [0x78, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let method = &decompilation.types.methods[0];
+    assert_eq!(method.arguments.len(), 1);
+    assert_eq!(method.arguments[0], ValueType::Unknown);
+}
+
+#[test]
+fn call_graph_attributes_helper_syscall_to_inferred_helper_method() {
+    // Script layout:
+    // 0x0000: CALL +4 (target=0x0004)
+    // 0x0002: RET
+    // 0x0003: NOP
+    // 0x0004: SYSCALL System.Runtime.GetTime
+    // 0x0009: RET
+    let script = [
+        0x34, 0x04, // CALL +4
+        0x40, // RET
+        0x21, // NOP
+        0x41, 0xB7, 0xC3, 0x88, 0x03, // SYSCALL 0x0388C3B7
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    assert_eq!(decompilation.call_graph.edges.len(), 2);
+    let helper_edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "SYSCALL")
+        .expect("helper syscall edge");
+    assert_eq!(helper_edge.call_offset, 4);
+    assert_eq!(helper_edge.caller.offset, 4);
+    assert_eq!(helper_edge.caller.name, "sub_0x0004");
+}
+
+#[test]
+fn call_graph_attributes_pusha_calla_helper_syscall_to_inferred_helper_method() {
+    // Script layout:
+    // 0x0000: PUSHA +8 (target=0x0008)
+    // 0x0005: CALLA
+    // 0x0006: RET
+    // 0x0007: NOP
+    // 0x0008: SYSCALL System.Runtime.GetTime
+    // 0x000D: RET
+    let script = [
+        0x0A, 0x08, 0x00, 0x00, 0x00, // PUSHA +8
+        0x36, // CALLA
+        0x40, // RET
+        0x21, // NOP
+        0x41, 0xB7, 0xC3, 0x88, 0x03, // SYSCALL 0x0388C3B7
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let helper_edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "SYSCALL")
+        .expect("helper syscall edge");
+    assert_eq!(helper_edge.call_offset, 8);
+    assert_eq!(helper_edge.caller.offset, 8);
+    assert_eq!(helper_edge.caller.name, "sub_0x0008");
+}
+
+#[test]
+fn call_graph_attributes_ldarg_calla_helper_syscall_to_inferred_helper_method() {
+    // Script layout:
+    // 0x0000: PUSHA +15 (target=0x000F)
+    // 0x0005: CALL +4 (target=0x0009)
+    // 0x0007: RET
+    // 0x0008: NOP
+    // 0x0009: INITSLOT 0,1
+    // 0x000C: LDARG0
+    // 0x000D: CALLA
+    // 0x000E: RET
+    // 0x000F: SYSCALL System.Runtime.GetTime
+    // 0x0014: RET
+    let script = [
+        0x0A, 0x0F, 0x00, 0x00, 0x00, // PUSHA +15
+        0x34, 0x04, // CALL +4
+        0x40, // RET
+        0x21, // NOP
+        0x57, 0x00, 0x01, // INITSLOT 0,1
+        0x78, // LDARG0
+        0x36, // CALLA
+        0x40, // RET
+        0x41, 0xB7, 0xC3, 0x88, 0x03, // SYSCALL 0x0388C3B7
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let helper_edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "SYSCALL")
+        .expect("helper syscall edge");
+    assert_eq!(helper_edge.call_offset, 0x000F);
+    assert_eq!(helper_edge.caller.offset, 0x000F);
+    assert_eq!(helper_edge.caller.name, "sub_0x000F");
+}
+
+#[test]
+fn call_graph_attributes_ldloc_from_argument_calla_helper_syscall_to_inferred_helper_method() {
+    // Script layout:
+    // 0x0000: PUSHA +17 (target=0x0011)
+    // 0x0005: CALL +4 (target=0x0009)
+    // 0x0007: RET
+    // 0x0008: NOP
+    // 0x0009: INITSLOT 1,1
+    // 0x000C: LDARG0
+    // 0x000D: STLOC0
+    // 0x000E: LDLOC0
+    // 0x000F: CALLA
+    // 0x0010: RET
+    // 0x0011: SYSCALL System.Runtime.GetTime
+    // 0x0016: RET
+    let script = [
+        0x0A, 0x11, 0x00, 0x00, 0x00, // PUSHA +17
+        0x34, 0x04, // CALL +4
+        0x40, // RET
+        0x21, // NOP
+        0x57, 0x01, 0x01, // INITSLOT 1,1
+        0x78, // LDARG0
+        0x70, // STLOC0
+        0x68, // LDLOC0
+        0x36, // CALLA
+        0x40, // RET
+        0x41, 0xB7, 0xC3, 0x88, 0x03, // SYSCALL 0x0388C3B7
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let helper_edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "SYSCALL")
+        .expect("helper syscall edge");
+    assert_eq!(helper_edge.call_offset, 0x0011);
+    assert_eq!(helper_edge.caller.offset, 0x0011);
+    assert_eq!(helper_edge.caller.name, "sub_0x0011");
+}
+
+#[test]
+fn call_graph_resolves_nested_pusha_argument_through_calla_helper() {
+    // Script layout:
+    // 0x0000: PUSHA +18 (target = 0x0012)  // helper2 pointer argument
+    // 0x0005: PUSHA +7  (target = 0x000C)  // helper1 callee
+    // 0x000A: CALLA
+    // 0x000B: RET
+    // 0x000C: INITSLOT 0,1
+    // 0x000F: LDARG0
+    // 0x0010: CALLA
+    // 0x0011: RET
+    // 0x0012: SYSCALL System.Runtime.GetTime
+    // 0x0017: RET
+    let script = [
+        0x0A, 0x12, 0x00, 0x00, 0x00, // PUSHA +18
+        0x0A, 0x07, 0x00, 0x00, 0x00, // PUSHA +7
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x01, // INITSLOT 0,1
+        0x78, // LDARG0
+        0x36, // CALLA
+        0x40, // RET
+        0x41, 0xB7, 0xC3, 0x88, 0x03, // SYSCALL 0x0388C3B7
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let nested_calla = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA" && edge.call_offset == 0x0010)
+        .expect("nested CALLA edge present");
+    match &nested_calla.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x0012);
+            assert_eq!(method.name, "sub_0x0012");
+        }
+        other => panic!("expected nested CALLA to resolve helper target, got: {other:?}"),
+    }
+
+    let helper_edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "SYSCALL")
+        .expect("helper syscall edge");
+    assert_eq!(helper_edge.call_offset, 0x0012);
+    assert_eq!(helper_edge.caller.offset, 0x0012);
+    assert_eq!(helper_edge.caller.name, "sub_0x0012");
+}
+
+#[test]
+fn call_graph_resolves_nested_pusha_argument_through_calla_helper_without_initslot() {
+    // Script layout:
+    // 0x0000: PUSHA +11 (target = 0x000B) // helper2 pointer argument
+    // 0x0005: CALL +3  (target = 0x0008) // helper1 callee, no INITSLOT
+    // 0x0007: RET
+    // 0x0008: LDARG0
+    // 0x0009: CALLA
+    // 0x000A: RET
+    // 0x000B: SYSCALL System.Runtime.GetTime
+    // 0x0010: RET
+    let script = [
+        0x0A, 0x0B, 0x00, 0x00, 0x00, // PUSHA +11
+        0x34, 0x03, // CALL +3
+        0x40, // RET
+        0x78, // LDARG0
+        0x36, // CALLA
+        0x40, // RET
+        0x41, 0xB7, 0xC3, 0x88, 0x03, // SYSCALL 0x0388C3B7
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let nested_calla = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA" && edge.call_offset == 0x0009)
+        .expect("nested CALLA edge present");
+    match &nested_calla.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x000B);
+            assert_eq!(method.name, "sub_0x000B");
+        }
+        other => panic!("expected CALLA without INITSLOT helper to resolve target, got: {other:?}"),
+    }
+}
+
+#[test]
+fn call_graph_resolves_two_level_nested_calla_argument_chain() {
+    // Script layout:
+    // 0x0000: PUSHA +20 (target = 0x0014) // helper2 pointer
+    // 0x0005: PUSHA +21 (target = 0x001A) // helper3 pointer
+    // 0x000A: CALL +3  (target = 0x000D) // helper1
+    // 0x000C: RET
+    // 0x000D: INITSLOT 0,2
+    // 0x0010: LDARG0   // helper3
+    // 0x0011: LDARG1   // helper2
+    // 0x0012: CALLA    // helper2(helper3)
+    // 0x0013: RET
+    // 0x0014: INITSLOT 0,1
+    // 0x0017: LDARG0   // helper3
+    // 0x0018: CALLA    // helper3()
+    // 0x0019: RET
+    // 0x001A: SYSCALL System.Runtime.GetTime
+    // 0x001F: RET
+    let script = [
+        0x0A, 0x14, 0x00, 0x00, 0x00, // PUSHA +20
+        0x0A, 0x15, 0x00, 0x00, 0x00, // PUSHA +21
+        0x34, 0x03, // CALL +3
+        0x40, // RET
+        0x57, 0x00, 0x02, // INITSLOT 0,2
+        0x78, // LDARG0
+        0x79, // LDARG1
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x01, // INITSLOT 0,1
+        0x78, // LDARG0
+        0x36, // CALLA
+        0x40, // RET
+        0x41, 0xB7, 0xC3, 0x88, 0x03, // SYSCALL 0x0388C3B7
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let nested_calla = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA" && edge.call_offset == 0x0018)
+        .expect("second-level CALLA edge present");
+    match &nested_calla.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x001A);
+            assert_eq!(method.name, "sub_0x001A");
+        }
+        other => panic!("expected second-level CALLA to resolve helper target, got: {other:?}"),
+    }
+
+    let helper_edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "SYSCALL")
+        .expect("helper syscall edge");
+    assert_eq!(helper_edge.call_offset, 0x001A);
+    assert_eq!(helper_edge.caller.offset, 0x001A);
+    assert_eq!(helper_edge.caller.name, "sub_0x001A");
+}
+
+#[test]
+fn inferred_method_starts_tolerate_malformed_tryl_operand() {
+    use crate::instruction::{Instruction, OpCode, Operand};
+
+    let instructions = vec![
+        Instruction::new(
+            0,
+            OpCode::TryL,
+            Some(Operand::Bytes(vec![0x01, 0x02, 0x03])),
+        ),
+        Instruction::new(1, OpCode::Ret, None),
+    ];
+
+    let inferred = crate::decompiler::helpers::inferred_method_starts(&instructions, None);
+    assert_eq!(inferred, vec![0]);
+}
+
+#[test]
+fn decompilation_resolves_pickitem_delegate_array_into_calla_edge() {
+    // Script layout:
+    // 0x0000: NEWARRAY0
+    // 0x0001: STLOC0
+    // 0x0002: LDLOC0
+    // 0x0003: PUSHA +11 (target = 0x000E)
+    // 0x0008: APPEND
+    // 0x0009: LDLOC0
+    // 0x000A: PUSH0
+    // 0x000B: PICKITEM
+    // 0x000C: CALLA
+    // 0x000D: RET
+    // 0x000E: INITSLOT 0,0
+    // 0x0011: RET
+    let script = [
+        0xC2, // NEWARRAY0
+        0x70, // STLOC0
+        0x68, // LDLOC0
+        0x0A, 0x0B, 0x00, 0x00, 0x00, // PUSHA +11
+        0xCF, // APPEND
+        0x68, // LDLOC0
+        0x10, // PUSH0
+        0xCE, // PICKITEM
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x000E);
+            assert_eq!(method.name, "sub_0x000E");
+        }
+        other => {
+            panic!("expected PICKITEM delegate CALLA to resolve helper target, got: {other:?}")
+        }
+    }
+}
+
+#[test]
+fn decompilation_resolves_pickitem_delegate_array_through_local_alias() {
+    // Script layout:
+    // NEWARRAY0; STLOC0
+    // LDLOC0; DUP; STLOC1
+    // PUSHA +14 (target=0x0016); APPEND
+    // LDLOC1; PUSH0; PICKITEM; STLOC2
+    // LDLOC2; CALLA; RET
+    // target: INITSLOT 0,0; RET
+    let script = [
+        0xC2, // NEWARRAY0
+        0x70, // STLOC0
+        0x68, // LDLOC0
+        0x4A, // DUP
+        0x71, // STLOC1
+        0x0A, 0x11, 0x00, 0x00, 0x00, // PUSHA +17
+        0xCF, // APPEND
+        0x69, // LDLOC1
+        0x10, // PUSH0
+        0xCE, // PICKITEM
+        0x72, // STLOC2
+        0x6A, // LDLOC2
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x0016);
+            assert_eq!(method.name, "sub_0x0016");
+        }
+        other => {
+            panic!("expected aliased delegate-array CALLA to resolve helper target, got: {other:?}")
+        }
+    }
+}
+
+#[test]
+fn decompilation_resolves_duplicated_pointer_into_calla_edge() {
+    // Script layout:
+    // 0x0000: PUSHA +8 (target = 0x0008)
+    // 0x0005: DUP
+    // 0x0006: CALLA
+    // 0x0007: RET
+    // 0x0008: INITSLOT 0,0
+    // 0x000B: RET
+    let script = [
+        0x0A, 0x08, 0x00, 0x00, 0x00, // PUSHA +8
+        0x4A, // DUP
+        0x36, // CALLA
+        0x40, // RET
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x0008);
+            assert_eq!(method.name, "sub_0x0008");
+        }
+        other => panic!("expected DUP-fed CALLA target to resolve, got: {other:?}"),
+    }
+}
+
+#[test]
 fn decompilation_includes_slot_xrefs() {
     // Script:
     // INITSLOT 1 local, 0 args

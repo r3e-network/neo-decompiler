@@ -7,6 +7,36 @@ mod immediates;
 
 const MAX_OPERAND_LEN: usize = 1_048_576;
 
+fn read_i16_le(bytes: &[u8]) -> i16 {
+    let mut array = [0u8; 2];
+    array.copy_from_slice(bytes);
+    i16::from_le_bytes(array)
+}
+
+fn read_i32_le(bytes: &[u8]) -> i32 {
+    let mut array = [0u8; 4];
+    array.copy_from_slice(bytes);
+    i32::from_le_bytes(array)
+}
+
+fn read_i64_le(bytes: &[u8]) -> i64 {
+    let mut array = [0u8; 8];
+    array.copy_from_slice(bytes);
+    i64::from_le_bytes(array)
+}
+
+fn read_u16_le(bytes: &[u8]) -> u16 {
+    let mut array = [0u8; 2];
+    array.copy_from_slice(bytes);
+    u16::from_le_bytes(array)
+}
+
+fn read_u32_le(bytes: &[u8]) -> u32 {
+    let mut array = [0u8; 4];
+    array.copy_from_slice(bytes);
+    u32::from_le_bytes(array)
+}
+
 impl Disassembler {
     pub(super) fn read_operand(
         &self,
@@ -27,17 +57,17 @@ impl Disassembler {
             }
             OperandEncoding::I16 => {
                 let bytes = self.read_slice(bytecode, offset + 1, 2, offset)?;
-                let value = i16::from_le_bytes(bytes.try_into().unwrap());
+                let value = read_i16_le(bytes);
                 Ok((Some(Operand::I16(value)), 2))
             }
             OperandEncoding::I32 => {
                 let bytes = self.read_slice(bytecode, offset + 1, 4, offset)?;
-                let value = i32::from_le_bytes(bytes.try_into().unwrap());
+                let value = read_i32_le(bytes);
                 Ok((Some(Operand::I32(value)), 4))
             }
             OperandEncoding::I64 => {
                 let bytes = self.read_slice(bytecode, offset + 1, 8, offset)?;
-                let value = i64::from_le_bytes(bytes.try_into().unwrap());
+                let value = read_i64_le(bytes);
                 Ok((Some(Operand::I64(value)), 8))
             }
             OperandEncoding::Bytes(len) => {
@@ -63,12 +93,12 @@ impl Disassembler {
             }
             OperandEncoding::Jump32 => {
                 let bytes = self.read_slice(bytecode, offset + 1, 4, offset)?;
-                let value = i32::from_le_bytes(bytes.try_into().unwrap());
+                let value = read_i32_le(bytes);
                 Ok((Some(Operand::Jump32(value)), 4))
             }
             OperandEncoding::U16 => {
                 let bytes = self.read_slice(bytecode, offset + 1, 2, offset)?;
-                let value = u16::from_le_bytes(bytes.try_into().unwrap());
+                let value = read_u16_le(bytes);
                 Ok((Some(Operand::U16(value)), 2))
             }
             OperandEncoding::U8 => {
@@ -77,12 +107,12 @@ impl Disassembler {
             }
             OperandEncoding::U32 => {
                 let bytes = self.read_slice(bytecode, offset + 1, 4, offset)?;
-                let value = u32::from_le_bytes(bytes.try_into().unwrap());
+                let value = read_u32_le(bytes);
                 Ok((Some(Operand::U32(value)), 4))
             }
             OperandEncoding::Syscall => {
                 let bytes = self.read_slice(bytecode, offset + 1, 4, offset)?;
-                let value = u32::from_le_bytes(bytes.try_into().unwrap());
+                let value = read_u32_le(bytes);
                 Ok((Some(Operand::Syscall(value)), 4))
             }
         }
@@ -97,8 +127,8 @@ impl Disassembler {
         let len_bytes = self.read_slice(bytecode, offset + 1, prefix_len, offset)?;
         let len = match prefix_len {
             1 => len_bytes[0] as usize,
-            2 => u16::from_le_bytes(len_bytes.try_into().unwrap()) as usize,
-            4 => u32::from_le_bytes(len_bytes.try_into().unwrap()) as usize,
+            2 => read_u16_le(len_bytes) as usize,
+            4 => read_u32_le(len_bytes) as usize,
             _ => unreachable!("prefix_len is controlled by OperandEncoding"),
         };
 

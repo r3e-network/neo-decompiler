@@ -52,8 +52,8 @@ impl HighLevelEmitter {
 
             // Find `label_X:` inside the do-while body
             let label_line = format!("{label}:");
-            let Some(label_idx) = (do_idx + 1..end_idx)
-                .find(|&i| statements[i].trim() == label_line)
+            let Some(label_idx) =
+                (do_idx + 1..end_idx).find(|&i| statements[i].trim() == label_line)
             else {
                 index += 1;
                 continue;
@@ -77,10 +77,8 @@ impl HighLevelEmitter {
                 statements[end_idx] = "}".to_string();
             } else {
                 // Pattern 2: condition setup exists — duplicate before loop
-                let setup_copies: Vec<String> = setup_lines
-                    .iter()
-                    .map(|&i| statements[i].clone())
-                    .collect();
+                let setup_copies: Vec<String> =
+                    setup_lines.iter().map(|&i| statements[i].clone()).collect();
                 // Insert setup copies before the while line
                 for (j, line) in setup_copies.into_iter().enumerate() {
                     statements.insert(do_idx + j, line);
@@ -125,7 +123,8 @@ impl HighLevelEmitter {
             let goto_target = format!("goto {label};");
             for i in index + 1..end {
                 if statements[i].trim() == goto_target {
-                    let indent = &statements[i][..statements[i].len() - statements[i].trim_start().len()];
+                    let indent =
+                        &statements[i][..statements[i].len() - statements[i].trim_start().len()];
                     statements[i] = format!("{indent}break;");
                 }
             }
@@ -169,8 +168,8 @@ impl HighLevelEmitter {
 
             // Find `goto label_X;` inside the if-block
             let goto_target = format!("goto {label};");
-            let Some(goto_idx) = (if_idx + 1..end_idx)
-                .find(|&i| statements[i].trim() == goto_target)
+            let Some(goto_idx) =
+                (if_idx + 1..end_idx).find(|&i| statements[i].trim() == goto_target)
             else {
                 index += 1;
                 continue;

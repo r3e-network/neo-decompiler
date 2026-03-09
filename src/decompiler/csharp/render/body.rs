@@ -7,6 +7,7 @@ use super::super::super::high_level::HighLevelEmitter;
 use super::super::helpers::csharpize_statement;
 
 pub(super) struct LiftedBodyContext<'a> {
+    pub(super) method_labels_by_offset: &'a BTreeMap<usize, String>,
     pub(super) method_arg_counts_by_offset: &'a BTreeMap<usize, usize>,
     pub(super) call_targets_by_offset: &'a BTreeMap<usize, usize>,
     pub(super) calla_targets_by_offset: &'a BTreeMap<usize, usize>,
@@ -30,6 +31,7 @@ pub(super) fn write_lifted_body(
     emitter.set_callt_labels(context.callt_labels.to_vec());
     emitter.set_callt_param_counts(context.callt_param_counts.to_vec());
     emitter.set_callt_returns_value(context.callt_returns_value.to_vec());
+    emitter.set_method_labels_by_offset(context.method_labels_by_offset);
     emitter.set_method_arg_counts_by_offset(context.method_arg_counts_by_offset);
     emitter.set_call_targets_by_offset(context.call_targets_by_offset);
     emitter.set_calla_targets_by_offset(context.calla_targets_by_offset);
@@ -58,10 +60,16 @@ pub(super) fn write_lifted_body(
             indent_level = indent_level.saturating_sub(1);
         }
 
-        let indent = 12 + indent_level * 4;
-        writeln!(output, "{:indent$}{}", "", trimmed, indent = indent).unwrap();
+        let rendered = if !returns_void && trimmed == "return;" {
+            "return default;"
+        } else {
+            trimmed
+        };
 
-        if trimmed.ends_with('{') {
+        let indent = 12 + indent_level * 4;
+        writeln!(output, "{:indent$}{}", "", rendered, indent = indent).unwrap();
+
+        if rendered.ends_with('{') {
             indent_level += 1;
         }
     }

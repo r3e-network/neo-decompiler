@@ -22,10 +22,7 @@ pub(in super::super) fn build_method_arg_counts_by_offset(
 
     let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
     let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
-    let use_manifest_entry = entry_method
-        .as_ref()
-        .map(|(_, matched)| *matched)
-        .unwrap_or(false);
+    let use_manifest_entry = entry_method.is_some();
     let entry_arg_count = if use_manifest_entry {
         entry_method
             .as_ref()
@@ -88,57 +85,168 @@ fn infer_entry_stack_arg_count_for_inferred_start(
 
 fn estimate_required_entry_stack_depth(instructions: &[Instruction]) -> Option<usize> {
     let mut required_entry_depth = 0usize;
-    let mut depth_delta = 0isize;
+    let mut simulated_stack: Vec<Option<usize>> = Vec::new();
     let mut saw_supported_opcode = false;
 
     for instruction in instructions {
         if instruction.opcode == OpCode::Ret {
             break;
         }
-        let Some((pops, pushes)) = fixed_stack_effect(instruction.opcode) else {
+        let Some(effect) = stack_effect_for_arg_inference(instruction, &simulated_stack) else {
             break;
         };
         saw_supported_opcode = true;
-        let needed = pops as isize - depth_delta;
-        if needed > 0 {
-            required_entry_depth = required_entry_depth.max(needed as usize);
+
+        while simulated_stack.len() < effect.pops {
+            simulated_stack.insert(0, None);
+            required_entry_depth += 1;
         }
-        depth_delta += pushes as isize - pops as isize;
+        for _ in 0..effect.pops {
+            simulated_stack.pop();
+        }
+        for pushed in effect.pushes {
+            simulated_stack.push(pushed);
+        }
     }
 
     saw_supported_opcode.then_some(required_entry_depth)
 }
 
-fn fixed_stack_effect(opcode: OpCode) -> Option<(usize, usize)> {
+struct StackEffect {
+    pops: usize,
+    pushes: Vec<Option<usize>>,
+}
+
+fn stack_effect_for_arg_inference(
+    instruction: &Instruction,
+    simulated_stack: &[Option<usize>],
+) -> Option<StackEffect> {
     use OpCode::*;
 
-    match opcode {
-        Pushint8 | Pushint16 | Pushint32 | Pushint64 | Pushint128 | Pushint256 | PushT | PushF
-        | PushA | PushNull | Pushdata1 | Pushdata2 | Pushdata4 | PushM1 | Push0 | Push1 | Push2
-        | Push3 | Push4 | Push5 | Push6 | Push7 | Push8 | Push9 | Push10 | Push11 | Push12
-        | Push13 | Push14 | Push15 | Push16 | Newarray0 | Newstruct0 | Newmap | Ldsfld0
-        | Ldsfld1 | Ldsfld2 | Ldsfld3 | Ldsfld4 | Ldsfld5 | Ldsfld6 | Ldsfld | Ldloc0 | Ldloc1
-        | Ldloc2 | Ldloc3 | Ldloc4 | Ldloc5 | Ldloc6 | Ldloc | Ldarg0 | Ldarg1 | Ldarg2
-        | Ldarg3 | Ldarg4 | Ldarg5 | Ldarg6 | Ldarg | Depth => Some((0, 1)),
-        Nop | Initsslot | Initslot => Some((0, 0)),
+    let literal_push = |value: usize| StackEffect {
+        pops: 0,
+        pushes: vec![Some(value)],
+    };
+    let unknown_push = || StackEffect {
+        pops: 0,
+        pushes: vec![None],
+    };
+    let unary_unknown = || StackEffect {
+        pops: 1,
+        pushes: vec![None],
+    };
+    let binary_unknown = || StackEffect {
+        pops: 2,
+        pushes: vec![None],
+    };
+
+    match instruction.opcode {
+        Push0 => Some(literal_push(0)),
+        Push1 => Some(literal_push(1)),
+        Push2 => Some(literal_push(2)),
+        Push3 => Some(literal_push(3)),
+        Push4 => Some(literal_push(4)),
+        Push5 => Some(literal_push(5)),
+        Push6 => Some(literal_push(6)),
+        Push7 => Some(literal_push(7)),
+        Push8 => Some(literal_push(8)),
+        Push9 => Some(literal_push(9)),
+        Push10 => Some(literal_push(10)),
+        Push11 => Some(literal_push(11)),
+        Push12 => Some(literal_push(12)),
+        Push13 => Some(literal_push(13)),
+        Push14 => Some(literal_push(14)),
+        Push15 => Some(literal_push(15)),
+        Push16 => Some(literal_push(16)),
+        Pushint8 | Pushint16 | Pushint32 | Pushint64 => match instruction.operand {
+            Some(crate::instruction::Operand::I8(v)) if v >= 0 => Some(literal_push(v as usize)),
+            Some(crate::instruction::Operand::I16(v)) if v >= 0 => Some(literal_push(v as usize)),
+            Some(crate::instruction::Operand::I32(v)) if v >= 0 => Some(literal_push(v as usize)),
+            Some(crate::instruction::Operand::I64(v)) if v >= 0 => Some(literal_push(v as usize)),
+            _ => Some(unknown_push()),
+        },
+        Pushint128 | Pushint256 | PushT | PushF | PushA | PushNull | Pushdata1 | Pushdata2
+        | Pushdata4 | PushM1 | Newarray0 | Newstruct0 | Newmap | Ldsfld0 | Ldsfld1 | Ldsfld2
+        | Ldsfld3 | Ldsfld4 | Ldsfld5 | Ldsfld6 | Ldsfld | Ldloc0 | Ldloc1 | Ldloc2 | Ldloc3
+        | Ldloc4 | Ldloc5 | Ldloc6 | Ldloc | Ldarg0 | Ldarg1 | Ldarg2 | Ldarg3 | Ldarg4
+        | Ldarg5 | Ldarg6 | Ldarg | Depth => Some(unknown_push()),
+        Nop | Initsslot | Initslot => Some(StackEffect {
+            pops: 0,
+            pushes: vec![],
+        }),
         Drop | Stsfld0 | Stsfld1 | Stsfld2 | Stsfld3 | Stsfld4 | Stsfld5 | Stsfld6 | Stsfld
         | Stloc0 | Stloc1 | Stloc2 | Stloc3 | Stloc4 | Stloc5 | Stloc6 | Stloc | Starg0
         | Starg1 | Starg2 | Starg3 | Starg4 | Starg5 | Starg6 | Starg | Reverseitems
-        | Clearitems => Some((1, 0)),
+        | Clearitems => Some(StackEffect {
+            pops: 1,
+            pushes: vec![],
+        }),
         Newbuffer | Isnull | Istype | Convert | Keys | Values | Size | Sign | Abs | Negate
-        | Inc | Dec | Not | Nz | Sqrt | Newarray | NewarrayT | Newstruct | Invert => Some((1, 1)),
-        Dup => Some((1, 2)),
-        Nip => Some((2, 1)),
-        Over | Tuck => Some((2, 3)),
-        Swap => Some((2, 2)),
-        Rot | Reverse3 => Some((3, 3)),
-        Reverse4 => Some((4, 4)),
+        | Inc | Dec | Not | Nz | Sqrt | Newarray | NewarrayT | Newstruct | Invert => {
+            Some(unary_unknown())
+        }
+        Dup => {
+            let top = simulated_stack.last().copied().flatten();
+            Some(StackEffect {
+                pops: 1,
+                pushes: vec![top, top],
+            })
+        }
+        Nip => Some(StackEffect {
+            pops: 2,
+            pushes: vec![None],
+        }),
+        Over | Tuck => Some(StackEffect {
+            pops: 2,
+            pushes: vec![None, None, None],
+        }),
+        Swap => Some(StackEffect {
+            pops: 2,
+            pushes: vec![None, None],
+        }),
+        Rot | Reverse3 => Some(StackEffect {
+            pops: 3,
+            pushes: vec![None, None, None],
+        }),
+        Reverse4 => Some(StackEffect {
+            pops: 4,
+            pushes: vec![None, None, None, None],
+        }),
         Cat | Left | Right | And | Or | Xor | Equal | Notequal | Add | Sub | Mul | Div | Mod
         | Pow | Shl | Shr | Booland | Boolor | Numequal | Numnotequal | Lt | Le | Gt | Ge | Min
-        | Max | Haskey | Pickitem | Popitem => Some((2, 1)),
-        Append | Remove => Some((2, 0)),
-        Substr | Modmul | Modpow | Within => Some((3, 1)),
-        Memcpy | Setitem => Some((3, 0)),
+        | Max | Haskey | Pickitem | Popitem => Some(binary_unknown()),
+        Append | Remove => Some(StackEffect {
+            pops: 2,
+            pushes: vec![],
+        }),
+        Substr | Modmul | Modpow | Within => Some(StackEffect {
+            pops: 3,
+            pushes: vec![None],
+        }),
+        Memcpy | Setitem => Some(StackEffect {
+            pops: 3,
+            pushes: vec![],
+        }),
+        Pack | Packmap | Packstruct => {
+            let count = simulated_stack.last().copied().flatten()?;
+            Some(StackEffect {
+                pops: count + 1,
+                pushes: vec![None],
+            })
+        }
+        Syscall => match instruction.operand {
+            Some(crate::instruction::Operand::Syscall(hash)) => {
+                let info = crate::syscalls::lookup(hash);
+                let pops = info.map_or(0usize, |syscall| syscall.param_count as usize);
+                let pushes = if info.is_some_and(|syscall| syscall.returns_value) {
+                    vec![None]
+                } else {
+                    vec![]
+                };
+                Some(StackEffect { pops, pushes })
+            }
+            _ => None,
+        },
         _ => None,
     }
 }

@@ -73,8 +73,7 @@ pub(crate) fn render_high_level(
         BTreeMap::new()
     };
     let calla_targets_by_offset = build_calla_targets_by_offset(call_graph);
-    let noreturn_method_offsets =
-        build_noreturn_method_offsets(instructions, &inferred_starts);
+    let noreturn_method_offsets = build_noreturn_method_offsets(instructions, &inferred_starts);
     let body_context = body::MethodBodyContext {
         method_labels_by_offset: &method_labels_by_offset,
         method_arg_counts_by_offset: &method_arg_counts_by_offset,
@@ -136,10 +135,7 @@ fn build_method_labels_by_offset(
 
     let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
     let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
-    let use_manifest_entry = entry_method
-        .as_ref()
-        .map(|(_, matched)| *matched)
-        .unwrap_or(false);
+    let use_manifest_entry = entry_method.is_some();
     let entry_name = if use_manifest_entry {
         entry_method
             .as_ref()
@@ -239,10 +235,7 @@ fn build_noreturn_method_offsets(
 
         let has_ret = slice.iter().any(|ins| ins.opcode == OpCode::Ret);
         let last_is_terminator = slice.last().is_some_and(|ins| {
-            matches!(
-                ins.opcode,
-                OpCode::Abort | OpCode::Abortmsg | OpCode::Throw
-            )
+            matches!(ins.opcode, OpCode::Abort | OpCode::Abortmsg | OpCode::Throw)
         });
 
         if !has_ret && last_is_terminator {

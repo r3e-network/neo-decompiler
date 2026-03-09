@@ -7,8 +7,8 @@ use crate::manifest::ContractManifest;
 
 use super::super::super::helpers::{
     find_manifest_entry_method, format_manifest_parameters, format_manifest_type,
-    has_manifest_method_at_offset, make_unique_identifier, next_inferred_method_offset,
-    sanitize_identifier, sanitize_parameter_names,
+    make_unique_identifier, next_inferred_method_offset, sanitize_identifier,
+    sanitize_parameter_names,
 };
 use super::body;
 
@@ -23,10 +23,7 @@ pub(super) fn write_entry_method(
 ) -> Option<(String, Option<i32>)> {
     let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
     let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
-    let use_manifest_entry = entry_method
-        .as_ref()
-        .map(|(_, matched)| *matched)
-        .unwrap_or(false);
+    let use_manifest_entry = entry_method.is_some();
 
     let entry_start = entry_offset;
     let entry_end = next_inferred_method_offset(inferred_method_starts, entry_start);
@@ -82,9 +79,6 @@ pub(super) fn write_entry_method(
         None
     };
 
-    // Only mark void when the manifest explicitly declares Void return.
-    // Without manifest info we cannot know, so default to non-void (preserve
-    // stack-based return values).
     let entry_is_void = use_manifest_entry && entry_return.is_none();
 
     let signature = match entry_return {
@@ -93,16 +87,9 @@ pub(super) fn write_entry_method(
     };
 
     if !use_manifest_entry {
-        if manifest
-            .map(|m| has_manifest_method_at_offset(m, entry_offset))
-            .unwrap_or(false)
+        if let Some(method) =
+            manifest.and_then(|m| m.abi.methods.iter().find(|method| method.offset.is_some()))
         {
-            writeln!(
-                output,
-                "    // warning: manifest method at script entry 0x{entry_offset:04X} was not selected; using synthetic script_entry"
-            )
-            .unwrap();
-        } else if let Some((method, _)) = entry_method.as_ref() {
             writeln!(
                 output,
                 "    // warning: manifest entry offset {} did not match script entry at 0x{:04X}; using synthetic script_entry",

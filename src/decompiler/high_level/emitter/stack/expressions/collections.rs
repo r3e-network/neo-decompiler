@@ -17,8 +17,11 @@ impl HighLevelEmitter {
         if let Some(need) = count_literal {
             let mut elements = Vec::with_capacity(need);
             for _ in 0..need {
-                if let Some(val) = self.pop_stack_value() {
-                    elements.push(val);
+                if let Some((value, literal)) = self.pop_stack_value_with_literal() {
+                    if let Some(literal) = literal {
+                        self.literal_values.insert(value.clone(), literal);
+                    }
+                    elements.push(value);
                 } else {
                     let missing_temp = self.next_temp();
                     self.statements.push(format!(
@@ -136,15 +139,19 @@ impl HighLevelEmitter {
         }
 
         // If DUP preceded UNPACK, one pop consumes the original array copy.
-        let has_dup_before = unpack_index > 0
-            && self.program[unpack_index - 1].opcode == OpCode::Dup;
+        let has_dup_before =
+            unpack_index > 0 && self.program[unpack_index - 1].opcode == OpCode::Dup;
         let count = if has_dup_before {
             pops.saturating_sub(1)
         } else {
             pops
         };
 
-        if count == 0 { DEFAULT_COUNT } else { count }
+        if count == 0 {
+            DEFAULT_COUNT
+        } else {
+            count
+        }
     }
 
     fn is_single_pop(opcode: OpCode) -> bool {

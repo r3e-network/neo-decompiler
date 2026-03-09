@@ -63,10 +63,9 @@ impl HighLevelEmitter {
                 }
                 true
             }
-            Pushint8 | Pushint16 | Pushint32 | Pushint64 | PushM1
-            | Push0 | Push1 | Push2 | Push3 | Push4 | Push5 | Push6 | Push7 | Push8 | Push9
-            | Push10 | Push11 | Push12 | Push13 | Push14 | Push15 | Push16 | PushT | PushF
-            | PushNull => {
+            Pushint8 | Pushint16 | Pushint32 | Pushint64 | PushM1 | Push0 | Push1 | Push2
+            | Push3 | Push4 | Push5 | Push6 | Push7 | Push8 | Push9 | Push10 | Push11 | Push12
+            | Push13 | Push14 | Push15 | Push16 | PushT | PushF | PushNull => {
                 if let Some(operand) = &instruction.operand {
                     self.push_literal(instruction, operand.to_string());
                 } else {

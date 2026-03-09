@@ -26,7 +26,7 @@ impl HighLevelEmitter {
             .first()
             .is_some_and(|instruction| instruction.opcode == OpCode::Initslot);
         if !starts_with_initslot {
-            self.stack.extend(labels.iter().cloned());
+            self.stack.extend(labels.iter().rev().cloned());
         }
     }
 
@@ -58,7 +58,10 @@ impl HighLevelEmitter {
         self.calla_targets_by_offset = targets.clone();
     }
 
-    pub(crate) fn set_noreturn_method_offsets(&mut self, offsets: &std::collections::BTreeSet<usize>) {
+    pub(crate) fn set_noreturn_method_offsets(
+        &mut self,
+        offsets: &std::collections::BTreeSet<usize>,
+    ) {
         self.noreturn_method_offsets = offsets.clone();
     }
 
@@ -96,10 +99,7 @@ impl HighLevelEmitter {
                 // Merge point after an if/else (or plain if).  Reconcile the
                 // stack states from both branches.
                 if let Some(saved) = self.branch_saved_stacks.remove(&offset) {
-                    let pre_depth = self
-                        .pre_branch_stack_depth
-                        .remove(&offset)
-                        .unwrap_or(0);
+                    let pre_depth = self.pre_branch_stack_depth.remove(&offset).unwrap_or(0);
 
                     if self.stack.is_empty() && !saved.is_empty() {
                         self.stack = saved;
@@ -114,12 +114,11 @@ impl HighLevelEmitter {
                             .rposition(|s| s.trim() == "}")
                             .unwrap_or(self.statements.len());
                         let mut inserts = Vec::new();
-                        for i in pre_depth..self.stack.len() {
-                            if self.stack[i] != saved[i] {
-                                inserts.push(format!(
-                                    "let {} = {};",
-                                    saved[i], self.stack[i]
-                                ));
+                        for (current, saved_name) in
+                            self.stack.iter().zip(saved.iter()).skip(pre_depth)
+                        {
+                            if current != saved_name {
+                                inserts.push(format!("let {} = {};", saved_name, current));
                             }
                         }
                         for (j, stmt) in inserts.into_iter().enumerate() {

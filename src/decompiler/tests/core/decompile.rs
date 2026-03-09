@@ -214,6 +214,48 @@ fn decompile_relative_call_passes_known_method_arguments() {
 }
 
 #[test]
+fn decompile_infers_entry_stack_argument_for_syscall_only_helper() {
+    // Script layout:
+    // 0x0000: PUSHDATA1 "x"
+    // 0x0003: CALL +3 (target = 0x0006)
+    // 0x0005: RET
+    // 0x0006: SYSCALL System.Runtime.Log
+    // 0x000B: RET
+    let nef_bytes = build_nef(&[
+        0x0C, 0x01, b'x', // PUSHDATA1 "x"
+        0x34, 0x03, // CALL +3
+        0x40, // RET
+        0x41, 0xCF, 0xE7, 0x47, 0x96, // SYSCALL System.Runtime.Log
+        0x40, // RET
+    ]);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("fn sub_0x0006(arg0)"),
+        "syscall-only helper should infer one entry-stack argument: {high_level}"
+    );
+    assert!(
+        high_level.contains("syscall(\"System.Runtime.Log\", arg0)"),
+        "syscall-only helper should consume inferred argument instead of ???: {high_level}"
+    );
+    assert!(
+        !decompilation
+            .warnings
+            .iter()
+            .any(|warning| warning
+                .contains("missing syscall argument values for System.Runtime.Log")),
+        "syscall-only helper should not emit missing-argument warnings: {:?}",
+        decompilation.warnings
+    );
+}
+
+#[test]
 fn decompile_lifts_unconditional_jumps_without_control_flow_warning() {
     // Script: JMP +2 (to JMP_L), JMP_L +5 (to RET), RET
     let nef_bytes = build_nef(&[0x22, 0x02, 0x23, 0x05, 0x00, 0x00, 0x00, 0x40]);

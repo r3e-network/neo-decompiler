@@ -149,10 +149,11 @@ pub fn infer_types(instructions: &[Instruction], manifest: Option<&ContractManif
         if let Some(manifest) = manifest {
             if let Some(index) = table.manifest_index_for_start(span.start) {
                 if let Some(method) = manifest.abi.methods.get(index) {
+                    if arguments.len() < method.parameters.len() {
+                        arguments.resize(method.parameters.len(), ValueType::Unknown);
+                    }
                     for (idx, param) in method.parameters.iter().enumerate() {
-                        if idx < arguments.len() {
-                            arguments[idx] = arguments[idx].join(type_from_manifest(&param.kind));
-                        }
+                        arguments[idx] = arguments[idx].join(type_from_manifest(&param.kind));
                     }
                 }
             }
@@ -331,13 +332,13 @@ fn infer_types_in_slice(
             }
 
             // Slot ops
-            OpCode::Ldloc0 => push_slot(&mut stack, locals.first().copied()),
-            OpCode::Ldloc1 => push_slot(&mut stack, locals.get(1).copied()),
-            OpCode::Ldloc2 => push_slot(&mut stack, locals.get(2).copied()),
-            OpCode::Ldloc3 => push_slot(&mut stack, locals.get(3).copied()),
-            OpCode::Ldloc4 => push_slot(&mut stack, locals.get(4).copied()),
-            OpCode::Ldloc5 => push_slot(&mut stack, locals.get(5).copied()),
-            OpCode::Ldloc6 => push_slot(&mut stack, locals.get(6).copied()),
+            OpCode::Ldloc0 => push_fixed_slot(&mut stack, locals, 0),
+            OpCode::Ldloc1 => push_fixed_slot(&mut stack, locals, 1),
+            OpCode::Ldloc2 => push_fixed_slot(&mut stack, locals, 2),
+            OpCode::Ldloc3 => push_fixed_slot(&mut stack, locals, 3),
+            OpCode::Ldloc4 => push_fixed_slot(&mut stack, locals, 4),
+            OpCode::Ldloc5 => push_fixed_slot(&mut stack, locals, 5),
+            OpCode::Ldloc6 => push_fixed_slot(&mut stack, locals, 6),
             OpCode::Ldloc => push_indexed_slot(&mut stack, locals, instr.operand.as_ref()),
             OpCode::Stloc0 => store_slot(&mut stack, locals, 0),
             OpCode::Stloc1 => store_slot(&mut stack, locals, 1),
@@ -348,13 +349,13 @@ fn infer_types_in_slice(
             OpCode::Stloc6 => store_slot(&mut stack, locals, 6),
             OpCode::Stloc => store_indexed_slot(&mut stack, locals, instr.operand.as_ref()),
 
-            OpCode::Ldarg0 => push_slot(&mut stack, arguments.first().copied()),
-            OpCode::Ldarg1 => push_slot(&mut stack, arguments.get(1).copied()),
-            OpCode::Ldarg2 => push_slot(&mut stack, arguments.get(2).copied()),
-            OpCode::Ldarg3 => push_slot(&mut stack, arguments.get(3).copied()),
-            OpCode::Ldarg4 => push_slot(&mut stack, arguments.get(4).copied()),
-            OpCode::Ldarg5 => push_slot(&mut stack, arguments.get(5).copied()),
-            OpCode::Ldarg6 => push_slot(&mut stack, arguments.get(6).copied()),
+            OpCode::Ldarg0 => push_fixed_slot(&mut stack, arguments, 0),
+            OpCode::Ldarg1 => push_fixed_slot(&mut stack, arguments, 1),
+            OpCode::Ldarg2 => push_fixed_slot(&mut stack, arguments, 2),
+            OpCode::Ldarg3 => push_fixed_slot(&mut stack, arguments, 3),
+            OpCode::Ldarg4 => push_fixed_slot(&mut stack, arguments, 4),
+            OpCode::Ldarg5 => push_fixed_slot(&mut stack, arguments, 5),
+            OpCode::Ldarg6 => push_fixed_slot(&mut stack, arguments, 6),
             OpCode::Ldarg => push_indexed_slot(&mut stack, arguments, instr.operand.as_ref()),
             OpCode::Starg0 => store_slot(&mut stack, arguments, 0),
             OpCode::Starg1 => store_slot(&mut stack, arguments, 1),
@@ -365,13 +366,13 @@ fn infer_types_in_slice(
             OpCode::Starg6 => store_slot(&mut stack, arguments, 6),
             OpCode::Starg => store_indexed_slot(&mut stack, arguments, instr.operand.as_ref()),
 
-            OpCode::Ldsfld0 => push_slot(&mut stack, statics.first().copied()),
-            OpCode::Ldsfld1 => push_slot(&mut stack, statics.get(1).copied()),
-            OpCode::Ldsfld2 => push_slot(&mut stack, statics.get(2).copied()),
-            OpCode::Ldsfld3 => push_slot(&mut stack, statics.get(3).copied()),
-            OpCode::Ldsfld4 => push_slot(&mut stack, statics.get(4).copied()),
-            OpCode::Ldsfld5 => push_slot(&mut stack, statics.get(5).copied()),
-            OpCode::Ldsfld6 => push_slot(&mut stack, statics.get(6).copied()),
+            OpCode::Ldsfld0 => push_fixed_slot(&mut stack, statics, 0),
+            OpCode::Ldsfld1 => push_fixed_slot(&mut stack, statics, 1),
+            OpCode::Ldsfld2 => push_fixed_slot(&mut stack, statics, 2),
+            OpCode::Ldsfld3 => push_fixed_slot(&mut stack, statics, 3),
+            OpCode::Ldsfld4 => push_fixed_slot(&mut stack, statics, 4),
+            OpCode::Ldsfld5 => push_fixed_slot(&mut stack, statics, 5),
+            OpCode::Ldsfld6 => push_fixed_slot(&mut stack, statics, 6),
             OpCode::Ldsfld => push_indexed_slot(&mut stack, statics, instr.operand.as_ref()),
             OpCode::Stsfld0 => store_slot(&mut stack, statics, 0),
             OpCode::Stsfld1 => store_slot(&mut stack, statics, 1),
@@ -574,6 +575,13 @@ fn pop_or_unknown(stack: &mut Vec<StackValue>) -> StackValue {
 
 fn push_slot(stack: &mut Vec<StackValue>, ty: Option<ValueType>) {
     stack.push(StackValue::with_type(ty.unwrap_or(ValueType::Unknown)));
+}
+
+fn push_fixed_slot(stack: &mut Vec<StackValue>, slots: &mut Vec<ValueType>, index: usize) {
+    if index >= slots.len() {
+        slots.resize(index + 1, ValueType::Unknown);
+    }
+    push_slot(stack, slots.get(index).copied());
 }
 
 fn push_indexed_slot(
