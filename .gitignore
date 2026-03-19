@@ -1,5 +1,10 @@
 # Rust build artifacts
 /target/
+/pkg/
+web/dist/
+web/node_modules/
+web/pkg/
+web/*.tgz
 TestingArtifacts/decompiled/
 
 # IDE files

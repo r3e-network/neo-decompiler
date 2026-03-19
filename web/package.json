@@ -1,0 +1,50 @@
+{
+  "name": "neo-decompiler-web",
+  "version": "0.6.0",
+  "description": "TypeScript wrapper for the Neo decompiler WebAssembly bindings",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/r3e-network/neo-decompiler.git",
+    "directory": "web"
+  },
+  "homepage": "https://github.com/r3e-network/neo-decompiler/tree/master/web",
+  "keywords": [
+    "neo",
+    "nef",
+    "decompiler",
+    "wasm",
+    "typescript"
+  ],
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
+  },
+  "scripts": {
+    "version:check": "node ./scripts/sync-version.mjs --check",
+    "version:sync": "node ./scripts/sync-version.mjs --write",
+    "build:wasm": "wasm-pack build .. --mode no-install --target web --out-dir web/dist/pkg --features web --no-default-features && node ./scripts/prepare-wasm-package.mjs",
+    "build:ts": "tsc -p tsconfig.json",
+    "build": "npm run build:ts",
+    "build:package": "npm run version:check && npm run build:wasm && npm run build:ts",
+    "verify:pack": "node ./scripts/check-pack.mjs",
+    "prepack": "npm run build:package",
+    "serve": "python3 -m http.server 4173",
+    "test": "npm run build:ts && node --test test/package.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Neo Decompiler Web Demo</title>
+    <style>
+      :root {
+        --bg: #f5efe3;
+        --paper: rgba(255, 251, 244, 0.92);
+        --ink: #1a1f24;
+        --muted: #5d655f;
+        --line: rgba(26, 31, 36, 0.12);
+        --accent: #b44f2f;
+        --accent-2: #3e6a57;
+        --shadow: 0 24px 60px rgba(43, 34, 24, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(180, 79, 47, 0.16), transparent 32%),
+          radial-gradient(circle at bottom right, rgba(62, 106, 87, 0.18), transparent 34%),
+          linear-gradient(180deg, #f9f5ee 0%, var(--bg) 100%);
+        color: var(--ink);
+        font-family: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+      }
+
+      main {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 32px auto;
+      }
+
+      .hero,
+      .panel,
+      .output {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(14px);
+      }
+
+      .hero {
+        padding: 28px;
+        margin-bottom: 18px;
+      }
+
+      .eyebrow {
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 12px;
+        margin-bottom: 10px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+        font-weight: 700;
+        font-size: clamp(2rem, 5vw, 4.2rem);
+        line-height: 0.96;
+      }
+
+      .hero p {
+        margin: 0;
+        max-width: 780px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 360px 1fr;
+        gap: 18px;
+      }
+
+      .panel {
+        padding: 22px;
+      }
+
+      .panel h2,
+      .output h2 {
+        margin: 0 0 14px;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 14px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      input[type="file"],
+      select {
+        width: 100%;
+        margin-top: 8px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 11px 12px;
+        background: rgba(255, 255, 255, 0.78);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      .options {
+        display: grid;
+        gap: 10px;
+        margin: 18px 0;
+      }
+
+      .toggle {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        margin: 0;
+        color: var(--ink);
+      }
+
+      button {
+        width: 100%;
+        border: 0;
+        border-radius: 999px;
+        padding: 14px 18px;
+        font: inherit;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--accent), #cb6d42);
+        color: #fff7f0;
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease;
+        box-shadow: 0 14px 28px rgba(180, 79, 47, 0.22);
+      }
+
+      button:hover {
+        transform: translateY(-1px);
+      }
+
+      button:disabled {
+        cursor: progress;
+        opacity: 0.7;
+        transform: none;
+      }
+
+      .status {
+        margin-top: 12px;
+        min-height: 18px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .outputs {
+        display: grid;
+        gap: 18px;
+      }
+
+      .output {
+        padding: 22px;
+      }
+
+      pre {
+        margin: 0;
+        overflow: auto;
+        max-height: 420px;
+        padding: 18px;
+        border-radius: 18px;
+        background: rgba(17, 22, 27, 0.96);
+        color: #e9efe8;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 920px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <div class="eyebrow">WebAssembly Demo</div>
+        <h1>Neo bytecode, straight into the browser.</h1>
+        <p>
+          Build the Rust crate with `wasm-pack`, drop the generated package into
+          `web/pkg/`, then use this page to inspect NEF files without spinning up
+          a backend. The parser, disassembler, and decompiler are the same Rust
+          implementations used by the CLI.
+        </p>
+      </section>
+
+      <section class="grid">
+        <form class="panel" id="controls">
+          <h2>Inputs</h2>
+          <label>
+            NEF File
+            <input id="nef-file" type="file" accept=".nef,application/octet-stream" required />
+          </label>
+          <label>
+            Manifest JSON
+            <input id="manifest-file" type="file" accept=".json,application/json" />
+          </label>
+          <label>
+            Decompile Output
+            <select id="output-format">
+              <option value="all">all</option>
+              <option value="highLevel">highLevel</option>
+              <option value="pseudocode">pseudocode</option>
+              <option value="csharp">csharp</option>
+            </select>
+          </label>
+
+          <div class="options">
+            <label class="toggle"><input id="strict-manifest" type="checkbox" /> strict manifest</label>
+            <label class="toggle"><input id="fail-unknown" type="checkbox" /> fail on unknown opcodes</label>
+            <label class="toggle"><input id="inline-temps" type="checkbox" /> inline single-use temps</label>
+          </div>
+
+          <button id="run" type="submit">Analyze In Browser</button>
+          <div class="status" id="status">Waiting for wasm package in <code>web/pkg/</code>.</div>
+        </form>
+
+        <div class="outputs">
+          <section class="output">
+            <div class="meta"><h2>Info</h2><span id="info-summary">No file loaded</span></div>
+            <pre id="info-output">// Build the wasm package, then load a .nef file.</pre>
+          </section>
+          <section class="output">
+            <div class="meta"><h2>Disassembly</h2><span id="disasm-summary">Instruction stream</span></div>
+            <pre id="disasm-output">// Disassembly will appear here.</pre>
+          </section>
+          <section class="output">
+            <div class="meta"><h2>Decompile</h2><span id="decompile-summary">High-level output</span></div>
+            <pre id="decompile-output">// Decompiled output will appear here.</pre>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

@@ -162,3 +162,36 @@ jobs:
         with:
           name: neo-decompiler-${{ matrix.os }}
           path: target/release/neo-decompiler*
+
+  web-package:
+    name: Web package
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.108 --locked
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Run web package tests
+        working-directory: web
+        run: npm test
+      - name: Verify web package version sync
+        working-directory: web
+        run: npm run version:check
+      - name: Verify web package tarball contents
+        working-directory: web
+        run: npm run verify:pack

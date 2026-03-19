@@ -261,6 +261,31 @@ cargo build --release
 ./target/release/neo-decompiler --strict-manifest decompile --manifest path/to/contract.manifest.json path/to/contract.nef
 ```
 
+## Web / JS
+
+The recommended web-side integration is to compile the Rust core to WebAssembly
+and consume it through the npm/TypeScript wrapper in `web/` instead of
+maintaining a second handwritten decompiler implementation.
+
+```bash
+cd web
+npm install
+npm run build:package
+
+# Serve the demo
+python3 -m http.server 4173
+```
+
+The wrapper exports:
+
+- `init(input?)`
+- `initPanicHook()`
+- `infoReport(nefBytes, options?)`
+- `disasmReport(nefBytes, options?)`
+- `decompileReport(nefBytes, options?)`
+
+It accepts camelCase JS options and normalizes them to the wasm ABI. See [web/README.md](/home/neo/git/neo-decompiler/web/README.md) for package and demo usage.
+
 ### Strict manifest validation
 
 By default, manifest parsing is permissive to maximize compatibility with

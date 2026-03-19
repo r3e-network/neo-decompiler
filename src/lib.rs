@@ -1,9 +1,10 @@
-//! Minimal Neo N3 NEF bytecode tooling.
+//! Neo N3 NEF inspection, disassembly, and decompilation tooling.
 //!
-//! This crate provides a deliberately small and well tested toolkit for
-//! inspecting Neo N3 NEF files.  It focuses on parsing the NEF container,
-//! decoding a handful of common opcodes, and exposing a simple API that other
-//! applications (including the CLI binary in this repository) can use.
+//! This crate provides a well-tested toolkit for parsing NEF containers,
+//! decoding Neo VM bytecode, building CFG/SSA views, and rendering both
+//! high-level and C#-style outputs. It exposes the same core engine used by
+//! the CLI binary in this repository, so library and command-line workflows
+//! stay aligned.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -20,6 +21,8 @@ pub mod native_contracts;
 pub mod nef;
 pub mod syscalls;
 mod util;
+#[cfg(feature = "web")]
+pub mod web;
 
 pub use crate::decompiler::analysis::call_graph::{CallEdge, CallGraph, CallTarget};
 pub use crate::decompiler::analysis::types::{MethodTypes, TypeInfo, ValueType};

@@ -55,9 +55,9 @@ impl Decompilation {
         self.cfg.to_dot()
     }
 
-    /// Get or compute the SSA form of this decompilation.
+    /// Get the cached SSA form for this decompilation, if available.
     ///
-    /// SSA form is computed lazily on first call and cached for subsequent calls.
+    /// Call [`Self::compute_ssa`] first to populate the cached SSA value.
     ///
     /// # Returns
     ///
@@ -66,7 +66,8 @@ impl Decompilation {
     /// # Examples
     ///
     /// ```ignore
-    /// let decompilation = decompiler.decompile_bytes(&nef_bytes)?;
+    /// let mut decompilation = decompiler.decompile_bytes(&nef_bytes)?;
+    /// decompilation.compute_ssa();
     /// if let Some(ssa) = decompilation.ssa() {
     ///     println!("SSA Stats: {}", ssa.stats());
     ///     println!("{}", ssa.render());
