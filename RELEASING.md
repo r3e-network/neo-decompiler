@@ -25,4 +25,5 @@
    cd web
    npm publish
    ```
+   Prefer GitHub Actions trusted publishing. If trusted publishing is not configured on npm yet, provide an `NPM_TOKEN` secret for the `Publish Web Package` workflow instead.
 10. Draft a GitHub release referencing the tag and summarising key changes, including the matching npm package version.
