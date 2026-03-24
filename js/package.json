@@ -1,0 +1,44 @@
+{
+  "name": "neo-decompiler-js",
+  "version": "1.0.1",
+  "description": "Pure JavaScript Neo N3 NEF decompiler — parse, disassemble, and decompile smart contracts to human-readable pseudocode. Zero dependencies.",
+  "license": "MIT OR Apache-2.0",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "keywords": [
+    "neo",
+    "neo-n3",
+    "nef",
+    "decompiler",
+    "disassembler",
+    "smart-contract",
+    "bytecode",
+    "blockchain",
+    "vm",
+    "pseudocode"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neo-ngd/neo-decompiler.git",
+    "directory": "js"
+  },
+  "bugs": {
+    "url": "https://github.com/neo-ngd/neo-decompiler/issues"
+  },
+  "homepage": "https://github.com/neo-ngd/neo-decompiler#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "generate:opcodes": "node scripts/generate-opcodes.mjs",
+    "generate:syscalls": "node scripts/generate-syscalls.mjs",
+    "test": "node --test test/*.test.mjs"
+  }
+}

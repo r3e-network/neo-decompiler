@@ -286,6 +286,38 @@ The wrapper exports:
 
 It accepts camelCase JS options and normalizes them to the wasm ABI. See [web/README.md](/home/neo/git/neo-decompiler/web/README.md) for package and demo usage.
 
+## JavaScript Port
+
+There is also a separate plain-JavaScript port under `js/`. Unlike the wasm
+wrapper, it does not call into Rust at runtime.
+
+Current JS scope:
+
+- Parse Neo N3 NEF containers and verify checksums
+- Decode method tokens
+- Disassemble Neo VM bytecode using generated opcode table
+- Emit pseudocode listing (matches Rust core output)
+- Parse manifests and group output by ABI method offsets
+- Lift straight-line bytecode into conservative high-level method bodies
+- Render sanitized manifest signatures with pseudo-types such as `int`, `hash160`, and `string`
+- Reconstruct basic forward-branch `if` / `if-else` shapes
+- Reconstruct `while` and `do-while` loop shapes with `break` / `continue`
+- Emit label-style `goto` / `leave` fallbacks for unstructured jumps and `ENDTRY`
+- Lift `CALL` / `CALL_L` internal calls and `CALLT` token calls
+- Resolve known syscalls (44 syscalls supported)
+- Surface high-level syscall warnings when stack arguments are missing
+- Handle `CALLA` indirection and collection ops (`has_key`, `keys`, `values`, `append`, etc.)
+- Preserve packed arrays across `UNPACK` / `PICK` / reverse ops
+- Rewrite `ISTYPE`, `CONVERT`, `XDROP` and other stack/type helpers
+- Expose call-graph, xref, and basic type-inference analysis helpers
+
+Build/test it with:
+
+```bash
+cd js
+npm test
+```
+
 ### Strict manifest validation
 
 By default, manifest parsing is permissive to maximize compatibility with
