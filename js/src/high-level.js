@@ -18,7 +18,7 @@ import {
   tryStoreLocal,
   tryStoreStatic,
 } from "./high-level-slots.js";
-import { jumpTarget, renderUntranslatedInstruction, stripOuterParens, wrapExpression } from "./high-level-utils.js";
+import { renderUntranslatedInstruction, stripOuterParens } from "./high-level-utils.js";
 import { formatManifestParameters, formatManifestType, makeUniqueIdentifier, sanitizeIdentifier } from "./manifest.js";
 import { postprocess } from "./postprocess.js";
 
@@ -156,8 +156,6 @@ function liftStraightLineMethodBody(
 }
 
 function executeStraightLine(state, instructions) {
-  const stack = [];
-  // preserve shape for local helper code that still references local names
   const { statements, initializedLocals, initializedStatics, parameterNames, returnsVoid } = state;
 
   for (const instruction of instructions) {

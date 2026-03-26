@@ -34,7 +34,7 @@ export function parseNef(input) {
   }
 
   let offset = 0;
-  const magicBytes = slice(bytes, offset, 4, "UnexpectedEof");
+  const magicBytes = slice(bytes, offset, 4);
   const actualMagic = textDecoder.decode(magicBytes);
   if (actualMagic !== MAGIC) {
     throw new NefParseError(
@@ -44,7 +44,7 @@ export function parseNef(input) {
   }
   offset += 4;
 
-  const compilerBytes = slice(bytes, offset, 64, "UnexpectedEof");
+  const compilerBytes = slice(bytes, offset, 64);
   let compiler;
   try {
     compiler = textDecoder.decode(compilerBytes).replace(/\0+$/u, "");
@@ -75,7 +75,7 @@ export function parseNef(input) {
   const methodTokens = tokensResult.tokens;
   offset += tokensResult.consumed;
 
-  const reservedWordBytes = slice(bytes, offset, 2, "UnexpectedEof");
+  const reservedWordBytes = slice(bytes, offset, 2);
   const reservedWord = readU16LE(reservedWordBytes, 0);
   if (reservedWord !== 0) {
     throw new NefParseError(
@@ -95,7 +95,7 @@ export function parseNef(input) {
   offset += scriptResult.consumed;
 
   const checksumStart = offset;
-  const checksumBytes = slice(bytes, checksumStart, 4, "UnexpectedEof");
+  const checksumBytes = slice(bytes, checksumStart, 4);
   const checksum = readU32LE(checksumBytes, 0);
   const calculated = readU32LE(computeChecksum(bytes.subarray(0, checksumStart)), 0);
   if (checksum !== calculated) {
@@ -141,7 +141,7 @@ function parseMethodTokens(bytes, startOffset) {
 
   const tokens = [];
   for (let index = 0; index < count; index += 1) {
-    const hash = slice(bytes, offset, 20, "UnexpectedEof");
+    const hash = slice(bytes, offset, 20);
     offset += 20;
 
     const methodLenResult = readVarInt(bytes, offset);
@@ -154,7 +154,7 @@ function parseMethodTokens(bytes, startOffset) {
       });
     }
 
-    const methodBytes = slice(bytes, offset, methodLen, "UnexpectedEof");
+    const methodBytes = slice(bytes, offset, methodLen);
     let method;
     try {
       method = textDecoder.decode(methodBytes);
@@ -172,7 +172,7 @@ function parseMethodTokens(bytes, startOffset) {
     }
     offset += methodLen;
 
-    const paramsBytes = slice(bytes, offset, 2, "UnexpectedEof");
+    const paramsBytes = slice(bytes, offset, 2);
     const parametersCount = readU16LE(paramsBytes, 0);
     offset += 2;
 
@@ -225,13 +225,13 @@ function readVarInt(bytes, offset) {
     value = first;
     consumed = 1;
   } else if (first === 0xfd) {
-    value = readU16LE(slice(bytes, offset + 1, 2, "UnexpectedEof"), 0);
+    value = readU16LE(slice(bytes, offset + 1, 2), 0);
     consumed = 3;
   } else if (first === 0xfe) {
-    value = readU32LE(slice(bytes, offset + 1, 4, "UnexpectedEof"), 0);
+    value = readU32LE(slice(bytes, offset + 1, 4), 0);
     consumed = 5;
   } else {
-    const wide = readU64LE(slice(bytes, offset + 1, 8, "UnexpectedEof"), 0);
+    const wide = readU64LE(slice(bytes, offset + 1, 8), 0);
     if (wide > BigInt(0xffffffff)) {
       throw new NefParseError(`varint exceeds supported range at offset ${offset}`, {
         code: "IntegerOverflow",
@@ -262,7 +262,7 @@ function readVarString(bytes, offset, maxLength) {
     });
   }
   const start = offset + consumed;
-  const stringBytes = slice(bytes, start, length, "UnexpectedEof");
+  const stringBytes = slice(bytes, start, length);
   try {
     return { value: textDecoder.decode(stringBytes), consumed: consumed + length };
   } catch {
@@ -283,7 +283,7 @@ function readVarBytes(bytes, offset, maxLength) {
     });
   }
   const start = offset + consumed;
-  return { value: new Uint8Array(slice(bytes, start, length, "UnexpectedEof")), consumed: consumed + length };
+  return { value: new Uint8Array(slice(bytes, start, length)), consumed: consumed + length };
 }
 
 function varIntEncodedLength(value) {

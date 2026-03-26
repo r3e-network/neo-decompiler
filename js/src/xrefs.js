@@ -1,3 +1,5 @@
+import { scanSlotCounts, scanStaticSlotCount } from "./util.js";
+
 export function buildXrefs(instructions, methodGroups) {
   const staticCount = scanStaticSlotCount(instructions);
   return {
@@ -92,27 +94,3 @@ function slotAccess(instruction) {
   return null;
 }
 
-function scanSlotCounts(instructions) {
-  for (const instruction of instructions) {
-    if (
-      instruction.opcode.mnemonic === "INITSLOT" &&
-      instruction.operand?.kind === "Bytes" &&
-      instruction.operand.value.length >= 2
-    ) {
-      return [instruction.operand.value[0], instruction.operand.value[1]];
-    }
-  }
-  return [0, 0];
-}
-
-function scanStaticSlotCount(instructions) {
-  for (const instruction of instructions) {
-    if (
-      instruction.opcode.mnemonic === "INITSSLOT" &&
-      instruction.operand?.kind === "U8"
-    ) {
-      return instruction.operand.value;
-    }
-  }
-  return 0;
-}

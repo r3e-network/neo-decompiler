@@ -5,6 +5,32 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-03-27
+
+### Fixed
+
+- **WASM `initPanicHook` binding**: Added missing `js_name = initPanicHook` attribute to `web.rs`, fixing a runtime `TypeError` when calling `init()` from the TypeScript wrapper.
+- **Test panics on missing devpack fixtures**: Two unit tests (`csharp_trims_initslot_boundaries`, `high_level_trims_initslot_boundaries`) now gracefully skip when the optional `TestingArtifacts/devpack/` directory is absent instead of panicking.
+- **Incorrect `MAX_NEF_FILE_SIZE` doc comment**: Corrected "10 MiB" to "1 MiB" in the re-export doc comment (`src/decompiler.rs`), matching the actual constant `0x10_0000`.
+- **Disassembler split doc comment**: Consolidated the doc comment above the `#[derive]` attribute so the full description appears in generated docs.
+- **JS security tests calling wrong function**: Three tests in `security.test.mjs` now correctly call `decompileHighLevelBytesWithManifest` instead of passing a manifest as options to `decompileHighLevelBytes`.
+- **JS unused code cleanup**: Removed dead `stack` variable and unused `jumpTarget`/`wrapExpression` imports in `high-level.js`. Removed dead 4th argument from all `slice()` call sites in `nef.js`.
+
+### Changed
+
+- **JS package repository URLs**: Fixed `package.json` URLs from `neo-ngd` to `r3e-network` to match the actual repository.
+- **JS README browser claim**: Corrected feature list to state "Node.js 18+, Deno, Bun" instead of claiming browser support, since `util.js` uses `node:crypto`.
+- **JS shared utilities**: Extracted duplicated `scanSlotCounts`, `scanStaticSlotCount`, and `slotIndex` functions from `types.js` and `xrefs.js` into shared `util.js`.
+- **SECURITY.md**: Corrected branch reference from `main` to `master`.
+- **README roadmap ordering**: Swapped v0.5.x and v0.6.x sections to chronological order.
+- **Plan documents**: Added completion status markers to all six plan files.
+- **RELEASING.md**: Added step for JS package version consideration during releases.
+
+### Added
+
+- **CI JS package job**: Added `js-package` job to `ci.yml` to run JS tests on every push/PR.
+- **Justfile JS/web tasks**: Added `js-test` and `web-test` recipes; included `js-test` in the `ci` recipe.
+
 ## [0.6.0] - 2026-02-16
 
 ### Added

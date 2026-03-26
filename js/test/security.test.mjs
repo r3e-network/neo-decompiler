@@ -12,6 +12,7 @@ import {
   disassembleScript,
   decompileBytes,
   decompileHighLevelBytes,
+  decompileHighLevelBytesWithManifest,
   analyzeBytes,
 } from "../src/index.js";
 
@@ -165,7 +166,7 @@ test("security: no prototype pollution via manifest", () => {
   
   // Should not pollute
   const before = {}.polluted;
-  decompileHighLevelBytes(nef, maliciousManifest);
+  decompileHighLevelBytesWithManifest(nef, maliciousManifest);
   const after = {}.polluted;
   
   assert.equal(before, after);
@@ -194,9 +195,9 @@ test("security: regex DoS prevention in identifier parsing", () => {
   const nef = buildValidNef(new Uint8Array([0x11, 0x40]));
   
   const start = Date.now();
-  decompileHighLevelBytes(nef, manifest);
+  decompileHighLevelBytesWithManifest(nef, manifest);
   const elapsed = Date.now() - start;
-  
+
   assert.ok(elapsed < 5000, `should not hang on long identifiers (${elapsed}ms)`);
 });
 
@@ -354,9 +355,9 @@ test("security: ReDoS in string matching patterns", () => {
     const nef = buildValidNef(new Uint8Array([0x11, 0x40]));
     
     const start = Date.now();
-    decompileHighLevelBytes(nef, manifest);
+    decompileHighLevelBytesWithManifest(nef, manifest);
     const elapsed = Date.now() - start;
-    
+
     assert.ok(elapsed < 1000, `pattern should not cause ReDoS (${elapsed}ms)`);
   }
 });
@@ -409,7 +410,7 @@ test("security: constructor hijacking attempt", () => {
   Object.prototype.polluted = true;
   
   const nef = buildValidNef(new Uint8Array([0x11, 0x40]));
-  const result = decompileHighLevelBytes(nef, JSON.stringify(manifest));
+  const result = decompileHighLevelBytesWithManifest(nef, JSON.stringify(manifest));
   
   // Cleanup
   delete Object.prototype.polluted;

@@ -34,7 +34,13 @@ msrv:
 	cargo +1.83.0 test
 	cargo +1.83.0 test --no-default-features
 
-ci: fmt-check test clippy test-no-default clippy-no-default doc-check deny msrv
+js-test:
+	cd js && npm test
+
+web-test:
+	cd web && npm test
+
+ci: fmt-check test clippy test-no-default clippy-no-default doc-check deny msrv js-test
 
 artifact-sweep:
 	bash tools/ci/artifact_sweep.sh

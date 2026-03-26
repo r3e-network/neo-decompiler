@@ -1,7 +1,7 @@
 # Security Policy
 
 ## Supported Versions
-We currently support the latest `main` branch and the most recent tagged
+We currently support the latest `master` branch and the most recent tagged
 release. Older commits are not maintained for security fixes.
 
 ## Reporting a Vulnerability

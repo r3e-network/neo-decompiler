@@ -114,6 +114,17 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | Cross-Reference Analysis  | ✅     | Track local/argument/static slot reads and writes by bytecode offset                 |
 | Switch Statement Recovery | ✅     | Rewrite equality-based `if`/`else` chains into `switch`/`case` blocks (conservative) |
 
+### Shipped Features (v0.5.x)
+
+| Feature                    | Status | Description                                                                  |
+| -------------------------- | ------ | ---------------------------------------------------------------------------- |
+| SSA Transformation         | ✅     | Static Single Assignment form with φ nodes and variable versions             |
+| Dominance Analysis         | ✅     | Immediate dominators, dominator tree, dominance frontiers                    |
+| SSA Rendering              | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars)            |
+| Strict Manifest Validation | ✅     | Global `--strict-manifest` flag plus strict manifest parser APIs             |
+| Entry-Offset Safety        | ✅     | Synthetic script-entry emission when ABI method offsets don't match entry    |
+| Disassembly Fast Path      | ✅     | `disasm` command decodes instruction streams without full decompile analysis |
+
 ### Shipped Features (v0.6.x)
 
 | Feature                       | Status | Description                                                                  |
@@ -125,17 +136,6 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | Temp Variable Collapsing      | ✅     | Identity temps, temp-into-store, and temp-into-return patterns simplified    |
 | Try/Catch Nesting Fix         | ✅     | Correct catch/finally sibling ordering in control flow reconstruction        |
 | 101-Contract Audit Validation | ✅     | Comprehensive parity testing against full Neo N3 devpack                     |
-
-### Shipped Features (v0.5.x)
-
-| Feature                    | Status | Description                                                                  |
-| -------------------------- | ------ | ---------------------------------------------------------------------------- |
-| SSA Transformation         | ✅     | Static Single Assignment form with φ nodes and variable versions             |
-| Dominance Analysis         | ✅     | Immediate dominators, dominator tree, dominance frontiers                    |
-| SSA Rendering              | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars)            |
-| Strict Manifest Validation | ✅     | Global `--strict-manifest` flag plus strict manifest parser APIs             |
-| Entry-Offset Safety        | ✅     | Synthetic script-entry emission when ABI method offsets don't match entry    |
-| Disassembly Fast Path      | ✅     | `disasm` command decodes instruction streams without full decompile analysis |
 
 ### Planned Features (v0.7.x+)
 

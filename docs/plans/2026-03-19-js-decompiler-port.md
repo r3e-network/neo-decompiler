@@ -1,6 +1,8 @@
 # Neo Decompiler JavaScript Port Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For Implementer:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Status:** Completed (shipped in v0.6.0)
 
 **Goal:** Build a real plain-JavaScript decompiler package that parses Neo N3 NEF files, disassembles bytecode, and emits the same pseudocode listing as the Rust core.
 

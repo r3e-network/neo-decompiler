@@ -111,10 +111,20 @@ fn load_testing_nef(name: &str) -> Vec<u8> {
     fs::read(testing_artifact_dir().join(name)).expect("failed to read NEF artifact")
 }
 
+fn try_load_testing_nef(name: &str) -> Option<Vec<u8>> {
+    fs::read(testing_artifact_dir().join(name)).ok()
+}
+
 fn load_testing_manifest(name: &str) -> ContractManifest {
     let path = testing_artifact_dir().join(name);
     let data = fs::read_to_string(&path).expect("failed to read manifest artifact");
     ContractManifest::from_json_str(&data).expect("manifest parsed")
+}
+
+fn try_load_testing_manifest(name: &str) -> Option<ContractManifest> {
+    let path = testing_artifact_dir().join(name);
+    let data = fs::read_to_string(&path).ok()?;
+    Some(ContractManifest::from_json_str(&data).expect("manifest parsed"))
 }
 
 mod core;

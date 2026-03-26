@@ -1,6 +1,8 @@
 # NEF Hardening And Consistency Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For Implementer:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Status:** Completed (shipped in v0.6.0)
 
 **Goal:** Harden NEF parsing against malformed overlong varints and clean up core decompiler consistency issues so the crate is stricter, safer, and lint-clean.
 

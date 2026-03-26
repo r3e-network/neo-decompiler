@@ -1,6 +1,8 @@
 # Neo Decompiler Web/WASM Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For Implementer:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Status:** Completed (shipped in v0.6.0)
 
 **Goal:** Expose the existing Rust decompiler to browser-side JavaScript via WebAssembly without forking the core analysis logic.
 

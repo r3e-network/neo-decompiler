@@ -140,7 +140,7 @@ struct JsDecompileOptions {
 }
 
 #[cfg(target_arch = "wasm32")]
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = initPanicHook)]
 /// Install a panic hook that forwards Rust panics to the browser console.
 pub fn init_panic_hook() {
     console_error_panic_hook::set_once();

@@ -1,3 +1,5 @@
+import { scanSlotCounts, scanStaticSlotCount, slotIndex } from "./util.js";
+
 export function inferTypes(instructions, methodGroups, manifest = null) {
   const staticCount = scanStaticSlotCount(instructions);
   const statics = Array.from({ length: staticCount }, () => "unknown");
@@ -59,51 +61,6 @@ export function inferTypes(instructions, methodGroups, manifest = null) {
   });
 
   return { methods, statics };
-}
-
-function scanSlotCounts(instructions) {
-  for (const instruction of instructions) {
-    if (
-      instruction.opcode.mnemonic === "INITSLOT" &&
-      instruction.operand?.kind === "Bytes" &&
-      instruction.operand.value.length >= 2
-    ) {
-      return [instruction.operand.value[0], instruction.operand.value[1]];
-    }
-  }
-
-  let maxLocal = -1;
-  let maxArg = -1;
-  for (const instruction of instructions) {
-    const mnemonic = instruction.opcode.mnemonic;
-    if (/^(?:LD|ST)LOC(?:\d+)?$/u.test(mnemonic)) {
-      maxLocal = Math.max(maxLocal, slotIndex(mnemonic, instruction));
-    }
-    if (/^(?:LD|ST)ARG(?:\d+)?$/u.test(mnemonic)) {
-      maxArg = Math.max(maxArg, slotIndex(mnemonic, instruction));
-    }
-  }
-  return [maxLocal + 1, maxArg + 1];
-}
-
-function scanStaticSlotCount(instructions) {
-  for (const instruction of instructions) {
-    if (instruction.opcode.mnemonic === "INITSSLOT" && instruction.operand?.kind === "U8") {
-      return instruction.operand.value;
-    }
-  }
-  return 0;
-}
-
-function slotIndex(mnemonic, instruction) {
-  const exact = mnemonic.match(/(?:LD|ST)(?:LOC|ARG|SFLD)(\d+)$/u);
-  if (exact) {
-    return Number(exact[1]);
-  }
-  if (instruction.operand?.kind === "U8") {
-    return instruction.operand.value;
-  }
-  return 0;
 }
 
 function assignStoredType(locals, statics, store, instruction, type) {

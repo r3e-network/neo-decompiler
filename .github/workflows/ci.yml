@@ -163,6 +163,20 @@ jobs:
           name: neo-decompiler-${{ matrix.os }}
           path: target/release/neo-decompiler*
 
+  js-package:
+    name: JS package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run JS package tests
+        working-directory: js
+        run: npm test
+
   web-package:
     name: Web package
     runs-on: ubuntu-latest

@@ -1,6 +1,8 @@
 # Neo Decompiler Web NPM Package Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For Implementer:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Status:** Completed (shipped in v0.6.0)
 
 **Goal:** Turn the existing `web/` wasm demo into a publishable npm package with a stable TypeScript wrapper and typed browser-facing API.
 

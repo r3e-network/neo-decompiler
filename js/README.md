@@ -18,7 +18,7 @@ npm install neo-decompiler-js
 - **Cross-references** — slot read/write tracking
 - **Type inference** — basic collection and primitive type detection
 - **Manifest support** — ABI method signatures, parameter names, return types
-- **Zero dependencies** — pure ESM, works in browsers, Node, Deno, Bun
+- **Zero dependencies** — pure ESM, works in Node.js 18+, Deno, Bun (uses `node:crypto` for checksum verification)
 
 ## Usage
 

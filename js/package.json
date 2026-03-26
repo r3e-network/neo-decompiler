@@ -26,13 +26,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/neo-ngd/neo-decompiler.git",
+    "url": "git+https://github.com/r3e-network/neo-decompiler.git",
     "directory": "js"
   },
   "bugs": {
-    "url": "https://github.com/neo-ngd/neo-decompiler/issues"
+    "url": "https://github.com/r3e-network/neo-decompiler/issues"
   },
-  "homepage": "https://github.com/neo-ngd/neo-decompiler#readme",
+  "homepage": "https://github.com/r3e-network/neo-decompiler#readme",
   "engines": {
     "node": ">=18.0.0"
   },

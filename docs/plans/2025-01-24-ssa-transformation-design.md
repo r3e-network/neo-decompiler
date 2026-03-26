@@ -1,7 +1,7 @@
 # SSA Transformation Design
 
 **Date:** 2025-01-24
-**Status:** Design Approved
+**Status:** Completed (shipped in v0.5.0)
 **Priority:** Medium (README Roadmap v0.5.x)
 
 ## Overview

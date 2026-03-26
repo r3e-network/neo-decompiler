@@ -1,7 +1,7 @@
 //! High-level decompilation pipeline shared by the library and CLI.
 //! Parses NEF, disassembles bytecode, lifts control flow, and renders text/C#.
 
-/// Maximum file size allowed for NEF files (10 MiB).
+/// Maximum file size allowed for NEF files (1 MiB).
 pub const MAX_NEF_FILE_SIZE: u64 = crate::nef::MAX_NEF_FILE_SIZE;
 
 pub mod analysis;

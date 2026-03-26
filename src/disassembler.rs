@@ -17,10 +17,10 @@ pub enum UnknownHandling {
 }
 
 /// Stateless helper that decodes Neo VM bytecode into structured instructions.
-#[derive(Debug, Clone, Copy)]
 ///
 /// The disassembler maintains no state between calls; configuration only
 /// controls how unknown opcode bytes are handled.
+#[derive(Debug, Clone, Copy)]
 pub struct Disassembler {
     unknown: UnknownHandling,
 }

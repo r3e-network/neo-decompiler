@@ -1,6 +1,8 @@
 # JavaScript Decompiler Parity Hardening Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For Implementer:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Status:** Completed (shipped in v0.6.0)
 
 **Goal:** Close the highest-value Rust-to-JavaScript parity gaps in the standalone `js/` decompiler so it is consistent, production-ready, and self-contained without Rust at runtime.
 
