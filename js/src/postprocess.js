@@ -178,6 +178,8 @@ function findMatchingBrace(statements, openIdx) {
 function negateCondition(cond) {
   const c = cond.trim();
   const ops = [
+    [" === ", " !== "],
+    [" !== ", " === "],
     [" == ", " != "],
     [" != ", " == "],
     [" >= ", " < "],
@@ -892,7 +894,7 @@ function splitArgs(text) {
     if ("([{".includes(ch)) {
       depth++;
       current += ch;
-    } else if (")]}\\".includes(ch)) {
+    } else if (")]}".includes(ch)) {
       depth = Math.max(0, depth - 1);
       current += ch;
     } else if (ch === "," && depth === 0) {

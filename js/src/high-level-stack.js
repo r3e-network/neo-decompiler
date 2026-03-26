@@ -237,11 +237,7 @@ export function tryUnaryExpression(state, instruction) {
     state.stack.push(`new_array(${value})`);
     return true;
   }
-  if (mnemonic === "NEWSTRUCT") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`new_struct(${value})`);
-    return true;
-  }
+  // NEWSTRUCT handled by tryCollectionExpression in high-level-collections.js
   if (mnemonic === "NEGATE") {
     const value = stripOuterParens(state.stack.pop() ?? "???");
     state.stack.push(`-${value}`);

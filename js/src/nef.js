@@ -294,7 +294,8 @@ function readVarBytes(bytes, offset, maxLength) {
 function varIntEncodedLength(value) {
   if (value <= 0xfc) return 1;
   if (value <= 0xffff) return 3;
-  return 5;
+  if (value <= 0xffffffff) return 5;
+  return 9;
 }
 
 function slice(bytes, start, length) {

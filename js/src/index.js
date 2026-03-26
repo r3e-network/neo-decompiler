@@ -167,9 +167,10 @@ function stackEffectForArgInference(instruction) {
   }
   if (mnemonic === "SYSCALL" && instruction.operand?.kind === "Syscall") {
     const info = SYSCALLS.get(instruction.operand.value) ?? null;
+    if (!info) return null;
     return {
-      pops: info?.param_count ?? 0,
-      pushes: (info?.returns_value ?? true) ? 1 : 0,
+      pops: info.param_count ?? 0,
+      pushes: (info.returns_value ?? true) ? 1 : 0,
     };
   }
   if (
@@ -192,10 +193,12 @@ function stackEffectForArgInference(instruction) {
       "CAT",
       "HASKEY",
       "PICKITEM",
-      "POPITEM",
     ].includes(mnemonic)
   ) {
     return { pops: 2, pushes: 1 };
+  }
+  if (mnemonic === "POPITEM") {
+    return { pops: 1, pushes: 1 };
   }
   return null;
 }
