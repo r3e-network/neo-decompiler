@@ -56,9 +56,9 @@ console.log(disasm.instructions);
 
 ## API
 
-### `parseNef(bytes) → { script, header, methodTokens, ... }`
+### `parseNef(bytes) → { script, header, methodTokens, scriptHash, scriptHashLE, ... }`
 
-Parse a NEF container. Throws on invalid magic or checksum mismatch.
+Parse a NEF container. Throws on invalid magic or checksum mismatch. Returns the script hash in both big-endian (`scriptHash`) and little-endian (`scriptHashLE`) hex.
 
 ### `disassembleScript(script) → { instructions, warnings }`
 
@@ -67,6 +67,10 @@ Disassemble a bytecode array into instruction objects.
 ### `decompileBytes(bytes) → { nef, instructions, warnings, pseudocode }`
 
 Parse and disassemble. Returns simple pseudocode listing.
+
+### `decompileBytesWithManifest(bytes, manifest) → { ..., methodGroups, groupedPseudocode }`
+
+Parse, disassemble, and group methods using manifest ABI info. Returns grouped pseudocode.
 
 ### `decompileHighLevelBytes(bytes) → { ..., highLevel }`
 
@@ -107,6 +111,13 @@ contract MyContract {
 ```bash
 npm test
 ```
+
+## Version Mapping
+
+| neo-decompiler-js | neo-decompiler (Rust) |
+|-------------------|-----------------------|
+| 1.1.0             | 0.6.1                 |
+| 1.0.x             | 0.6.0                 |
 
 ## License
 

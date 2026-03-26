@@ -2,9 +2,11 @@ import { NefParseError } from "./errors.js";
 import {
   asUint8Array,
   computeChecksum,
+  computeScriptHash,
   readU16LE,
   readU32LE,
   readU64LE,
+  upperHex,
 } from "./util.js";
 
 const MAX_NEF_FILE_SIZE = 0x10_0000;
@@ -114,6 +116,7 @@ export function parseNef(input) {
     );
   }
 
+  const scriptHashBytes = computeScriptHash(script);
   return {
     header: {
       magic: actualMagic,
@@ -123,6 +126,8 @@ export function parseNef(input) {
     methodTokens,
     script,
     checksum,
+    scriptHash: upperHex(scriptHashBytes),
+    scriptHashLE: upperHex(scriptHashBytes.slice().reverse()),
   };
 }
 

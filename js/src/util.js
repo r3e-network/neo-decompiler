@@ -47,6 +47,12 @@ export function computeChecksum(bytes) {
   return new Uint8Array(second.subarray(0, 4));
 }
 
+export function computeScriptHash(script) {
+  const sha256 = createHash("sha256").update(Buffer.from(script)).digest();
+  const ripemd160 = createHash("ripemd160").update(sha256).digest();
+  return new Uint8Array(ripemd160);
+}
+
 export function scanSlotCounts(instructions) {
   for (const instruction of instructions) {
     if (
