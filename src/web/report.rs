@@ -108,7 +108,7 @@ pub(super) fn build_decompile_report(result: Decompilation) -> WebDecompileRepor
     let mut seen = HashSet::new();
     for warning in collect_warnings(&method_tokens)
         .into_iter()
-        .chain(decompile_warnings.into_iter())
+        .chain(decompile_warnings)
     {
         if seen.insert(warning.clone()) {
             warnings.push(warning);

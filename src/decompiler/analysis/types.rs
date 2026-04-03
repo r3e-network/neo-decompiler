@@ -253,11 +253,9 @@ fn infer_types_in_slice(
                 let value = stack.last().copied().unwrap_or_else(StackValue::unknown);
                 stack.push(value);
             }
-            OpCode::Swap => {
-                if stack.len() >= 2 {
-                    let len = stack.len();
-                    stack.swap(len - 1, len - 2);
-                }
+            OpCode::Swap if stack.len() >= 2 => {
+                let len = stack.len();
+                stack.swap(len - 1, len - 2);
             }
             OpCode::Over => {
                 let value = stack
@@ -266,11 +264,9 @@ fn infer_types_in_slice(
                     .unwrap_or_else(StackValue::unknown);
                 stack.push(value);
             }
-            OpCode::Nip => {
-                if stack.len() >= 2 {
-                    let len = stack.len();
-                    stack.remove(len - 2);
-                }
+            OpCode::Nip if stack.len() >= 2 => {
+                let len = stack.len();
+                stack.remove(len - 2);
             }
             OpCode::Rot => {
                 if let (Some(top), Some(mid), Some(bottom)) =
