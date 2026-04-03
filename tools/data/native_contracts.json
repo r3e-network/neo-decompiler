@@ -166,7 +166,9 @@
     "script_hash": "cf76e28bd0062c4a478ee35561011319f3cfa4d2",
     "methods": [
       "BalanceOf",
+      "Decimals",
       "OnManifestCompose",
+      "Symbol",
       "TotalSupply",
       "Transfer"
     ]
@@ -186,6 +188,7 @@
     "script_hash": "f563ea40bc283d4d0e05c48ea305b3f2a07340ef",
     "methods": [
       "BalanceOf",
+      "Decimals",
       "GetAccountState",
       "GetAllCandidates",
       "GetCandidateVote",
@@ -199,6 +202,7 @@
       "RegisterCandidate",
       "SetGasPerBlock",
       "SetRegisterPrice",
+      "Symbol",
       "TotalSupply",
       "Transfer",
       "UnclaimedGas",

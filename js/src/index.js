@@ -1,4 +1,5 @@
 import { buildCallGraph } from "./call-graph.js";
+import { NeoDecompilerError, NefParseError, DisassemblyError, ManifestParseError } from "./errors.js";
 import { parseNef } from "./nef.js";
 import { disassembleScript } from "./disassembler.js";
 import { SYSCALLS } from "./generated/syscalls.js";
@@ -21,6 +22,10 @@ export {
   renderGroupedPseudocode,
   renderPseudocode,
   renderHighLevelMethodGroups,
+  NeoDecompilerError,
+  NefParseError,
+  DisassemblyError,
+  ManifestParseError,
 };
 
 export function decompileBytes(bytes, options = {}) {
@@ -63,7 +68,7 @@ export function decompileBytesWithManifest(bytes, manifestInput, options = {}) {
 export function decompileHighLevelBytes(bytes, options = {}) {
   const result = decompileBytes(bytes, options);
   const methodGroups = buildMethodGroups(result.instructions, null);
-  const context = buildHighLevelContext(methodGroups, result.nef);
+  const context = buildHighLevelContext(methodGroups, result.nef, options);
   const highLevel = renderHighLevelMethodGroups(methodGroups, null, context);
   return {
     ...result,
@@ -77,7 +82,7 @@ export function decompileHighLevelBytesWithManifest(bytes, manifestInput, option
   const manifest = parseManifest(manifestInput);
   const result = decompileBytes(bytes, options);
   const methodGroups = buildMethodGroups(result.instructions, manifest);
-  const context = buildHighLevelContext(methodGroups, result.nef);
+  const context = buildHighLevelContext(methodGroups, result.nef, options);
   const highLevel = renderHighLevelMethodGroups(methodGroups, manifest, context);
   return {
     ...result,
@@ -89,7 +94,7 @@ export function decompileHighLevelBytesWithManifest(bytes, manifestInput, option
   };
 }
 
-function buildHighLevelContext(methodGroups, nef) {
+function buildHighLevelContext(methodGroups, nef, options = {}) {
   const entryOffset = methodGroups[0]?.start ?? 0;
   return {
     methodLabelsByOffset: new Map(methodGroups.map((group) => [group.start, group.name])),
@@ -100,6 +105,9 @@ function buildHighLevelContext(methodGroups, nef) {
     calltParamCounts: nef.methodTokens.map((token) => token.parametersCount),
     calltReturnsValue: nef.methodTokens.map((token) => token.hasReturnValue),
     highLevelWarnings: [],
+    postprocessOptions: {
+      inlineSingleUseTemps: !!options.inlineSingleUseTemps,
+    },
   };
 }
 

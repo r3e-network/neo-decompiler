@@ -133,7 +133,7 @@ export function liftMethodBody(
     }
   }
 
-  postprocess(result.statements);
+  postprocess(result.statements, context.postprocessOptions);
   return result;
 }
 

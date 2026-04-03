@@ -3,7 +3,7 @@ use std::fmt::Write;
 use crate::manifest::ContractManifest;
 
 use crate::decompiler::helpers::{
-    format_manifest_type, format_permission_entry, manifest_extra_string, sanitize_identifier,
+    format_manifest_type, format_permission_entry, sanitize_identifier,
 };
 
 pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractManifest) {
@@ -39,11 +39,12 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
     if let Some(trusts) = manifest.trusts.as_ref() {
         writeln!(output, "    trusts = {};", trusts.describe()).unwrap();
     }
-    if let Some(author) = manifest_extra_string(manifest, "author") {
-        writeln!(output, "    // author: {author}").unwrap();
-    }
-    if let Some(email) = manifest_extra_string(manifest, "email") {
-        writeln!(output, "    // email: {email}").unwrap();
+    if let Some(serde_json::Value::Object(map)) = manifest.extra.as_ref() {
+        for (key, value) in map {
+            if let Some(s) = value.as_str() {
+                writeln!(output, "    // {key}: {s}").unwrap();
+            }
+        }
     }
 
     if !manifest.abi.methods.is_empty() {

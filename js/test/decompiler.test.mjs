@@ -1553,3 +1553,71 @@ test("infers PACKMAP and CONVERT target types", () => {
   );
   assert.equal(convert.types.methods[0].locals[0], "bytestring");
 });
+
+test("inlineSingleUseTemps option inlines single-use temp variables", () => {
+  // Script: PUSH1 PUSH2 ADD RET — produces a temp for the addition
+  const script = new Uint8Array([0x11, 0x12, 0x9e, 0x40]);
+  const nef = buildNefFromScript(script);
+
+  const without = decompileHighLevelBytes(nef);
+  const with_ = decompileHighLevelBytes(nef, { inlineSingleUseTemps: true });
+
+  // Both should produce valid output
+  assert.match(without.highLevel, /fn script_entry\(\)/);
+  assert.match(with_.highLevel, /fn script_entry\(\)/);
+});
+
+test("postprocess inlineSingleUseTemps inlines temp into complex expression", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+
+  // Temp used inside a larger expression (not just `Y = tN;` which collapseTempIntoStore handles)
+  const stmts = [
+    "  let t0 = 42;",
+    "  loc0 = t0 + 10;",
+  ];
+  postprocess(stmts, { inlineSingleUseTemps: true });
+  const result = stmts.filter((s) => s.trim() !== "").join("\n");
+  assert.match(result, /loc0 = 42 \+ 10;/);
+  assert.ok(!result.includes("let t0"));
+});
+
+test("postprocess inlineSingleUseTemps does not inline multi-use temps", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+
+  // t0 used twice in separate expressions - should not be inlined
+  const stmts = [
+    "  let t0 = 42;",
+    "  loc0 = t0 + 1;",
+    "  loc1 = t0 + 2;",
+  ];
+  postprocess(stmts, { inlineSingleUseTemps: true });
+  const result = stmts.filter((s) => s.trim() !== "").join("\n");
+  assert.match(result, /let t0 = 42;/);
+});
+
+test("postprocess inlineSingleUseTemps wraps operator expressions in parens", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+
+  // Temp with operator RHS used inside a larger expression needs parens
+  const stmts = [
+    "  let t0 = a + b;",
+    "  loc0 = t0 * 2;",
+  ];
+  postprocess(stmts, { inlineSingleUseTemps: true });
+  const result = stmts.filter((s) => s.trim() !== "").join("\n");
+  assert.match(result, /loc0 = \(a \+ b\) \* 2;/);
+});
+
+test("postprocess inlineSingleUseTemps skips non-temp identifiers", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+
+  // loc0 is not a temp (doesn't match t[0-9]+) so should not be inlined
+  const stmts = [
+    "  let loc0 = 42;",
+    "  loc1 = loc0 + 10;",
+  ];
+  postprocess(stmts, { inlineSingleUseTemps: true });
+  const result = stmts.filter((s) => s.trim() !== "").join("\n");
+  assert.match(result, /let loc0 = 42;/);
+  assert.match(result, /loc1 = loc0 \+ 10;/);
+});

@@ -4,7 +4,7 @@ use crate::manifest::ContractManifest;
 use crate::nef::NefFile;
 use crate::util;
 
-use super::super::super::helpers::{format_permission_entry, manifest_extra_string};
+use super::super::super::helpers::format_permission_entry;
 use super::super::helpers::escape_csharp_string;
 
 pub(super) fn write_preamble(output: &mut String) {
@@ -24,21 +24,29 @@ pub(super) fn write_contract_open(
 ) {
     writeln!(output, "namespace NeoDecompiler.Generated {{").unwrap();
     if let Some(manifest) = manifest {
-        if let Some(author) = manifest_extra_string(manifest, "author") {
-            writeln!(
-                output,
-                "    [ManifestExtra(\"Author\", \"{}\")]",
-                escape_csharp_string(&author)
-            )
-            .unwrap();
+        // Emit all ManifestExtra fields from the extra object.
+        if let Some(serde_json::Value::Object(map)) = manifest.extra.as_ref() {
+            for (key, value) in map {
+                if let Some(s) = value.as_str() {
+                    writeln!(
+                        output,
+                        "    [ManifestExtra(\"{}\", \"{}\")]",
+                        escape_csharp_string(key),
+                        escape_csharp_string(s)
+                    )
+                    .unwrap();
+                }
+            }
         }
-        if let Some(email) = manifest_extra_string(manifest, "email") {
-            writeln!(
-                output,
-                "    [ManifestExtra(\"Email\", \"{}\")]",
-                escape_csharp_string(&email)
-            )
-            .unwrap();
+        // Emit SupportedStandards as a proper attribute.
+        if !manifest.supported_standards.is_empty() {
+            let standards = manifest
+                .supported_standards
+                .iter()
+                .map(|s| format!("\"{}\"", escape_csharp_string(s)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(output, "    [SupportedStandards({standards})]").unwrap();
         }
     }
     writeln!(output, "    public class {contract_name} : SmartContract").unwrap();
@@ -59,10 +67,6 @@ pub(super) fn write_contract_open(
     .unwrap();
 
     if let Some(manifest) = manifest {
-        if !manifest.supported_standards.is_empty() {
-            let standards = manifest.supported_standards.join(", ");
-            writeln!(output, "        // supported standards: {standards}").unwrap();
-        }
         if manifest.features.storage || manifest.features.payable {
             writeln!(output, "        // features:").unwrap();
             if manifest.features.storage {

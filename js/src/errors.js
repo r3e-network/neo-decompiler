@@ -9,3 +9,5 @@ export class NeoDecompilerError extends Error {
 export class NefParseError extends NeoDecompilerError {}
 
 export class DisassemblyError extends NeoDecompilerError {}
+
+export class ManifestParseError extends NeoDecompilerError {}

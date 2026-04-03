@@ -36,9 +36,24 @@ function prevCodeLine(statements, start) {
 function braceDelta(line) {
   let opens = 0,
     closes = 0;
-  for (const ch of line) {
-    if (ch === "{") opens++;
-    if (ch === "}") closes++;
+  let inString = false;
+  let quote = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inString) {
+      if (ch === "\\" && i + 1 < line.length) {
+        i++; // skip escaped character
+      } else if (ch === quote) {
+        inString = false;
+      }
+    } else if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+    } else if (ch === "{") {
+      opens++;
+    } else if (ch === "}") {
+      closes++;
+    }
   }
   return opens - closes;
 }
@@ -1349,6 +1364,184 @@ function rewriteSwitchBreakGotos(statements) {
   }
 }
 
+// ─── Pass 8b: inline_single_use_temps (optional) ─────────────────────────────
+
+function isSafeToInline(expr) {
+  if (expr.includes("(")) {
+    const trimmed = expr.trim();
+    if (trimmed.startsWith("(") && trimmed.endsWith(")")) return true;
+    return false;
+  }
+  return true;
+}
+
+function needsParens(expr) {
+  // Check for operator characters outside of string literals and bracket indexing.
+  let depth = 0;
+  let inString = false;
+  let quote = "";
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (inString) {
+      if (ch === "\\" && i + 1 < expr.length) {
+        i++;
+      } else if (ch === quote) {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      quote = ch;
+      continue;
+    }
+    if (ch === "[" || ch === "(") { depth++; continue; }
+    if (ch === "]" || ch === ")") { depth--; continue; }
+    if (depth > 0) continue;
+    if (
+      ch === "+" || ch === "-" || ch === "*" ||
+      ch === "/" || ch === "%" ||
+      ch === "<" || ch === ">"
+    ) return true;
+    if (ch === "&" && i + 1 < expr.length && expr[i + 1] === "&") return true;
+    if (ch === "|" && i + 1 < expr.length && expr[i + 1] === "|") return true;
+    if (ch === "=" && i + 1 < expr.length && expr[i + 1] === "=") return true;
+    if (ch === "!" && i + 1 < expr.length && expr[i + 1] === "=") return true;
+  }
+  return false;
+}
+
+function isControlFlowCondition(statement) {
+  const t = statement.trim();
+  return (
+    t.startsWith("if ") ||
+    t.startsWith("while ") ||
+    t.startsWith("for ") ||
+    t.startsWith("} else if ")
+  );
+}
+
+function isNumericLiteral(text) {
+  const t = text.startsWith("-") ? text.slice(1) : text;
+  if (t.startsWith("0x") || t.startsWith("0X")) {
+    const hex = t.slice(2);
+    return hex.length > 0 && /^[0-9a-fA-F]+$/.test(hex);
+  }
+  return t.length > 0 && /^\d+$/.test(t);
+}
+
+function isStringLiteral(text) {
+  if (text.length < 2) return false;
+  return (
+    (text[0] === '"' && text[text.length - 1] === '"') ||
+    (text[0] === "'" && text[text.length - 1] === "'")
+  );
+}
+
+function isSimpleIdentifier(text) {
+  if (text.length === 0) return false;
+  if (!/^[A-Za-z_]/.test(text)) return false;
+  return /^\w+$/.test(text);
+}
+
+function isTrivialInlineRhs(expr) {
+  const t = expr.trim();
+  if (t === "") return false;
+  if (t === "true" || t === "false" || t === "null") return true;
+  if (isNumericLiteral(t) || isStringLiteral(t)) return true;
+  return isSimpleIdentifier(t);
+}
+
+function collectInlineCandidates(statements) {
+  const definitions = new Map();
+  const useCounts = new Map();
+  const reassigned = new Set();
+  const known = [];
+
+  for (let idx = 0; idx < statements.length; idx++) {
+    const trimmed = statements[idx].trim();
+    const assign = parseAssignment(trimmed);
+
+    if (assign) {
+      for (const v of known) {
+        if (containsIdentifier(assign.rhs, v)) {
+          useCounts.set(v, (useCounts.get(v) || 0) + 1);
+        }
+      }
+
+      if (!isTempIdent(assign.lhs)) continue;
+
+      if (assign.hasLet) {
+        if (definitions.has(assign.lhs)) {
+          reassigned.add(assign.lhs);
+        } else {
+          known.push(assign.lhs);
+          definitions.set(assign.lhs, { defLine: idx, rhs: assign.rhs });
+        }
+      } else {
+        reassigned.add(assign.lhs);
+      }
+    } else {
+      for (const v of known) {
+        if (containsIdentifier(trimmed, v)) {
+          useCounts.set(v, (useCounts.get(v) || 0) + 1);
+        }
+      }
+    }
+  }
+
+  const candidates = [];
+  for (const [name, { defLine, rhs }] of definitions) {
+    const count = useCounts.get(name) || 0;
+    if (count === 1 && !reassigned.has(name) && isSafeToInline(rhs)) {
+      candidates.push({ name, defLine, rhs });
+    }
+  }
+
+  candidates.sort((a, b) => b.defLine - a.defLine);
+  return candidates;
+}
+
+function applyInlining(statements, candidates) {
+  for (const candidate of candidates) {
+    let inlined = false;
+    for (let i = candidate.defLine + 1; i < statements.length; i++) {
+      if (!containsIdentifier(statements[i], candidate.name)) continue;
+
+      if (
+        isControlFlowCondition(statements[i]) &&
+        !isTrivialInlineRhs(candidate.rhs)
+      ) {
+        break;
+      }
+
+      const replacement = needsParens(candidate.rhs)
+        ? `(${candidate.rhs})`
+        : candidate.rhs;
+
+      const updated = replaceIdentifier(
+        statements[i],
+        candidate.name,
+        replacement,
+      );
+      if (updated !== statements[i]) {
+        statements[i] = updated;
+        inlined = true;
+        break;
+      }
+    }
+
+    if (inlined) {
+      statements[candidate.defLine] = "";
+    }
+  }
+}
+
+function inlineSingleUseTemps(statements) {
+  const candidates = collectInlineCandidates(statements);
+  applyInlining(statements, candidates);
+}
+
 // ─── Main entry point ──────────────────────────────────────────────────────
 
 /**
@@ -1356,8 +1549,10 @@ function rewriteSwitchBreakGotos(statements) {
  * Pass order MUST match Rust's HighLevelEmitter::finish().
  *
  * @param {string[]} statements - flat list of pseudo-code lines (mutated in place)
+ * @param {object} [options] - optional settings
+ * @param {boolean} [options.inlineSingleUseTemps] - enable single-use temp inlining (default: false)
  */
-export function postprocess(statements) {
+export function postprocess(statements, options = {}) {
   // Pass 1
   rewriteElseIfChains(statements);
   // Pass 2
@@ -1376,6 +1571,10 @@ export function postprocess(statements) {
   inlineConditionTemps(statements);
   // Pass 8
   inlineForIncrementTemps(statements);
+  // Pass 8b (optional, matches Rust inline_single_use_temps)
+  if (options.inlineSingleUseTemps) {
+    inlineSingleUseTemps(statements);
+  }
   // Pass 9
   rewriteCompoundAssignments(statements);
   // Pass 10

@@ -1,5 +1,25 @@
+import { ManifestParseError } from "./errors.js";
+
 export function parseManifest(json) {
-  const value = typeof json === "string" ? JSON.parse(json) : json;
+  let value;
+  if (typeof json === "string") {
+    try {
+      value = JSON.parse(json);
+    } catch (cause) {
+      throw new ManifestParseError(
+        `invalid manifest JSON: ${cause.message}`,
+        { code: "InvalidJson" },
+      );
+    }
+  } else {
+    value = json;
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new ManifestParseError(
+      "manifest must be a JSON object",
+      { code: "InvalidStructure" },
+    );
+  }
   return {
     name: value.name,
     groups: Array.isArray(value.groups) ? value.groups : [],
