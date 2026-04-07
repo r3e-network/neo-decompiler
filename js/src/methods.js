@@ -64,13 +64,18 @@ export function buildMethodGroups(instructions, manifest) {
 
   groups.sort((left, right) => left.start - right.start);
 
-  return groups.map((group, index) => ({
-    ...group,
-    end: groups[index + 1]?.start ?? (instructions.at(-1)?.offset ?? group.start) + 1,
-    instructions: instructions.filter(
-      (instruction) =>
-        instruction.offset >= group.start &&
-        instruction.offset < (groups[index + 1]?.start ?? Number.POSITIVE_INFINITY),
-    ),
-  }));
+  // Single-pass partition: instructions are sorted by offset, so we walk once.
+  let instrIdx = 0;
+  return groups.map((group, index) => {
+    const nextStart = groups[index + 1]?.start ?? Number.POSITIVE_INFINITY;
+    const end = groups[index + 1]?.start ?? (instructions.at(-1)?.offset ?? group.start) + 1;
+    const groupInstructions = [];
+    while (instrIdx < instructions.length && instructions[instrIdx].offset < group.start) {
+      instrIdx++;
+    }
+    while (instrIdx < instructions.length && instructions[instrIdx].offset < nextStart) {
+      groupInstructions.push(instructions[instrIdx++]);
+    }
+    return { ...group, end, instructions: groupInstructions };
+  });
 }

@@ -147,21 +147,36 @@ function isTempIdent(s) {
   return /^t\d+$/.test(s);
 }
 
+// Regex cache: avoids recompiling the same pattern on every call.
+// Key = identifier string, value = { test: RegExp, global: RegExp }.
+const identRegexCache = new Map();
+
+function getIdentRegex(ident) {
+  let cached = identRegexCache.get(ident);
+  if (!cached) {
+    const pattern = `(?<![\\w])${escapeRegex(ident)}(?![\\w])`;
+    cached = { test: new RegExp(pattern), global: new RegExp(pattern, "g") };
+    identRegexCache.set(ident, cached);
+  }
+  return cached;
+}
+
 function containsIdentifier(text, ident) {
   if (!ident) return false;
-  const re = new RegExp(`(?<![\\w])${escapeRegex(ident)}(?![\\w])`);
-  return re.test(text);
+  return getIdentRegex(ident).test.test(text);
 }
 
 function countIdentifier(text, ident) {
   if (!ident) return 0;
-  const re = new RegExp(`(?<![\\w])${escapeRegex(ident)}(?![\\w])`, "g");
+  const re = getIdentRegex(ident).global;
+  re.lastIndex = 0;
   return (text.match(re) || []).length;
 }
 
 function replaceIdentifier(text, ident, replacement) {
   if (!ident) return text;
-  const re = new RegExp(`(?<![\\w])${escapeRegex(ident)}(?![\\w])`, "g");
+  const re = getIdentRegex(ident).global;
+  re.lastIndex = 0;
   return text.replace(re, replacement);
 }
 
@@ -1065,7 +1080,10 @@ function eliminateIdentityTemps(statements) {
     }
 
     // Don't substitute if lhs appeared earlier
-    const lhsSeenEarlier = statements.slice(0, index).some((s) => containsIdentifier(s, assign.lhs));
+    let lhsSeenEarlier = false;
+    for (let k = 0; k < index; k++) {
+      if (containsIdentifier(statements[k], assign.lhs)) { lhsSeenEarlier = true; break; }
+    }
     if (lhsSeenEarlier) {
       index++;
       continue;
@@ -1110,7 +1128,10 @@ function collapseTempIntoStore(statements) {
     // Assignment pattern: [let] X = tN;
     const a2 = parseAssignment(trimmedNext);
     if (a2 && a2.rhs === temp) {
-      const usedLater = statements.slice(next + 1).some((s) => containsIdentifier(s, temp));
+      let usedLater = false;
+      for (let k = next + 1; k < statements.length; k++) {
+        if (containsIdentifier(statements[k], temp)) { usedLater = true; break; }
+      }
       if (!usedLater) {
         const indent = leadingWhitespace(statements[next]);
         const prefix = a2.hasLet ? "let " : "";
@@ -1123,7 +1144,10 @@ function collapseTempIntoStore(statements) {
 
     // Return pattern: return tN;
     if (trimmedNext === `return ${temp};`) {
-      const usedLater = statements.slice(next + 1).some((s) => containsIdentifier(s, temp));
+      let usedLater = false;
+      for (let k = next + 1; k < statements.length; k++) {
+        if (containsIdentifier(statements[k], temp)) { usedLater = true; break; }
+      }
       if (!usedLater) {
         const indent = leadingWhitespace(statements[next]);
         statements[next] = `${indent}return ${a1.rhs};`;
@@ -1609,9 +1633,11 @@ export function postprocess(statements, options = {}) {
 
   // Final cleanup: remove blank lines
   // (matching Rust: self.statements.retain(|line| !line.trim().is_empty()))
-  for (let i = statements.length - 1; i >= 0; i--) {
-    if (statements[i].trim() === "") {
-      statements.splice(i, 1);
+  let write = 0;
+  for (let read = 0; read < statements.length; read++) {
+    if (statements[read].trim() !== "") {
+      statements[write++] = statements[read];
     }
   }
+  statements.length = write;
 }

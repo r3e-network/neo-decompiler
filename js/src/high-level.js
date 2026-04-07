@@ -52,19 +52,19 @@ CONTROL_FLOW = createControlFlowHelpers({
 
 export function renderHighLevelMethodGroups(groups, manifest, context = null) {
   const contractName = manifest ? sanitizeIdentifier(manifest.name) : "Contract";
-  let output = `contract ${contractName} {\n`;
+  const lines = [`contract ${contractName} {`];
 
   const used = new Set();
   for (const group of groups) {
     const signature = renderMethodSignature(group, used, context);
-    output += `    ${signature} {\n`;
+    lines.push(`    ${signature} {`);
 
     const body = liftMethodBody(group.instructions, group.source, context, group.start);
     if (context?.highLevelWarnings) {
       context.highLevelWarnings.push(...body.warnings);
     }
     if (body.statements.length === 0) {
-      output += "        // no instructions decoded\n";
+      lines.push("        // no instructions decoded");
     } else {
       let indentLevel = 0;
       for (const statement of body.statements) {
@@ -72,18 +72,18 @@ export function renderHighLevelMethodGroups(groups, manifest, context = null) {
         if (trimmed.startsWith("}")) {
           indentLevel = Math.max(0, indentLevel - 1);
         }
-        output += `${" ".repeat(8 + indentLevel * 4)}${trimmed}\n`;
+        lines.push(`${" ".repeat(8 + indentLevel * 4)}${trimmed}`);
         if (trimmed.endsWith("{")) {
           indentLevel += 1;
         }
       }
     }
 
-    output += "    }\n";
+    lines.push("    }");
   }
 
-  output += "}\n";
-  return output;
+  lines.push("}");
+  return lines.join("\n") + "\n";
 }
 
 function renderMethodSignature(group, used, context = null) {
