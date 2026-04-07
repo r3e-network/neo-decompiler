@@ -96,14 +96,22 @@ function readOperand(opcode, bytecode, offset) {
   switch (encoding.kind) {
     case "None":
       return { operand: null, consumed: 0 };
-    case "I8":
+    case "I8": {
+      readSlice(bytecode, offset + 1, 1, offset);
       return { operand: { kind: "I8", value: new Int8Array(bytecode.buffer, bytecode.byteOffset + offset + 1, 1)[0] }, consumed: 1 };
-    case "I16":
+    }
+    case "I16": {
+      readSlice(bytecode, offset + 1, 2, offset);
       return { operand: { kind: "I16", value: readI16LE(bytecode, offset + 1) }, consumed: 2 };
-    case "I32":
+    }
+    case "I32": {
+      readSlice(bytecode, offset + 1, 4, offset);
       return { operand: { kind: "I32", value: readI32LE(bytecode, offset + 1) }, consumed: 4 };
-    case "I64":
+    }
+    case "I64": {
+      readSlice(bytecode, offset + 1, 8, offset);
       return { operand: { kind: "I64", value: readI64LE(bytecode, offset + 1).toString() }, consumed: 8 };
+    }
     case "Bytes":
       return {
         operand: { kind: "Bytes", value: readSlice(bytecode, offset + 1, encoding.length, offset) },
@@ -115,18 +123,28 @@ function readOperand(opcode, bytecode, offset) {
       return readPrefixedBytes(bytecode, offset, 2);
     case "Data4":
       return readPrefixedBytes(bytecode, offset, 4);
-    case "Jump8":
+    case "Jump8": {
+      readSlice(bytecode, offset + 1, 1, offset);
       return { operand: { kind: "Jump", value: new Int8Array(bytecode.buffer, bytecode.byteOffset + offset + 1, 1)[0] }, consumed: 1 };
-    case "Jump32":
+    }
+    case "Jump32": {
+      readSlice(bytecode, offset + 1, 4, offset);
       return { operand: { kind: "Jump32", value: readI32LE(bytecode, offset + 1) }, consumed: 4 };
+    }
     case "U8":
       return { operand: { kind: "U8", value: readSlice(bytecode, offset + 1, 1, offset)[0] }, consumed: 1 };
-    case "U16":
+    case "U16": {
+      readSlice(bytecode, offset + 1, 2, offset);
       return { operand: { kind: "U16", value: readU16LE(bytecode, offset + 1) }, consumed: 2 };
-    case "U32":
+    }
+    case "U32": {
+      readSlice(bytecode, offset + 1, 4, offset);
       return { operand: { kind: "U32", value: readU32LE(bytecode, offset + 1) }, consumed: 4 };
-    case "Syscall":
+    }
+    case "Syscall": {
+      readSlice(bytecode, offset + 1, 4, offset);
       return { operand: { kind: "Syscall", value: readU32LE(bytecode, offset + 1) }, consumed: 4 };
+    }
     default:
       return { operand: null, consumed: 0 };
   }

@@ -1,6 +1,6 @@
 {
   "name": "neo-decompiler-js",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Pure JavaScript Neo N3 NEF decompiler — parse, disassemble, and decompile smart contracts to human-readable pseudocode. Zero dependencies.",
   "license": "MIT OR Apache-2.0",
   "type": "module",

@@ -446,7 +446,9 @@ function propagateCallArguments(
 }
 
 function relativePointerTarget(instruction) {
-  return instruction.offset + instruction.operand.value;
+  // PUSHA operand is encoded as U32 but represents a signed I32 relative offset
+  const signedOffset = instruction.operand.value | 0;
+  return instruction.offset + signedOffset;
 }
 
 function pointerValue(target) {

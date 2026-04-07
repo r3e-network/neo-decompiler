@@ -49,7 +49,9 @@ export function parseNef(input) {
   const compilerBytes = slice(bytes, offset, 64);
   let compiler;
   try {
-    compiler = textDecoder.decode(compilerBytes).replace(/\0+$/u, "");
+    const nullIdx = compilerBytes.indexOf(0);
+    const trimmed = nullIdx === -1 ? compilerBytes : compilerBytes.subarray(0, nullIdx);
+    compiler = textDecoder.decode(trimmed);
   } catch {
     throw new NefParseError("compiler field is not valid UTF-8", {
       code: "InvalidCompiler",

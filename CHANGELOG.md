@@ -5,6 +5,26 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-04-07
+
+### Fixed
+
+- **JS: PUSHA signed offset**: PUSHA operand is now correctly interpreted as signed I32 for backward pointer resolution, fixing wrong output for contracts using indirect backward calls via `CALLA`.
+- **JS: disassembler bounds checks**: All operand reads (I8, I16, I32, I64, Jump8, Jump32, U16, U32, Syscall) now throw a proper `DisassemblyError` with code `UnexpectedEof` on truncated bytecode instead of an unhelpful `RangeError`.
+- **JS: inline use-count**: `collectInlineCandidates` now counts identifier occurrences instead of using a boolean check, preventing incorrect inlining of temps used multiple times in a single expression.
+- **JS: `negateCondition` compound logic**: Compound conditions with `&&`/`||` are now wrapped with `!(...)` instead of incorrectly negating only the first operator.
+- **JS: compiler field null handling**: NEF compiler field parsing now stops at the first null byte (matching Rust behavior) instead of stripping only trailing nulls.
+
+### Added
+
+- **JS: `inlineSingleUseTemps` option**: New opt-in postprocess pass that inlines single-use temporaries into their use sites, producing cleaner output. Enable via `decompileHighLevelBytes(bytes, { inlineSingleUseTemps: true })`.
+- **Rust: C# `[SupportedStandards]` attribute**: C# output now emits a proper `[SupportedStandards(...)]` attribute instead of a comment.
+- **Native contract methods**: Added missing `Decimals` and `Symbol` methods to GasToken and NeoToken definitions.
+
+### Changed
+
+- **Rust: manifest extra rendering**: Both C# header and high-level summary now emit all string-valued manifest extra fields instead of only `author` and `email`. Keys are now matched case-sensitively (matching the JSON exactly).
+
 ## [0.6.1] - 2026-03-27
 
 ### Fixed

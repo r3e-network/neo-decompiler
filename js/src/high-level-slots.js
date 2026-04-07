@@ -42,9 +42,12 @@ export function pushImmediate(state, instruction) {
   }
   if (instruction.operand !== null) {
     if (instruction.operand.kind === "U32" && mnemonic === "PUSHA") {
-      const expression = `${instruction.operand.value}`;
+      // PUSHA operand is U32-encoded but represents a signed I32 relative offset
+      const signedOffset = instruction.operand.value | 0;
+      const target = instruction.offset + signedOffset;
+      const expression = `${target}`;
       stack.push(expression);
-      pointerTargetsByExpression.set(expression, instruction.operand.value);
+      pointerTargetsByExpression.set(expression, target);
       return true;
     }
     if (

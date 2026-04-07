@@ -153,6 +153,12 @@ function containsIdentifier(text, ident) {
   return re.test(text);
 }
 
+function countIdentifier(text, ident) {
+  if (!ident) return 0;
+  const re = new RegExp(`(?<![\\w])${escapeRegex(ident)}(?![\\w])`, "g");
+  return (text.match(re) || []).length;
+}
+
 function replaceIdentifier(text, ident, replacement) {
   if (!ident) return text;
   const re = new RegExp(`(?<![\\w])${escapeRegex(ident)}(?![\\w])`, "g");
@@ -192,6 +198,9 @@ function findMatchingBrace(statements, openIdx) {
 
 function negateCondition(cond) {
   const c = cond.trim();
+  if (c.includes(" && ") || c.includes(" || ")) {
+    return `!(${c})`;
+  }
   const ops = [
     [" === ", " !== "],
     [" !== ", " === "],
@@ -1464,8 +1473,9 @@ function collectInlineCandidates(statements) {
 
     if (assign) {
       for (const v of known) {
-        if (containsIdentifier(assign.rhs, v)) {
-          useCounts.set(v, (useCounts.get(v) || 0) + 1);
+        const occurrences = countIdentifier(assign.rhs, v);
+        if (occurrences > 0) {
+          useCounts.set(v, (useCounts.get(v) || 0) + occurrences);
         }
       }
 
@@ -1483,8 +1493,9 @@ function collectInlineCandidates(statements) {
       }
     } else {
       for (const v of known) {
-        if (containsIdentifier(trimmed, v)) {
-          useCounts.set(v, (useCounts.get(v) || 0) + 1);
+        const occurrences = countIdentifier(trimmed, v);
+        if (occurrences > 0) {
+          useCounts.set(v, (useCounts.get(v) || 0) + occurrences);
         }
       }
     }
