@@ -97,14 +97,16 @@ export function popConditionForLoop(stack, mnemonic) {
 
 export function rewriteForLoops(result) {
   const statements = stripStructuredLabels(result.statements);
+  // Pre-trim all statements once to avoid repeated .trim() in findMatchingClose.
+  const trimmed = statements.map((s) => s.trim());
   for (let index = 1; index < statements.length - 2; index += 1) {
-    const init = statements[index - 1];
-    const whileLine = statements[index];
-    const closeIndex = findMatchingClose(statements, index);
+    const init = trimmed[index - 1];
+    const whileLine = trimmed[index];
+    const closeIndex = findMatchingCloseTrimmed(trimmed, index);
     if (closeIndex === -1 || closeIndex <= index + 1) {
       continue;
     }
-    const increment = statements[closeIndex - 1];
+    const increment = trimmed[closeIndex - 1];
 
     const initMatch = init.match(/^let (\w+) = (.+);$/u);
     const whileMatch = whileLine.match(/^while (.+) \{$/u);
@@ -121,8 +123,11 @@ export function rewriteForLoops(result) {
     }
 
     statements[index] = `for (let ${variable} = ${initMatch[2]}; ${whileMatch[1]}; ${increment.slice(0, -1)}) {`;
+    trimmed[index] = statements[index];
     statements[index - 1] = "";
+    trimmed[index - 1] = "";
     statements[closeIndex - 1] = "";
+    trimmed[closeIndex - 1] = "";
   }
   return {
     statements: statements.filter((line) => line !== ""),
@@ -158,6 +163,24 @@ function findMatchingClose(statements, startIndex) {
   let depth = 0;
   for (let index = startIndex; index < statements.length; index += 1) {
     const line = statements[index].trim();
+    if (line.endsWith("{")) {
+      depth += 1;
+    }
+    if (line === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
+
+// Pre-trimmed variant: avoids O(n) .trim() calls per invocation.
+function findMatchingCloseTrimmed(trimmed, startIndex) {
+  let depth = 0;
+  for (let index = startIndex; index < trimmed.length; index += 1) {
+    const line = trimmed[index];
     if (line.endsWith("{")) {
       depth += 1;
     }
