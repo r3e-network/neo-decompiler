@@ -1059,6 +1059,22 @@ function stripStackComments(statements) {
 // ─── Pass 15: eliminate_identity_temps ─────────────────────────────────────
 
 function eliminateIdentityTemps(statements) {
+  // Pre-scan: record first and last occurrence of each temp identifier.
+  // This avoids O(n) backward/forward scans per temp.
+  const firstSeen = new Map(); // temp → first line index
+  const lastSeen = new Map();  // temp → last line index
+  for (let i = 0; i < statements.length; i++) {
+    const t = statements[i].trim();
+    if (t === "") continue;
+    const matches = t.match(/\bt\d+\b/g);
+    if (matches) {
+      for (const m of matches) {
+        if (!firstSeen.has(m)) firstSeen.set(m, i);
+        lastSeen.set(m, i);
+      }
+    }
+  }
+
   let index = 0;
   while (index < statements.length) {
     const trimmed = statements[index].trim();
@@ -1079,12 +1095,9 @@ function eliminateIdentityTemps(statements) {
       continue;
     }
 
-    // Don't substitute if lhs appeared earlier
-    let lhsSeenEarlier = false;
-    for (let k = 0; k < index; k++) {
-      if (containsIdentifier(statements[k], assign.lhs)) { lhsSeenEarlier = true; break; }
-    }
-    if (lhsSeenEarlier) {
+    // Don't substitute if lhs appeared earlier (O(1) check via pre-scan)
+    const first = firstSeen.get(assign.lhs);
+    if (first !== undefined && first < index) {
       index++;
       continue;
     }
@@ -1103,6 +1116,22 @@ function eliminateIdentityTemps(statements) {
 // ─── Pass 16: collapse_temp_into_store ─────────────────────────────────────
 
 function collapseTempIntoStore(statements) {
+  // Pre-scan: count how many lines each temp appears on.
+  // If a temp appears on exactly 2 lines (definition + single use), it's safe
+  // to collapse without scanning forward. This replaces O(n) per-temp scans.
+  const tempLineCounts = new Map();
+  for (let i = 0; i < statements.length; i++) {
+    const t = statements[i].trim();
+    if (t === "") continue;
+    const matches = t.match(/\bt\d+\b/g);
+    if (matches) {
+      const seen = new Set(matches); // dedupe within same line
+      for (const m of seen) {
+        tempLineCounts.set(m, (tempLineCounts.get(m) || 0) + 1);
+      }
+    }
+  }
+
   let index = 0;
   while (index + 1 < statements.length) {
     const trimmed = statements[index].trim();
@@ -1128,10 +1157,8 @@ function collapseTempIntoStore(statements) {
     // Assignment pattern: [let] X = tN;
     const a2 = parseAssignment(trimmedNext);
     if (a2 && a2.rhs === temp) {
-      let usedLater = false;
-      for (let k = next + 1; k < statements.length; k++) {
-        if (containsIdentifier(statements[k], temp)) { usedLater = true; break; }
-      }
+      // temp on exactly 2 lines (definition + this use) means not used later
+      const usedLater = (tempLineCounts.get(temp) || 0) > 2;
       if (!usedLater) {
         const indent = leadingWhitespace(statements[next]);
         const prefix = a2.hasLet ? "let " : "";
@@ -1144,10 +1171,7 @@ function collapseTempIntoStore(statements) {
 
     // Return pattern: return tN;
     if (trimmedNext === `return ${temp};`) {
-      let usedLater = false;
-      for (let k = next + 1; k < statements.length; k++) {
-        if (containsIdentifier(statements[k], temp)) { usedLater = true; break; }
-      }
+      const usedLater = (tempLineCounts.get(temp) || 0) > 2;
       if (!usedLater) {
         const indent = leadingWhitespace(statements[next]);
         statements[next] = `${indent}return ${a1.rhs};`;
