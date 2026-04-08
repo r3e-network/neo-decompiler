@@ -5,6 +5,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-04-08 (JS only)
+
+### Changed
+
+- **JS: O(n²) → O(n) in `eliminateIdentityTemps` and `collapseTempIntoStore`**: Pre-scan temp usage counts/first-occurrence indices to replace per-temp forward scans with O(1) lookups. 31-42x faster on temp-heavy contracts.
+- **JS: eliminate O(n²) `.trim()` in `rewriteForLoops`**: Pre-trim statements once instead of calling `.trim()` on every line for every `while`-scan in `findMatchingClose`. 1.7x faster on 50KB contracts (441ms → 260ms).
+- **JS: regex cache for identifier helpers**: `containsIdentifier`, `countIdentifier`, and `replaceIdentifier` now cache compiled regexps per identifier, avoiding recompilation on every call.
+- **JS: single-pass method partition**: `buildMethodGroups` now partitions instructions in a single walk instead of O(groups × instructions) filter calls.
+- **JS: O(n) blank-line removal**: Final cleanup uses write-pointer compaction instead of O(n²) splice-in-loop.
+
 ## [0.6.2] - 2026-04-07
 
 ### Fixed
