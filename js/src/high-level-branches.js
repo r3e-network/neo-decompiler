@@ -39,11 +39,22 @@ export function createBranchHelpers(runtime) {
 
     executeStraightLine(prefixState, instructions.slice(0, cursor));
 
+    const indexByOffset = new Map();
+    for (let i = 0; i < instructions.length; i++) {
+      indexByOffset.set(instructions[i].offset, i);
+    }
+
     const cases = [];
     let current = cursor;
     let endOffset = null;
     while (current + 6 < instructions.length) {
-      const [load, pushCase, equal, branch, pushValue, store, jump] = instructions.slice(current, current + 7);
+      const load = instructions[current];
+      const pushCase = instructions[current + 1];
+      const equal = instructions[current + 2];
+      const branch = instructions[current + 3];
+      const pushValue = instructions[current + 4];
+      const store = instructions[current + 5];
+      const jump = instructions[current + 6];
       if (
         load?.opcode.mnemonic !== "LDLOC0" ||
         !pushCase?.opcode.mnemonic.startsWith("PUSH") ||
@@ -66,10 +77,11 @@ export function createBranchHelpers(runtime) {
 
       endOffset = jumpTargetOffset;
       cases.push({ match: caseValue, assign: assignValue, nextOffset: falseTarget });
-      current = instructions.findIndex((instruction) => instruction.offset === falseTarget);
-      if (current < 0) {
+      const nextIndex = indexByOffset.get(falseTarget);
+      if (nextIndex === undefined) {
         return null;
       }
+      current = nextIndex;
 
       const maybeNext = instructions[current];
       if (maybeNext?.opcode.mnemonic !== "LDLOC0") {
@@ -81,11 +93,12 @@ export function createBranchHelpers(runtime) {
       return null;
     }
 
-    const defaultSlice = instructions.slice(
-      current,
-      instructions.findIndex((instruction) => instruction.offset === endOffset),
-    );
-    const returnSlice = instructions.slice(instructions.findIndex((instruction) => instruction.offset === endOffset));
+    const endIndex = indexByOffset.get(endOffset);
+    if (endIndex === undefined) {
+      return null;
+    }
+    const defaultSlice = instructions.slice(current, endIndex);
+    const returnSlice = instructions.slice(endIndex);
     if (
       defaultSlice.length < 2 ||
       defaultSlice[0].opcode.mnemonic.startsWith("PUSH") === false ||
@@ -128,10 +141,18 @@ export function createBranchHelpers(runtime) {
       return null;
     }
 
-    const indexByOffset = new Map(instructions.map((instruction, index) => [instruction.offset, index]));
+    const indexByOffset = new Map();
+    for (let i = 0; i < instructions.length; i++) {
+      indexByOffset.set(instructions[i].offset, i);
+    }
     const exactTargetIndex = indexByOffset.get(target);
-    const nextTargetIndex = instructions.findIndex((instruction) => instruction.offset > target);
-    const targetIndex = exactTargetIndex ?? (nextTargetIndex >= 0 ? nextTargetIndex : instructions.length);
+    let targetIndex;
+    if (exactTargetIndex !== undefined) {
+      targetIndex = exactTargetIndex;
+    } else {
+      const nextTargetIndex = instructions.findIndex((instruction) => instruction.offset > target);
+      targetIndex = nextTargetIndex >= 0 ? nextTargetIndex : instructions.length;
+    }
     if (targetIndex === -1 || targetIndex <= conditionalIndex) {
       return null;
     }
@@ -277,6 +298,8 @@ export function createBranchHelpers(runtime) {
   return { tryLiftSimpleSwitch, tryLiftSimpleBranch };
 }
 
+const PUSH_LIT_RE = /^PUSH(\d+|M1)$/u;
+
 function immediateValue(instruction) {
   const mnemonic = instruction?.opcode?.mnemonic;
   if (!mnemonic) {
@@ -286,7 +309,7 @@ function immediateValue(instruction) {
   if (mnemonic === "PUSHT") return "true";
   if (mnemonic === "PUSHF") return "false";
 
-  const match = mnemonic.match(/^PUSH(\d+|M1)$/u);
+  const match = PUSH_LIT_RE.exec(mnemonic);
   if (match) {
     return match[1] === "M1" ? "-1" : `${Number(match[1])}`;
   }
