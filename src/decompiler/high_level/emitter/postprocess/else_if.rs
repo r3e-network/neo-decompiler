@@ -41,8 +41,8 @@ impl HighLevelEmitter {
 
     fn find_matching_close(statements: &[String], start: usize) -> Option<usize> {
         let mut depth = 1;
-        for (i, stmt) in statements.iter().enumerate().skip(start + 1) {
-            let trimmed = stmt.trim();
+        for i in (start + 1)..statements.len() {
+            let trimmed = statements[i].trim();
             if trimmed.ends_with('{') {
                 depth += 1;
             }

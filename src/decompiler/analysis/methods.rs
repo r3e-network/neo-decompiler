@@ -36,6 +36,17 @@ impl MethodRef {
     }
 }
 
+/// Returns the largest element in `sorted` that is `<= target`.
+/// `sorted` MUST be sorted ascending. O(log n).
+fn largest_le(sorted: &[usize], target: usize) -> Option<usize> {
+    let pos = sorted.partition_point(|&x| x <= target);
+    if pos > 0 {
+        Some(sorted[pos - 1])
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct MethodSpan {
     pub(super) start: usize,
@@ -84,23 +95,25 @@ impl MethodTable {
         for start in collect_call_targets(instructions) {
             starts.insert(start, ());
         }
-        let mut callers_by_target: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        let mut callers_by_target: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
         for (index, instruction) in instructions.iter().enumerate() {
             if instruction.opcode == OpCode::CallA {
                 if let Some(start) = calla_target_from_pusha(instructions, index) {
                     starts.insert(start, ());
-                    callers_by_target.entry(start).or_default().push(index);
+                    callers_by_target.entry(start).or_default().insert(index);
                 }
                 continue;
             }
             if matches!(instruction.opcode, OpCode::Call | OpCode::Call_L) {
                 if let Some(target) = Self::direct_call_target(instruction) {
-                    callers_by_target.entry(target).or_default().push(index);
+                    callers_by_target.entry(target).or_default().insert(index);
                 }
             }
         }
 
         loop {
+            // Sorted Vec of method-start offsets; rebuilt per fixpoint iter so
+            // newly-inserted starts from the previous round are visible.
             let method_starts: Vec<usize> = starts.keys().copied().collect();
             let mut progress = false;
 
@@ -111,11 +124,8 @@ impl MethodTable {
                 let Some(arg_index) = calla_ldarg_index(instructions, index) else {
                     continue;
                 };
-                let Some(method_offset) = method_starts
-                    .iter()
-                    .copied()
-                    .filter(|start| *start <= instruction.offset)
-                    .max()
+                let Some(method_offset) =
+                    largest_le(&method_starts, instruction.offset)
                 else {
                     continue;
                 };
@@ -130,8 +140,7 @@ impl MethodTable {
                 ) {
                     let mut changed = starts.insert(start, ()).is_none();
                     let callers = callers_by_target.entry(start).or_default();
-                    if !callers.contains(&index) {
-                        callers.push(index);
+                    if callers.insert(index) {
                         changed = true;
                     }
                     if changed {
@@ -204,7 +213,7 @@ impl MethodTable {
 
     fn resolve_argument_target_for_method(
         instructions: &[Instruction],
-        callers_by_target: &BTreeMap<usize, Vec<usize>>,
+        callers_by_target: &BTreeMap<usize, BTreeSet<usize>>,
         method_starts: &[usize],
         method_offset: usize,
         arg_index: u8,
@@ -223,12 +232,8 @@ impl MethodTable {
             match trace_call_arg_source(instructions, call_index, arg_index, callee_arg_count) {
                 Some(CallArgSource::Target(target)) => return Some(target),
                 Some(CallArgSource::PassThrough(next_arg)) => {
-                    let caller_method_offset = method_starts
-                        .iter()
-                        .copied()
-                        .filter(|start| *start <= call_offset)
-                        .max()
-                        .unwrap_or(call_offset);
+                    let caller_method_offset =
+                        largest_le(method_starts, call_offset).unwrap_or(call_offset);
                     if let Some(target) = Self::resolve_argument_target_for_method(
                         instructions,
                         callers_by_target,
@@ -270,13 +275,13 @@ impl MethodTable {
     }
 
     /// Resolve an internal call target to a method reference.
+    /// `spans` is kept sorted by start offset, so we use binary search.
     #[must_use]
     pub fn resolve_internal_target(&self, target_offset: usize) -> MethodRef {
-        self.spans
-            .iter()
-            .find(|span| span.start == target_offset)
-            .map(|span| span.method.clone())
-            .unwrap_or_else(|| MethodRef::synthetic(target_offset))
+        match self.spans.binary_search_by_key(&target_offset, |span| span.start) {
+            Ok(index) => self.spans[index].method.clone(),
+            Err(_) => MethodRef::synthetic(target_offset),
+        }
     }
 
     fn direct_call_target(instruction: &Instruction) -> Option<usize> {
