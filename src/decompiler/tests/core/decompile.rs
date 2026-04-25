@@ -268,19 +268,20 @@ fn decompile_lifts_unconditional_jumps_without_control_flow_warning() {
         .as_deref()
         .expect("high-level output");
 
-    // Fallthrough gotos (JMP to next instruction) are optimised away,
-    // but the labels and the absence of warnings must still hold.
-    assert!(
-        high_level.contains("label_0x0002:") || high_level.contains("goto label_0x0002;"),
-        "JMP target should appear as label or goto: {high_level}"
-    );
-    assert!(
-        high_level.contains("label_0x0007:") || high_level.contains("goto label_0x0007;"),
-        "JMP_L target should appear as label or goto: {high_level}"
-    );
+    // Fallthrough gotos (JMP to next instruction) are optimised away, and
+    // the orphaned-label-removal pass strips the now-unreferenced label
+    // anchors. The key guarantee is the absence of control-flow warnings.
     assert!(
         !high_level.contains("control flow not yet lifted"),
         "unconditional jumps should no longer emit control-flow-not-lifted warnings: {high_level}"
+    );
+    assert!(
+        !high_level.contains("label_0x0002:"),
+        "fallthrough JMP target should be removed as orphan: {high_level}"
+    );
+    assert!(
+        !high_level.contains("label_0x0007:"),
+        "fallthrough JMP_L target should be removed as orphan: {high_level}"
     );
 }
 
