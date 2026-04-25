@@ -681,18 +681,47 @@ test("deep-fuzz: manifest with extreme/unusual field values", () => {
   }
 });
 
-test("deep-fuzz: manifest with type field vs kind field", () => {
-  // Tests that both .type and .kind are accepted for parameters
-  const manifests = [
-    { name: "C", abi: { methods: [{ name: "m", parameters: [{ name: "a", type: "Integer" }], returntype: "Void", offset: 0, safe: false }], events: [] } },
-    { name: "C", abi: { methods: [{ name: "m", parameters: [{ name: "a", kind: "Integer" }], returntype: "Void", offset: 0, safe: false }], events: [] } },
-    { name: "C", abi: { methods: [{ name: "m", parameters: [{ name: "a" }], returntype: "Void", offset: 0, safe: false }], events: [] } },
-  ];
+test("deep-fuzz: manifest parameter type is required (matches Rust spec)", () => {
+  // Spec requires `type` field exactly. Rust uses #[serde(rename = "type")];
+  // JS now mirrors that strictness — neither `kind` nor missing is accepted.
+  const accepted = {
+    name: "C",
+    abi: {
+      methods: [
+        { name: "m", parameters: [{ name: "a", type: "Integer" }], returntype: "Void", offset: 0, safe: false },
+      ],
+      events: [],
+    },
+  };
+  assert.doesNotThrow(() => parseManifest(accepted));
 
-  for (const manifest of manifests) {
-    const parsed = parseManifest(manifest);
-    assert.ok(parsed.abi.methods[0].parameters[0].kind);
-  }
+  const usingKind = {
+    name: "C",
+    abi: {
+      methods: [
+        { name: "m", parameters: [{ name: "a", kind: "Integer" }], returntype: "Void", offset: 0, safe: false },
+      ],
+      events: [],
+    },
+  };
+  assert.throws(
+    () => parseManifest(usingKind),
+    (err) => err.details.code === "MissingField" && err.details.path.endsWith(".type"),
+  );
+
+  const missingType = {
+    name: "C",
+    abi: {
+      methods: [
+        { name: "m", parameters: [{ name: "a" }], returntype: "Void", offset: 0, safe: false },
+      ],
+      events: [],
+    },
+  };
+  assert.throws(
+    () => parseManifest(missingType),
+    (err) => err.details.code === "MissingField",
+  );
 });
 
 test("deep-fuzz: manifest parse error handling", () => {

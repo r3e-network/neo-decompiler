@@ -250,11 +250,260 @@ test("SMOKE: Empty manifest fields handled", () => {
     permissions: [],
     trusts: [],
   });
-  
+
   assert.doesNotThrow(() => parseManifest(manifest));
   const parsed = parseManifest(manifest);
   assert.equal(parsed.name, "");
   assert.equal(parsed.abi.methods.length, 0);
+});
+
+test("SMOKE: oversized manifest is rejected", () => {
+  const padding = "x".repeat(0x10000);
+  const oversized = JSON.stringify({ name: padding, abi: { methods: [], events: [] } });
+  assert.throws(
+    () => parseManifest(oversized),
+    (err) => err.details.code === "FileTooLarge" && err.details.max === 0xffff,
+  );
+});
+
+test("SMOKE: strict mode rejects non-canonical wildcards", () => {
+  const badContract = JSON.stringify({
+    name: "C",
+    abi: { methods: [], events: [] },
+    permissions: [{ contract: "all", methods: "*" }],
+  });
+  assert.throws(
+    () => parseManifest(badContract, { strict: true }),
+    (err) => err.details.code === "Validation",
+  );
+  assert.doesNotThrow(() => parseManifest(badContract));
+
+  const badMethods = JSON.stringify({
+    name: "C",
+    abi: { methods: [], events: [] },
+    permissions: [{ contract: "*", methods: "ALL" }],
+  });
+  assert.throws(
+    () => parseManifest(badMethods, { strict: true }),
+    (err) => err.details.code === "Validation",
+  );
+
+  const badTrusts = JSON.stringify({
+    name: "C",
+    abi: { methods: [], events: [] },
+    trusts: "all",
+  });
+  assert.throws(
+    () => parseManifest(badTrusts, { strict: true }),
+    (err) => err.details.code === "Validation",
+  );
+});
+
+test("SMOKE: manifest method offset/safe strict typing (matches Rust)", () => {
+  // offset: Rust uses Option<i32>, rejects strings/objects.
+  assert.throws(
+    () =>
+      parseManifest(
+        JSON.stringify({
+          name: "C",
+          abi: {
+            methods: [
+              { name: "m", parameters: [], returntype: "Void", offset: "5" },
+            ],
+          },
+        }),
+      ),
+    (err) => err.details.code === "InvalidType" && err.details.path.endsWith(".offset"),
+  );
+
+  // safe: Rust requires bool; JS no longer coerces truthy values.
+  assert.throws(
+    () =>
+      parseManifest(
+        JSON.stringify({
+          name: "C",
+          abi: {
+            methods: [
+              { name: "m", parameters: [], returntype: "Void", safe: 1 },
+            ],
+          },
+        }),
+      ),
+    (err) => err.details.code === "InvalidType" && err.details.path.endsWith(".safe"),
+  );
+
+  // Negative offsets still treated as "no offset" (Neo N3 -1 convention) — both match.
+  assert.doesNotThrow(() =>
+    parseManifest(
+      JSON.stringify({
+        name: "C",
+        abi: {
+          methods: [{ name: "m", parameters: [], returntype: "Void", offset: -1 }],
+        },
+      }),
+    ),
+  );
+});
+
+test("SMOKE: manifest abi and feature/standards strict typing (matches Rust)", () => {
+  // abi is required
+  assert.throws(
+    () => parseManifest(JSON.stringify({ name: "C" })),
+    (err) => err.details.code === "MissingField" && err.details.path === "abi",
+  );
+  // abi cannot be null
+  assert.throws(
+    () => parseManifest(JSON.stringify({ name: "C", abi: null })),
+    (err) => err.details.code === "MissingField" && err.details.path === "abi",
+  );
+  // features.storage must be boolean (Rust serde rejects coercion)
+  assert.throws(
+    () =>
+      parseManifest(
+        JSON.stringify({
+          name: "C",
+          abi: { methods: [], events: [] },
+          features: { storage: "yes" },
+        }),
+      ),
+    (err) => err.details.code === "InvalidType" && err.details.path === "features.storage",
+  );
+  // supportedstandards must be array
+  assert.throws(
+    () =>
+      parseManifest(
+        JSON.stringify({
+          name: "C",
+          abi: { methods: [], events: [] },
+          supportedstandards: "NEP-17",
+        }),
+      ),
+    (err) => err.details.code === "InvalidType" && err.details.path === "supportedstandards",
+  );
+});
+
+test("SMOKE: manifest top-level name and groups required (matches Rust)", () => {
+  // Top-level `name` is required: Rust ContractManifest.name is `String` (no default).
+  assert.throws(
+    () => parseManifest(JSON.stringify({ abi: { methods: [], events: [] } })),
+    (err) => err.details.code === "MissingField" && err.details.path === "name",
+  );
+
+  // Groups require both pubkey and signature: Rust ManifestGroup struct mandates both.
+  assert.throws(
+    () =>
+      parseManifest(
+        JSON.stringify({
+          name: "C",
+          groups: [{ pubkey: "k" }],
+          abi: { methods: [], events: [] },
+        }),
+      ),
+    (err) =>
+      err.details.code === "MissingField" &&
+      err.details.path === "groups[0].signature",
+  );
+  assert.throws(
+    () =>
+      parseManifest(
+        JSON.stringify({
+          name: "C",
+          groups: [{ signature: "s" }],
+          abi: { methods: [], events: [] },
+        }),
+      ),
+    (err) =>
+      err.details.code === "MissingField" &&
+      err.details.path === "groups[0].pubkey",
+  );
+
+  // Complete groups should still parse.
+  assert.doesNotThrow(() =>
+    parseManifest(
+      JSON.stringify({
+        name: "C",
+        groups: [{ pubkey: "k", signature: "s" }],
+        abi: { methods: [], events: [] },
+      }),
+    ),
+  );
+});
+
+test("SMOKE: manifest required-field strictness matches Rust", () => {
+  const cases = [
+    {
+      json: { name: "C", abi: { methods: [{ parameters: [], returntype: "Void" }] } },
+      pathSuffix: ".name",
+    },
+    {
+      json: { name: "C", abi: { methods: [{ name: "m", parameters: [{ type: "Integer" }], returntype: "Void" }] } },
+      pathSuffix: ".name",
+    },
+    {
+      json: { name: "C", abi: { methods: [{ name: "m", parameters: [{ name: "x" }], returntype: "Void" }] } },
+      pathSuffix: ".type",
+    },
+    {
+      json: { name: "C", abi: { events: [{ parameters: [] }] } },
+      pathSuffix: ".name",
+    },
+    {
+      json: { name: "C", abi: { events: [{ name: "E", parameters: [{ type: "Integer" }] }] } },
+      pathSuffix: ".name",
+    },
+  ];
+  for (const { json, pathSuffix } of cases) {
+    assert.throws(
+      () => parseManifest(JSON.stringify(json)),
+      (err) =>
+        err.details.code === "MissingField" && err.details.path.endsWith(pathSuffix),
+      `expected rejection for ${JSON.stringify(json)} ending in ${pathSuffix}`,
+    );
+  }
+});
+
+test("SMOKE: manifest method missing returntype is rejected", () => {
+  // Matches Rust spec: ManifestMethod.return_type has no #[serde(default)],
+  // so missing returntype must error consistently in both implementations.
+  const missing = JSON.stringify({
+    name: "test",
+    abi: { methods: [{ name: "m", parameters: [] }] },
+  });
+  assert.throws(
+    () => parseManifest(missing),
+    (err) =>
+      err.details.code === "MissingField" &&
+      err.details.path === "abi.methods[0].returntype",
+  );
+
+  const nullValue = JSON.stringify({
+    name: "C",
+    abi: { methods: [{ name: "m", parameters: [], returntype: null }] },
+  });
+  assert.throws(
+    () => parseManifest(nullValue),
+    (err) => err.details.code === "MissingField",
+  );
+});
+
+test("SMOKE: strict mode accepts canonical wildcards and concrete entries", () => {
+  const canonical = JSON.stringify({
+    name: "C",
+    abi: { methods: [], events: [] },
+    permissions: [
+      { contract: "*", methods: "*" },
+      { contract: { hash: "0x1234567890abcdef1234567890abcdef12345678" }, methods: ["transfer"] },
+    ],
+    trusts: "*",
+  });
+  assert.doesNotThrow(() => parseManifest(canonical, { strict: true }));
+
+  const arrayTrusts = JSON.stringify({
+    name: "C",
+    abi: { methods: [], events: [] },
+    trusts: [],
+  });
+  assert.doesNotThrow(() => parseManifest(arrayTrusts, { strict: true }));
 });
 
 console.log("Smoke tests loaded");

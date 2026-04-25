@@ -229,7 +229,10 @@ export function disassembleScript(
   options?: DisassemblyOptions,
 ): DisassemblyResult;
 
-export function parseManifest(json: string | Record<string, unknown>): ContractManifest;
+export function parseManifest(
+  json: string | Record<string, unknown>,
+  options?: { strict?: boolean },
+): ContractManifest;
 
 export function decompileBytes(
   bytes: Uint8Array | ArrayBuffer | number[],
