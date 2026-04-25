@@ -99,8 +99,8 @@ export function tryCollectionExpression(state, instruction) {
       state.stack.push(countTemp);
       return true;
     }
-    for (const element of [...packed].reverse()) {
-      state.stack.push(element);
+    for (let i = packed.length - 1; i >= 0; i--) {
+      state.stack.push(packed[i]);
     }
     state.stack.push(`${packed.length}`);
     return true;
@@ -184,10 +184,15 @@ function renderPackedExpression(mnemonic, elements) {
 
 function inferUnpackElementCount(state, instruction) {
   const DEFAULT_COUNT = 4;
-  const unpackIndex = state.program.findIndex(
-    (candidate) => candidate.offset === instruction.offset,
-  );
-  if (unpackIndex < 0) {
+  if (!state.programIndexByOffset) {
+    const map = new Map();
+    for (let i = 0; i < state.program.length; i++) {
+      map.set(state.program[i].offset, i);
+    }
+    state.programIndexByOffset = map;
+  }
+  const unpackIndex = state.programIndexByOffset.get(instruction.offset);
+  if (unpackIndex === undefined) {
     return DEFAULT_COUNT;
   }
 

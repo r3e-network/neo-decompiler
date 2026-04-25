@@ -923,7 +923,9 @@ function rewriteExpr(expr) {
     kind = "has_key";
   } else return expr;
 
-  const left = rewriteExpr(expr.slice(0, pos));
+  // `left` cannot contain another " get " or " has_key " (else it would
+  // have been the leftmost match), so skip a recursive scan over it.
+  const left = expr.slice(0, pos).trim();
   const right = expr.slice(pos + (kind === "get" ? 5 : 10));
   if (kind === "get") return `${left}[${rewriteExpr(right)}]`;
   return `has_key(${left}, ${rewriteExpr(right)})`;

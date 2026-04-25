@@ -213,20 +213,18 @@ export function tryStoreArgument(statements, stack, parameterNames, mnemonic, in
   return true;
 }
 
-const _slotRegexCache = new Map();
-
 export function slotIndexFromMnemonic(mnemonic, prefix) {
-  if (mnemonic === prefix) {
+  // Fast path: avoid regex by checking prefix + all-digit suffix directly.
+  // Called per-instruction across LDLOC/LDARG/LDSFLD/STLOC/STARG/STSFLD,
+  // so micro-cost matters across thousands of calls.
+  if (mnemonic.length <= prefix.length || !mnemonic.startsWith(prefix)) {
     return null;
   }
-  let regex = _slotRegexCache.get(prefix);
-  if (!regex) {
-    regex = new RegExp(`^${prefix}(\\d+)$`, "u");
-    _slotRegexCache.set(prefix, regex);
+  let value = 0;
+  for (let i = prefix.length; i < mnemonic.length; i++) {
+    const code = mnemonic.charCodeAt(i);
+    if (code < 48 || code > 57) return null;
+    value = value * 10 + (code - 48);
   }
-  const match = mnemonic.match(regex);
-  if (match) {
-    return Number(match[1]);
-  }
-  return null;
+  return value;
 }

@@ -1,5 +1,5 @@
 import { SYSCALLS } from "./generated/syscalls.js";
-import { upperHex } from "./util.js";
+import { hex16, upperHex } from "./util.js";
 
 export function buildCallGraph(nef, instructions, methodGroups) {
   const methods = methodGroups.map((group) => ({
@@ -272,7 +272,7 @@ function resolveMethodTarget(methodByOffset, targetOffset) {
   return (
     methodByOffset.get(targetOffset) ?? {
       offset: targetOffset,
-      name: `sub_0x${targetOffset.toString(16).padStart(4, "0")}`,
+      name: `sub_0x${hex16(targetOffset)}`,
     }
   );
 }

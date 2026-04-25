@@ -1,23 +1,22 @@
 import { formatOperand } from "./disassembler.js";
+import { hex8, hex16 } from "./util.js";
 
 export function renderPseudocode(instructions) {
-  let output = "";
-  for (const instruction of instructions) {
-    output += `${instruction.offset.toString(16).padStart(4, "0").toUpperCase()}: ${renderMnemonic(instruction)}`;
+  const lines = [];
+  for (let i = 0; i < instructions.length; i++) {
+    const instruction = instructions[i];
+    let line = `${hex16(instruction.offset)}: ${renderMnemonic(instruction)}`;
     if (instruction.operand !== null) {
-      output += ` ${formatOperand(instruction.operand)}`;
+      line += ` ${formatOperand(instruction.operand)}`;
     }
-    output += "\n";
+    lines.push(line);
   }
-  return output;
+  return lines.join("\n") + (instructions.length > 0 ? "\n" : "");
 }
 
 function renderMnemonic(instruction) {
   if (instruction.opcode.mnemonic === "UNKNOWN") {
-    return `UNKNOWN_0x${instruction.opcode.byte
-      .toString(16)
-      .padStart(2, "0")
-      .toUpperCase()}`;
+    return `UNKNOWN_0x${hex8(instruction.opcode.byte)}`;
   }
   return instruction.opcode.mnemonic;
 }

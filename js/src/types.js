@@ -22,33 +22,30 @@ export function inferTypes(instructions, methodGroups, manifest = null) {
       const instruction = group.instructions[index];
       const next = group.instructions[index + 1];
       const store = next?.opcode?.mnemonic;
-      if (instruction.opcode.mnemonic === "NEWMAP") {
-        assignStoredType(locals, statics, store, next, "map");
-      }
-      if (
-        instruction.opcode.mnemonic === "NEWSTRUCT0" ||
-        instruction.opcode.mnemonic === "NEWSTRUCT" ||
-        instruction.opcode.mnemonic === "PACKSTRUCT"
-      ) {
-        assignStoredType(locals, statics, store, next, "struct");
-      }
-      if (
-        instruction.opcode.mnemonic === "NEWARRAY0" ||
-        instruction.opcode.mnemonic === "NEWARRAY" ||
-        instruction.opcode.mnemonic === "NEWARRAY_T"
-      ) {
-        assignStoredType(locals, statics, store, next, "array");
-      }
-      if (instruction.opcode.mnemonic === "NEWBUFFER") {
-        assignStoredType(locals, statics, store, next, "buffer");
-      }
-      if (instruction.opcode.mnemonic === "PACKMAP") {
-        assignStoredType(locals, statics, store, next, "map");
-      }
-      if (instruction.opcode.mnemonic === "CONVERT") {
-        const target = convertTargetType(instruction.operand);
-        if (target) {
-          assignStoredType(locals, statics, store, next, target);
+      switch (instruction.opcode.mnemonic) {
+        case "NEWMAP":
+        case "PACKMAP":
+          assignStoredType(locals, statics, store, next, "map");
+          break;
+        case "NEWSTRUCT0":
+        case "NEWSTRUCT":
+        case "PACKSTRUCT":
+          assignStoredType(locals, statics, store, next, "struct");
+          break;
+        case "NEWARRAY0":
+        case "NEWARRAY":
+        case "NEWARRAY_T":
+          assignStoredType(locals, statics, store, next, "array");
+          break;
+        case "NEWBUFFER":
+          assignStoredType(locals, statics, store, next, "buffer");
+          break;
+        case "CONVERT": {
+          const target = convertTargetType(instruction.operand);
+          if (target) {
+            assignStoredType(locals, statics, store, next, target);
+          }
+          break;
         }
       }
     }
@@ -90,22 +87,23 @@ function manifestType(kind) {
   return "unknown";
 }
 
+const CONVERT_TARGET_MAP = new Map([
+  [0x00, "any"],
+  [0x10, "pointer"],
+  [0x20, "bool"],
+  [0x21, "integer"],
+  [0x28, "bytestring"],
+  [0x30, "buffer"],
+  [0x40, "array"],
+  [0x41, "struct"],
+  [0x48, "map"],
+  [0x60, "interopinterface"],
+]);
+
 function convertTargetType(operand) {
   if (!operand || (operand.kind !== "U8" && operand.kind !== "I8")) {
     return null;
   }
   const byte = operand.kind === "U8" ? operand.value : operand.value & 0xff;
-  const map = {
-    0x00: "any",
-    0x10: "pointer",
-    0x20: "bool",
-    0x21: "integer",
-    0x28: "bytestring",
-    0x30: "buffer",
-    0x40: "array",
-    0x41: "struct",
-    0x48: "map",
-    0x60: "interopinterface",
-  };
-  return map[byte] ?? null;
+  return CONVERT_TARGET_MAP.get(byte) ?? null;
 }

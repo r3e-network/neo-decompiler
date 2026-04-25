@@ -15,24 +15,25 @@ export function resolvePackedValue(state, expression) {
   return state.packedValuesByExpression.get(expression) ?? state.packedValuesBySlot.get(expression) ?? null;
 }
 
+const CONVERT_TARGETS = new Map([
+  [0x00, "any"],
+  [0x10, "pointer"],
+  [0x20, "bool"],
+  [0x21, "integer"],
+  [0x28, "bytestring"],
+  [0x30, "buffer"],
+  [0x40, "array"],
+  [0x41, "struct"],
+  [0x48, "map"],
+  [0x60, "interopinterface"],
+]);
+
 export function convertTargetName(operand) {
   if (!operand || (operand.kind !== "U8" && operand.kind !== "I8")) {
     return null;
   }
   const byte = operand.kind === "U8" ? operand.value : operand.value & 0xff;
-  const targets = {
-    0x00: "any",
-    0x10: "pointer",
-    0x20: "bool",
-    0x21: "integer",
-    0x28: "bytestring",
-    0x30: "buffer",
-    0x40: "array",
-    0x41: "struct",
-    0x48: "map",
-    0x60: "interopinterface",
-  };
-  return targets[byte] ?? null;
+  return CONVERT_TARGETS.get(byte) ?? null;
 }
 
 export function renderUntranslatedInstruction(instruction) {
@@ -44,11 +45,15 @@ export function renderUntranslatedInstruction(instruction) {
   return `// ${formatOffset(instruction.offset)}: ${mnemonic}${operandText} (not yet translated)`;
 }
 
+const PRIMITIVE_OR_IDENT_RE = /^(?:-?\d+|true|false|null|[A-Za-z_][A-Za-z0-9_]*)$/u;
+const ARRAY_LITERAL_RE = /^\[.*\]$/u;
+const OBJECT_LITERAL_RE = /^\{.*\}$/u;
+
 export function wrapExpression(value) {
   if (
-    /^(?:-?\d+|true|false|null|[A-Za-z_][A-Za-z0-9_]*)$/u.test(value) ||
-    /^\[.*\]$/u.test(value) ||
-    /^\{.*\}$/u.test(value)
+    PRIMITIVE_OR_IDENT_RE.test(value) ||
+    ARRAY_LITERAL_RE.test(value) ||
+    OBJECT_LITERAL_RE.test(value)
   ) {
     return value;
   }

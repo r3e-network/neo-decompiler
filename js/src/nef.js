@@ -7,6 +7,7 @@ import {
   readU32LE,
   readU64LE,
   upperHex,
+  upperHexReversed,
 } from "./util.js";
 
 const MAX_NEF_FILE_SIZE = 0x10_0000;
@@ -129,7 +130,7 @@ export function parseNef(input) {
     script,
     checksum,
     scriptHash: upperHex(scriptHashBytes),
-    scriptHashLE: upperHex(scriptHashBytes.slice().reverse()),
+    scriptHashLE: upperHexReversed(scriptHashBytes),
   };
 }
 

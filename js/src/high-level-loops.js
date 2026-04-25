@@ -33,9 +33,10 @@ export function createLoopHelpers(runtime) {
       return null;
     }
 
-    const indexByOffset = new Map(
-      instructions.map((instruction, index) => [instruction.offset, index]),
-    );
+    const indexByOffset = new Map();
+    for (let i = 0; i < instructions.length; i++) {
+      indexByOffset.set(instructions[i].offset, i);
+    }
     const falseIndex = indexByOffset.get(falseTarget) ?? instructions.length;
     if (falseIndex <= conditionalIndex + 1) {
       return null;
@@ -107,9 +108,10 @@ export function createLoopHelpers(runtime) {
       return null;
     }
 
-    const indexByOffset = new Map(
-      instructions.map((instruction, index) => [instruction.offset, index]),
-    );
+    const indexByOffset = new Map();
+    for (let i = 0; i < instructions.length; i++) {
+      indexByOffset.set(instructions[i].offset, i);
+    }
     const loopStartIndex = indexByOffset.get(loopStart);
     if (loopStartIndex === undefined || loopStartIndex >= tailIndex) {
       return null;

@@ -2,6 +2,7 @@ import { DisassemblyError } from "./errors.js";
 import { OPCODES } from "./generated/opcodes.js";
 import {
   asUint8Array,
+  hex32,
   readI16LE,
   readI32LE,
   readI64LE,
@@ -80,7 +81,7 @@ export function formatOperand(operand) {
     case "Jump32":
       return `${operand.value}`;
     case "Syscall":
-      return `0x${operand.value.toString(16).padStart(8, "0").toUpperCase()}`;
+      return `0x${hex32(operand.value)}`;
     default:
       return String(operand.value);
   }
@@ -97,19 +98,23 @@ function readOperand(opcode, bytecode, offset) {
     case "None":
       return { operand: null, consumed: 0 };
     case "I8": {
-      readSlice(bytecode, offset + 1, 1, offset);
-      return { operand: { kind: "I8", value: new Int8Array(bytecode.buffer, bytecode.byteOffset + offset + 1, 1)[0] }, consumed: 1 };
+      checkBounds(bytecode, offset + 1, 1, offset);
+      const byte = bytecode[offset + 1];
+      return {
+        operand: { kind: "I8", value: byte > 127 ? byte - 256 : byte },
+        consumed: 1,
+      };
     }
     case "I16": {
-      readSlice(bytecode, offset + 1, 2, offset);
+      checkBounds(bytecode, offset + 1, 2, offset);
       return { operand: { kind: "I16", value: readI16LE(bytecode, offset + 1) }, consumed: 2 };
     }
     case "I32": {
-      readSlice(bytecode, offset + 1, 4, offset);
+      checkBounds(bytecode, offset + 1, 4, offset);
       return { operand: { kind: "I32", value: readI32LE(bytecode, offset + 1) }, consumed: 4 };
     }
     case "I64": {
-      readSlice(bytecode, offset + 1, 8, offset);
+      checkBounds(bytecode, offset + 1, 8, offset);
       return { operand: { kind: "I64", value: readI64LE(bytecode, offset + 1).toString() }, consumed: 8 };
     }
     case "Bytes":
@@ -124,25 +129,31 @@ function readOperand(opcode, bytecode, offset) {
     case "Data4":
       return readPrefixedBytes(bytecode, offset, 4);
     case "Jump8": {
-      readSlice(bytecode, offset + 1, 1, offset);
-      return { operand: { kind: "Jump", value: new Int8Array(bytecode.buffer, bytecode.byteOffset + offset + 1, 1)[0] }, consumed: 1 };
+      checkBounds(bytecode, offset + 1, 1, offset);
+      const byte = bytecode[offset + 1];
+      return {
+        operand: { kind: "Jump", value: byte > 127 ? byte - 256 : byte },
+        consumed: 1,
+      };
     }
     case "Jump32": {
-      readSlice(bytecode, offset + 1, 4, offset);
+      checkBounds(bytecode, offset + 1, 4, offset);
       return { operand: { kind: "Jump32", value: readI32LE(bytecode, offset + 1) }, consumed: 4 };
     }
-    case "U8":
-      return { operand: { kind: "U8", value: readSlice(bytecode, offset + 1, 1, offset)[0] }, consumed: 1 };
+    case "U8": {
+      checkBounds(bytecode, offset + 1, 1, offset);
+      return { operand: { kind: "U8", value: bytecode[offset + 1] }, consumed: 1 };
+    }
     case "U16": {
-      readSlice(bytecode, offset + 1, 2, offset);
+      checkBounds(bytecode, offset + 1, 2, offset);
       return { operand: { kind: "U16", value: readU16LE(bytecode, offset + 1) }, consumed: 2 };
     }
     case "U32": {
-      readSlice(bytecode, offset + 1, 4, offset);
+      checkBounds(bytecode, offset + 1, 4, offset);
       return { operand: { kind: "U32", value: readU32LE(bytecode, offset + 1) }, consumed: 4 };
     }
     case "Syscall": {
-      readSlice(bytecode, offset + 1, 4, offset);
+      checkBounds(bytecode, offset + 1, 4, offset);
       return { operand: { kind: "Syscall", value: readU32LE(bytecode, offset + 1) }, consumed: 4 };
     }
     default:
@@ -180,23 +191,34 @@ function readLength(bytecode, start, prefixLength, offset) {
   }
 }
 
-function readSlice(bytecode, start, length, offset) {
-  const end = start + length;
-  if (end > bytecode.byteLength) {
+function checkBounds(bytecode, start, length, offset) {
+  if (start + length > bytecode.byteLength) {
     throw new DisassemblyError(`unexpected end of bytecode at offset ${offset}`, {
       code: "UnexpectedEof",
       offset,
     });
   }
-  return bytecode.subarray(start, end);
 }
 
+function readSlice(bytecode, start, length, offset) {
+  checkBounds(bytecode, start, length, offset);
+  return bytecode.subarray(start, start + length);
+}
+
+const PUSHNULL_OP = { kind: "Null", value: null };
+const PUSHT_OP = { kind: "Bool", value: true };
+const PUSHF_OP = { kind: "Bool", value: false };
+const PUSHM1_OP = { kind: "I32", value: -1 };
+const PUSH_LIT_RE = /^PUSH(\d+|M1)$/u;
+
 function immediateConstant(mnemonic) {
-  if (mnemonic === "PUSHNULL") return { kind: "Null", value: null };
-  if (mnemonic === "PUSHT") return { kind: "Bool", value: true };
-  if (mnemonic === "PUSHF") return { kind: "Bool", value: false };
-  const match = mnemonic.match(/^PUSH(\d+|M1)$/u);
+  // Short-circuit majority of opcodes that don't start with PUSH.
+  if (!mnemonic.startsWith("PUSH")) return null;
+  if (mnemonic === "PUSHNULL") return PUSHNULL_OP;
+  if (mnemonic === "PUSHT") return PUSHT_OP;
+  if (mnemonic === "PUSHF") return PUSHF_OP;
+  const match = PUSH_LIT_RE.exec(mnemonic);
   if (!match) return null;
-  if (match[1] === "M1") return { kind: "I32", value: -1 };
+  if (match[1] === "M1") return PUSHM1_OP;
   return { kind: "I32", value: Number(match[1]) };
 }

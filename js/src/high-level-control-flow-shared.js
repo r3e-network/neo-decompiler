@@ -146,34 +146,23 @@ export function collectDerivedWarnings(baseState, ...states) {
   return warnings;
 }
 
-function stripStructuredLabels(statements) {
-  return statements.flatMap((line, index) => {
-    if (!/^\s*label_0x[0-9a-f]+:\s*$/iu.test(line)) {
-      return [line];
-    }
-    const next = statements[index + 1]?.trim() ?? "";
-    if (next.startsWith("while ") || next.startsWith("do {") || next.startsWith("for (")) {
-      return [];
-    }
-    return [line];
-  });
-}
+const STRUCTURED_LABEL_RE = /^\s*label_0x[0-9a-f]+:\s*$/iu;
 
-function findMatchingClose(statements, startIndex) {
-  let depth = 0;
-  for (let index = startIndex; index < statements.length; index += 1) {
-    const line = statements[index].trim();
-    if (line.endsWith("{")) {
-      depth += 1;
+function stripStructuredLabels(statements) {
+  const out = [];
+  for (let i = 0; i < statements.length; i++) {
+    const line = statements[i];
+    if (!STRUCTURED_LABEL_RE.test(line)) {
+      out.push(line);
+      continue;
     }
-    if (line === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return index;
-      }
+    const next = statements[i + 1]?.trim() ?? "";
+    if (next.startsWith("while ") || next.startsWith("do {") || next.startsWith("for (")) {
+      continue;
     }
+    out.push(line);
   }
-  return -1;
+  return out;
 }
 
 // Pre-trimmed variant: avoids O(n) .trim() calls per invocation.
@@ -194,38 +183,40 @@ function findMatchingCloseTrimmed(trimmed, startIndex) {
   return -1;
 }
 
+const NEGATED_COMPARISONS = new Map([
+  ["JMPEQ", "!=="],
+  ["JMPEQ_L", "!=="],
+  ["JMPNE", "==="],
+  ["JMPNE_L", "==="],
+  ["JMPGT", "<="],
+  ["JMPGT_L", "<="],
+  ["JMPGE", "<"],
+  ["JMPGE_L", "<"],
+  ["JMPLT", ">="],
+  ["JMPLT_L", ">="],
+  ["JMPLE", ">"],
+  ["JMPLE_L", ">"],
+]);
+
+const ORIGINAL_COMPARISONS = new Map([
+  ["JMPEQ", "==="],
+  ["JMPEQ_L", "==="],
+  ["JMPNE", "!=="],
+  ["JMPNE_L", "!=="],
+  ["JMPGT", ">"],
+  ["JMPGT_L", ">"],
+  ["JMPGE", ">="],
+  ["JMPGE_L", ">="],
+  ["JMPLT", "<"],
+  ["JMPLT_L", "<"],
+  ["JMPLE", "<="],
+  ["JMPLE_L", "<="],
+]);
+
 function negateComparisonMnemonic(mnemonic) {
-  const operators = {
-    JMPEQ: "!==",
-    JMPEQ_L: "!==",
-    JMPNE: "===",
-    JMPNE_L: "===",
-    JMPGT: "<=",
-    JMPGT_L: "<=",
-    JMPGE: "<",
-    JMPGE_L: "<",
-    JMPLT: ">=",
-    JMPLT_L: ">=",
-    JMPLE: ">",
-    JMPLE_L: ">",
-  };
-  return operators[mnemonic] ?? null;
+  return NEGATED_COMPARISONS.get(mnemonic) ?? null;
 }
 
 function originalComparisonMnemonic(mnemonic) {
-  const operators = {
-    JMPEQ: "===",
-    JMPEQ_L: "===",
-    JMPNE: "!==",
-    JMPNE_L: "!==",
-    JMPGT: ">",
-    JMPGT_L: ">",
-    JMPGE: ">=",
-    JMPGE_L: ">=",
-    JMPLT: "<",
-    JMPLT_L: "<",
-    JMPLE: "<=",
-    JMPLE_L: "<=",
-  };
-  return operators[mnemonic] ?? null;
+  return ORIGINAL_COMPARISONS.get(mnemonic) ?? null;
 }

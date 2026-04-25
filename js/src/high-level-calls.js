@@ -1,5 +1,6 @@
 import { SYSCALLS } from "./generated/syscalls.js";
 import { jumpTarget, stripOuterParens } from "./high-level-utils.js";
+import { hex16, hex32 } from "./util.js";
 
 export function tryInternalCall(state, instruction) {
   const mnemonic = instruction.opcode.mnemonic;
@@ -37,7 +38,7 @@ export function tryIndirectCall(state, instruction) {
   if (resolvedTarget !== null) {
     const callee =
       state.context.methodLabelsByOffset.get(resolvedTarget) ??
-      `sub_0x${resolvedTarget.toString(16).padStart(4, "0")}`;
+      `sub_0x${hex16(resolvedTarget)}`;
     const argCount = state.context.methodArgCountsByOffset.get(resolvedTarget) ?? 0;
     const args = [];
     for (let index = 0; index < argCount; index += 1) {
@@ -59,7 +60,7 @@ export function tryTokenCall(state, instruction) {
     return false;
   }
   const label =
-    state.context.calltLabels[index] ?? `callt(0x${index.toString(16).padStart(4, "0")})`;
+    state.context.calltLabels[index] ?? `callt(0x${hex16(index)})`;
   const argCount = state.context.calltParamCounts[index] ?? 0;
   const returnsValue = state.context.calltReturnsValue[index] ?? true;
   const args = [];
@@ -104,7 +105,7 @@ export function trySyscall(state, instruction) {
     ? args.length > 0
       ? `syscall("${info.name}", ${args.join(", ")})`
       : `syscall("${info.name}")`
-    : `syscall(0x${hash.toString(16).padStart(8, "0").toUpperCase()})`;
+    : `syscall(0x${hex32(hash)})`;
 
   if (missingArgument && info) {
     let message = `missing syscall argument values for ${info.name} (substituted ???)`;

@@ -4,13 +4,18 @@ import {
   rewriteForLoops,
 } from "./high-level-control-flow-shared.js";
 
+function findMnemonicFrom(instructions, start, mnemonic) {
+  for (let i = start; i < instructions.length; i++) {
+    if (instructions[i].opcode.mnemonic === mnemonic) return i;
+  }
+  return -1;
+}
+
 export function createTryHelpers(runtime) {
   const { createState, cloneState, executeStraightLine } = runtime;
 
   function tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset) {
-    const tryIndex = instructions.findIndex(
-      (instruction) => instruction.opcode.mnemonic === "TRY",
-    );
+    const tryIndex = findMnemonicFrom(instructions, 0, "TRY");
     if (tryIndex < 0) {
       return null;
     }
@@ -22,23 +27,20 @@ export function createTryHelpers(runtime) {
     }
 
     const { bodyStart, catchTarget, finallyTarget } = handlerTargets;
-    const indexByOffset = new Map(
-      instructions.map((instruction, index) => [instruction.offset, index]),
-    );
+    const indexByOffset = new Map();
+    for (let i = 0; i < instructions.length; i++) {
+      indexByOffset.set(instructions[i].offset, i);
+    }
 
     const bodyStartIndex = indexByOffset.get(bodyStart);
     if (bodyStartIndex === undefined) {
       return null;
     }
 
-    const endtryIndexInSlice = instructions.slice(bodyStartIndex).findIndex(
-      (instruction) => instruction.opcode.mnemonic === "ENDTRY",
-    );
-    if (endtryIndexInSlice < 0) {
+    const endtryGlobalIndex = findMnemonicFrom(instructions, bodyStartIndex, "ENDTRY");
+    if (endtryGlobalIndex < 0) {
       return null;
     }
-
-    const endtryGlobalIndex = bodyStartIndex + endtryIndexInSlice;
     let catchSlice = [];
     let finallySlice = [];
     let resumeSlice = [];
@@ -51,17 +53,14 @@ export function createTryHelpers(runtime) {
         return null;
       }
 
-      const endtrySliceStart = endtryGlobalIndex + 1;
-      const finallyEndIndexInSlice = instructions.slice(endtrySliceStart).findIndex(
-        (instruction) => instruction.opcode.mnemonic === "ENDFINALLY",
+      const finallyEndGlobalIndex = findMnemonicFrom(
+        instructions,
+        endtryGlobalIndex + 1,
+        "ENDFINALLY",
       );
-      let finallyEndGlobalIndex = null;
-      if (finallyEndIndexInSlice >= 0) {
-        finallyEndGlobalIndex = endtrySliceStart + finallyEndIndexInSlice;
-      }
 
       catchSlice = instructions.slice(catchIndex, finallyIndex);
-      if (finallyEndGlobalIndex !== null) {
+      if (finallyEndGlobalIndex >= 0) {
         finallySlice = instructions.slice(finallyIndex, finallyEndGlobalIndex);
         resumeSlice = instructions.slice(finallyEndGlobalIndex + 1);
       }
@@ -71,13 +70,12 @@ export function createTryHelpers(runtime) {
         return null;
       }
 
-      const afterEndtryIndex = endtryGlobalIndex + 1;
-      const catchEndtryIndexInSlice = instructions.slice(afterEndtryIndex).findIndex(
-        (instruction) => instruction.opcode.mnemonic === "ENDTRY",
+      const catchEndGlobalIndex = findMnemonicFrom(
+        instructions,
+        endtryGlobalIndex + 1,
+        "ENDTRY",
       );
-      let catchEndGlobalIndex = null;
-      if (catchEndtryIndexInSlice >= 0) {
-        catchEndGlobalIndex = afterEndtryIndex + catchEndtryIndexInSlice;
+      if (catchEndGlobalIndex >= 0) {
         const catchEndInstruction = instructions[catchEndGlobalIndex];
         const catchEndTarget = jumpTarget(catchEndInstruction);
         if (catchEndTarget !== null && catchEndTarget > catchTarget) {
@@ -99,11 +97,12 @@ export function createTryHelpers(runtime) {
         return null;
       }
 
-      const finallyEndIndexInSlice = instructions.slice(finallyIndex).findIndex(
-        (instruction) => instruction.opcode.mnemonic === "ENDFINALLY",
+      const finallyEndGlobalIndex = findMnemonicFrom(
+        instructions,
+        finallyIndex,
+        "ENDFINALLY",
       );
-      if (finallyEndIndexInSlice >= 0) {
-        const finallyEndGlobalIndex = finallyIndex + finallyEndIndexInSlice;
+      if (finallyEndGlobalIndex >= 0) {
         finallySlice = instructions.slice(finallyIndex, finallyEndGlobalIndex);
         resumeSlice = instructions.slice(endtryGlobalIndex + 1);
       }

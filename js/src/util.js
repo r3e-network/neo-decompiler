@@ -25,6 +25,34 @@ export function upperHex(bytes) {
   return out;
 }
 
+export function upperHexReversed(bytes) {
+  let out = "";
+  for (let i = bytes.length - 1; i >= 0; i--) {
+    out += HEX_TABLE[bytes[i]];
+  }
+  return out;
+}
+
+// 1-byte (2-hex-digit) zero-padded uppercase hex of an unsigned 8-bit value.
+export function hex8(value) {
+  return HEX_TABLE[value & 0xff];
+}
+
+// 2-byte (4-hex-digit) zero-padded uppercase hex of an unsigned 16-bit value.
+export function hex16(value) {
+  return HEX_TABLE[(value >>> 8) & 0xff] + HEX_TABLE[value & 0xff];
+}
+
+// 4-byte (8-hex-digit) zero-padded uppercase hex of an unsigned 32-bit value.
+export function hex32(value) {
+  return (
+    HEX_TABLE[(value >>> 24) & 0xff] +
+    HEX_TABLE[(value >>> 16) & 0xff] +
+    HEX_TABLE[(value >>> 8) & 0xff] +
+    HEX_TABLE[value & 0xff]
+  );
+}
+
 export function readU16LE(bytes, offset) {
   return bytes[offset] | (bytes[offset + 1] << 8);
 }

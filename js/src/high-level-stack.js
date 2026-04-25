@@ -23,79 +23,75 @@ const BINARY_OPERATORS = {
 };
 
 export function tryControlStatement(state, instruction) {
-  const mnemonic = instruction.opcode.mnemonic;
-  if (mnemonic === "ASSERT") {
-    const condition = stripOuterParens(state.stack.pop() ?? "???");
-    state.statements.push(`assert(${condition});`);
-    return true;
+  switch (instruction.opcode.mnemonic) {
+    case "ASSERT": {
+      const condition = stripOuterParens(state.stack.pop() ?? "???");
+      state.statements.push(`assert(${condition});`);
+      return true;
+    }
+    case "ASSERTMSG": {
+      const message = stripOuterParens(state.stack.pop() ?? "???");
+      const condition = stripOuterParens(state.stack.pop() ?? "???");
+      state.statements.push(`assert(${condition}, ${message});`);
+      return true;
+    }
+    case "THROW": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.statements.push(`throw(${value});`);
+      state.stack.length = 0;
+      return true;
+    }
+    case "ABORT":
+      state.statements.push("abort();");
+      state.stack.length = 0;
+      return true;
+    case "ABORTMSG": {
+      const msg = stripOuterParens(state.stack.pop() ?? "???");
+      state.statements.push(`abort(${msg});`);
+      state.stack.length = 0;
+      return true;
+    }
+    default:
+      return false;
   }
-  if (mnemonic === "ASSERTMSG") {
-    const message = stripOuterParens(state.stack.pop() ?? "???");
-    const condition = stripOuterParens(state.stack.pop() ?? "???");
-    state.statements.push(`assert(${condition}, ${message});`);
-    return true;
-  }
-  if (mnemonic === "THROW") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.statements.push(`throw(${value});`);
-    state.stack.length = 0;
-    return true;
-  }
-  if (mnemonic === "ABORT") {
-    state.statements.push("abort();");
-    state.stack.length = 0;
-    return true;
-  }
-  if (mnemonic === "ABORTMSG") {
-    const msg = stripOuterParens(state.stack.pop() ?? "???");
-    state.statements.push(`abort(${msg});`);
-    state.stack.length = 0;
-    return true;
-  }
-  return false;
 }
 
 export function tryStackShapeOperation(state, instruction) {
   const mnemonic = instruction.opcode.mnemonic;
-  if (mnemonic === "DEPTH") {
-    state.stack.push(`${state.stack.length}`);
-    return true;
-  }
-  if (mnemonic === "DROP") {
-    state.stack.pop();
-    return true;
-  }
-  if (mnemonic === "CLEAR") {
-    state.stack.length = 0;
-    state.statements.push("// clear stack");
-    return true;
-  }
-  if (mnemonic === "DUP") {
-    const top = state.stack.at(-1);
-    if (top !== undefined) {
-      state.stack.push(top);
-    } else {
-      state.stack.push("/* stack_underflow */");
+  switch (mnemonic) {
+    case "DEPTH":
+      state.stack.push(`${state.stack.length}`);
+      return true;
+    case "DROP":
+      state.stack.pop();
+      return true;
+    case "CLEAR":
+      state.stack.length = 0;
+      state.statements.push("// clear stack");
+      return true;
+    case "DUP": {
+      const top = state.stack.at(-1);
+      state.stack.push(top !== undefined ? top : "/* stack_underflow */");
+      return true;
     }
-    return true;
-  }
-  if (mnemonic === "OVER") {
-    const value = state.stack.length >= 2 ? state.stack[state.stack.length - 2] : "/* stack_underflow */";
-    state.stack.push(value);
-    return true;
-  }
-  if (mnemonic === "SWAP") {
-    if (state.stack.length >= 2) {
-      const last = state.stack.length - 1;
-      [state.stack[last - 1], state.stack[last]] = [state.stack[last], state.stack[last - 1]];
+    case "OVER": {
+      const value = state.stack.length >= 2 ? state.stack[state.stack.length - 2] : "/* stack_underflow */";
+      state.stack.push(value);
+      return true;
     }
-    return true;
-  }
-  if (mnemonic === "NIP") {
-    if (state.stack.length >= 2) {
-      state.stack.splice(state.stack.length - 2, 1);
+    case "SWAP": {
+      if (state.stack.length >= 2) {
+        const last = state.stack.length - 1;
+        [state.stack[last - 1], state.stack[last]] = [state.stack[last], state.stack[last - 1]];
+      }
+      return true;
     }
-    return true;
+    case "NIP": {
+      if (state.stack.length >= 2) {
+        state.stack.splice(state.stack.length - 2, 1);
+      }
+      return true;
+    }
   }
   if (mnemonic === "PICK") {
     const indexText = state.stack.pop();
@@ -148,16 +144,25 @@ export function tryStackShapeOperation(state, instruction) {
   }
   if (mnemonic === "REVERSE3") {
     if (state.stack.length >= 3) {
-      const start = state.stack.length - 3;
-      state.stack.splice(start, 3, ...state.stack.slice(start).reverse());
+      const stack = state.stack;
+      const last = stack.length - 1;
+      const tmp = stack[last - 2];
+      stack[last - 2] = stack[last];
+      stack[last] = tmp;
     }
     state.statements.push("// reverse top 3 stack values");
     return true;
   }
   if (mnemonic === "REVERSE4") {
     if (state.stack.length >= 4) {
-      const start = state.stack.length - 4;
-      state.stack.splice(start, 4, ...state.stack.slice(start).reverse());
+      const stack = state.stack;
+      const last = stack.length - 1;
+      let tmp = stack[last - 3];
+      stack[last - 3] = stack[last];
+      stack[last] = tmp;
+      tmp = stack[last - 2];
+      stack[last - 2] = stack[last - 1];
+      stack[last - 1] = tmp;
     }
     state.statements.push("// reverse top 4 stack values");
     return true;
@@ -166,8 +171,16 @@ export function tryStackShapeOperation(state, instruction) {
     const countText = state.stack.pop();
     const count = countText !== undefined ? Number.parseInt(countText, 10) : Number.NaN;
     if (Number.isFinite(count) && count >= 0 && count <= state.stack.length) {
-      const start = state.stack.length - count;
-      state.stack.splice(start, count, ...state.stack.slice(start).reverse());
+      const stack = state.stack;
+      let i = stack.length - count;
+      let j = stack.length - 1;
+      while (i < j) {
+        const tmp = stack[i];
+        stack[i] = stack[j];
+        stack[j] = tmp;
+        i++;
+        j--;
+      }
       state.statements.push(`// reverse top ${count} stack values`);
     } else {
       state.statements.push(`// reverse top ${countText ?? "???"} stack values`);
@@ -190,85 +203,86 @@ export function tryStackShapeOperation(state, instruction) {
 
 export function tryUnaryExpression(state, instruction) {
   const mnemonic = instruction.opcode.mnemonic;
-  if (mnemonic === "SQRT") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`sqrt(${value})`);
-    return true;
-  }
-  if (mnemonic === "NOT") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`!${value}`);
-    return true;
-  }
-  if (mnemonic === "INC") {
-    const value = stripOuterParens(state.stack.pop() ?? "/* stack_underflow */");
-    state.stack.push(`${wrapExpression(value)} + 1`);
-    return true;
-  }
-  if (mnemonic === "DEC") {
-    const value = stripOuterParens(state.stack.pop() ?? "/* stack_underflow */");
-    state.stack.push(`${wrapExpression(value)} - 1`);
-    return true;
-  }
-  if (mnemonic === "SUBSTR") {
-    const count = stripOuterParens(state.stack.pop() ?? "???");
-    const index = stripOuterParens(state.stack.pop() ?? "???");
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`substr(${value}, ${index}, ${count})`);
-    return true;
-  }
-  if (mnemonic === "CONVERT") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    const targetName = convertTargetName(instruction.operand);
-    if (targetName !== null) {
-      state.stack.push(`convert_to_${targetName}(${value})`);
-    } else {
-      state.stack.push(`convert(${value})`);
+  switch (mnemonic) {
+    case "SQRT": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`sqrt(${value})`);
+      return true;
     }
-    return true;
+    case "NOT": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`!${value}`);
+      return true;
+    }
+    case "INC": {
+      const value = stripOuterParens(state.stack.pop() ?? "/* stack_underflow */");
+      state.stack.push(`${wrapExpression(value)} + 1`);
+      return true;
+    }
+    case "DEC": {
+      const value = stripOuterParens(state.stack.pop() ?? "/* stack_underflow */");
+      state.stack.push(`${wrapExpression(value)} - 1`);
+      return true;
+    }
+    case "SUBSTR": {
+      const count = stripOuterParens(state.stack.pop() ?? "???");
+      const index = stripOuterParens(state.stack.pop() ?? "???");
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`substr(${value}, ${index}, ${count})`);
+      return true;
+    }
+    case "CONVERT": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      const targetName = convertTargetName(instruction.operand);
+      state.stack.push(
+        targetName !== null ? `convert_to_${targetName}(${value})` : `convert(${value})`,
+      );
+      return true;
+    }
+    case "NEWBUFFER": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`new_buffer(${value})`);
+      return true;
+    }
+    case "NEWARRAY": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`new_array(${value})`);
+      return true;
+    }
+    // NEWSTRUCT handled by tryCollectionExpression in high-level-collections.js
+    case "NEGATE": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`-${value}`);
+      return true;
+    }
+    case "ABS": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`abs(${value})`);
+      return true;
+    }
+    case "SIGN": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`sign(${value})`);
+      return true;
+    }
+    case "INVERT": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`~${value}`);
+      return true;
+    }
+    case "ISNULL": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`is_null(${value})`);
+      return true;
+    }
+    case "NZ": {
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      state.stack.push(`${wrapExpression(value)} != 0`);
+      return true;
+    }
+    default:
+      return false;
   }
-  if (mnemonic === "NEWBUFFER") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`new_buffer(${value})`);
-    return true;
-  }
-  if (mnemonic === "NEWARRAY") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`new_array(${value})`);
-    return true;
-  }
-  // NEWSTRUCT handled by tryCollectionExpression in high-level-collections.js
-  if (mnemonic === "NEGATE") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`-${value}`);
-    return true;
-  }
-  if (mnemonic === "ABS") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`abs(${value})`);
-    return true;
-  }
-  if (mnemonic === "SIGN") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`sign(${value})`);
-    return true;
-  }
-  if (mnemonic === "INVERT") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`~${value}`);
-    return true;
-  }
-  if (mnemonic === "ISNULL") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`is_null(${value})`);
-    return true;
-  }
-  if (mnemonic === "NZ") {
-    const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`${wrapExpression(value)} != 0`);
-    return true;
-  }
-  return false;
 }
 
 export function tryBinaryExpression(stack, mnemonic) {
@@ -279,68 +293,71 @@ export function tryBinaryExpression(stack, mnemonic) {
     stack.push(`${wrapExpression(left)} ${operator} ${wrapExpression(right)}`);
     return true;
   }
-  if (mnemonic === "POW") {
-    const exponent = stack.pop() ?? "???";
-    const base = stack.pop() ?? "???";
-    stack.push(`pow(${base}, ${exponent})`);
-    return true;
+  switch (mnemonic) {
+    case "POW": {
+      const exponent = stack.pop() ?? "???";
+      const base = stack.pop() ?? "???";
+      stack.push(`pow(${base}, ${exponent})`);
+      return true;
+    }
+    case "MODPOW": {
+      const modulus = stack.pop() ?? "???";
+      const exponent = stack.pop() ?? "???";
+      const base = stack.pop() ?? "???";
+      stack.push(`modpow(${base}, ${exponent}, ${modulus})`);
+      return true;
+    }
+    case "MODMUL": {
+      const modulus = stack.pop() ?? "???";
+      const right = stack.pop() ?? "???";
+      const left = stack.pop() ?? "???";
+      stack.push(`modmul(${left}, ${right}, ${modulus})`);
+      return true;
+    }
+    case "MAX": {
+      const right = stack.pop() ?? "???";
+      const left = stack.pop() ?? "???";
+      stack.push(`max(${left}, ${right})`);
+      return true;
+    }
+    case "MIN": {
+      const right = stack.pop() ?? "???";
+      const left = stack.pop() ?? "???";
+      stack.push(`min(${left}, ${right})`);
+      return true;
+    }
+    case "WITHIN": {
+      const upper = stack.pop() ?? "???";
+      const lower = stack.pop() ?? "???";
+      const value = stack.pop() ?? "???";
+      stack.push(`within(${value}, ${lower}, ${upper})`);
+      return true;
+    }
+    case "LEFT": {
+      const count = stack.pop() ?? "???";
+      const value = stack.pop() ?? "???";
+      stack.push(`left(${value}, ${count})`);
+      return true;
+    }
+    case "RIGHT": {
+      const count = stack.pop() ?? "???";
+      const value = stack.pop() ?? "???";
+      stack.push(`right(${value}, ${count})`);
+      return true;
+    }
+    case "SHL": {
+      const shift = stripOuterParens(stack.pop() ?? "???");
+      const value = stripOuterParens(stack.pop() ?? "???");
+      stack.push(`${wrapExpression(value)} << ${shift}`);
+      return true;
+    }
+    case "SHR": {
+      const shift = stripOuterParens(stack.pop() ?? "???");
+      const value = stripOuterParens(stack.pop() ?? "???");
+      stack.push(`${wrapExpression(value)} >> ${shift}`);
+      return true;
+    }
+    default:
+      return false;
   }
-  if (mnemonic === "MODPOW") {
-    const modulus = stack.pop() ?? "???";
-    const exponent = stack.pop() ?? "???";
-    const base = stack.pop() ?? "???";
-    stack.push(`modpow(${base}, ${exponent}, ${modulus})`);
-    return true;
-  }
-  if (mnemonic === "MODMUL") {
-    const modulus = stack.pop() ?? "???";
-    const right = stack.pop() ?? "???";
-    const left = stack.pop() ?? "???";
-    stack.push(`modmul(${left}, ${right}, ${modulus})`);
-    return true;
-  }
-  if (mnemonic === "MAX") {
-    const right = stack.pop() ?? "???";
-    const left = stack.pop() ?? "???";
-    stack.push(`max(${left}, ${right})`);
-    return true;
-  }
-  if (mnemonic === "MIN") {
-    const right = stack.pop() ?? "???";
-    const left = stack.pop() ?? "???";
-    stack.push(`min(${left}, ${right})`);
-    return true;
-  }
-  if (mnemonic === "WITHIN") {
-    const upper = stack.pop() ?? "???";
-    const lower = stack.pop() ?? "???";
-    const value = stack.pop() ?? "???";
-    stack.push(`within(${value}, ${lower}, ${upper})`);
-    return true;
-  }
-  if (mnemonic === "LEFT") {
-    const count = stack.pop() ?? "???";
-    const value = stack.pop() ?? "???";
-    stack.push(`left(${value}, ${count})`);
-    return true;
-  }
-  if (mnemonic === "RIGHT") {
-    const count = stack.pop() ?? "???";
-    const value = stack.pop() ?? "???";
-    stack.push(`right(${value}, ${count})`);
-    return true;
-  }
-  if (mnemonic === "SHL") {
-    const shift = stripOuterParens(stack.pop() ?? "???");
-    const value = stripOuterParens(stack.pop() ?? "???");
-    stack.push(`${wrapExpression(value)} << ${shift}`);
-    return true;
-  }
-  if (mnemonic === "SHR") {
-    const shift = stripOuterParens(stack.pop() ?? "???");
-    const value = stripOuterParens(stack.pop() ?? "???");
-    stack.push(`${wrapExpression(value)} >> ${shift}`);
-    return true;
-  }
-  return false;
 }
