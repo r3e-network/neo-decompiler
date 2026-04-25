@@ -13,32 +13,55 @@ export function asUint8Array(value) {
   throw new TypeError("expected Uint8Array-compatible input");
 }
 
+const HEX_TABLE = Array.from({ length: 256 }, (_, i) =>
+  i.toString(16).padStart(2, "0").toUpperCase(),
+);
+
 export function upperHex(bytes) {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0").toUpperCase()).join("");
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) {
+    out += HEX_TABLE[bytes[i]];
+  }
+  return out;
 }
 
 export function readU16LE(bytes, offset) {
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint16(offset, true);
+  return bytes[offset] | (bytes[offset + 1] << 8);
 }
 
 export function readI16LE(bytes, offset) {
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt16(offset, true);
+  return ((bytes[offset] | (bytes[offset + 1] << 8)) << 16) >> 16;
 }
 
 export function readU32LE(bytes, offset) {
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(offset, true);
+  return (
+    (bytes[offset] |
+      (bytes[offset + 1] << 8) |
+      (bytes[offset + 2] << 16) |
+      (bytes[offset + 3] << 24)) >>>
+    0
+  );
 }
 
 export function readI32LE(bytes, offset) {
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getInt32(offset, true);
+  return (
+    bytes[offset] |
+    (bytes[offset + 1] << 8) |
+    (bytes[offset + 2] << 16) |
+    (bytes[offset + 3] << 24)
+  );
 }
 
 export function readI64LE(bytes, offset) {
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigInt64(offset, true);
+  const lo = BigInt(readU32LE(bytes, offset));
+  const hi = BigInt(readI32LE(bytes, offset + 4));
+  return (hi << 32n) | lo;
 }
 
 export function readU64LE(bytes, offset) {
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(offset, true);
+  const lo = BigInt(readU32LE(bytes, offset));
+  const hi = BigInt(readU32LE(bytes, offset + 4));
+  return (hi << 32n) | lo;
 }
 
 export function computeChecksum(bytes) {
@@ -68,15 +91,19 @@ export function scanSlotCounts(instructions) {
   let maxArg = -1;
   for (const instruction of instructions) {
     const mnemonic = instruction.opcode.mnemonic;
-    if (/^(?:LD|ST)LOC(?:\d+)?$/u.test(mnemonic)) {
+    if (LOC_LD_ST_RE.test(mnemonic)) {
       maxLocal = Math.max(maxLocal, slotIndex(mnemonic, instruction));
     }
-    if (/^(?:LD|ST)ARG(?:\d+)?$/u.test(mnemonic)) {
+    if (ARG_LD_ST_RE.test(mnemonic)) {
       maxArg = Math.max(maxArg, slotIndex(mnemonic, instruction));
     }
   }
   return [maxLocal + 1, maxArg + 1];
 }
+
+const LOC_LD_ST_RE = /^(?:LD|ST)LOC(?:\d+)?$/u;
+const ARG_LD_ST_RE = /^(?:LD|ST)ARG(?:\d+)?$/u;
+const SLOT_INDEX_RE = /(?:LD|ST)(?:LOC|ARG|SFLD)(\d+)$/u;
 
 export function scanStaticSlotCount(instructions) {
   for (const instruction of instructions) {
@@ -88,7 +115,7 @@ export function scanStaticSlotCount(instructions) {
 }
 
 export function slotIndex(mnemonic, instruction) {
-  const exact = mnemonic.match(/(?:LD|ST)(?:LOC|ARG|SFLD)(\d+)$/u);
+  const exact = SLOT_INDEX_RE.exec(mnemonic);
   if (exact) {
     return Number(exact[1]);
   }

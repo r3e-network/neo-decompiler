@@ -331,8 +331,16 @@ function isJumpOperand(operand) {
   return operand?.kind === "Jump" || operand?.kind === "Jump32";
 }
 
+const SLOT_INDEX_RE = /(?:LD|ST)(?:LOC|ARG|SFLD)(\d+)$/u;
+const STLOC_RE = /^STLOC(?:\d+)?$/u;
+const STARG_RE = /^STARG(?:\d+)?$/u;
+const STSFLD_RE = /^STSFLD(?:\d+)?$/u;
+const LDARG_RE = /^LDARG(?:\d+)?$/u;
+const LDLOC_RE = /^LDLOC(?:\d+)?$/u;
+const LDSFLD_RE = /^LDSFLD(?:\d+)?$/u;
+
 function slotIndex(mnemonic, instruction) {
-  const exact = mnemonic.match(/(?:LD|ST)(?:LOC|ARG|SFLD)(\d+)$/u);
+  const exact = SLOT_INDEX_RE.exec(mnemonic);
   if (exact) {
     return Number(exact[1]);
   }
@@ -343,27 +351,27 @@ function slotIndex(mnemonic, instruction) {
 }
 
 function isStoreLocal(mnemonic) {
-  return /^STLOC(?:\d+)?$/u.test(mnemonic);
+  return STLOC_RE.test(mnemonic);
 }
 
 function isStoreArgument(mnemonic) {
-  return /^STARG(?:\d+)?$/u.test(mnemonic);
+  return STARG_RE.test(mnemonic);
 }
 
 function isStoreStatic(mnemonic) {
-  return /^STSFLD(?:\d+)?$/u.test(mnemonic);
+  return STSFLD_RE.test(mnemonic);
 }
 
 function isLoadArgument(mnemonic) {
-  return /^LDARG(?:\d+)?$/u.test(mnemonic);
+  return LDARG_RE.test(mnemonic);
 }
 
 function isLoadLocal(mnemonic) {
-  return /^LDLOC(?:\d+)?$/u.test(mnemonic);
+  return LDLOC_RE.test(mnemonic);
 }
 
 function isLoadStatic(mnemonic) {
-  return /^LDSFLD(?:\d+)?$/u.test(mnemonic);
+  return LDSFLD_RE.test(mnemonic);
 }
 
 function inferMethodArgCount(group) {
@@ -472,15 +480,18 @@ function mergeValues(existing, next) {
   return existing === next ? existing : null;
 }
 
+const PUSH_LIT_RE = /^PUSH(\d+|M1)$/u;
+const PUSHINT_RE = /^PUSHINT(?:8|16|32|64)$/u;
+
 function isImmediateInteger(mnemonic, instruction) {
-  if (/^PUSH(\d+|M1)$/u.test(mnemonic)) {
+  if (PUSH_LIT_RE.test(mnemonic)) {
     return true;
   }
-  return /^PUSHINT(?:8|16|32|64)$/u.test(mnemonic);
+  return PUSHINT_RE.test(mnemonic);
 }
 
 function integerValue(mnemonic, instruction) {
-  const match = mnemonic.match(/^PUSH(\d+|M1)$/u);
+  const match = PUSH_LIT_RE.exec(mnemonic);
   if (match) {
     return { kind: "int", value: match[1] === "M1" ? -1 : Number(match[1]) };
   }

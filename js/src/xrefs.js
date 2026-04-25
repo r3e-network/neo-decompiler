@@ -51,42 +51,49 @@ export function buildXrefs(instructions, methodGroups) {
   };
 }
 
+const LDLOC_NUM_RE = /^LDLOC\d+$/u;
+const STLOC_NUM_RE = /^STLOC\d+$/u;
+const LDARG_NUM_RE = /^LDARG\d+$/u;
+const STARG_NUM_RE = /^STARG\d+$/u;
+const LDSFLD_NUM_RE = /^LDSFLD\d+$/u;
+const STSFLD_NUM_RE = /^STSFLD\d+$/u;
+
 function slotAccess(instruction) {
   const mnemonic = instruction.opcode.mnemonic;
-  if (/^LDLOC\d+$/u.test(mnemonic)) {
-    return { kind: "local", index: Number(mnemonic.slice("LDLOC".length)), isWrite: false };
+  if (LDLOC_NUM_RE.test(mnemonic)) {
+    return { kind: "local", index: Number(mnemonic.slice(5)), isWrite: false };
   }
   if (mnemonic === "LDLOC" && instruction.operand?.kind === "U8") {
     return { kind: "local", index: instruction.operand.value, isWrite: false };
   }
-  if (/^STLOC\d+$/u.test(mnemonic)) {
-    return { kind: "local", index: Number(mnemonic.slice("STLOC".length)), isWrite: true };
+  if (STLOC_NUM_RE.test(mnemonic)) {
+    return { kind: "local", index: Number(mnemonic.slice(5)), isWrite: true };
   }
   if (mnemonic === "STLOC" && instruction.operand?.kind === "U8") {
     return { kind: "local", index: instruction.operand.value, isWrite: true };
   }
 
-  if (/^LDARG\d+$/u.test(mnemonic)) {
-    return { kind: "argument", index: Number(mnemonic.slice("LDARG".length)), isWrite: false };
+  if (LDARG_NUM_RE.test(mnemonic)) {
+    return { kind: "argument", index: Number(mnemonic.slice(5)), isWrite: false };
   }
   if (mnemonic === "LDARG" && instruction.operand?.kind === "U8") {
     return { kind: "argument", index: instruction.operand.value, isWrite: false };
   }
-  if (/^STARG\d+$/u.test(mnemonic)) {
-    return { kind: "argument", index: Number(mnemonic.slice("STARG".length)), isWrite: true };
+  if (STARG_NUM_RE.test(mnemonic)) {
+    return { kind: "argument", index: Number(mnemonic.slice(5)), isWrite: true };
   }
   if (mnemonic === "STARG" && instruction.operand?.kind === "U8") {
     return { kind: "argument", index: instruction.operand.value, isWrite: true };
   }
 
-  if (/^LDSFLD\d+$/u.test(mnemonic)) {
-    return { kind: "static", index: Number(mnemonic.slice("LDSFLD".length)), isWrite: false };
+  if (LDSFLD_NUM_RE.test(mnemonic)) {
+    return { kind: "static", index: Number(mnemonic.slice(6)), isWrite: false };
   }
   if (mnemonic === "LDSFLD" && instruction.operand?.kind === "U8") {
     return { kind: "static", index: instruction.operand.value, isWrite: false };
   }
-  if (/^STSFLD\d+$/u.test(mnemonic)) {
-    return { kind: "static", index: Number(mnemonic.slice("STSFLD".length)), isWrite: true };
+  if (STSFLD_NUM_RE.test(mnemonic)) {
+    return { kind: "static", index: Number(mnemonic.slice(6)), isWrite: true };
   }
   if (mnemonic === "STSFLD" && instruction.operand?.kind === "U8") {
     return { kind: "static", index: instruction.operand.value, isWrite: true };
