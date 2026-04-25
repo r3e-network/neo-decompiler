@@ -166,13 +166,6 @@ function containsIdentifier(text, ident) {
   return getIdentRegex(ident).test.test(text);
 }
 
-function countIdentifier(text, ident) {
-  if (!ident) return 0;
-  const re = getIdentRegex(ident).global;
-  re.lastIndex = 0;
-  return (text.match(re) || []).length;
-}
-
 function replaceIdentifier(text, ident, replacement) {
   if (!ident) return text;
   const re = getIdentRegex(ident).global;
@@ -694,38 +687,49 @@ function findIncrementAssignment(statements, start, end, varName) {
 function inlineConditionTemps(statements) {
   let index = 0;
   while (index < statements.length) {
-    const whileCond = extractWhileCondition(statements[index]);
-    if (whileCond !== null) {
-      const idx = prevCodeLine(statements, index);
-      if (idx >= 0) {
-        const assign = parseAssignment(statements[idx]);
-        if (assign && assign.lhs === whileCond && shouldInlineCondition(assign.rhs)) {
-          statements[index] = `while ${assign.rhs} {`;
-          statements[idx] = "";
+    const trimmed = statements[index].trim();
+
+    let cond = null;
+    let forParts = null;
+    let kind = null;
+
+    if (trimmed.endsWith(" {")) {
+      if (trimmed.startsWith("while ")) {
+        cond = trimmed.slice(6, -2).trim();
+        kind = "while";
+      } else if (trimmed.startsWith("for (")) {
+        let inner = trimmed.slice(5, -2).trim();
+        if (inner.endsWith(")")) inner = inner.slice(0, -1).trim();
+        const parts = inner.split(";");
+        if (parts.length === 3) {
+          forParts = {
+            init: parts[0].trim(),
+            condition: parts[1].trim(),
+            increment: parts[2].trim(),
+          };
+          kind = "for";
         }
+      } else if (trimmed.startsWith("if ")) {
+        cond = trimmed.slice(3, -2).trim();
+        kind = "if";
       }
     }
 
-    const forParts = parseForParts(statements[index]);
-    if (forParts !== null) {
+    if (kind !== null) {
       const idx = prevCodeLine(statements, index);
       if (idx >= 0) {
         const assign = parseAssignment(statements[idx]);
-        if (assign && assign.lhs === forParts.condition && shouldInlineCondition(assign.rhs)) {
-          statements[index] = `for (${forParts.init}; ${assign.rhs}; ${forParts.increment}) {`;
-          statements[idx] = "";
-        }
-      }
-    }
-
-    const ifCond = extractIfCondition(statements[index]);
-    if (ifCond !== null) {
-      const idx = prevCodeLine(statements, index);
-      if (idx >= 0) {
-        const assign = parseAssignment(statements[idx]);
-        if (assign && assign.lhs === ifCond && shouldInlineCondition(assign.rhs)) {
-          statements[index] = `if ${assign.rhs} {`;
-          statements[idx] = "";
+        if (assign && shouldInlineCondition(assign.rhs)) {
+          if (kind === "while" && assign.lhs === cond) {
+            statements[index] = `while ${assign.rhs} {`;
+            statements[idx] = "";
+          } else if (kind === "for" && assign.lhs === forParts.condition) {
+            statements[index] = `for (${forParts.init}; ${assign.rhs}; ${forParts.increment}) {`;
+            statements[idx] = "";
+          } else if (kind === "if" && assign.lhs === cond) {
+            statements[index] = `if ${assign.rhs} {`;
+            statements[idx] = "";
+          }
         }
       }
     }
@@ -1509,42 +1513,43 @@ function isTrivialInlineRhs(expr) {
   return isSimpleIdentifier(t);
 }
 
+const TEMP_TOKEN_RE = /\bt\d+\b/g;
+
 function collectInlineCandidates(statements) {
   const definitions = new Map();
   const useCounts = new Map();
   const reassigned = new Set();
-  const known = [];
+  const known = new Set();
 
   for (let idx = 0; idx < statements.length; idx++) {
     const trimmed = statements[idx].trim();
     const assign = parseAssignment(trimmed);
+    const scanText = assign ? assign.rhs : trimmed;
 
-    if (assign) {
-      for (const v of known) {
-        const occurrences = countIdentifier(assign.rhs, v);
-        if (occurrences > 0) {
-          useCounts.set(v, (useCounts.get(v) || 0) + occurrences);
+    if (known.size > 0 && scanText !== "") {
+      const matches = scanText.match(TEMP_TOKEN_RE);
+      if (matches !== null) {
+        for (let m = 0; m < matches.length; m++) {
+          const v = matches[m];
+          if (known.has(v)) {
+            useCounts.set(v, (useCounts.get(v) || 0) + 1);
+          }
         }
       }
+    }
 
+    if (assign) {
       if (!isTempIdent(assign.lhs)) continue;
 
       if (assign.hasLet) {
         if (definitions.has(assign.lhs)) {
           reassigned.add(assign.lhs);
         } else {
-          known.push(assign.lhs);
+          known.add(assign.lhs);
           definitions.set(assign.lhs, { defLine: idx, rhs: assign.rhs });
         }
       } else {
         reassigned.add(assign.lhs);
-      }
-    } else {
-      for (const v of known) {
-        const occurrences = countIdentifier(trimmed, v);
-        if (occurrences > 0) {
-          useCounts.set(v, (useCounts.get(v) || 0) + occurrences);
-        }
       }
     }
   }
