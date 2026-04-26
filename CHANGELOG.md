@@ -5,6 +5,108 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-04-26 (Rust) / [1.3.0] - 2026-04-26 (JS)
+
+This release closes the last known behavior asymmetry between the Rust
+and JavaScript implementations and bundles a comprehensive performance
+and correctness pass on both sides. The two implementations are now
+verified behavior-equivalent across 967 JS unit tests, 316 Rust lib
+tests, and 4030 cross-implementation differential and corpus-replay
+cases.
+
+### Fixed
+
+- **Rust: orphaned-label removal pass**: New `remove_orphaned_labels`
+  postprocess pass strips `label_0xXXXX:` lines whose only `goto` /
+  `leave` / `if {goto}` references were optimised away by the
+  fallthrough-goto pass. Previously these labels remained as visible
+  noise; the JS port already had this pass.
+- **JS: ~17 silent manifest validation divergences**: `parseManifest`
+  now rejects the same set of malformed manifests that Rust's serde
+  rejects, instead of silently defaulting fields, coercing types, or
+  storing raw values. Required-field violations throw
+  `ManifestParseError` with `code: "MissingField"`; type violations
+  use `code: "InvalidType"`. Specifically:
+  - Required: top-level `name`; `abi.methods[i].name`, `returntype`;
+    `parameters[j].name`, `type`; `abi.events[i].name`,
+    `parameters[j].name`, `type`; `groups[i].pubkey`, `signature`;
+    `permissions[i].contract`.
+  - Type-strict: `abi` must be an object; `features.storage` /
+    `payable` must be boolean (was `Boolean(...)` coercion);
+    `supportedstandards` must be an array;
+    `groups`/`permissions`/`abi.methods`/`abi.events`/`parameters`
+    must be arrays when present; `method.offset` must be a number;
+    `method.safe` must be a boolean; permission entries must be
+    objects.
+  - Removed the JS-specific `parameter.kind` fallback shim. Inputs
+    using `kind` instead of the spec-required `type` now fail
+    consistently in both implementations.
+
+### Added
+
+- **JS: `parseManifest` strict mode**: Optional second argument
+  `parseManifest(json, { strict: true })` validates canonical wildcard
+  values (`"*"`) in `permissions` and `trusts`, matching Rust's
+  `from_json_str_strict` semantics.
+- **JS: manifest size limit enforcement**: When input is a string,
+  `parseManifest` now enforces `MAX_MANIFEST_SIZE = 0xFFFF`, matching
+  Rust's `from_bytes` behaviour.
+- **Differential fuzzing harness**: New `js/test/differential-fuzz.mjs`
+  generates random NEFs covering all 15 operand encoding kinds and
+  runs 21 hand-crafted edge-case probes (empty PUSHDATA,
+  PUSHINT128/256, TRY variants, deep nesting, etc.) against both
+  implementations. 200/200 random + 21/21 edge cases agree.
+- **Corpus-replay harnesses**: New `js/test/corpus-replay.mjs` and
+  `js/test/manifest-corpus-replay.mjs` feed every input from the saved
+  fuzz corpora through both implementations. 414/414 NEF/decompile
+  inputs and 3416/3416 manifest inputs produce matching outcomes.
+
+### Changed (performance)
+
+- **JS: comprehensive hot-path optimisations** (averaged over 3 runs):
+  - Disassembly 10KB: `0.222ms → 0.135ms` (-39%)
+  - Full-analysis pipeline: `1.74ms → 1.20ms` (-31%)
+  - Syscall-heavy contract: `0.116ms → 0.062ms` (-47%)
+  - 10KB contract end-to-end: `3.27ms → 2.60ms` (-21%)
+  - 10000-iteration stress: `154ms → 116ms` (-25%)
+
+  Highlights: replaced per-call `DataView` allocations with bit-op
+  reads; cached PUSH-immediate operand singletons; replaced
+  `Int8Array(...)[0]` with bit-math sign extension; switched
+  `renderPseudocode` from `+=` cons-string accumulation to
+  array-push + `join("\n")`; added `hex8`/`hex16`/`hex32` helpers
+  using a 256-entry lookup table and applied them at every hot
+  `toString(16).padStart(...)` site; converted chained
+  `if (mnemonic === ...)` cascades to `switch` in
+  `tryControlStatement`, `tryStackShapeOperation`,
+  `tryUnaryExpression`, `tryBinaryExpression`, and `inferTypes`;
+  replaced regex-based `slotIndexFromMnemonic` with prefix-check +
+  char-code digit parse (called 6×/instruction); fixed
+  `tryLiftSimpleSwitch` O(n²) per-case scan via offset→index Map;
+  eliminated 4 `slice().findIndex()` patterns in
+  `tryLiftSimpleTryBlock`; dropped redundant recursion in postprocess
+  `rewriteExpr` (O(N²) → O(N)); single-pass temp scan in
+  `collectInlineCandidates` (O(K·N) → O(N)); lazy
+  `state.programIndexByOffset` cache in `inferUnpackElementCount`;
+  in-place `REVERSE3`/`REVERSE4`/`REVERSEN` swaps; eliminated
+  `scriptHashLE` slice-then-reverse copy.
+- **Rust: O(log n) lookups in `MethodTable`**: New `largest_le`
+  helper using `partition_point` replaces `filter().max()` linear
+  scans in the CallA fixpoint loop and
+  `resolve_argument_target_for_method`. `resolve_internal_target`
+  switched from linear `iter().find()` to `binary_search_by_key`.
+  `callers_by_target` switched from `BTreeMap<usize, Vec<usize>>`
+  to `BTreeMap<usize, BTreeSet<usize>>`, eliminating the redundant
+  `Vec::contains` check on each fixpoint iteration. For a contract
+  with K method starts and N CallA instructions, fixpoint complexity
+  drops from O(K·N) to O(N·log K) per iteration.
+- **Rust: postprocess scan-loop clean-up**: Replaced
+  `iter().enumerate().skip(start)` with direct `(start..len)` range
+  loops in `next_code_line`, `find_matching_brace`, and
+  `find_matching_close`. The `.skip()` adapter on slice iterators is
+  not always specialised to O(1), so each call previously paid an
+  O(start) startup tax.
+
 ## [1.2.1] - 2026-04-08 (JS only)
 
 ### Changed
