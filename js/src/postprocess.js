@@ -568,6 +568,65 @@ function eliminateFallthroughGotos(statements) {
   }
 }
 
+// ─── Pass 5a: rewrite_label_goto_to_loop ───────────────────────────────────
+// Lifts `label_X: ... goto label_X;` (with no other references to label_X)
+// into a `loop { ... }` block — the canonical Neo C# compiler shape for an
+// unconditional infinite loop. Mirrors the Rust `rewrite_label_goto_to_loop`
+// pass; runs after fallthrough-goto elimination and before orphan-label
+// removal so that downstream passes see only the structured loop.
+
+function rewriteLabelGotoToLoop(statements) {
+  let index = 0;
+  while (index < statements.length) {
+    const trimmed = statements[index].trim();
+    const labelMatch = LABEL_LINE_RE.exec(trimmed);
+    if (!labelMatch) {
+      index++;
+      continue;
+    }
+    const label = labelMatch[1];
+    const gotoTarget = `goto ${label};`;
+    let depth = 0;
+    let gotoIdx = -1;
+    for (let j = index + 1; j < statements.length; j++) {
+      const t = statements[j].trim();
+      if (t === gotoTarget && depth === 0) {
+        gotoIdx = j;
+        break;
+      }
+      if (t.endsWith("{")) depth++;
+      if (t === "}" || t.startsWith("} ")) {
+        depth--;
+        if (depth < 0) break;
+      }
+    }
+    if (gotoIdx < 0) {
+      index++;
+      continue;
+    }
+    // Bail if there are other references to the label anywhere — a second
+    // goto means the label is a structured-jump target, not just a back-edge.
+    let extraRefs = 0;
+    for (let i = 0; i < statements.length; i++) {
+      if (i === index || i === gotoIdx) continue;
+      const t = statements[i].trim();
+      if (t === `${label}:` || t.includes(gotoTarget)) {
+        extraRefs++;
+        break;
+      }
+    }
+    if (extraRefs > 0) {
+      index++;
+      continue;
+    }
+    const labelIndent = statements[index].slice(0, statements[index].length - statements[index].trimStart().length);
+    const gotoIndent = statements[gotoIdx].slice(0, statements[gotoIdx].length - statements[gotoIdx].trimStart().length);
+    statements[index] = `${labelIndent}loop {`;
+    statements[gotoIdx] = `${gotoIndent}}`;
+    index++;
+  }
+}
+
 // ─── Pass 5b: remove_orphaned_labels ───────────────────────────────────────
 // Remove labels that have no matching goto. These are artifacts from
 // liftStructuredSlice falling through to liftStraightLineMethodBody.
@@ -1651,6 +1710,8 @@ export function postprocess(statements, options = {}) {
   rewriteIfGotoToWhile(statements);
   // Pass 5
   eliminateFallthroughGotos(statements);
+  // Pass 5a: lift `label_X: ... goto label_X;` to `loop { ... }`
+  rewriteLabelGotoToLoop(statements);
   // Pass 5b: remove orphaned labels (labels with no matching goto)
   removeOrphanedLabels(statements);
   // Pass 6
