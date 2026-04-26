@@ -87,15 +87,15 @@ struct OverflowCollapse {
 
 /// Return the index of the next non-empty, non-comment line at or after `start`.
 fn next_code_line(statements: &[String], start: usize) -> Option<usize> {
-    // Direct indexing avoids the skip()-iterator's O(start) startup overhead.
-    for i in start..statements.len() {
-        let trimmed = statements[i].trim();
-        if trimmed.is_empty() || trimmed.starts_with("//") {
-            continue;
-        }
-        return Some(i);
-    }
-    None
+    statements
+        .iter()
+        .enumerate()
+        .skip(start)
+        .find(|(_, stmt)| {
+            let trimmed = stmt.trim();
+            !trimmed.is_empty() && !trimmed.starts_with("//")
+        })
+        .map(|(i, _)| i)
 }
 
 /// Try to match the overflow-check pattern starting at `idx`.
@@ -326,8 +326,8 @@ fn find_overflow_block_end(statements: &[String], if_idx: usize) -> Option<usize
 /// Find the index of the closing `}` that matches the `{` at `open_idx`.
 fn find_matching_brace(statements: &[String], open_idx: usize) -> Option<usize> {
     let mut depth = 1i32;
-    for i in (open_idx + 1)..statements.len() {
-        let trimmed = statements[i].trim();
+    for (i, stmt) in statements.iter().enumerate().skip(open_idx + 1) {
+        let trimmed = stmt.trim();
         if trimmed.is_empty() || trimmed.starts_with("//") {
             continue;
         }

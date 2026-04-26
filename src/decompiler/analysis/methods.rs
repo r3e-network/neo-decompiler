@@ -124,9 +124,7 @@ impl MethodTable {
                 let Some(arg_index) = calla_ldarg_index(instructions, index) else {
                     continue;
                 };
-                let Some(method_offset) =
-                    largest_le(&method_starts, instruction.offset)
-                else {
+                let Some(method_offset) = largest_le(&method_starts, instruction.offset) else {
                     continue;
                 };
                 let mut visited = BTreeSet::new();
@@ -278,7 +276,10 @@ impl MethodTable {
     /// `spans` is kept sorted by start offset, so we use binary search.
     #[must_use]
     pub fn resolve_internal_target(&self, target_offset: usize) -> MethodRef {
-        match self.spans.binary_search_by_key(&target_offset, |span| span.start) {
+        match self
+            .spans
+            .binary_search_by_key(&target_offset, |span| span.start)
+        {
             Ok(index) => self.spans[index].method.clone(),
             Err(_) => MethodRef::synthetic(target_offset),
         }

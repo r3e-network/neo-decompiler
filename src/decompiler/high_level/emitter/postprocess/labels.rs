@@ -6,8 +6,7 @@ impl HighLevelEmitter {
     /// when control-flow lifting falls through to straight-line emission and
     /// emits a label whose only intended target was inlined away.
     pub(crate) fn remove_orphaned_labels(statements: &mut [String]) {
-        let mut referenced: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut referenced: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for stmt in statements.iter() {
             let trimmed = stmt.trim();

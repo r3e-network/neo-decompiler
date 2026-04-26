@@ -1,6 +1,6 @@
 {
   "name": "neo-decompiler-web",
-  "version": "0.6.1",
+  "version": "0.6.3",
   "description": "TypeScript wrapper for the Neo decompiler WebAssembly bindings",
   "license": "MIT OR Apache-2.0",
   "repository": {
