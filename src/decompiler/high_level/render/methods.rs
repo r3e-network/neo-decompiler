@@ -146,16 +146,26 @@ pub(super) fn write_inferred_methods(
             .collect::<Vec<_>>();
         let argument_signature = argument_labels.join(", ");
 
-        writeln!(output).unwrap();
-        writeln!(output, "    fn {method_name}({argument_signature}) {{").unwrap();
+        // Render body into a scratch buffer first. Synthetic helpers that
+        // produce only a "no instructions decoded" placeholder are dropped
+        // entirely — emitting an empty `fn sub_0xNNNN() { ... }` block adds
+        // noise without conveying any decompiled content.
+        let mut body_buffer = String::new();
         body::write_method_body(
-            output,
+            &mut body_buffer,
             slice,
             (!argument_labels.is_empty()).then_some(argument_labels.as_slice()),
             warnings,
             context.body_context,
             false, // inferred methods: return type unknown
         );
+        if body_buffer.trim() == "// no instructions decoded" {
+            continue;
+        }
+
+        writeln!(output).unwrap();
+        writeln!(output, "    fn {method_name}({argument_signature}) {{").unwrap();
+        output.push_str(&body_buffer);
         writeln!(output, "    }}").unwrap();
     }
 }

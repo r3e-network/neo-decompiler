@@ -218,6 +218,89 @@ impl HighLevelEmitter {
         }
     }
 
+    /// Removes `let tN = <pure_value>;` lines whose lhs is never referenced.
+    /// Pure values are literals (numbers, booleans, null), simple identifiers,
+    /// or string/byte literals — anything without a side-effecting call.
+    /// This catches the common `let tN = 0; return;` leftover where the lifted
+    /// stack push has no consumer in the lifted form.
+    pub(crate) fn eliminate_dead_temps(statements: &mut [String]) {
+        let mut index = 0;
+        while index < statements.len() {
+            let trimmed = statements[index].trim();
+            if !trimmed.starts_with("let ") {
+                index += 1;
+                continue;
+            }
+            let Some(assign) = Self::parse_assignment(trimmed) else {
+                index += 1;
+                continue;
+            };
+            if !Self::is_temp_ident(&assign.lhs) {
+                index += 1;
+                continue;
+            }
+            if !Self::is_pure_rhs(&assign.rhs) {
+                index += 1;
+                continue;
+            }
+            let lhs = &assign.lhs;
+            let used_anywhere = statements
+                .iter()
+                .enumerate()
+                .any(|(i, stmt)| i != index && Self::contains_identifier(stmt, lhs));
+            if !used_anywhere {
+                statements[index].clear();
+            }
+            index += 1;
+        }
+    }
+
+    /// Returns true when `rhs` is safe to drop without altering side effects.
+    /// Conservatively true for literals and bare identifiers (slot reads, etc.).
+    fn is_pure_rhs(rhs: &str) -> bool {
+        let trimmed = rhs.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+        // Function-call shapes have side effects; bail.
+        if trimmed.contains('(') {
+            return false;
+        }
+        if matches!(trimmed, "true" | "false" | "null") {
+            return true;
+        }
+        // Numeric literal (decimal or hex), optionally negative.
+        let numeric = trimmed.strip_prefix('-').unwrap_or(trimmed);
+        let hex = numeric
+            .strip_prefix("0x")
+            .or_else(|| numeric.strip_prefix("0X"));
+        if let Some(hex) = hex {
+            if !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return true;
+            }
+        } else if !numeric.is_empty() && numeric.bytes().all(|b| b.is_ascii_digit()) {
+            return true;
+        }
+        // String literal.
+        let bytes = trimmed.as_bytes();
+        if bytes.len() >= 2
+            && (bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"'
+                || bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\'')
+        {
+            return true;
+        }
+        // Bare identifier (loc0, arg1, static0, tN, etc.).
+        let mut chars = trimmed.chars();
+        if let Some(first) = chars.next() {
+            if (first == '_' || first.is_ascii_alphabetic())
+                && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Strips VM-level stack operation comments that add noise to the output:
     /// - Removes standalone `// drop ...` and `// remove second stack value` lines
     /// - Strips trailing `// duplicate top of stack` and `// copy second stack value`
