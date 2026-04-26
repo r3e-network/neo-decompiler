@@ -12,6 +12,7 @@ pub(super) struct MethodBodyContext<'a> {
     pub(super) calla_targets_by_offset: &'a BTreeMap<usize, usize>,
     pub(super) noreturn_method_offsets: &'a BTreeSet<usize>,
     pub(super) inline_single_use_temps: bool,
+    pub(super) emit_trace_comments: bool,
     pub(super) callt_labels: &'a [String],
     pub(super) callt_param_counts: &'a [usize],
     pub(super) callt_returns_value: &'a [bool],
@@ -30,6 +31,7 @@ pub(super) fn write_method_body(
         emitter.set_argument_labels(labels);
     }
     emitter.set_inline_single_use_temps(context.inline_single_use_temps);
+    emitter.set_emit_trace_comments(context.emit_trace_comments);
     emitter.set_callt_labels(context.callt_labels.to_vec());
     emitter.set_callt_param_counts(context.callt_param_counts.to_vec());
     emitter.set_callt_returns_value(context.callt_returns_value.to_vec());

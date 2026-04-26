@@ -29,6 +29,7 @@ pub(crate) fn render_high_level(
     manifest: Option<&ContractManifest>,
     call_graph: &CallGraph,
     inline_single_use_temps: bool,
+    emit_trace_comments: bool,
 ) -> HighLevelRender {
     use std::fmt::Write;
 
@@ -81,6 +82,7 @@ pub(crate) fn render_high_level(
         calla_targets_by_offset: &calla_targets_by_offset,
         noreturn_method_offsets: &noreturn_method_offsets,
         inline_single_use_temps,
+        emit_trace_comments,
         callt_labels: &callt_labels,
         callt_param_counts: &callt_param_counts,
         callt_returns_value: &callt_returns_value,

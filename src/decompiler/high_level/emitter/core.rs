@@ -7,6 +7,10 @@ impl HighLevelEmitter {
     pub(crate) fn with_program(instructions: &[Instruction]) -> Self {
         let mut emitter = Self {
             program: instructions.to_vec(),
+            // Trace comments default to ON to preserve historical rendering
+            // (golden tests assert their presence). Disable with
+            // `set_emit_trace_comments(false)` for clean human-readable output.
+            emit_trace_comments: true,
             ..Self::default()
         };
         for (index, instruction) in instructions.iter().enumerate() {
@@ -67,6 +71,10 @@ impl HighLevelEmitter {
 
     pub(crate) fn set_inline_single_use_temps(&mut self, enabled: bool) {
         self.inline_single_use_temps = enabled;
+    }
+
+    pub(crate) fn set_emit_trace_comments(&mut self, enabled: bool) {
+        self.emit_trace_comments = enabled;
     }
 
     pub(crate) fn set_returns_void(&mut self, value: bool) {
@@ -231,6 +239,11 @@ impl HighLevelEmitter {
         Self::strip_stack_comments(&mut self.statements);
         Self::eliminate_identity_temps(&mut self.statements);
         Self::collapse_temp_into_store(&mut self.statements);
+        if self.inline_single_use_temps {
+            // Pairs with the inliner: removing dead `let tN = pure_value;`
+            // makes outputs after empty-if elimination read as natural code.
+            Self::eliminate_dead_temps(&mut self.statements);
+        }
         Self::rewrite_switch_statements(&mut self.statements);
         Self::rewrite_switch_break_gotos(&mut self.statements);
         self.statements.retain(|line| !line.trim().is_empty());

@@ -7,8 +7,10 @@ impl HighLevelEmitter {
         self.push_comment(instruction);
         match instruction.operand {
             Some(Operand::U8(count)) => {
-                self.statements
-                    .push(format!("// declare {count} static slots"));
+                if self.emit_trace_comments {
+                    self.statements
+                        .push(format!("// declare {count} static slots"));
+                }
                 self.static_pointer_values.clear();
             }
             _ => self.statements.push("// missing INITSSLOT operand".into()),
@@ -21,8 +23,10 @@ impl HighLevelEmitter {
             Some(Operand::Bytes(bytes)) if bytes.len() >= 2 => {
                 let locals = bytes[0];
                 let args = bytes[1];
-                self.statements
-                    .push(format!("// declare {locals} locals, {args} arguments"));
+                if self.emit_trace_comments {
+                    self.statements
+                        .push(format!("// declare {locals} locals, {args} arguments"));
+                }
                 self.local_pointer_values.clear();
             }
             _ => self.statements.push("// missing INITSLOT operand".into()),

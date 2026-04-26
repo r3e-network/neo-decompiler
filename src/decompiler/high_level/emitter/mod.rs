@@ -25,6 +25,13 @@ pub(crate) struct HighLevelEmitter {
     warnings: Vec<String>,
     next_temp: usize,
     inline_single_use_temps: bool,
+    /// When true, every instruction handler emits a `// XXXX: OPCODE` trace
+    /// comment alongside the lifted statement. Useful for learning the lift
+    /// rules or correlating high-level lines with raw bytecode, but produces
+    /// noisy output for end users. Defaults to true to preserve historical
+    /// rendering. Disable via `Decompiler::with_trace_comments(false)` for
+    /// clean human-readable output.
+    emit_trace_comments: bool,
     pending_closers: BTreeMap<usize, usize>,
     else_targets: BTreeMap<usize, usize>,
     pending_if_headers: BTreeMap<usize, Vec<String>>,

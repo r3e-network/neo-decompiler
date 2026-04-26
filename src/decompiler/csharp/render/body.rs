@@ -14,6 +14,8 @@ pub(super) struct LiftedBodyContext<'a> {
     pub(super) callt_labels: &'a [String],
     pub(super) callt_param_counts: &'a [usize],
     pub(super) callt_returns_value: &'a [bool],
+    pub(super) inline_single_use_temps: bool,
+    pub(super) emit_trace_comments: bool,
 }
 
 pub(super) fn write_lifted_body(
@@ -36,6 +38,8 @@ pub(super) fn write_lifted_body(
     emitter.set_call_targets_by_offset(context.call_targets_by_offset);
     emitter.set_calla_targets_by_offset(context.calla_targets_by_offset);
     emitter.set_returns_void(returns_void);
+    emitter.set_inline_single_use_temps(context.inline_single_use_temps);
+    emitter.set_emit_trace_comments(context.emit_trace_comments);
     for instruction in instructions {
         emitter.advance_to(instruction.offset);
         emitter.emit_instruction(instruction);

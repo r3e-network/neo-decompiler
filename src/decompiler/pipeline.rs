@@ -18,6 +18,7 @@ pub struct Decompiler {
     parser: NefParser,
     disassembler: Disassembler,
     inline_single_use_temps: bool,
+    emit_trace_comments: bool,
 }
 
 impl Decompiler {
@@ -49,6 +50,11 @@ impl Decompiler {
             parser: NefParser::new(),
             disassembler: Disassembler::with_unknown_handling(handling),
             inline_single_use_temps: false,
+            // Emit `// XXXX: OPCODE` trace comments next to each lifted
+            // statement. Defaults to true to preserve existing rendering
+            // (golden tests assert their presence). Disable via
+            // `with_trace_comments(false)` for clean human-readable output.
+            emit_trace_comments: true,
         }
     }
 
@@ -59,6 +65,18 @@ impl Decompiler {
     #[must_use]
     pub fn with_inline_single_use_temps(mut self, enabled: bool) -> Self {
         self.inline_single_use_temps = enabled;
+        self
+    }
+
+    /// Toggle inline `// XXXX: OPCODE` trace comments in the high-level view.
+    ///
+    /// Defaults to `true` (preserved historical behaviour). Set to `false` for
+    /// clean output suitable for end users — the lifted statements alone, with
+    /// no per-instruction trace markers. Untranslated instructions still emit
+    /// their `// not yet translated` notes regardless of this setting.
+    #[must_use]
+    pub fn with_trace_comments(mut self, enabled: bool) -> Self {
+        self.emit_trace_comments = enabled;
         self
     }
 
@@ -126,6 +144,7 @@ impl Decompiler {
                 manifest.as_ref(),
                 &call_graph,
                 self.inline_single_use_temps,
+                self.emit_trace_comments,
             );
             for warning in render.warnings {
                 push_warning(warning);
@@ -133,7 +152,14 @@ impl Decompiler {
             render.text
         });
         let csharp = output_format.wants_csharp().then(|| {
-            let render = csharp::render_csharp(&nef, &instructions, manifest.as_ref(), &call_graph);
+            let render = csharp::render_csharp(
+                &nef,
+                &instructions,
+                manifest.as_ref(),
+                &call_graph,
+                self.inline_single_use_temps,
+                self.emit_trace_comments,
+            );
             for warning in render.warnings {
                 push_warning(warning);
             }

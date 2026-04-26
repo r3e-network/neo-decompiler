@@ -33,6 +33,8 @@ pub(crate) fn render_csharp(
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
     call_graph: &CallGraph,
+    inline_single_use_temps: bool,
+    emit_trace_comments: bool,
 ) -> CSharpRender {
     let mut output = String::new();
     let mut warnings = Vec::new();
@@ -78,6 +80,8 @@ pub(crate) fn render_csharp(
         callt_labels: &callt_labels,
         callt_param_counts: &callt_param_counts,
         callt_returns_value: &callt_returns_value,
+        inline_single_use_temps,
+        emit_trace_comments,
     };
     let methods_context = methods::MethodsContext {
         instructions,

@@ -18,10 +18,12 @@ impl Cli {
         output_format: OutputFormat,
         fail_on_unknown_opcodes: bool,
         inline_single_use_temps: bool,
+        no_trace_comments: bool,
     ) -> Result<()> {
         let handling = Self::unknown_handling(fail_on_unknown_opcodes);
         let decompiler = Decompiler::with_unknown_handling(handling)
-            .with_inline_single_use_temps(inline_single_use_temps);
+            .with_inline_single_use_temps(inline_single_use_temps)
+            .with_trace_comments(!no_trace_comments);
         let manifest_path = self.resolve_manifest_path(path);
         // Use explicit output_format, but ensure All is used for JSON format
         let effective_output_format = if matches!(format, DecompileFormat::Json) {

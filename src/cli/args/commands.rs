@@ -60,6 +60,18 @@ pub(in crate::cli) enum Command {
         /// Inline single-use temporary variables in the high-level view (experimental)
         #[arg(long)]
         inline_single_use_temps: bool,
+
+        /// Suppress per-instruction `// XXXX: OPCODE` trace comments in the
+        /// high-level view. Recommended when reading decompiled output as
+        /// source code. Untranslated instructions still emit notes.
+        #[arg(long)]
+        no_trace_comments: bool,
+
+        /// Convenience flag: produce clean human-readable output by enabling
+        /// both `--no-trace-comments` and `--inline-single-use-temps`.
+        /// Recommended for end users; equivalent to passing both flags.
+        #[arg(long)]
+        clean: bool,
     },
 
     /// List method tokens embedded in the NEF file

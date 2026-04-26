@@ -4,6 +4,9 @@ use super::{HighLevelEmitter, LiteralValue};
 
 impl HighLevelEmitter {
     pub(super) fn note(&mut self, instruction: &Instruction, message: &str) {
+        if !self.emit_trace_comments {
+            return;
+        }
         self.statements
             .push(format!("// {:04X}: {}", instruction.offset, message));
     }
@@ -29,6 +32,9 @@ impl HighLevelEmitter {
     }
 
     pub(super) fn push_comment(&mut self, instruction: &Instruction) {
+        if !self.emit_trace_comments {
+            return;
+        }
         self.statements.push(format!(
             "// {:04X}: {}",
             instruction.offset, instruction.opcode
