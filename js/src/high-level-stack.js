@@ -86,119 +86,115 @@ export function tryStackShapeOperation(state, instruction) {
       }
       return true;
     }
-    case "NIP": {
+    case "NIP":
       if (state.stack.length >= 2) {
         state.stack.splice(state.stack.length - 2, 1);
       }
       return true;
-    }
-  }
-  if (mnemonic === "PICK") {
-    const indexText = state.stack.pop();
-    const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
-    if (!Number.isFinite(index) || index < 0 || index >= state.stack.length) {
-      const temp = `t${state.nextTempId}`;
-      state.nextTempId += 1;
-      state.statements.push(`let ${temp} = pick(${indexText ?? "???"});`);
-      state.stack.push(temp);
+    case "PICK": {
+      const indexText = state.stack.pop();
+      const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
+      if (!Number.isFinite(index) || index < 0 || index >= state.stack.length) {
+        const temp = `t${state.nextTempId}`;
+        state.nextTempId += 1;
+        state.statements.push(`let ${temp} = pick(${indexText ?? "???"});`);
+        state.stack.push(temp);
+        return true;
+      }
+      const source = state.stack[state.stack.length - 1 - index];
+      state.stack.push(source);
+      const packed = resolvePackedValue(state, source);
+      if (packed) {
+        state.packedValuesByExpression.set(source, packed);
+      }
       return true;
     }
-    const source = state.stack[state.stack.length - 1 - index];
-    state.stack.push(source);
-    const packed = resolvePackedValue(state, source);
-    if (packed) {
-      state.packedValuesByExpression.set(source, packed);
-    }
-    return true;
-  }
-  if (mnemonic === "ROT") {
-    if (state.stack.length >= 3) {
-      const [a, b, c] = state.stack.splice(state.stack.length - 3, 3);
-      state.stack.push(b, c, a);
-    }
-    state.statements.push("// rotate top three stack values");
-    return true;
-  }
-  if (mnemonic === "TUCK") {
-    if (state.stack.length >= 2) {
-      const top = state.stack[state.stack.length - 1];
-      state.stack.splice(state.stack.length - 2, 0, top);
-    }
-    state.statements.push("// tuck top of stack");
-    return true;
-  }
-  if (mnemonic === "ROLL") {
-    const indexText = state.stack.pop();
-    const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
-    if (Number.isFinite(index) && index >= 0 && index < state.stack.length) {
-      const from = state.stack.length - 1 - index;
-      const [value] = state.stack.splice(from, 1);
-      state.stack.push(value);
-    } else {
-      const temp = `t${state.nextTempId}`;
-      state.nextTempId += 1;
-      state.statements.push(`let ${temp} = roll(${indexText ?? "???"}); // dynamic roll`);
-      state.stack.push(temp);
-    }
-    return true;
-  }
-  if (mnemonic === "REVERSE3") {
-    if (state.stack.length >= 3) {
-      const stack = state.stack;
-      const last = stack.length - 1;
-      const tmp = stack[last - 2];
-      stack[last - 2] = stack[last];
-      stack[last] = tmp;
-    }
-    state.statements.push("// reverse top 3 stack values");
-    return true;
-  }
-  if (mnemonic === "REVERSE4") {
-    if (state.stack.length >= 4) {
-      const stack = state.stack;
-      const last = stack.length - 1;
-      let tmp = stack[last - 3];
-      stack[last - 3] = stack[last];
-      stack[last] = tmp;
-      tmp = stack[last - 2];
-      stack[last - 2] = stack[last - 1];
-      stack[last - 1] = tmp;
-    }
-    state.statements.push("// reverse top 4 stack values");
-    return true;
-  }
-  if (mnemonic === "REVERSEN") {
-    const countText = state.stack.pop();
-    const count = countText !== undefined ? Number.parseInt(countText, 10) : Number.NaN;
-    if (Number.isFinite(count) && count >= 0 && count <= state.stack.length) {
-      const stack = state.stack;
-      let i = stack.length - count;
-      let j = stack.length - 1;
-      while (i < j) {
-        const tmp = stack[i];
-        stack[i] = stack[j];
-        stack[j] = tmp;
-        i++;
-        j--;
+    case "ROT":
+      if (state.stack.length >= 3) {
+        const [a, b, c] = state.stack.splice(state.stack.length - 3, 3);
+        state.stack.push(b, c, a);
       }
-      state.statements.push(`// reverse top ${count} stack values`);
-    } else {
-      state.statements.push(`// reverse top ${countText ?? "???"} stack values`);
+      state.statements.push("// rotate top three stack values");
+      return true;
+    case "TUCK":
+      if (state.stack.length >= 2) {
+        const top = state.stack[state.stack.length - 1];
+        state.stack.splice(state.stack.length - 2, 0, top);
+      }
+      state.statements.push("// tuck top of stack");
+      return true;
+    case "ROLL": {
+      const indexText = state.stack.pop();
+      const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
+      if (Number.isFinite(index) && index >= 0 && index < state.stack.length) {
+        const from = state.stack.length - 1 - index;
+        const [value] = state.stack.splice(from, 1);
+        state.stack.push(value);
+      } else {
+        const temp = `t${state.nextTempId}`;
+        state.nextTempId += 1;
+        state.statements.push(`let ${temp} = roll(${indexText ?? "???"}); // dynamic roll`);
+        state.stack.push(temp);
+      }
+      return true;
     }
-    return true;
-  }
-  if (mnemonic === "XDROP") {
-    const indexText = state.stack.pop();
-    const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
-    if (Number.isFinite(index) && index >= 0 && index < state.stack.length) {
-      const removeAt = state.stack.length - 1 - index;
-      state.stack.splice(removeAt, 1);
-    } else {
-      state.statements.push(`// xdrop stack[${indexText ?? "???"}] (dynamic index, stack may be imprecise)`);
+    case "REVERSE3":
+      if (state.stack.length >= 3) {
+        const stack = state.stack;
+        const last = stack.length - 1;
+        const tmp = stack[last - 2];
+        stack[last - 2] = stack[last];
+        stack[last] = tmp;
+      }
+      state.statements.push("// reverse top 3 stack values");
+      return true;
+    case "REVERSE4":
+      if (state.stack.length >= 4) {
+        const stack = state.stack;
+        const last = stack.length - 1;
+        let tmp = stack[last - 3];
+        stack[last - 3] = stack[last];
+        stack[last] = tmp;
+        tmp = stack[last - 2];
+        stack[last - 2] = stack[last - 1];
+        stack[last - 1] = tmp;
+      }
+      state.statements.push("// reverse top 4 stack values");
+      return true;
+    case "REVERSEN": {
+      const countText = state.stack.pop();
+      const count = countText !== undefined ? Number.parseInt(countText, 10) : Number.NaN;
+      if (Number.isFinite(count) && count >= 0 && count <= state.stack.length) {
+        const stack = state.stack;
+        let i = stack.length - count;
+        let j = stack.length - 1;
+        while (i < j) {
+          const tmp = stack[i];
+          stack[i] = stack[j];
+          stack[j] = tmp;
+          i++;
+          j--;
+        }
+        state.statements.push(`// reverse top ${count} stack values`);
+      } else {
+        state.statements.push(`// reverse top ${countText ?? "???"} stack values`);
+      }
+      return true;
     }
-    return true;
+    case "XDROP": {
+      const indexText = state.stack.pop();
+      const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
+      if (Number.isFinite(index) && index >= 0 && index < state.stack.length) {
+        const removeAt = state.stack.length - 1 - index;
+        state.stack.splice(removeAt, 1);
+      } else {
+        state.statements.push(`// xdrop stack[${indexText ?? "???"}] (dynamic index, stack may be imprecise)`);
+      }
+      return true;
+    }
+    default:
+      return false;
   }
-  return false;
 }
 
 export function tryUnaryExpression(state, instruction) {

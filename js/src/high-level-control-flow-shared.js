@@ -108,9 +108,9 @@ export function rewriteForLoops(result) {
     }
     const increment = trimmed[closeIndex - 1];
 
-    const initMatch = init.match(/^let (\w+) = (.+);$/u);
-    const whileMatch = whileLine.match(/^while (.+) \{$/u);
-    const incrementMatch = increment.match(/^(\w+) = \1 \+ 1;$/u);
+    const initMatch = LET_INIT_RE.exec(init);
+    const whileMatch = WHILE_HEADER_RE.exec(whileLine);
+    const incrementMatch = SELF_INCREMENT_RE.exec(increment);
     if (!initMatch || !whileMatch || !incrementMatch) {
       continue;
     }
@@ -147,6 +147,9 @@ export function collectDerivedWarnings(baseState, ...states) {
 }
 
 const STRUCTURED_LABEL_RE = /^\s*label_0x[0-9a-f]+:\s*$/iu;
+const LET_INIT_RE = /^let (\w+) = (.+);$/u;
+const WHILE_HEADER_RE = /^while (.+) \{$/u;
+const SELF_INCREMENT_RE = /^(\w+) = \1 \+ 1;$/u;
 
 function stripStructuredLabels(statements) {
   const out = [];

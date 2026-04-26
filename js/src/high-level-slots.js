@@ -1,6 +1,8 @@
 import { formatOperand } from "./disassembler.js";
 import { stripOuterParens } from "./high-level-utils.js";
 
+const PUSH_LIT_RE = /^PUSH(\d+|M1)$/u;
+
 export function trySlotDeclarations(statements, instruction) {
   if (
     instruction.opcode.mnemonic === "INITSLOT" &&
@@ -35,7 +37,7 @@ export function pushImmediate(state, instruction) {
     stack.push("false");
     return true;
   }
-  const match = mnemonic.match(/^PUSH(\d+|M1)$/u);
+  const match = PUSH_LIT_RE.exec(mnemonic);
   if (match) {
     stack.push(match[1] === "M1" ? "-1" : `${Number(match[1])}`);
     return true;

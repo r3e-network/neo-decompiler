@@ -156,13 +156,29 @@ function liftStraightLineMethodBody(
 }
 
 function executeStraightLine(state, instructions) {
-  const { statements, initializedLocals, initializedStatics, parameterNames, returnsVoid } = state;
+  // Destructure stable references once. state.stack / state.statements / the
+  // four pointer-and-packed Maps are mutated in place but never reassigned,
+  // so caching the references avoids per-instruction property loads. The
+  // assigned-to state.previousStoreInfo / state.previousInstruction stay on
+  // `state` since those are slot writes, not mutations.
+  const {
+    statements,
+    initializedLocals,
+    initializedStatics,
+    parameterNames,
+    returnsVoid,
+    stack,
+    pointerTargetsByExpression,
+    pointerTargetsBySlot,
+    packedValuesByExpression,
+    packedValuesBySlot,
+  } = state;
 
   for (const instruction of instructions) {
     const mnemonic = instruction.opcode.mnemonic;
     emitLabelIfNeeded(state, instruction.offset);
 
-    if (trySlotDeclarations(state.statements, instruction)) {
+    if (trySlotDeclarations(statements, instruction)) {
       finishInstruction(state, instruction);
       continue;
     }
@@ -177,12 +193,12 @@ function executeStraightLine(state, instructions) {
       continue;
     }
 
-    if (tryLoadLocalOrArg(state.stack, mnemonic, parameterNames, instruction)) {
+    if (tryLoadLocalOrArg(stack, mnemonic, parameterNames, instruction)) {
       finishInstruction(state, instruction);
       continue;
     }
 
-    if (tryLoadStatic(state.stack, mnemonic, instruction)) {
+    if (tryLoadStatic(stack, mnemonic, instruction)) {
       finishInstruction(state, instruction);
       continue;
     }
@@ -190,12 +206,12 @@ function executeStraightLine(state, instructions) {
     if (
       tryStoreLocal(
         statements,
-        state.stack,
+        stack,
         initializedLocals,
-        state.pointerTargetsByExpression,
-        state.pointerTargetsBySlot,
-        state.packedValuesByExpression,
-        state.packedValuesBySlot,
+        pointerTargetsByExpression,
+        pointerTargetsBySlot,
+        packedValuesByExpression,
+        packedValuesBySlot,
         mnemonic,
         instruction,
       )
@@ -205,7 +221,7 @@ function executeStraightLine(state, instructions) {
       continue;
     }
 
-    if (tryStoreArgument(statements, state.stack, parameterNames, mnemonic, instruction)) {
+    if (tryStoreArgument(statements, stack, parameterNames, mnemonic, instruction)) {
       state.previousStoreInfo = captureStoreInfo(instruction, state);
       finishInstruction(state, instruction);
       continue;
@@ -214,12 +230,12 @@ function executeStraightLine(state, instructions) {
     if (
       tryStoreStatic(
         statements,
-        state.stack,
+        stack,
         initializedStatics,
-        state.pointerTargetsByExpression,
-        state.pointerTargetsBySlot,
-        state.packedValuesByExpression,
-        state.packedValuesBySlot,
+        pointerTargetsByExpression,
+        pointerTargetsBySlot,
+        packedValuesByExpression,
+        packedValuesBySlot,
         mnemonic,
         instruction,
       )
@@ -229,7 +245,7 @@ function executeStraightLine(state, instructions) {
       continue;
     }
 
-    if (tryBinaryExpression(state.stack, mnemonic)) {
+    if (tryBinaryExpression(stack, mnemonic)) {
       finishInstruction(state, instruction);
       continue;
     }
@@ -285,10 +301,10 @@ function executeStraightLine(state, instructions) {
     }
 
     if (mnemonic === "RET") {
-      if (returnsVoid || state.stack.length === 0) {
+      if (returnsVoid || stack.length === 0) {
         statements.push("return;");
       } else {
-        statements.push(`return ${stripOuterParens(state.stack.pop())};`);
+        statements.push(`return ${stripOuterParens(stack.pop())};`);
       }
       finishInstruction(state, instruction);
       continue;
