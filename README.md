@@ -230,6 +230,14 @@ cargo build --release
 # Emit the high-level contract view (auto-detects `*.manifest.json` if present)
 ./target/release/neo-decompiler decompile path/to/contract.nef
 
+# Maximum-readability output: suppresses per-instruction trace markers,
+# inlines single-use temporaries, and drops dead let-bindings. Recommended
+# when reading the result as source rather than tracing it back to bytecode.
+./target/release/neo-decompiler decompile --clean path/to/contract.nef
+
+# Suppress only the `// XXXX: OPCODE` trace comments (keep tN-style temps)
+./target/release/neo-decompiler decompile --no-trace-comments path/to/contract.nef
+
 # Enable experimental inlining of single-use temporaries in the high-level view
 ./target/release/neo-decompiler decompile --inline-single-use-temps path/to/contract.nef
 

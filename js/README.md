@@ -72,13 +72,24 @@ Parse and disassemble. Returns simple pseudocode listing.
 
 Parse, disassemble, and group methods using manifest ABI info. Returns grouped pseudocode.
 
-### `decompileHighLevelBytes(bytes) → { ..., highLevel }`
+### `decompileHighLevelBytes(bytes, options?) → { ..., highLevel }`
 
 Full decompilation to structured pseudocode (if/else, loops, etc.).
 
-### `decompileHighLevelBytesWithManifest(bytes, manifest) → { ..., highLevel }`
+`options`:
+- `clean: true` — convenience shorthand for the maximum-readability mode.
+  Inlines single-use temporaries and strips informational comments
+  (`// declare N locals, M arguments`, etc.). Recommended when consuming
+  the high-level output as source code.
+- `inlineSingleUseTemps: true` — replace every single-use `tN` with its
+  RHS at the use site. Implied by `clean: true`.
+- `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
+  for opcodes the disassembler does not recognise.
 
-Same as above but with manifest-driven method signatures.
+### `decompileHighLevelBytesWithManifest(bytes, manifest, options?) → { ..., highLevel }`
+
+Same as above but with manifest-driven method signatures. Accepts the
+same `options` object.
 
 ### `analyzeBytes(bytes, manifest?) → { ..., callGraph, xrefs, types, methodGroups }`
 
