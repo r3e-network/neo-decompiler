@@ -202,6 +202,84 @@ impl HighLevelEmitter {
         }
     }
 
+    /// Recognises the `label_X: ... goto label_X;` shape with no other
+    /// references to `label_X` and rewrites it to a `loop { ... }` block.
+    /// This is the canonical pattern for an unconditional infinite loop
+    /// produced by the Neo C# compiler; lifting it removes both the label
+    /// and the goto, leaving idiomatic source.
+    pub(crate) fn rewrite_label_goto_to_loop(statements: &mut [String]) {
+        let mut index = 0;
+        while index < statements.len() {
+            let trimmed = statements[index].trim().to_string();
+
+            // Match: `label_0xXXXX:`
+            let Some(label) = trimmed.strip_suffix(':') else {
+                index += 1;
+                continue;
+            };
+            if !label.starts_with("label_") {
+                index += 1;
+                continue;
+            }
+            let label = label.to_string();
+
+            // Find the matching `goto label_X;` at the same brace depth.
+            let goto_target = format!("goto {label};");
+            let mut depth = 0i32;
+            let mut goto_idx = None;
+            for (j, stmt) in statements.iter().enumerate().skip(index + 1) {
+                let t = stmt.trim();
+                if t == goto_target && depth == 0 {
+                    goto_idx = Some(j);
+                    break;
+                }
+                if t.ends_with('{') {
+                    depth += 1;
+                }
+                if t == "}" || t.starts_with("} ") {
+                    depth -= 1;
+                    if depth < 0 {
+                        // Exited the enclosing block before finding the goto.
+                        break;
+                    }
+                }
+            }
+            let Some(goto_idx) = goto_idx else {
+                index += 1;
+                continue;
+            };
+
+            // Bail if any other reference to the label appears anywhere —
+            // a second goto means the label is a structured-jump target,
+            // not just a back-edge for an infinite loop, and lifting would
+            // change semantics.
+            let occurrences = statements
+                .iter()
+                .enumerate()
+                .filter(|(i, stmt)| {
+                    *i != index
+                        && *i != goto_idx
+                        && (stmt.trim() == format!("{label}:") || stmt.contains(&goto_target))
+                })
+                .count();
+            if occurrences > 0 {
+                index += 1;
+                continue;
+            }
+
+            // Preserve indentation from the original label line so the
+            // loop block stays aligned with surrounding code.
+            let label_indent_len = statements[index].len() - statements[index].trim_start().len();
+            let label_indent = statements[index][..label_indent_len].to_string();
+            let goto_indent_len = statements[goto_idx].len() - statements[goto_idx].trim_start().len();
+            let goto_indent = statements[goto_idx][..goto_indent_len].to_string();
+
+            statements[index] = format!("{label_indent}loop {{");
+            statements[goto_idx] = format!("{goto_indent}}}");
+            index += 1;
+        }
+    }
+
     /// Removes `goto label_X;` when the very next code line is `label_X:`.
     pub(crate) fn eliminate_fallthrough_gotos(statements: &mut [String]) {
         let mut index = 0;
