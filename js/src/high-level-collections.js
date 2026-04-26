@@ -152,6 +152,15 @@ export function tryCollectionStatement(state, instruction) {
   return false;
 }
 
+// Hard cap on the number of elements rendered inline for PACK/PACKMAP/
+// PACKSTRUCT. Hand-written contracts almost never PACK more than a few
+// dozen items at once, while pathological or malformed inputs can drive
+// the count into the thousands and produce KB-sized expressions packed
+// with `???` underflow markers. When the requested count exceeds this
+// cap, render as `pack_n(value0, value1, ..., /* N more elements */)`
+// or fall back to a `pack_dynamic(N)` placeholder.
+const PACK_MAX_INLINE = 64;
+
 function emitPackExpression(state, mnemonic, stripOuterParens) {
   const countText = state.stack.pop();
   const count = countText !== undefined ? Number.parseInt(countText, 10) : Number.NaN;
@@ -160,9 +169,18 @@ function emitPackExpression(state, mnemonic, stripOuterParens) {
     return true;
   }
 
+  // Drain only as many concrete stack values as the stack actually has
+  // (capped at PACK_MAX_INLINE). When the caller asked for more than the
+  // stack can supply, render the remainder as a single underflow note
+  // rather than emitting N copies of `???` per missing slot.
+  const drainCount = Math.min(count, state.stack.length, PACK_MAX_INLINE);
   const elements = [];
-  for (let index = 0; index < count; index += 1) {
+  for (let index = 0; index < drainCount; index += 1) {
     elements.push(stripOuterParens(state.stack.pop() ?? "???"));
+  }
+  const remainder = count - drainCount;
+  if (remainder > 0) {
+    elements.push(`/* ${remainder} more element${remainder === 1 ? "" : "s"} */`);
   }
 
   const expression = renderPackedExpression(mnemonic, elements);
