@@ -54,6 +54,92 @@ export function renderHighLevelMethodGroups(groups, manifest, context = null) {
   const contractName = manifest ? sanitizeIdentifier(manifest.name) : "Contract";
   const lines = [`contract ${contractName} {`];
 
+  // Contract-level metadata block (matches the Rust renderer):
+  // - script hash in both byte orders for cross-explorer lookups
+  // - supportedstandards / features / permissions / trusts when set
+  // - extra fields like Author/Email surfaced as `// Key: Value`
+  // - ABI method signatures listed as forward declarations
+  // - ABI events listed as `event Name(params);`
+  const scriptHash = context?.scriptHash;
+  const scriptHashLE = context?.scriptHashLE;
+  if (scriptHash) {
+    lines.push(`    // script hash (little-endian): ${scriptHashLE}`);
+    lines.push(`    // script hash (big-endian): ${scriptHash}`);
+  }
+  if (manifest) {
+    if (manifest.supportedStandards?.length) {
+      const formatted = manifest.supportedStandards.map((s) => `"${s}"`).join(", ");
+      lines.push(`    supported_standards = [${formatted}];`);
+    }
+    if (manifest.features?.storage || manifest.features?.payable) {
+      lines.push(`    features {`);
+      if (manifest.features.storage) lines.push(`        storage = true;`);
+      if (manifest.features.payable) lines.push(`        payable = true;`);
+      lines.push(`    }`);
+    }
+    if (manifest.permissions?.length) {
+      lines.push(`    permissions {`);
+      for (const perm of manifest.permissions) {
+        const contractPart =
+          typeof perm.contract === "string"
+            ? `contract=${perm.contract}`
+            : perm.contract?.hash
+              ? `contract=hash:${perm.contract.hash}`
+              : perm.contract?.group
+                ? `contract=group:${perm.contract.group}`
+                : `contract=${JSON.stringify(perm.contract)}`;
+        const methodsPart =
+          perm.methods === "*"
+            ? "methods=*"
+            : Array.isArray(perm.methods)
+              ? `methods=[${perm.methods.map((m) => `"${m}"`).join(", ")}]`
+              : `methods=${JSON.stringify(perm.methods)}`;
+        lines.push(`        ${contractPart} ${methodsPart}`);
+      }
+      lines.push(`    }`);
+    }
+    if (manifest.trusts !== null && manifest.trusts !== undefined) {
+      const formatted =
+        manifest.trusts === "*"
+          ? "*"
+          : Array.isArray(manifest.trusts) && manifest.trusts.length === 0
+            ? null
+            : JSON.stringify(manifest.trusts);
+      if (formatted !== null) {
+        lines.push(`    trusts = ${formatted};`);
+      }
+    }
+    if (manifest.extra && typeof manifest.extra === "object" && !Array.isArray(manifest.extra)) {
+      for (const [key, value] of Object.entries(manifest.extra)) {
+        if (typeof value === "string") {
+          lines.push(`    // ${key}: ${value}`);
+        }
+      }
+    }
+    if (manifest.abi?.methods?.length) {
+      lines.push(`    // ABI methods`);
+      for (const method of manifest.abi.methods) {
+        const params = method.parameters
+          ?.map((p) => `${p.name}: ${formatManifestType(p.kind)}`)
+          .join(", ") ?? "";
+        const returnType = formatManifestType(method.returnType ?? "Void");
+        const arrow = returnType === "void" ? "" : ` -> ${returnType}`;
+        const offsetTag = typeof method.offset === "number" ? ` // offset ${method.offset}` : "";
+        lines.push(`    fn ${method.name}(${params})${arrow};${offsetTag}`);
+      }
+    }
+    if (manifest.abi?.events?.length) {
+      lines.push(`    // ABI events`);
+      for (const event of manifest.abi.events) {
+        const params = event.parameters
+          ?.map((p) => `${p.name}: ${formatManifestType(p.kind)}`)
+          .join(", ") ?? "";
+        lines.push(`    event ${event.name}(${params});`);
+      }
+    }
+    lines.push("");
+  }
+
   const used = new Set();
   for (const group of groups) {
     const signature = renderMethodSignature(group, used, context);

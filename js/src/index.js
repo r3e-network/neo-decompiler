@@ -104,6 +104,8 @@ function buildHighLevelContext(methodGroups, nef, options = {}) {
     calltLabels: nef.methodTokens.map((token) => token.method),
     calltParamCounts: nef.methodTokens.map((token) => token.parametersCount),
     calltReturnsValue: nef.methodTokens.map((token) => token.hasReturnValue),
+    scriptHash: nef.scriptHash,
+    scriptHashLE: nef.scriptHashLE,
     highLevelWarnings: [],
     postprocessOptions: {
       // `clean: true` is a convenience shorthand that enables every
