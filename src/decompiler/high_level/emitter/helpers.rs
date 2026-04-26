@@ -146,3 +146,26 @@ pub(super) fn format_type_operand(operand: &Operand) -> String {
         _ => operand.to_string(),
     }
 }
+
+/// Strip a single matching pair of outer parentheses, but only if they
+/// actually balance — `(a) + (b)` must NOT be stripped to `a) + (b`.
+pub(super) fn strip_outer_parens(text: &str) -> &str {
+    let bytes = text.as_bytes();
+    if bytes.len() < 2 || bytes[0] != b'(' || bytes[bytes.len() - 1] != b')' {
+        return text;
+    }
+    let mut depth = 0i32;
+    for (i, byte) in bytes.iter().enumerate() {
+        match byte {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 && i < bytes.len() - 1 {
+                    return text;
+                }
+            }
+            _ => {}
+        }
+    }
+    &text[1..bytes.len() - 1]
+}

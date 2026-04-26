@@ -13,6 +13,23 @@ impl HighLevelEmitter {
                 continue;
             }
 
+            // Strip redundant outer parens in `return (EXPR);` — the
+            // statement-terminating semicolon already delimits the
+            // expression, so the parens added by the single-use-temp
+            // inliner are noise.
+            if let Some(inner) = trimmed
+                .strip_prefix("return ")
+                .and_then(|s| s.strip_suffix(';'))
+            {
+                let stripped = strip_outer_parens(inner.trim());
+                if stripped != inner {
+                    let indent_len = statement.len() - statement.trim_start().len();
+                    let indent = &statement[..indent_len];
+                    *statement = format!("{indent}return {stripped};");
+                    continue;
+                }
+            }
+
             if trimmed.starts_with("let ") {
                 continue;
             }
@@ -40,16 +57,22 @@ fn rewrite_increment(increment: &str) -> Option<String> {
 }
 
 fn rewrite_rhs<'a>(lhs: &str, rhs: &'a str) -> Option<(&'static str, &'a str)> {
+    // Inline-single-use-temps may wrap the RHS in outer parens
+    // (e.g. `loc0 = (loc0 + 1);`). Strip a single matching pair so the
+    // compound-assignment pattern still matches.
+    let inner = strip_outer_parens(rhs);
     let plus_prefix = format!("{lhs} + ");
-    if let Some(rest) = rhs.strip_prefix(plus_prefix.as_str()) {
+    if let Some(rest) = inner.strip_prefix(plus_prefix.as_str()) {
         return Some(("+=", rest));
     }
     let minus_prefix = format!("{lhs} - ");
-    if let Some(rest) = rhs.strip_prefix(minus_prefix.as_str()) {
+    if let Some(rest) = inner.strip_prefix(minus_prefix.as_str()) {
         return Some(("-=", rest));
     }
     None
 }
+
+use super::super::helpers::strip_outer_parens;
 
 fn is_identifier(text: &str) -> bool {
     let mut chars = text.chars();
