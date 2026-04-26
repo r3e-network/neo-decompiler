@@ -271,7 +271,8 @@ impl HighLevelEmitter {
             // loop block stays aligned with surrounding code.
             let label_indent_len = statements[index].len() - statements[index].trim_start().len();
             let label_indent = statements[index][..label_indent_len].to_string();
-            let goto_indent_len = statements[goto_idx].len() - statements[goto_idx].trim_start().len();
+            let goto_indent_len =
+                statements[goto_idx].len() - statements[goto_idx].trim_start().len();
             let goto_indent = statements[goto_idx][..goto_indent_len].to_string();
 
             statements[index] = format!("{label_indent}loop {{");

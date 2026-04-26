@@ -15,8 +15,17 @@ impl HighLevelEmitter {
         let count_literal = self.take_usize_literal(&count_name);
 
         if let Some(need) = count_literal {
-            let mut elements = Vec::with_capacity(need);
-            for _ in 0..need {
+            // Cap inline rendering to bound output for malformed inputs:
+            // pathological NEFs can ask PACK to consume thousands of items
+            // when the actual stack has only a handful, ballooning the
+            // emitted statement and per-iteration `missing_pack_item()`
+            // synthetic-temp lines. Hand-written contracts rarely PACK
+            // more than a few dozen items, so 64 is a generous ceiling
+            // for normal cases.
+            const PACK_MAX_INLINE: usize = 64;
+            let cap = PACK_MAX_INLINE.min(need);
+            let mut elements = Vec::with_capacity(cap);
+            for _ in 0..cap {
                 if let Some((value, literal)) = self.pop_stack_value_with_literal() {
                     if let Some(literal) = literal {
                         self.literal_values.insert(value.clone(), literal);
@@ -29,6 +38,13 @@ impl HighLevelEmitter {
                     ));
                     elements.push(missing_temp);
                 }
+            }
+            if need > cap {
+                let remainder = need - cap;
+                elements.push(format!(
+                    "/* {remainder} more element{} */",
+                    if remainder == 1 { "" } else { "s" }
+                ));
             }
             // Neo VM PACK: first popped item becomes array[0], second becomes
             // array[1], etc.  Since we pop in stack order (top-first), the
