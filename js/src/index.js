@@ -106,7 +106,14 @@ function buildHighLevelContext(methodGroups, nef, options = {}) {
     calltReturnsValue: nef.methodTokens.map((token) => token.hasReturnValue),
     highLevelWarnings: [],
     postprocessOptions: {
-      inlineSingleUseTemps: !!options.inlineSingleUseTemps,
+      // `clean: true` is a convenience shorthand that enables every
+      // readability-focused postprocess option. Today that's
+      // `inlineSingleUseTemps` plus stripping informational slot-declaration
+      // comments, but new options will compose under the same shorthand
+      // without callers needing to update.
+      inlineSingleUseTemps:
+        !!options.inlineSingleUseTemps || !!options.clean,
+      clean: !!options.clean,
     },
   };
 }

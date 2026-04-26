@@ -285,6 +285,15 @@ const OVERFLOW_BOUNDS = [
   "18446744073709551615",
 ];
 
+// Hot postprocess regex literals: hoisted to module level so each pass
+// reuses the same compiled instance instead of relying on per-call interning.
+const GOTO_LABEL_RE = /^goto\s+(label_0x[\da-f]+);$/i;
+const LEAVE_LABEL_RE = /^leave\s+(label_0x[\da-f]+);$/i;
+const LABEL_LINE_RE = /^(label_0x[\da-f]+):$/i;
+const IF_GOTO_RE = /^if\s+.+\{\s*goto\s+(label_0x[\da-f]+);\s*\}$/i;
+const DO_WHILE_END_RE = /^}\s+while\s+(?:!\((.+)\)|(.+))\);?$/;
+const TEMP_TOKEN_RE = /\bt\d+\b/g;
+
 function collapseOverflowChecks(statements) {
   let index = 0;
   while (index < statements.length) {
@@ -415,7 +424,7 @@ function rewriteGotoDoWhile(statements) {
   let index = 0;
   while (index < statements.length) {
     const trimmed = statements[index].trim();
-    const labelMatch = trimmed.match(/^goto\s+(label_0x[\da-f]+);$/i);
+    const labelMatch = GOTO_LABEL_RE.exec(trimmed);
     if (!labelMatch) {
       index++;
       continue;
@@ -434,7 +443,7 @@ function rewriteGotoDoWhile(statements) {
       continue;
     }
     const endTrimmed = statements[endIdx].trim();
-    const condMatch = endTrimmed.match(/^}\s+while\s+(?:!\((.+)\)|(.+))\);?$/);
+    const condMatch = DO_WHILE_END_RE.exec(endTrimmed);
     if (!condMatch) {
       index++;
       continue;
@@ -483,7 +492,7 @@ function rewriteIfGotoToWhile(statements) {
   let index = 0;
   while (index < statements.length) {
     const trimmed = statements[index].trim();
-    const labelMatch = trimmed.match(/^(label_0x[\da-f]+):$/i);
+    const labelMatch = LABEL_LINE_RE.exec(trimmed);
     if (!labelMatch) {
       index++;
       continue;
@@ -549,7 +558,7 @@ function rewriteIfGotoToWhile(statements) {
 function eliminateFallthroughGotos(statements) {
   for (let i = 0; i < statements.length; i++) {
     const trimmed = statements[i].trim();
-    const labelMatch = trimmed.match(/^goto\s+(label_0x[\da-f]+);$/i);
+    const labelMatch = GOTO_LABEL_RE.exec(trimmed);
     if (!labelMatch) continue;
     const label = labelMatch[1];
     const next = nextCodeLine(statements, i);
@@ -568,16 +577,16 @@ function removeOrphanedLabels(statements) {
   const referenced = new Set();
   for (const stmt of statements) {
     const t = stmt.trim();
-    const gotoM = t.match(/^goto\s+(label_0x[\da-f]+);$/i);
+    const gotoM = GOTO_LABEL_RE.exec(t);
     if (gotoM) referenced.add(gotoM[1]);
-    const leaveM = t.match(/^leave\s+(label_0x[\da-f]+);$/i);
+    const leaveM = LEAVE_LABEL_RE.exec(t);
     if (leaveM) referenced.add(leaveM[1]);
-    const ifGotoM = t.match(/^if\s+.+\{\s*goto\s+(label_0x[\da-f]+);\s*\}$/i);
+    const ifGotoM = IF_GOTO_RE.exec(t);
     if (ifGotoM) referenced.add(ifGotoM[1]);
   }
   // Remove labels not referenced
   for (let i = 0; i < statements.length; i++) {
-    const m = statements[i].trim().match(/^(label_0x[\da-f]+):$/i);
+    const m = LABEL_LINE_RE.exec(statements[i].trim());
     if (m && !referenced.has(m[1])) {
       statements[i] = "";
     }
@@ -1062,6 +1071,21 @@ function stripStackComments(statements) {
   }
 }
 
+// Strip informational slot-declaration comments emitted from INITSLOT /
+// INITSSLOT. These document the runtime layout but read as noise alongside
+// lifted source code, so clean mode removes them.
+function stripSlotDeclarationComments(statements) {
+  for (let i = 0; i < statements.length; i++) {
+    const trimmed = statements[i].trim();
+    if (
+      trimmed.startsWith("// declare ") &&
+      (trimmed.endsWith(" arguments") || trimmed.endsWith(" static slots"))
+    ) {
+      statements[i] = "";
+    }
+  }
+}
+
 // ─── Pass 15: eliminate_identity_temps ─────────────────────────────────────
 
 function eliminateIdentityTemps(statements) {
@@ -1072,7 +1096,7 @@ function eliminateIdentityTemps(statements) {
   for (let i = 0; i < statements.length; i++) {
     const t = statements[i].trim();
     if (t === "") continue;
-    const matches = t.match(/\bt\d+\b/g);
+    const matches = t.match(TEMP_TOKEN_RE);
     if (matches) {
       for (const m of matches) {
         if (!firstSeen.has(m)) firstSeen.set(m, i);
@@ -1129,7 +1153,7 @@ function collapseTempIntoStore(statements) {
   for (let i = 0; i < statements.length; i++) {
     const t = statements[i].trim();
     if (t === "") continue;
-    const matches = t.match(/\bt\d+\b/g);
+    const matches = t.match(TEMP_TOKEN_RE);
     if (matches) {
       const seen = new Set(matches); // dedupe within same line
       for (const m of seen) {
@@ -1515,8 +1539,6 @@ function isTrivialInlineRhs(expr) {
   return isSimpleIdentifier(t);
 }
 
-const TEMP_TOKEN_RE = /\bt\d+\b/g;
-
 function collectInlineCandidates(statements) {
   const definitions = new Map();
   const useCounts = new Map();
@@ -1653,6 +1675,12 @@ export function postprocess(statements, options = {}) {
   removeEmptyIf(statements);
   // Pass 14
   stripStackComments(statements);
+  // Optional: strip informational slot-declaration comments in clean mode.
+  // Matches the Rust emitter's `emit_trace_comments=false` behaviour for
+  // INITSLOT/INITSSLOT.
+  if (options.clean || options.cleanOutput) {
+    stripSlotDeclarationComments(statements);
+  }
   // Pass 15
   eliminateIdentityTemps(statements);
   // Pass 16

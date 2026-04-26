@@ -179,7 +179,19 @@ export interface DisassemblyOptions {
 }
 
 export interface DecompileOptions extends DisassemblyOptions {
+  /**
+   * Inline single-use temporary variables (`tN`) into their first use site
+   * for tighter, more readable output. Disabled by default to preserve
+   * one-name-per-stack-slot output that's easier to step through.
+   */
   inlineSingleUseTemps?: boolean;
+  /**
+   * Convenience shorthand for the maximum-readability mode: enables every
+   * end-user-friendly postprocess option (currently `inlineSingleUseTemps`,
+   * with future readability options auto-composing under the same flag).
+   * Recommended when consuming the high-level output as source code.
+   */
+  clean?: boolean;
 }
 
 // ─── Result types ──────────────────────────────────────────────────────────
