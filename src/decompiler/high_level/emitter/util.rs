@@ -12,7 +12,16 @@ impl HighLevelEmitter {
     }
 
     pub(super) fn warn(&mut self, instruction: &Instruction, message: &str) {
-        self.note(instruction, message);
+        // Warnings are real holes in the lifted source — an untranslated
+        // opcode, a malformed operand, an unsupported call shape — and a
+        // reader needs to see them inline regardless of whether trace
+        // comments are otherwise enabled. Use a `// warning:` prefix so
+        // the inline annotation is clearly semantic (a known limitation
+        // or hazard), distinct from the per-instruction trace stream
+        // (`// XXXX: OPCODE`) which is gated on `emit_trace_comments`.
+        // The JS port already uses this same prefix; aligning here
+        // gives byte-identical warning rendering across ports.
+        self.statements.push(format!("// warning: {message}"));
         self.warnings.push(format!(
             "high-level: 0x{:04X}: {}",
             instruction.offset, message

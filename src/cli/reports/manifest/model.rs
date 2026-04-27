@@ -13,6 +13,12 @@ pub(in crate::cli) struct ManifestSummary {
     pub(super) permissions: Vec<PermissionSummary>,
     pub(super) trusts: Option<TrustSummary>,
     pub(super) abi: AbiSummary,
+    /// Free-form metadata declared in the manifest's `extra` field. Most
+    /// contracts use this for a flat object of strings (`Author`,
+    /// `Email`, `Description`, etc.) but the spec allows any JSON value,
+    /// so we surface it verbatim.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) extra: Option<Value>,
 }
 
 #[derive(Serialize)]

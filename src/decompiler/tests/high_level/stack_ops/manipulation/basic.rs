@@ -29,6 +29,13 @@ fn high_level_handles_stack_manipulation_and_unary_ops() {
         .high_level
         .as_deref()
         .expect("high-level output");
-    assert!(hl.contains("let t2 = t0 + t0;"), "expected t0+t0: {hl}");
-    assert!(hl.contains("return t2 + 1;"), "expected return t2+1: {hl}");
+    // DUP of a simple literal/identifier no longer materializes a
+    // temp — the duplicate reference is just another copy of the
+    // existing value (mirrors JS port's `materialiseStackTopForDup`
+    // skip for `SIMPLE_IDENT_OR_LITERAL_RE`). So the t-numbering
+    // shifts by one compared to the older "always materialize DUP"
+    // behaviour: ADD now allocates `t1`, INC's INC allocates t2 (then
+    // gets inlined into the return).
+    assert!(hl.contains("let t1 = t0 + t0;"), "expected t0+t0: {hl}");
+    assert!(hl.contains("return t1 + 1;"), "expected return t1+1: {hl}");
 }

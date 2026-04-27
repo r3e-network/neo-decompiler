@@ -3,7 +3,7 @@ use std::fmt::Write;
 use crate::manifest::ContractManifest;
 
 use crate::decompiler::helpers::{
-    format_manifest_type, format_permission_entry, sanitize_identifier,
+    format_manifest_type, format_permission_entry, render_extra_scalar, sanitize_identifier,
 };
 
 pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractManifest) {
@@ -28,6 +28,22 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
         writeln!(output, "    }}").unwrap();
     }
 
+    if !manifest.groups.is_empty() {
+        // `groups` is the list of pubkey/signature pairs that authorise
+        // signed updates of the contract. The signature is opaque
+        // base64; show only the pubkey (canonical short form) so the
+        // summary stays scannable. Sample shape:
+        //
+        //   groups {
+        //       pubkey=02f49ce0c33a...
+        //   }
+        writeln!(output, "    groups {{").unwrap();
+        for group in &manifest.groups {
+            writeln!(output, "        pubkey={}", group.pubkey).unwrap();
+        }
+        writeln!(output, "    }}").unwrap();
+    }
+
     if !manifest.permissions.is_empty() {
         writeln!(output, "    permissions {{").unwrap();
         for permission in &manifest.permissions {
@@ -41,8 +57,8 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
     }
     if let Some(serde_json::Value::Object(map)) = manifest.extra.as_ref() {
         for (key, value) in map {
-            if let Some(s) = value.as_str() {
-                writeln!(output, "    // {key}: {s}").unwrap();
+            if let Some(rendered) = render_extra_scalar(value) {
+                writeln!(output, "    // {key}: {rendered}").unwrap();
             }
         }
     }

@@ -10,6 +10,11 @@ pub enum OutputFormat {
     /// Emit a higher-level structured output.
     HighLevel,
     /// Emit C# source code output.
+    // Override clap's default kebab-case derivation (`c-sharp`) so the
+    // CLI accepts the same `csharp` token as `--format csharp`. The
+    // legacy `c-sharp` form is kept as an alias for back-compat with
+    // any scripts that pinned the old spelling.
+    #[cfg_attr(feature = "cli", value(name = "csharp", alias = "c-sharp"))]
     CSharp,
     /// Emit all supported outputs.
     #[default]

@@ -186,11 +186,14 @@ function findMatchingCloseTrimmed(trimmed, startIndex) {
   return -1;
 }
 
+// Use `==` / `!=` rather than JavaScript's `===` / `!==` so the lifted
+// comparison matches the Rust port and lowers cleanly into both Rust
+// and C# without further rewriting.
 const NEGATED_COMPARISONS = new Map([
-  ["JMPEQ", "!=="],
-  ["JMPEQ_L", "!=="],
-  ["JMPNE", "==="],
-  ["JMPNE_L", "==="],
+  ["JMPEQ", "!="],
+  ["JMPEQ_L", "!="],
+  ["JMPNE", "=="],
+  ["JMPNE_L", "=="],
   ["JMPGT", "<="],
   ["JMPGT_L", "<="],
   ["JMPGE", "<"],
@@ -202,10 +205,10 @@ const NEGATED_COMPARISONS = new Map([
 ]);
 
 const ORIGINAL_COMPARISONS = new Map([
-  ["JMPEQ", "==="],
-  ["JMPEQ_L", "==="],
-  ["JMPNE", "!=="],
-  ["JMPNE_L", "!=="],
+  ["JMPEQ", "=="],
+  ["JMPEQ_L", "=="],
+  ["JMPNE", "!="],
+  ["JMPNE_L", "!="],
   ["JMPGT", ">"],
   ["JMPGT_L", ">"],
   ["JMPGE", ">="],

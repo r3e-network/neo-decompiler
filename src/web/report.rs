@@ -31,6 +31,8 @@ pub struct WebInfoReport {
 /// Browser-friendly summary of `disasm` output.
 #[derive(Debug, Clone, Serialize)]
 pub struct WebDisasmReport {
+    script_hash_le: String,
+    script_hash_be: String,
     instructions: Vec<InstructionReport>,
     warnings: Vec<String>,
 }
@@ -38,6 +40,8 @@ pub struct WebDisasmReport {
 /// Browser-friendly summary of `decompile` output.
 #[derive(Debug, Clone, Serialize)]
 pub struct WebDecompileReport {
+    compiler: String,
+    source: Option<String>,
     script_hash_le: String,
     script_hash_be: String,
     csharp: String,
@@ -73,8 +77,11 @@ pub(super) fn build_info_report(
     }
 }
 
-pub(super) fn build_disasm_report(output: DisassemblyOutput) -> WebDisasmReport {
+pub(super) fn build_disasm_report(nef: &NefFile, output: DisassemblyOutput) -> WebDisasmReport {
+    let script_hash = nef.script_hash();
     WebDisasmReport {
+        script_hash_le: util::format_hash(&script_hash),
+        script_hash_be: util::format_hash_be(&script_hash),
         instructions: output
             .instructions
             .iter()
@@ -116,6 +123,8 @@ pub(super) fn build_decompile_report(result: Decompilation) -> WebDecompileRepor
     }
 
     WebDecompileReport {
+        compiler: nef.header.compiler.trim_end_matches('\0').to_string(),
+        source: (!nef.header.source.is_empty()).then(|| nef.header.source.clone()),
         script_hash_le: util::format_hash(&script_hash),
         script_hash_be: util::format_hash_be(&script_hash),
         csharp: csharp.unwrap_or_default(),
@@ -303,6 +312,11 @@ struct ManifestSummary {
     permissions: Vec<PermissionSummary>,
     trusts: Option<TrustSummary>,
     abi: AbiSummary,
+    /// Free-form metadata declared in the manifest's `extra` field (e.g.
+    /// `Author`, `Email`, `Description`). Surfaced verbatim because the
+    /// spec allows arbitrary JSON values.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    extra: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -393,6 +407,7 @@ fn summarize_manifest(manifest: &ContractManifest) -> ManifestSummary {
             })
             .collect(),
         trusts: manifest.trusts.as_ref().map(TrustSummary::from),
+        extra: manifest.extra.clone(),
         abi: AbiSummary {
             methods: manifest
                 .abi

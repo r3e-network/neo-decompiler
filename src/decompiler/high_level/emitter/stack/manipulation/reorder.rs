@@ -1,6 +1,7 @@
 use crate::instruction::Instruction;
 
 use super::super::super::HighLevelEmitter;
+use super::is_simple_literal_or_identifier;
 
 impl HighLevelEmitter {
     pub(in super::super::super) fn emit_rot(&mut self, instruction: &Instruction) {
@@ -36,6 +37,19 @@ impl HighLevelEmitter {
         let (Some(top), Some(second)) = (self.stack.pop(), self.stack.pop()) else {
             return;
         };
+
+        // Same skip-on-literal optimization as `dup_top` and
+        // `over_second`: TUCK conceptually duplicates `top` below
+        // `second`, but for a simple literal/identifier the duplicate
+        // is just another copy of the expression string — no temp
+        // needed. Mirrors JS's `materialiseStackTopForDup` pattern.
+        if is_simple_literal_or_identifier(&top) {
+            let dup = top.clone();
+            self.stack.push(top);
+            self.stack.push(second);
+            self.stack.push(dup);
+            return;
+        }
 
         let dup = self.next_temp();
         self.statements

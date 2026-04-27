@@ -26,7 +26,15 @@ fn decompile_testing_artifacts_into_folder() {
     }
     fs::create_dir_all(&output_dir).expect("create decompiled folder");
 
-    let decompiler = Decompiler::new();
+    // Match the CLI's clean defaults so the committed sample outputs in
+    // `TestingArtifacts/decompiled/` reflect what users actually see when
+    // running `neo-decompiler decompile`. The library `Decompiler::new()`
+    // still defaults to verbose (trace comments on, single-use temps not
+    // inlined) for backwards compatibility with downstream embedders that
+    // assert on the trace-form output.
+    let decompiler = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .with_trace_comments(false);
     let mut processed = 0usize;
     let mut skipped = Vec::new();
     let mut known_failures = Vec::new();
@@ -99,6 +107,10 @@ fn decompile_testing_artifacts_into_folder() {
         assert_non_empty(
             &output_base.with_extension("pseudocode.txt"),
             "pseudocode output missing",
+        );
+        assert_non_empty(
+            &output_base.with_extension("csharp.cs"),
+            "C# output missing",
         );
     }
 

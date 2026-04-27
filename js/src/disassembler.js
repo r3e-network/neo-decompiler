@@ -1,5 +1,6 @@
 import { DisassemblyError } from "./errors.js";
 import { OPCODES } from "./generated/opcodes.js";
+import { SYSCALLS } from "./generated/syscalls.js";
 import {
   asUint8Array,
   hex32,
@@ -80,8 +81,17 @@ export function formatOperand(operand) {
     case "Jump":
     case "Jump32":
       return `${operand.value}`;
-    case "Syscall":
-      return `0x${hex32(operand.value)}`;
+    case "Syscall": {
+      // Mirror Rust's `Display for Operand::Syscall`: prefix the
+      // resolved syscall name when known, falling back to bare hex
+      // for unknown/reserved hashes. Earlier the JS port always
+      // emitted `0xHASH` even for known syscalls, leaving the
+      // pseudocode less readable than Rust's
+      // `System.Storage.Get (0x12345678)` form.
+      const info = SYSCALLS.get(operand.value);
+      const hex = `0x${hex32(operand.value)}`;
+      return info ? `${info.name} (${hex})` : hex;
+    }
     default:
       return String(operand.value);
   }

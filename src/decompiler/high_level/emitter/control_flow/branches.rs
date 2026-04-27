@@ -296,7 +296,7 @@ impl HighLevelEmitter {
     /// Detect an implicit else branch when the if-true body ends with a
     /// noreturn instruction.  The Neo C# compiler omits the JMP before the
     /// false-target when the if-true branch always terminates (ABORT, ABORTMSG,
-    /// THROW, or CALL to a known noreturn method).
+    /// THROW, RET, or CALL to a known noreturn method).
     ///
     /// Returns `Some(else_end_offset)` — the offset where the else closer `}`
     /// should be placed.  The caller must NOT insert a `skip_jumps` entry
@@ -308,10 +308,16 @@ impl HighLevelEmitter {
         }
         let prev = self.program.get(target_index.checked_sub(1)?)?;
 
-        // Check if the if-true body ends with a direct terminator.
+        // Check if the if-true body ends with a direct terminator. RET is
+        // included so `if (cond) { return X; } else { return Y; }` patterns
+        // emit the explicit else block instead of falling out as
+        // `if (cond) { return X; } return Y;` — matches JS port behaviour
+        // and reads more faithfully against the original C# source where
+        // the `else` was actually written. The `} else {` formatting is
+        // produced by `join_close_brace_with_chain` (final-pass cleanup).
         let is_direct_terminator = matches!(
             prev.opcode,
-            OpCode::Abort | OpCode::Abortmsg | OpCode::Throw
+            OpCode::Abort | OpCode::Abortmsg | OpCode::Throw | OpCode::Ret
         );
 
         // Check if the if-true body ends with a CALL to a known noreturn method.

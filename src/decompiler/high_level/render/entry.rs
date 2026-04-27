@@ -7,8 +7,8 @@ use crate::manifest::ContractManifest;
 
 use super::super::super::helpers::{
     find_manifest_entry_method, format_manifest_parameters, format_manifest_type,
-    make_unique_identifier, next_inferred_method_offset, sanitize_identifier,
-    sanitize_parameter_names,
+    initslot_argument_count_at, make_unique_identifier, next_inferred_method_offset,
+    sanitize_identifier, sanitize_parameter_names,
 };
 use super::body;
 
@@ -42,12 +42,24 @@ pub(super) fn write_entry_method(
         entry_instructions
     };
 
+    // For manifest-known entries we use the declared parameter names; for
+    // synthesised script_entry we fall back to `arg0..argN` based on the
+    // INITSLOT-inferred argument count. Only `INITSLOT`-declared args are
+    // surfaced — purely stack-depth-inferred args (where the body consumes
+    // values that no opcode pushed) stay anonymous so the
+    // missing-argument warning remains visible to the reader. The JS port
+    // applies the same rule.
     let entry_param_labels = if use_manifest_entry {
         entry_method
             .as_ref()
             .map(|(method, _)| sanitize_parameter_names(&method.parameters))
     } else {
-        None
+        match initslot_argument_count_at(instructions, entry_offset) {
+            Some(arg_count) if arg_count > 0 => {
+                Some((0..arg_count).map(|index| format!("arg{index}")).collect())
+            }
+            _ => None,
+        }
     };
 
     let entry_name = if use_manifest_entry {
@@ -67,7 +79,12 @@ pub(super) fn write_entry_method(
             .map(|(method, _)| format_manifest_parameters(&method.parameters))
             .unwrap_or_default()
     } else {
-        String::new()
+        // Reuse the same arg-label list as the body so the signature and
+        // first lines (`let loc0 = arg0;`) reference matching identifiers.
+        entry_param_labels
+            .as_ref()
+            .map(|labels| labels.join(", "))
+            .unwrap_or_default()
     };
 
     let entry_return = if use_manifest_entry {

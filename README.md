@@ -212,7 +212,8 @@ cargo build --release
 # Print header information
 ./target/release/neo-decompiler info path/to/contract.nef
 
-# Emit machine-readable header information (includes checksum, script hash, ABI, tokens, manifest path)
+# Emit machine-readable header information (includes compiler, source,
+# checksum, script hash, ABI, tokens, manifest path).
 ./target/release/neo-decompiler info --format json path/to/contract.nef
 
 # Decode instructions
@@ -221,25 +222,34 @@ cargo build --release
 # Fail fast on unknown opcodes (default is tolerant)
 ./target/release/neo-decompiler disasm --fail-on-unknown-opcodes path/to/contract.nef
 
-# Machine-readable disassembly (tolerant by default)
+# Machine-readable disassembly (tolerant by default; surfaces script hash
+# at the top level so callers don't need a second `info` round-trip).
 ./target/release/neo-decompiler disasm --format json path/to/contract.nef
 
-# Export the control flow graph as Graphviz DOT
+# Export the control flow graph as Graphviz DOT. The graph carries a
+# top-anchored `label` showing contract name (when manifest known),
+# script hash, and instruction count — useful for multi-CFG canvases.
 ./target/release/neo-decompiler cfg path/to/contract.nef > cfg.dot
 
-# Emit the high-level contract view (auto-detects `*.manifest.json` if present)
+# Emit the high-level contract view (auto-detects `*.manifest.json` if present).
+# Defaults to clean rendering: no per-instruction trace comments, single-use
+# temporaries inlined, dead let-bindings dropped. Recommended when reading the
+# result as source rather than tracing it back to raw bytecode.
 ./target/release/neo-decompiler decompile path/to/contract.nef
 
-# Maximum-readability output: suppresses per-instruction trace markers,
-# inlines single-use temporaries, and drops dead let-bindings. Recommended
-# when reading the result as source rather than tracing it back to bytecode.
-./target/release/neo-decompiler decompile --clean path/to/contract.nef
+# Re-enable the per-instruction `// XXXX: OPCODE` trace comments above each
+# lifted statement (useful when cross-referencing the high-level view against
+# the raw disassembly).
+./target/release/neo-decompiler decompile --trace-comments path/to/contract.nef
 
-# Suppress only the `// XXXX: OPCODE` trace comments (keep tN-style temps)
-./target/release/neo-decompiler decompile --no-trace-comments path/to/contract.nef
+# Keep every `let tN = ...` temporary visible instead of inlining single-use
+# ones into their consumer (useful when correlating with `--trace-comments`
+# or with raw bytecode offsets).
+./target/release/neo-decompiler decompile --no-inline-temps path/to/contract.nef
 
-# Enable experimental inlining of single-use temporaries in the high-level view
-./target/release/neo-decompiler decompile --inline-single-use-temps path/to/contract.nef
+# Legacy aliases `--clean`, `--no-trace-comments`, and
+# `--inline-single-use-temps` are still accepted, but the matching behaviour
+# is now the default — there is no need to pass them explicitly.
 
 # Fail fast on unknown opcodes during high-level reconstruction
 ./target/release/neo-decompiler decompile --fail-on-unknown-opcodes path/to/contract.nef
@@ -250,13 +260,15 @@ cargo build --release
 # Emit a C# contract skeleton (includes manifest extras like Author/Email when present)
 ./target/release/neo-decompiler decompile --format csharp path/to/contract.nef
 
-# Machine-readable decompilation (high-level, pseudocode, manifest path, metadata)
+# Machine-readable decompilation (high-level, pseudocode, NEF compiler/
+# source, script hash, manifest path, manifest summary, analysis)
 ./target/release/neo-decompiler decompile --format json path/to/contract.nef
 
 # Inspect method tokens
 ./target/release/neo-decompiler tokens path/to/contract.nef
 
-# Machine-readable tokens listing
+# Machine-readable tokens listing (also surfaces script hash for
+# cross-correlation against the `info` / `decompile` JSON reports).
 ./target/release/neo-decompiler tokens --format json path/to/contract.nef
 
 # Use --json-compact alongside any JSON format to minimise whitespace
@@ -312,7 +324,7 @@ Current JS scope:
 - Reconstruct `while` and `do-while` loop shapes with `break` / `continue`
 - Emit label-style `goto` / `leave` fallbacks for unstructured jumps and `ENDTRY`
 - Lift `CALL` / `CALL_L` internal calls and `CALLT` token calls
-- Resolve known syscalls (44 syscalls supported)
+- Resolve known syscalls (41 syscalls supported, parity with the Rust port)
 - Surface high-level syscall warnings when stack arguments are missing
 - Handle `CALLA` indirection and collection ops (`has_key`, `keys`, `values`, `append`, etc.)
 - Preserve packed arrays across `UNPACK` / `PICK` / reverse ops
@@ -424,7 +436,7 @@ Download pre-built binaries from the [releases page](https://github.com/r3e-netw
 
 ```bash
 # Install from a tagged release (replace the tag as needed)
-cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.6.0 --locked
+cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.7.0 --locked
 
 # Or install the latest development version
 cargo install --git https://github.com/r3e-network/neo-decompiler --locked
@@ -440,7 +452,7 @@ APIs and want to avoid pulling in CLI-only dependencies, disable default
 features in your `Cargo.toml`:
 
 ```toml
-neo-decompiler = { version = "0.6.0", default-features = false }
+neo-decompiler = { version = "0.7", default-features = false }
 ```
 
 ```rust

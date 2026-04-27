@@ -1,6 +1,203 @@
 use super::*;
 
 #[test]
+fn reduce_double_parens_collapses_nested_pairs() {
+    // The single-use-temp inliner unconditionally wraps multi-token
+    // substitutions in parens. When the substitution lands inside a
+    // call argument (or any already-parenthesised context), we end up
+    // with `assert((x > 0))` and similar double parens. The pass
+    // strips one redundant pair while preserving the operator's
+    // precedence-safe outer parens.
+    let mut statements = vec![
+        "assert((x > 0));".to_string(),
+        "let y = ((a + b));".to_string(),
+        "if (((cond))) {".to_string(),
+        "foo((x), (y));".to_string(), // these parens are NOT redundant
+    ];
+
+    HighLevelEmitter::reduce_double_parens(&mut statements);
+
+    assert_eq!(statements[0], "assert(x > 0);");
+    assert_eq!(statements[1], "let y = (a + b);");
+    assert_eq!(statements[2], "if (cond) {");
+    assert_eq!(
+        statements[3], "foo((x), (y));",
+        "function-call argument parens around different operands must not collapse"
+    );
+}
+
+#[test]
+fn eliminate_dead_temps_strips_unused_arithmetic_expression() {
+    // After dispatch + inlining, an unused temp computed from a pure
+    // expression should be removed. Previously only literal/identifier
+    // RHS were considered "pure" and arithmetic temps survived as
+    // `var tN = loc1 * 3;` lines that did nothing.
+    let mut statements = vec!["let t1 = loc1 * 3;".to_string(), "return;".to_string()];
+
+    HighLevelEmitter::eliminate_dead_temps(&mut statements);
+
+    assert!(
+        statements[0].is_empty(),
+        "dead temp with arithmetic rhs should be cleared: {statements:?}"
+    );
+    assert_eq!(statements[1], "return;");
+}
+
+#[test]
+fn eliminate_dead_temps_keeps_calls_for_their_side_effects() {
+    // Function or syscall calls may have side effects (storage writes,
+    // notifications, throws) so even an unused temp must stay.
+    let mut statements = vec![
+        "let t0 = syscall(\"System.Storage.Get\", t1);".to_string(),
+        "return;".to_string(),
+    ];
+
+    HighLevelEmitter::eliminate_dead_temps(&mut statements);
+
+    assert_eq!(
+        statements[0], "let t0 = syscall(\"System.Storage.Get\", t1);",
+        "temps holding call results must not be eliminated: {statements:?}"
+    );
+}
+
+#[test]
+fn eliminate_dead_temps_keeps_used_temps() {
+    let mut statements = vec!["let t0 = loc1 + 1;".to_string(), "return t0;".to_string()];
+
+    HighLevelEmitter::eliminate_dead_temps(&mut statements);
+
+    assert_eq!(statements[0], "let t0 = loc1 + 1;");
+    assert_eq!(statements[1], "return t0;");
+}
+
+#[test]
+fn eliminate_dead_temps_keeps_potentially_throwing_division_or_indexing() {
+    // DIV and MOD throw on zero; PICKITEM throws on out-of-bounds. An
+    // unused temp built from these operators must not be silently dropped
+    // because that would hide a runtime exception the bytecode would have
+    // raised.
+    let mut statements = vec![
+        "let t0 = a / b;".to_string(),
+        "let t1 = c % d;".to_string(),
+        "let t2 = arr[i];".to_string(),
+        "return;".to_string(),
+    ];
+
+    HighLevelEmitter::eliminate_dead_temps(&mut statements);
+
+    assert_eq!(statements[0], "let t0 = a / b;");
+    assert_eq!(statements[1], "let t1 = c % d;");
+    assert_eq!(statements[2], "let t2 = arr[i];");
+}
+
+#[test]
+fn eliminate_fallthrough_gotos_strips_goto_followed_by_label() {
+    let mut statements = vec![
+        "let x = 1;".to_string(),
+        "goto label_0x0010;".to_string(),
+        "label_0x0010:".to_string(),
+        "return x;".to_string(),
+    ];
+
+    HighLevelEmitter::eliminate_fallthrough_gotos(&mut statements);
+
+    assert!(
+        statements[1].is_empty(),
+        "fallthrough goto should be cleared: {statements:?}"
+    );
+    // The label remains; remove_orphaned_labels (a separate pass) is what
+    // strips it once it has no remaining references.
+    assert_eq!(statements[2], "label_0x0010:");
+}
+
+#[test]
+fn eliminate_fallthrough_gotos_strips_leave_followed_by_label() {
+    // `leave` is the high-level encoding of an ENDTRY transfer. When the
+    // resume target sits immediately after the `leave`, the transfer is a
+    // visual no-op the C# / Rust backends would emit identical control
+    // flow for, so it should be stripped just like the `goto` form.
+    let mut statements = vec![
+        "try {".to_string(),
+        "    leave label_0x0008;".to_string(),
+        "    label_0x0008:".to_string(),
+        "}".to_string(),
+        "finally {".to_string(),
+        "}".to_string(),
+    ];
+
+    HighLevelEmitter::eliminate_fallthrough_gotos(&mut statements);
+
+    assert!(
+        statements[1].is_empty(),
+        "fallthrough leave should be cleared: {statements:?}"
+    );
+}
+
+#[test]
+fn eliminate_fallthrough_gotos_strips_leave_through_close_braces() {
+    // The leave is the last statement of a catch body; the label sits
+    // immediately after the `}`. Walking past the close-brace finds the
+    // label, so the transfer is dead — control reaches the label by
+    // structural fall-out anyway.
+    let mut statements = vec![
+        "try {".to_string(),
+        "}".to_string(),
+        "catch {".to_string(),
+        "    leave label_0x0009;".to_string(),
+        "}".to_string(),
+        "label_0x0009:".to_string(),
+        "return;".to_string(),
+    ];
+
+    HighLevelEmitter::eliminate_fallthrough_gotos(&mut statements);
+
+    assert!(
+        statements[3].is_empty(),
+        "leave at end of catch body should be cleared when label sits past `}}`: {statements:?}"
+    );
+}
+
+#[test]
+fn eliminate_fallthrough_gotos_keeps_leave_when_intervening_code_present() {
+    // Same shape but with executable code between the closing brace and
+    // the label — eliminating the leave would now skip that code,
+    // changing semantics. The transfer must stay.
+    let mut statements = vec![
+        "catch {".to_string(),
+        "    leave label_0x0010;".to_string(),
+        "}".to_string(),
+        "let x = 1;".to_string(),
+        "label_0x0010:".to_string(),
+        "return;".to_string(),
+    ];
+
+    HighLevelEmitter::eliminate_fallthrough_gotos(&mut statements);
+
+    assert_eq!(
+        statements[1].trim(),
+        "leave label_0x0010;",
+        "leave with intervening code must be preserved: {statements:?}"
+    );
+}
+
+#[test]
+fn eliminate_fallthrough_gotos_keeps_leave_when_target_is_distant() {
+    let mut statements = vec![
+        "leave label_0x0010;".to_string(),
+        "let unreachable = 1;".to_string(),
+        "label_0x0010:".to_string(),
+        "return;".to_string(),
+    ];
+
+    HighLevelEmitter::eliminate_fallthrough_gotos(&mut statements);
+
+    assert_eq!(
+        statements[0], "leave label_0x0010;",
+        "non-fallthrough leave must be preserved: {statements:?}"
+    );
+}
+
+#[test]
 fn rewrite_for_loops_handles_temp_increment_chain() {
     let mut statements = vec![
         "let loc0 = 0;".to_string(),

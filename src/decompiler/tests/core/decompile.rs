@@ -59,6 +59,35 @@ fn decompile_with_manifest_produces_contract_name() {
 }
 
 #[test]
+fn cfg_to_dot_includes_contract_name_and_script_hash_in_label() {
+    // Multi-CFG dumps benefit from a graph-level label so each
+    // canvas is self-identifying. Without manifest the title falls
+    // back to script hash + instruction count; with manifest the
+    // contract name is prepended.
+    let nef_bytes = sample_nef();
+    let manifest = sample_manifest();
+
+    // With manifest: name + hash + count.
+    let with = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::Pseudocode)
+        .expect("decompile with manifest");
+    let dot_with = with.cfg_to_dot();
+    assert!(dot_with.starts_with("digraph CFG {\n  label=\""));
+    assert!(dot_with.contains("ExampleContract"), "{dot_with}");
+    assert!(dot_with.contains("instr)"), "{dot_with}");
+    assert!(dot_with.contains("labelloc=\"t\";"), "{dot_with}");
+
+    // Without manifest: hash + count only (no contract name).
+    let without = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile without manifest");
+    let dot_without = without.cfg_to_dot();
+    assert!(dot_without.contains("label=\""), "{dot_without}");
+    assert!(!dot_without.contains("ExampleContract"), "{dot_without}");
+    assert!(dot_without.contains("instr)"), "{dot_without}");
+}
+
+#[test]
 fn decompile_lifts_indirect_calls_without_not_yet_translated_warning() {
     // Script: CALLA (no operand), CALLT 0x0001, RET
     let nef_bytes = build_nef(&[0x36, 0x37, 0x01, 0x00, 0x40]);
@@ -286,6 +315,116 @@ fn decompile_lifts_unconditional_jumps_without_control_flow_warning() {
 }
 
 #[test]
+fn decompile_manifestless_entry_surfaces_initslot_args() {
+    // INITSLOT 2 locals, 1 arg; LDARG0; STLOC0; LDLOC0; RET. Without a
+    // manifest the entry method's signature should still surface the
+    // INITSLOT-declared argument (`arg0`), so the body's `let loc0 =
+    // arg0;` references a parameter that actually appears in the
+    // signature — instead of the bare `fn script_entry()` Rust used to
+    // emit. Stack-depth-only inference (no INITSLOT) still produces a
+    // bare `fn script_entry()` so the missing-syscall-argument warning
+    // remains visible.
+    let script = [0x57, 0x02, 0x01, 0x78, 0x70, 0x68, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("fn script_entry(arg0)"),
+        "manifest-less script_entry should expose INITSLOT-declared args: {high_level}"
+    );
+    assert!(
+        high_level.contains("let loc0 = arg0;"),
+        "body should reference the same arg label as the signature: {high_level}"
+    );
+}
+
+#[test]
+fn decompile_known_syscall_drops_redundant_hash_comment_in_clean_mode() {
+    // Script: SYSCALL System.Runtime.GetTime, DROP, RET. The known syscall
+    // is fully identified by its name in the call expression, so the
+    // trailing `// 0x0388C3B7` comment is just noise — clean mode should
+    // strip it. Trace mode keeps it as a debug aid.
+    let script = [0x41, 0xB7, 0xC3, 0x88, 0x03, 0x75, 0x40];
+    let nef_bytes = build_nef(&script);
+
+    let trace = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds (trace)");
+    let trace_high = trace
+        .high_level
+        .as_deref()
+        .expect("high-level output (trace)");
+    assert!(
+        trace_high.contains("// 0x0388C3B7"),
+        "trace mode should keep the syscall hash comment: {trace_high}"
+    );
+
+    let clean = Decompiler::new()
+        .with_trace_comments(false)
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds (clean)");
+    let clean_high = clean
+        .high_level
+        .as_deref()
+        .expect("high-level output (clean)");
+    assert!(
+        !clean_high.contains("// 0x0388C3B7"),
+        "clean mode should drop the redundant syscall hash comment: {clean_high}"
+    );
+    assert!(
+        clean_high.contains("System.Runtime.GetTime"),
+        "syscall name must still appear in the call expression: {clean_high}"
+    );
+}
+
+#[test]
+fn decompile_unknown_syscall_keeps_unknown_annotation() {
+    // SYSCALL with an unrecognised hash — the `// warning: unknown
+    // syscall 0xHASH` annotation is the only signal of the situation,
+    // so it stays in every mode (cross-port parity with JS leading-
+    // comment style; iteration 97 unified all warn() callers on this
+    // prefix).
+    let script = [0x41, 0xEF, 0xBE, 0xAD, 0xDE, 0x75, 0x40]; // 0xDEADBEEF
+    let nef_bytes = build_nef(&script);
+
+    for emit_trace in [true, false] {
+        let decompilation = Decompiler::new()
+            .with_trace_comments(emit_trace)
+            .decompile_bytes(&nef_bytes)
+            .expect("decompile succeeds");
+        let high = decompilation
+            .high_level
+            .as_deref()
+            .expect("high-level output");
+        assert!(
+            high.contains("// warning: unknown syscall 0xDEADBEEF"),
+            "unknown-syscall annotation must always be emitted with the JS-style \
+             `// warning:` prefix (trace={emit_trace}): {high}"
+        );
+        assert!(
+            high.contains("0xDEADBEEF"),
+            "unknown-syscall hash must appear in the call expression itself: {high}"
+        );
+        // The structured warnings array carries the same hazard so a
+        // programmatic caller (CI, IDE integration) doesn't have to
+        // grep the rendered source. Parity with the JS port.
+        assert!(
+            decompilation
+                .warnings
+                .iter()
+                .any(|w| w.contains("unknown syscall 0xDEADBEEF")),
+            "unknown-syscall warning must be surfaced via the warnings array (trace={emit_trace}): {:?}",
+            decompilation.warnings,
+        );
+    }
+}
+
+#[test]
 fn decompile_lifts_endtry_transfers_without_control_flow_warning() {
     // Script: ENDTRY +2 (to ENDTRY_L), ENDTRY_L +5 (to RET), RET
     let nef_bytes = build_nef(&[0x3D, 0x02, 0x3E, 0x05, 0x00, 0x00, 0x00, 0x40]);
@@ -298,25 +437,31 @@ fn decompile_lifts_endtry_transfers_without_control_flow_warning() {
         .as_deref()
         .expect("high-level output");
 
-    assert!(
-        high_level.contains("leave label_0x0002;"),
-        "ENDTRY should be lifted as a label-based leave transfer: {high_level}"
-    );
-    assert!(
-        high_level.contains("leave label_0x0007;"),
-        "ENDTRY_L should be lifted as a label-based leave transfer: {high_level}"
-    );
-    assert!(
-        high_level.contains("label_0x0002:"),
-        "ENDTRY target label should be emitted in output: {high_level}"
-    );
-    assert!(
-        high_level.contains("label_0x0007:"),
-        "ENDTRY_L target label should be emitted in output: {high_level}"
-    );
+    // Both ENDTRYs target the immediately following instruction, so
+    // `eliminate_fallthrough_gotos` collapses the `leave label_X;` lines
+    // and `remove_orphaned_labels` strips the now-unreferenced anchors.
+    // The key guarantee is the absence of control-flow warnings — and the
+    // output should be clean, idiomatic high-level code with no dead
+    // transfer plumbing.
     assert!(
         !high_level.contains("control flow not yet lifted"),
         "ENDTRY opcodes should no longer emit control-flow-not-lifted warnings: {high_level}"
+    );
+    assert!(
+        !high_level.contains("leave label_"),
+        "fallthrough ENDTRY transfers should be eliminated: {high_level}"
+    );
+    assert!(
+        !high_level.contains("label_0x0002:"),
+        "fallthrough ENDTRY target should be removed as orphan: {high_level}"
+    );
+    assert!(
+        !high_level.contains("label_0x0007:"),
+        "fallthrough ENDTRY_L target should be removed as orphan: {high_level}"
+    );
+    assert!(
+        high_level.contains("return;"),
+        "method body should still emit the trailing return: {high_level}"
     );
 }
 

@@ -30,6 +30,7 @@ pub(in crate::cli) fn summarize_manifest(manifest: &ContractManifest) -> Manifes
             })
             .collect(),
         trusts: manifest.trusts.as_ref().map(TrustSummary::from),
+        extra: manifest.extra.clone(),
         abi: AbiSummary {
             methods: manifest
                 .abi

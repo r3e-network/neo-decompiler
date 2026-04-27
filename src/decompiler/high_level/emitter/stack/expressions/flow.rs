@@ -48,11 +48,14 @@ impl HighLevelEmitter {
                     message.push_str("; ");
                     message.push_str(&context);
                 }
-                self.note(instruction, &message);
-                self.warnings.push(format!(
-                    "high-level: 0x{:04X}: {}",
-                    instruction.offset, message
-                ));
+                // Use `warn(...)` so the inline `// XXXX: missing syscall
+                // argument values for Foo (substituted ???)` comment fires
+                // regardless of trace mode — earlier this delegated to
+                // `note(...)` which gated on `emit_trace_comments`, so a
+                // reader of the clean-mode rendering saw `???` placeholders
+                // with no inline explanation. The JS port has always
+                // emitted the comment unconditionally.
+                self.warn(instruction, &message);
             }
             args.reverse();
             let arg_list = args.join(", ");
@@ -63,23 +66,41 @@ impl HighLevelEmitter {
                 } else {
                     format!("syscall(\"{}\", {})", info.name, arg_list)
                 };
+                // For known syscalls the name already identifies the call;
+                // the 32-bit hash adds no information and clutters output.
+                // Keep it only as a debug aid when trace comments are on.
+                let trailing = if self.emit_trace_comments {
+                    format!(" // 0x{hash:08X}")
+                } else {
+                    String::new()
+                };
                 if returns_value {
                     let temp = self.next_temp();
                     self.statements
-                        .push(format!("let {temp} = {call}; // 0x{hash:08X}"));
+                        .push(format!("let {temp} = {call};{trailing}"));
                     self.stack.push(temp);
                 } else {
-                    self.statements.push(format!("{call}; // 0x{hash:08X}"));
+                    self.statements.push(format!("{call};{trailing}"));
                 }
             } else {
+                // Unknown syscall: the hex is in the call expression
+                // itself, so the leading `// warning: unknown syscall
+                // 0xHASH` annotation is the only hint at why a raw hash
+                // is showing up. Earlier this used a trailing
+                // `// unknown syscall` comment which diverged from the
+                // JS port's leading-comment style and from the rest of
+                // Rust's warn-emitted lines (iteration 97 unified those
+                // on the `// warning:` prefix). Route through `warn()`
+                // so the inline annotation + structured warnings array
+                // entry both fire, byte-identical to JS.
                 let call = format!("syscall(0x{hash:08X})");
+                self.warn(instruction, &format!("unknown syscall 0x{hash:08X}"));
                 if returns_value {
                     let temp = self.next_temp();
-                    self.statements
-                        .push(format!("let {temp} = {call}; // unknown syscall"));
+                    self.statements.push(format!("let {temp} = {call};"));
                     self.stack.push(temp);
                 } else {
-                    self.statements.push(format!("{call}; // unknown syscall"));
+                    self.statements.push(format!("{call};"));
                 }
             }
         } else {

@@ -104,7 +104,12 @@ export function createTryHelpers(runtime) {
       );
       if (finallyEndGlobalIndex >= 0) {
         finallySlice = instructions.slice(finallyIndex, finallyEndGlobalIndex);
-        resumeSlice = instructions.slice(endtryGlobalIndex + 1);
+        // Resume picks up after ENDFINALLY. The finally body's stack
+        // effects are propagated by cloning the resume state from
+        // `finallyState` further below — re-slicing the finally bytes
+        // into the resume would duplicate them and trip the
+        // unstructured ENDFINALLY renderer.
+        resumeSlice = instructions.slice(finallyEndGlobalIndex + 1);
       }
     }
 
@@ -142,9 +147,16 @@ export function createTryHelpers(runtime) {
     statements.push("}");
 
     if (resumeSlice.length > 0) {
-      resumeState = cloneState(prefixState);
+      // Stack values that the try / finally body left on the operand
+      // stack flow through to the resume target on the normal path
+      // (NEO VM preserves the stack across try-context exits). Clone
+      // from the most-recently-finished branch so the resume sees the
+      // full stack a downstream RET / consumer expects: finally if it
+      // ran, else the try body, else the prefix.
+      const upstream = finallyState ?? tryBodyState ?? prefixState;
+      resumeState = cloneState(upstream);
       executeStraightLine(resumeState, resumeSlice);
-      statements.push(...resumeState.statements.slice(prefixState.statements.length));
+      statements.push(...resumeState.statements.slice(upstream.statements.length));
     }
 
     return rewriteForLoops({

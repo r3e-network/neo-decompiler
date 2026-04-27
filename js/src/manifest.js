@@ -256,9 +256,15 @@ export function sanitizeIdentifier(input) {
     if (/[A-Za-z0-9]/u.test(character)) {
       ident += character;
     } else if (
-      (character === "_" || /\s|-/u.test(character)) &&
-      !ident.endsWith("_")
+      character === "_" ||
+      (/\s|-/u.test(character) && !ident.endsWith("_"))
     ) {
+      // Mirror Rust precedence: explicit `_` is always preserved
+      // (so `__foo` stays `__foo`); whitespace and `-` collapse into
+      // a single `_` separator only when the previous char isn't
+      // already `_`. Earlier the parens were `(_ || whitespace) &&
+      // !ends_with("_")`, which silently collapsed leading double
+      // underscores and broke parity with Rust's `sanitize_identifier`.
       ident += "_";
     }
   }
@@ -271,6 +277,22 @@ export function sanitizeIdentifier(input) {
     ident = `_${ident}`;
   }
   return ident;
+}
+
+/**
+ * Extract and sanitise the contract name from a manifest, falling back
+ * to `NeoContract` when the manifest is absent or the name trims to
+ * empty. Mirrors Rust's `decompiler::helpers::extract_contract_name`
+ * so manifest-less and empty-name outputs are byte-identical across
+ * ports. Returns the sanitised identifier or `"NeoContract"`.
+ */
+export function extractContractName(manifest) {
+  const trimmed = manifest?.name?.trim();
+  if (!trimmed) {
+    return "NeoContract";
+  }
+  const sanitised = sanitizeIdentifier(trimmed);
+  return sanitised !== "" ? sanitised : "NeoContract";
 }
 
 export function makeUniqueIdentifier(base, used) {
@@ -310,6 +332,8 @@ export function formatManifestType(kind) {
       return "hash160";
     case "hash256":
       return "hash256";
+    case "publickey":
+      return "publickey";
     case "bytearray":
       return "bytes";
     case "signature":

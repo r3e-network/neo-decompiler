@@ -147,10 +147,10 @@ fn high_level_else_branch_restores_pre_branch_stack_snapshot() {
         .high_level
         .as_deref()
         .expect("high-level output");
-    assert!(
-        high_level.contains("reverse top 3 stack values"),
-        "else branch should retain the pre-branch stack shape: {high_level}"
-    );
+    // The previous "reverse top 3 stack values" check was VM
+    // narration — stripped from clean output now. The substantive
+    // check below ensures REVERSE3 in the else branch saw a
+    // restored stack (no underflow).
     assert!(
         !high_level.contains("insufficient values on stack for REVERSE3"),
         "else entry should restore the pre-branch stack snapshot before REVERSE3: {high_level}"

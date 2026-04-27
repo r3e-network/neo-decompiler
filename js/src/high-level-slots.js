@@ -1,21 +1,78 @@
-import { formatOperand } from "./disassembler.js";
 import { stripOuterParens } from "./high-level-utils.js";
+import { upperHex } from "./util.js";
+
+/**
+ * Decode a little-endian, signed two's-complement byte array (the
+ * `PUSHINT128` / `PUSHINT256` operand shape) into a `BigInt` and return
+ * its decimal string representation. Empty input is treated as zero.
+ * Mirrors the Rust `format_int_bytes_as_decimal` helper.
+ */
+function decodeSignedLeBigInt(bytes) {
+  if (bytes.length === 0) return 0n;
+  // Walk the bytes high-to-low, building the unsigned magnitude.
+  let magnitude = 0n;
+  for (let i = bytes.length - 1; i >= 0; i--) {
+    magnitude = (magnitude << 8n) | BigInt(bytes[i]);
+  }
+  // Two's-complement: if the top bit of the most-significant byte is
+  // set, the value is negative.
+  const signBit = bytes[bytes.length - 1] & 0x80;
+  if (signBit !== 0) {
+    const range = 1n << BigInt(bytes.length * 8);
+    return magnitude - range;
+  }
+  return magnitude;
+}
+
+/**
+ * Decode a `PUSHDATA*` byte payload as a quoted string literal when every
+ * byte is printable ASCII or common whitespace; otherwise fall back to the
+ * raw `0xHEX` form. Mirrors the Rust `format_pushdata` helper so the two
+ * ports render byte-string operands identically.
+ */
+export function formatPushdata(bytes) {
+  if (bytes.length === 0) {
+    return '""';
+  }
+  // Only decode bytes that fit the same printable range Rust accepts:
+  // 0x20..=0x7E plus \n, \r, \t. Anything else (UTF-8 multi-byte, NUL,
+  // control bytes) stays as hex so binary keys stay unambiguous.
+  let decodable = true;
+  let decoded = "";
+  for (let i = 0; i < bytes.length; i++) {
+    const b = bytes[i];
+    if (b === 0x0A || b === 0x0D || b === 0x09 || (b >= 0x20 && b <= 0x7E)) {
+      decoded += String.fromCharCode(b);
+    } else {
+      decodable = false;
+      break;
+    }
+  }
+  if (!decodable) {
+    return `0x${upperHex(bytes)}`;
+  }
+  return `"${decoded.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
 
 const PUSH_LIT_RE = /^PUSH(\d+|M1)$/u;
 
-export function trySlotDeclarations(statements, instruction) {
+export function trySlotDeclarations(_statements, instruction) {
+  // INITSLOT / INITSSLOT have no observable effect on the lifted
+  // source — they declare slot capacity, which is implicit in
+  // subsequent LDLOC/STLOC/LDSFLD/STSFLD usage. Mark them handled so
+  // the main lift loop doesn't fall back to the default per-opcode
+  // handling, but emit no statement: the slot-declaration trace
+  // comment was always informational noise that the postprocess
+  // pass had to strip anyway.
   if (
     instruction.opcode.mnemonic === "INITSLOT" &&
     instruction.operand?.kind === "Bytes" &&
     instruction.operand.value.length >= 2
   ) {
-    const [locals, args] = instruction.operand.value;
-    statements.push(`// declare ${locals} locals, ${args} arguments`);
     return true;
   }
 
   if (instruction.opcode.mnemonic === "INITSSLOT" && instruction.operand?.kind === "U8") {
-    statements.push(`// declare ${instruction.operand.value} static slots`);
     return true;
   }
 
@@ -44,10 +101,19 @@ export function pushImmediate(state, instruction) {
   }
   if (instruction.operand !== null) {
     if (instruction.operand.kind === "U32" && mnemonic === "PUSHA") {
-      // PUSHA operand is U32-encoded but represents a signed I32 relative offset
+      // PUSHA operand is U32-encoded but represents a signed I32 relative offset.
+      // Mirror Rust's `resolve_pusha_display`: when the absolute target
+      // resolves to a known method label use `&{label}` (e.g.
+      // `&sub_0x000C`); otherwise fall back to `&fn_0xNNNN` with
+      // uppercase hex. Earlier this pushed the bare integer (`123`),
+      // which lost the function-pointer semantics and conflated PUSHA
+      // with PUSHINT operands.
       const signedOffset = instruction.operand.value | 0;
       const target = instruction.offset + signedOffset;
-      const expression = `${target}`;
+      const labelMap = state.context?.methodLabelsByOffset;
+      const resolved = labelMap?.get(target) ?? null;
+      const hex = (target >>> 0).toString(16).padStart(4, "0").toUpperCase();
+      const expression = resolved ? `&${resolved}` : `&fn_0x${hex}`;
       stack.push(expression);
       pointerTargetsByExpression.set(expression, target);
       return true;
@@ -64,9 +130,20 @@ export function pushImmediate(state, instruction) {
       }
     }
     if (instruction.operand.kind === "Bytes" && mnemonic.startsWith("PUSHDATA")) {
-      const expression = formatOperand(instruction.operand);
+      const expression = formatPushdata(instruction.operand.value);
       stack.push(expression);
       packedValuesByExpression.delete(expression);
+      return true;
+    }
+    if (
+      instruction.operand.kind === "Bytes" &&
+      (mnemonic === "PUSHINT128" || mnemonic === "PUSHINT256")
+    ) {
+      // The big-integer PUSHINT operands are little-endian, signed
+      // two's-complement byte arrays. Decode into a BigInt and render
+      // as a decimal literal — mirrors the Rust port's
+      // `format_int_bytes_as_decimal`.
+      stack.push(`${decodeSignedLeBigInt(instruction.operand.value)}`);
       return true;
     }
   }
@@ -135,7 +212,7 @@ export function tryStoreLocal(
   if (local === null) {
     return false;
   }
-  const value = stack.pop() ?? "/* stack_underflow */";
+  const value = stack.pop() ?? "???";
   const name = `loc${local}`;
   const stripped = stripOuterParens(value);
   const pointerTarget = pointerTargetsByExpression.get(stripped);
@@ -177,7 +254,7 @@ export function tryStoreStatic(
   if (index === null) {
     return false;
   }
-  const value = stack.pop() ?? "/* stack_underflow */";
+  const value = stack.pop() ?? "???";
   const name = `static${index}`;
   const stripped = stripOuterParens(value);
   const pointerTarget = pointerTargetsByExpression.get(stripped);
@@ -209,7 +286,7 @@ export function tryStoreArgument(statements, stack, parameterNames, mnemonic, in
   if (index === null) {
     return false;
   }
-  const value = stripOuterParens(stack.pop() ?? "/* stack_underflow */");
+  const value = stripOuterParens(stack.pop() ?? "???");
   const name = parameterNames[index] ?? `arg${index}`;
   statements.push(`${name} = ${value};`);
   return true;

@@ -1,6 +1,7 @@
 use crate::instruction::Instruction;
 
 use super::super::super::HighLevelEmitter;
+use super::is_simple_literal_or_identifier;
 
 impl HighLevelEmitter {
     pub(in super::super::super) fn drop_top(&mut self, instruction: &Instruction) {
@@ -16,6 +17,18 @@ impl HighLevelEmitter {
     pub(in super::super::super) fn dup_top(&mut self, instruction: &Instruction) {
         self.push_comment(instruction);
         if let Some(value) = self.stack.last().cloned() {
+            // Skip the temp materialization when the duplicated value
+            // is a simple literal or identifier — pushing another copy
+            // of the same expression string is semantically equivalent
+            // and yields tighter output (`return 5 + 5;` instead of
+            // `let t0 = 5; return t0 + t0;`). Mirrors the JS port's
+            // `materialiseStackTopForDup`. Complex expressions still
+            // get materialized so the side-effecting evaluation runs
+            // exactly once.
+            if is_simple_literal_or_identifier(&value) {
+                self.stack.push(value);
+                return;
+            }
             let temp = self.next_temp();
             self.statements
                 .push(format!("let {temp} = {value}; // duplicate top of stack"));
@@ -38,6 +51,12 @@ impl HighLevelEmitter {
             return;
         }
         let value = self.stack[self.stack.len() - 2].clone();
+        // Same skip-on-literal optimization as `dup_top`: copying a
+        // bare literal/identifier doesn't require a temp.
+        if is_simple_literal_or_identifier(&value) {
+            self.stack.push(value);
+            return;
+        }
         let temp = self.next_temp();
         self.statements
             .push(format!("let {temp} = {value}; // copy second stack value"));

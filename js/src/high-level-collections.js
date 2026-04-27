@@ -8,27 +8,50 @@ import {
 export function tryCollectionExpression(state, instruction) {
   const mnemonic = instruction.opcode.mnemonic;
 
+  // NEWARRAY0 / NEWMAP / NEWSTRUCT0 each create a fresh container that
+  // the bytecode then mutates (via DUP + SETITEM, APPEND, etc.). Pushing
+  // the bare literal `[]` / `{}` onto the operand stack means every DUP
+  // produces an *independent* literal in the rendered output, so a
+  // `NEWMAP DUP "k" "v" SETITEM RET` lift comes out as
+  // `{}["k"] = "v"; return {};` (two separate empty maps). Materialise
+  // the value into a temp so all stack references resolve to the same
+  // identifier.
   if (mnemonic === "NEWARRAY0") {
-    state.stack.push("[]");
+    const temp = `t${state.nextTempId}`;
+    state.nextTempId += 1;
+    state.statements.push(`let ${temp} = [];`);
+    state.stack.push(temp);
     return true;
   }
   if (mnemonic === "NEWARRAY_T") {
     const size = stripOuterParens(state.stack.pop() ?? "???");
     const targetName = convertTargetName(instruction.operand) ?? "unknown";
-    state.stack.push(`new_array_t(${size}, "${targetName}")`);
+    const temp = `t${state.nextTempId}`;
+    state.nextTempId += 1;
+    state.statements.push(`let ${temp} = new_array_t(${size}, "${targetName}");`);
+    state.stack.push(temp);
     return true;
   }
   if (mnemonic === "NEWMAP") {
-    state.stack.push("{}");
+    const temp = `t${state.nextTempId}`;
+    state.nextTempId += 1;
+    state.statements.push(`let ${temp} = {};`);
+    state.stack.push(temp);
     return true;
   }
   if (mnemonic === "NEWSTRUCT0") {
-    state.stack.push("{}");
+    const temp = `t${state.nextTempId}`;
+    state.nextTempId += 1;
+    state.statements.push(`let ${temp} = {};`);
+    state.stack.push(temp);
     return true;
   }
   if (mnemonic === "NEWSTRUCT") {
     const value = stripOuterParens(state.stack.pop() ?? "???");
-    state.stack.push(`new_struct(${value})`);
+    const temp = `t${state.nextTempId}`;
+    state.nextTempId += 1;
+    state.statements.push(`let ${temp} = new_struct(${value});`);
+    state.stack.push(temp);
     return true;
   }
   if (mnemonic === "PACK" || mnemonic === "PACKMAP" || mnemonic === "PACKSTRUCT") {

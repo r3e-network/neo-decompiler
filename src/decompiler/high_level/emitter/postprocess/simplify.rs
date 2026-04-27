@@ -255,59 +255,134 @@ impl HighLevelEmitter {
         }
     }
 
-    /// Returns true when `rhs` is safe to drop without altering side effects.
-    /// Conservatively true for literals and bare identifiers (slot reads, etc.).
+    /// Returns true when `rhs` is safe to drop without altering side effects
+    /// or hiding a runtime exception the original bytecode would have raised.
+    ///
+    /// Accepts:
+    /// - literals (numbers, hex, strings, byte literals, true/false/null)
+    /// - bare identifiers (loc0, arg1, static0, tN, …)
+    /// - arithmetic over the above using the operators listed below — NEO
+    ///   `ADD`/`SUB`/`MUL`/`AND`/`OR`/`XOR`/`SHL`/`SHR` and the comparison
+    ///   ops are observably pure on the lifted view (read but never mutate)
+    ///   and do not throw on valid operand types.
+    ///
+    /// Rejects:
+    /// - expressions containing `/` or `%` — `DIV`/`MOD` throw on divide by
+    ///   zero, so eliminating an unused temp would hide a real exception.
+    /// - expressions containing `[` — `PICKITEM` throws on out-of-bounds
+    ///   indexing or missing map keys; same hazard as above.
+    /// - expressions containing `(` (calls), unless the call is a
+    ///   known-pure helper. Side-effecting NEO calls (syscalls,
+    ///   internal CALL, CALLA, CALLT, manifest method names) must
+    ///   stay non-inlinable; without inlining them, two consumers
+    ///   would each re-execute the side effect. The whitelist
+    ///   covers the pure NEO arithmetic / buffer / type-check
+    ///   helpers the lift emits — these can be inlined safely
+    ///   because re-evaluation has no observable effect.
     fn is_pure_rhs(rhs: &str) -> bool {
         let trimmed = rhs.trim();
         if trimmed.is_empty() {
             return false;
         }
-        // Function-call shapes have side effects; bail.
-        if trimmed.contains('(') {
+        // Reject divide-by-zero and indexing throws unconditionally.
+        if trimmed
+            .as_bytes()
+            .iter()
+            .any(|b| matches!(*b, b'/' | b'%' | b'['))
+        {
             return false;
         }
-        if matches!(trimmed, "true" | "false" | "null") {
+        // No call → safe (literals, identifiers, arithmetic, etc.).
+        if !trimmed.contains('(') {
             return true;
         }
-        // Numeric literal (decimal or hex), optionally negative.
-        let numeric = trimmed.strip_prefix('-').unwrap_or(trimmed);
-        let hex = numeric
-            .strip_prefix("0x")
-            .or_else(|| numeric.strip_prefix("0X"));
-        if let Some(hex) = hex {
-            if !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return true;
+        // Has a call — accept only when every call site in the
+        // expression starts with a known-pure helper identifier.
+        rhs_calls_only_pure_helpers(trimmed)
+    }
+
+    /// Collapse `((expr))` to `(expr)` whenever the inner parens form a
+    /// matched pair surrounding the entire content. The single-use-temp
+    /// inliner unconditionally wraps multi-token substitutions in parens
+    /// for precedence safety; when the substitution lands inside an
+    /// existing parenthesised context (e.g. a `assert((x > 0))` call
+    /// argument), the result is doubly-parenthesised. Stripping the
+    /// inner pair leaves the operator-precedence intact.
+    pub(crate) fn reduce_double_parens(statements: &mut [String]) {
+        for stmt in statements.iter_mut() {
+            // Loop until no change so chains like `(((x)))` collapse fully.
+            loop {
+                let mut next: Option<String> = None;
+                let bytes = stmt.as_bytes();
+                let mut i = 0;
+                while i + 1 < bytes.len() {
+                    if bytes[i] == b'(' && bytes[i + 1] == b'(' {
+                        // Walk the inner `(` to find its matching `)`.
+                        let inner_open = i + 1;
+                        let mut depth = 1usize;
+                        let mut j = inner_open + 1;
+                        while j < bytes.len() {
+                            match bytes[j] {
+                                b'(' => depth += 1,
+                                b')' => {
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+                            j += 1;
+                        }
+                        if depth != 0 {
+                            break;
+                        }
+                        // The character immediately after the inner `)`
+                        // must itself be `)` for the outer pair to be
+                        // redundant — i.e. the pattern is `((...))`
+                        // where both parens close back-to-back.
+                        if j + 1 < bytes.len() && bytes[j + 1] == b')' {
+                            let mut rebuilt = String::with_capacity(stmt.len() - 2);
+                            rebuilt.push_str(&stmt[..i]);
+                            rebuilt.push('(');
+                            rebuilt.push_str(&stmt[inner_open + 1..j]);
+                            rebuilt.push(')');
+                            rebuilt.push_str(&stmt[j + 2..]);
+                            next = Some(rebuilt);
+                            break;
+                        }
+                    }
+                    i += 1;
+                }
+                match next {
+                    Some(rebuilt) => *stmt = rebuilt,
+                    None => break,
+                }
             }
-        } else if !numeric.is_empty() && numeric.bytes().all(|b| b.is_ascii_digit()) {
-            return true;
         }
-        // String literal.
-        let bytes = trimmed.as_bytes();
-        if bytes.len() >= 2
-            && (bytes[0] == b'"' && bytes[bytes.len() - 1] == b'"'
-                || bytes[0] == b'\'' && bytes[bytes.len() - 1] == b'\'')
-        {
-            return true;
-        }
-        // Bare identifier (loc0, arg1, static0, tN, etc.).
-        let mut chars = trimmed.chars();
-        if let Some(first) = chars.next() {
-            if (first == '_' || first.is_ascii_alphabetic())
-                && chars.all(|c| c == '_' || c.is_ascii_alphanumeric())
-            {
-                return true;
-            }
-        }
-        false
     }
 
     /// Strips VM-level stack operation comments that add noise to the output:
-    /// - Removes standalone `// drop ...` and `// remove second stack value` lines
-    /// - Strips trailing `// duplicate top of stack` and `// copy second stack value`
+    /// - Removes standalone `// drop ...`, `// remove second stack value`,
+    ///   `// swapped top two stack values`, `// xdrop stack[...]`,
+    ///   `// rotate top three stack values`, `// tuck top of stack`,
+    ///   `// reverse top N stack values`, and `// clear stack` lines.
+    ///   These describe the VM-level rearrangement; the actual data flow
+    ///   is already captured in subsequent variable references, so the
+    ///   comment is redundant once the lift completes.
+    /// - Strips trailing `// duplicate top of stack` and `// copy second stack value`.
     pub(crate) fn strip_stack_comments(statements: &mut [String]) {
         for stmt in statements.iter_mut() {
             let trimmed = stmt.trim();
-            if trimmed.starts_with("// drop ") || trimmed.starts_with("// remove second") {
+            if trimmed.starts_with("// drop ")
+                || trimmed.starts_with("// remove second")
+                || trimmed.starts_with("// swapped top")
+                || trimmed.starts_with("// xdrop stack")
+                || trimmed.starts_with("// rotate top")
+                || trimmed.starts_with("// tuck top")
+                || trimmed.starts_with("// reverse top")
+                || trimmed == "// clear stack"
+            {
                 stmt.clear();
                 continue;
             }
@@ -345,4 +420,99 @@ impl HighLevelEmitter {
         }
         format!("!({cond})")
     }
+}
+
+/// Return `true` when every `name(` call in `expr` starts with a
+/// known-pure helper identifier — i.e. one of the NEO math /
+/// buffer / type-check helpers the lift emits as `name(args)`.
+/// Calls into syscalls, internal/indirect/token-call helpers, or
+/// manifest method names are NOT pure and must keep the temp.
+fn rhs_calls_only_pure_helpers(expr: &str) -> bool {
+    let bytes = expr.as_bytes();
+    let mut in_string: Option<u8> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(quote) = in_string {
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+            if b == quote {
+                in_string = None;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' || b == b'\'' {
+            in_string = Some(b);
+            i += 1;
+            continue;
+        }
+        if b == b'(' {
+            // Walk back to find the identifier preceding `(`.
+            let mut start = i;
+            while start > 0 {
+                let prev = bytes[start - 1];
+                if prev.is_ascii_alphanumeric() || prev == b'_' {
+                    start -= 1;
+                } else {
+                    break;
+                }
+            }
+            if start == i {
+                // `(` with no preceding identifier — likely a
+                // grouping paren (e.g. `(a + b)` inside the RHS).
+                // That's pure; keep scanning.
+                i += 1;
+                continue;
+            }
+            let ident = &expr[start..i];
+            if !is_pure_helper_identifier(ident) {
+                return false;
+            }
+        }
+        i += 1;
+    }
+    true
+}
+
+/// The whitelist of identifiers the high-level lift uses for
+/// known-pure NEO operations. Anything outside this set is treated
+/// as potentially side-effecting (so the inliner won't move calls
+/// across each other or duplicate them by inlining a single-use
+/// temp into a multi-use position).
+fn is_pure_helper_identifier(ident: &str) -> bool {
+    if matches!(
+        ident,
+        // Math / arithmetic helpers (`Math` / `Helper.X` in C#)
+        "abs"
+            | "sign"
+            | "sqrt"
+            | "min"
+            | "max"
+            | "pow"
+            | "modpow"
+            | "modmul"
+            | "within"
+            // Buffer / string helpers
+            | "left"
+            | "right"
+            | "substr"
+            // Type checks (`(x is null)` form lives outside the
+            // call shape and is handled elsewhere; the call form
+            // appears only when the lift falls through to the
+            // generic helper)
+            | "is_null"
+            // Collection accessors that don't mutate state
+            | "keys"
+            | "values"
+            | "has_key"
+            | "len"
+    ) {
+        return true;
+    }
+    // Type-prefixed helpers: `is_type_bool`, `convert_to_integer`,
+    // etc. (suffix is one of NEO's stack-item type names).
+    ident.starts_with("is_type_") || ident.starts_with("convert_to_")
 }

@@ -12,7 +12,10 @@ impl HighLevelEmitter {
             Mul => self.binary_op(instruction, "*"),
             Div => self.binary_op(instruction, "/"),
             Mod => self.binary_op(instruction, "%"),
-            Pow => self.binary_op(instruction, "pow"),
+            // Function-call form (`pow(base, exp)`) matches the JS port
+            // and reads as a real helper invocation rather than the
+            // pseudo-operator `base pow exp` shape.
+            Pow => self.emit_call(instruction, "pow", 2, true),
             Sqrt => self.unary_op(instruction, |val| format!("sqrt({val})")),
             Modmul => self.emit_call(instruction, "modmul", 3, true),
             Modpow => self.emit_call(instruction, "modpow", 3, true),
@@ -36,13 +39,19 @@ impl HighLevelEmitter {
             Le => self.binary_op(instruction, "<="),
             Booland => self.binary_op(instruction, "&&"),
             Boolor => self.binary_op(instruction, "||"),
-            Min => self.binary_op(instruction, "min"),
-            Max => self.binary_op(instruction, "max"),
+            // Function-call form (`min(a, b)` / `max(a, b)`) — matches
+            // the JS port and reads as a helper invocation rather than
+            // the pseudo-operator `a min b` shape.
+            Min => self.emit_call(instruction, "min", 2, true),
+            Max => self.emit_call(instruction, "max", 2, true),
             Within => self.emit_call(instruction, "within", 3, true),
             Cat => self.binary_op(instruction, "cat"),
             Substr => self.emit_call(instruction, "substr", 3, true),
-            Left => self.binary_op(instruction, "left"),
-            Right => self.binary_op(instruction, "right"),
+            // Use function-call form (`left(s, n)` / `right(s, n)`) over
+            // a pseudo-operator `s left n` shape: matches the JS port
+            // and reads naturally as a helper invocation.
+            Left => self.emit_call(instruction, "left", 2, true),
+            Right => self.emit_call(instruction, "right", 2, true),
             Invert => self.unary_op(instruction, |val| format!("~{val}")),
             _ => return false,
         }

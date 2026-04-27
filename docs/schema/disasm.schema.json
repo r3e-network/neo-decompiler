@@ -3,9 +3,11 @@
   "$id": "https://github.com/r3e-network/neo-decompiler/docs/schema/disasm.schema.json",
   "title": "neo-decompiler disassembly report",
   "type": "object",
-  "required": ["file", "instructions", "warnings"],
+  "required": ["file", "script_hash_le", "script_hash_be", "instructions", "warnings"],
   "properties": {
     "file": {"type": "string"},
+    "script_hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
+    "script_hash_be": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
     "warnings": {"type": "array", "items": {"type": "string"}},
     "instructions": {
       "type": "array",

@@ -12,6 +12,8 @@ use super::schema::SchemaArgs;
 pub(in crate::cli) enum Command {
     /// Show NEF header information
     Info {
+        /// Path to the NEF file. The companion `<PATH>.manifest.json`
+        /// is auto-discovered when not passed via `--manifest`.
         path: PathBuf,
 
         /// Choose the output format
@@ -21,6 +23,7 @@ pub(in crate::cli) enum Command {
 
     /// Decode bytecode into instructions
     Disasm {
+        /// Path to the NEF file.
         path: PathBuf,
 
         /// Choose the output format
@@ -34,6 +37,9 @@ pub(in crate::cli) enum Command {
 
     /// Render the contract's control flow graph (DOT format)
     Cfg {
+        /// Path to the NEF file. The companion `<PATH>.manifest.json`
+        /// is auto-discovered when not passed via `--manifest`; when
+        /// found, the contract name is included in the graph label.
         path: PathBuf,
 
         /// Fail fast if an unknown opcode is encountered (default: tolerate and emit UNKNOWN_0x..)
@@ -43,6 +49,8 @@ pub(in crate::cli) enum Command {
 
     /// Parse and pretty-print the bytecode
     Decompile {
+        /// Path to the NEF file. The companion `<PATH>.manifest.json`
+        /// is auto-discovered when not passed via `--manifest`.
         path: PathBuf,
 
         /// Choose the output view
@@ -57,25 +65,36 @@ pub(in crate::cli) enum Command {
         #[arg(long)]
         fail_on_unknown_opcodes: bool,
 
-        /// Inline single-use temporary variables in the high-level view (experimental)
+        /// Emit per-instruction `// XXXX: OPCODE` trace comments above
+        /// each lifted statement. Off by default (the lifted source is
+        /// rendered without trace noise); pass this flag when
+        /// cross-referencing the high-level view against raw bytecode.
         #[arg(long)]
+        trace_comments: bool,
+
+        /// Suppress single-use temp inlining. By default, temporaries
+        /// referenced exactly once are inlined into their consumer for
+        /// readability; pass this flag to keep every `let tN = ...`
+        /// statement visible (useful when correlating against
+        /// `--trace-comments` or against raw bytecode offsets).
+        #[arg(long)]
+        no_inline_temps: bool,
+
+        // The flags below pre-date the default flip described above
+        // and are kept as hidden no-op aliases so existing scripts
+        // and CI configurations continue to work. They were the
+        // opt-in path to the new default behaviour.
+        #[arg(long, hide = true)]
         inline_single_use_temps: bool,
-
-        /// Suppress per-instruction `// XXXX: OPCODE` trace comments in the
-        /// high-level view. Recommended when reading decompiled output as
-        /// source code. Untranslated instructions still emit notes.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         no_trace_comments: bool,
-
-        /// Convenience flag: produce clean human-readable output by enabling
-        /// both `--no-trace-comments` and `--inline-single-use-temps`.
-        /// Recommended for end users; equivalent to passing both flags.
-        #[arg(long)]
+        #[arg(long, hide = true)]
         clean: bool,
     },
 
     /// List method tokens embedded in the NEF file
     Tokens {
+        /// Path to the NEF file.
         path: PathBuf,
 
         /// Choose the output view

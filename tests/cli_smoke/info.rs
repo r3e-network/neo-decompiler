@@ -129,7 +129,16 @@ fn info_command_loads_manifest_when_available() {
             "pubkey=039999999999999999999999999999999999999999999999999999999999999999",
         ))
         .stdout(contains("Permissions:"))
-        .stdout(contains("Trusts:"));
+        .stdout(contains("Trusts:"))
+        .stdout(contains("Extra:"))
+        .stdout(contains("- Author: Example Author"))
+        .stdout(contains("- Email: author@example.com"))
+        // ABI methods/events render on separate lines (was packed on
+        // a single line as `ABI methods: 1 events: 0` — inconsistent
+        // capitalisation and harder to grep). Now parallel to the
+        // other `Key: Value` rows in the block.
+        .stdout(contains("\nABI methods: "))
+        .stdout(contains("\nABI events: "));
 }
 
 #[test]

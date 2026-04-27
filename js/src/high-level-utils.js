@@ -37,23 +37,89 @@ export function convertTargetName(operand) {
 }
 
 export function renderUntranslatedInstruction(instruction) {
+  // Use the `// warning:` prefix (rather than the per-instruction
+  // `// XXXX:` trace style) to mark this as a real hole in the
+  // lifted source — distinct from the optional trace-comment
+  // stream. Mirrors Rust's `warn(...)` which routes through the
+  // same prefix so both ports surface untranslated opcodes
+  // identically.
   const mnemonic =
     instruction.opcode.mnemonic === "UNKNOWN"
       ? `UNKNOWN_0x${instruction.opcode.byte.toString(16).padStart(2, "0").toUpperCase()}`
       : instruction.opcode.mnemonic;
   const operandText = instruction.operand !== null ? ` ${formatOperand(instruction.operand)}` : "";
-  return `// ${formatOffset(instruction.offset)}: ${mnemonic}${operandText} (not yet translated)`;
+  return `// warning: ${mnemonic}${operandText} (not yet translated)`;
 }
 
-const PRIMITIVE_OR_IDENT_RE = /^(?:-?\d+|true|false|null|[A-Za-z_][A-Za-z0-9_]*)$/u;
+const PRIMITIVE_OR_IDENT_RE = /^(?:-?\d+|0x[0-9A-Fa-f]+|true|false|null|[A-Za-z_][A-Za-z0-9_]*)$/u;
 const ARRAY_LITERAL_RE = /^\[.*\]$/u;
 const OBJECT_LITERAL_RE = /^\{.*\}$/u;
+const CALL_PREFIX_RE = /^[A-Za-z_$][A-Za-z0-9_$]*\(/u;
+
+/**
+ * Returns true when `value` is a syntactically self-contained string
+ * literal — opens and closes with matching `"` or `'`, with the closing
+ * quote being the very last character (so `"a" + "b"` is *not* a single
+ * literal even though both ends are quotes). Used by `wrapExpression`
+ * to skip wrapping atomic string operands in extra parens.
+ */
+function isSelfContainedString(value) {
+  if (value.length < 2) return false;
+  const quote = value[0];
+  if (quote !== '"' && quote !== "'") return false;
+  if (value[value.length - 1] !== quote) return false;
+  // Walk forward and confirm the trailing quote is the *first* unescaped
+  // closing quote — anything else means the value contains additional
+  // tokens past a closed string.
+  let i = 1;
+  while (i < value.length) {
+    const ch = value[i];
+    if (ch === "\\") {
+      i += 2;
+      continue;
+    }
+    if (ch === quote) {
+      return i === value.length - 1;
+    }
+    i += 1;
+  }
+  return false;
+}
+
+/**
+ * Returns true when `value` is shaped like a single function call —
+ * `identifier(...)` whose closing paren is the final character and whose
+ * paren depth never re-opens to zero before the end. Used by
+ * `wrapExpression` to avoid redundant `(call())` parens around what is
+ * already a syntactically self-contained operand.
+ */
+function isSelfContainedCall(value) {
+  if (!value.endsWith(")") || !CALL_PREFIX_RE.test(value)) {
+    return false;
+  }
+  const firstOpen = value.indexOf("(");
+  let depth = 0;
+  for (let i = firstOpen; i < value.length; i++) {
+    const ch = value[i];
+    if (ch === "(") {
+      depth++;
+    } else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        return i === value.length - 1;
+      }
+    }
+  }
+  return false;
+}
 
 export function wrapExpression(value) {
   if (
     PRIMITIVE_OR_IDENT_RE.test(value) ||
     ARRAY_LITERAL_RE.test(value) ||
-    OBJECT_LITERAL_RE.test(value)
+    OBJECT_LITERAL_RE.test(value) ||
+    isSelfContainedCall(value) ||
+    isSelfContainedString(value)
   ) {
     return value;
   }

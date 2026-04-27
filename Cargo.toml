@@ -1,12 +1,12 @@
 [package]
 name = "neo-decompiler"
-version = "0.6.3"
+version = "0.7.0"
 edition = "2021"
 authors = ["Jimmy <jimmy@r3e.network>"]
 license = "MIT OR Apache-2.0"
-description = "Minimal tooling for inspecting Neo N3 NEF bytecode"
+description = "Neo N3 NEF decompiler: parse, disassemble, lift bytecode to high-level pseudocode and C# skeletons, with a CLI, JSON reports, and optional WebAssembly bindings."
 readme = "README.md"
-keywords = ["neo", "bytecode", "nef"]
+keywords = ["neo", "bytecode", "nef", "decompiler", "smart-contract"]
 categories = ["development-tools", "parser-implementations"]
 repository = "https://github.com/r3e-network/neo-decompiler"
 homepage = "https://github.com/r3e-network/neo-decompiler"

@@ -41,6 +41,17 @@ fn disasm_command_outputs_instructions() {
     assert_eq!(instructions[1]["operand_kind"], Value::String("I32".into()));
     assert_eq!(instructions[1]["operand_value"]["value"], Value::from(1));
     assert!(value["warnings"].is_array());
+    // Disasm JSON now surfaces script_hash so callers can correlate
+    // an instruction stream against an `info` / `decompile` report or
+    // explorer URL without re-parsing the NEF themselves.
+    assert_eq!(
+        value["script_hash_le"],
+        Value::String("9DE87DC65A6A581E502CAE845C6F13645B10C5EA".into())
+    );
+    assert_eq!(
+        value["script_hash_be"],
+        Value::String("EAC5105B64136F5C84AE2C501E586A5AC67DE89D".into())
+    );
     assert_schema(SchemaKind::Disasm, &value);
 }
 

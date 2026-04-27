@@ -1,5 +1,35 @@
 import { convertTargetName, resolvePackedValue, stripOuterParens, wrapExpression } from "./high-level-utils.js";
 
+// Use `==` / `!=` (rather than JavaScript's `===` / `!==`) for parity
+// with the Rust port's high-level emitter — those forms also lower
+// cleanly to both Rust and C# without further rewriting. The `cat`
+// pseudo-operator stays as-is in the high-level surface; the C#
+// emitter is responsible for translating it to `+`.
+// `arg0`, `loc12`, `static3`, `t7` and bare integer literals are safe
+// to duplicate by string copy. Anything else (a call, a freshly-built
+// arithmetic expression, an indexing access) carries either side
+// effects or a precedence hazard, so DUP/OVER must materialise it
+// into a temp before pushing the second copy.
+const SIMPLE_IDENT_OR_LITERAL_RE = /^(?:-?\d+|0x[0-9A-Fa-f]+|true|false|null|"(?:[^"\\]|\\.)*"|[A-Za-z_][A-Za-z0-9_]*)$/u;
+
+/**
+ * If `value` (currently sitting on the stack at index `slot`, defaulting
+ * to the top) is a complex expression, hoist it into a `let tN = ...;`
+ * statement and return the temp identifier — also patching the existing
+ * stack slot so the original consumer stays in sync. Returns `value`
+ * unchanged for simple identifiers and literals.
+ */
+function materialiseStackTopForDup(state, value, slot = state.stack.length - 1) {
+  if (SIMPLE_IDENT_OR_LITERAL_RE.test(value)) {
+    return value;
+  }
+  const temp = `t${state.nextTempId}`;
+  state.nextTempId += 1;
+  state.statements.push(`let ${temp} = ${value};`);
+  state.stack[slot] = temp;
+  return temp;
+}
+
 const BINARY_OPERATORS = {
   ADD: "+",
   SUB: "-",
@@ -9,16 +39,16 @@ const BINARY_OPERATORS = {
   AND: "&",
   OR: "|",
   XOR: "^",
-  EQUAL: "===",
-  NOTEQUAL: "!==",
+  EQUAL: "==",
+  NOTEQUAL: "!=",
   LT: "<",
   LE: "<=",
   GT: ">",
   GE: ">=",
   BOOLAND: "&&",
   BOOLOR: "||",
-  NUMEQUAL: "===",
-  NUMNOTEQUAL: "!==",
+  NUMEQUAL: "==",
+  NUMNOTEQUAL: "!=",
   CAT: "cat",
 };
 
@@ -71,12 +101,31 @@ export function tryStackShapeOperation(state, instruction) {
       return true;
     case "DUP": {
       const top = state.stack.at(-1);
-      state.stack.push(top !== undefined ? top : "/* stack_underflow */");
+      if (top === undefined) {
+        state.stack.push("???");
+      } else {
+        // If the top-of-stack is anything other than a plain
+        // identifier — typically a CALL/SYSCALL/CALLT/CALLA result
+        // expression with side effects, or a freshly-built
+        // arithmetic expression — materialise it into a temp before
+        // duplicating. Otherwise the lifted output ends up with two
+        // independent copies of the same call (`syscall(...)`,
+        // `sub_0xNNNN(...)`) where the bytecode evaluated it once.
+        const materialised = materialiseStackTopForDup(state, top);
+        state.stack.push(materialised);
+      }
       return true;
     }
     case "OVER": {
-      const value = state.stack.length >= 2 ? state.stack[state.stack.length - 2] : "/* stack_underflow */";
-      state.stack.push(value);
+      if (state.stack.length < 2) {
+        state.stack.push("???");
+        return true;
+      }
+      // Same hazard as DUP: copying the second-from-top expression
+      // by string yields two evaluations of the underlying call.
+      const idx = state.stack.length - 2;
+      const materialised = materialiseStackTopForDup(state, state.stack[idx], idx);
+      state.stack.push(materialised);
       return true;
     }
     case "SWAP": {
@@ -211,12 +260,12 @@ export function tryUnaryExpression(state, instruction) {
       return true;
     }
     case "INC": {
-      const value = stripOuterParens(state.stack.pop() ?? "/* stack_underflow */");
+      const value = stripOuterParens(state.stack.pop() ?? "???");
       state.stack.push(`${wrapExpression(value)} + 1`);
       return true;
     }
     case "DEC": {
-      const value = stripOuterParens(state.stack.pop() ?? "/* stack_underflow */");
+      const value = stripOuterParens(state.stack.pop() ?? "???");
       state.stack.push(`${wrapExpression(value)} - 1`);
       return true;
     }
@@ -235,14 +284,28 @@ export function tryUnaryExpression(state, instruction) {
       );
       return true;
     }
+    // NEWBUFFER / NEWARRAY / NEWARRAY_T allocate a fresh container that
+    // bytecode commonly mutates via DUP + SETITEM / APPEND. Pushing the
+    // call expression onto the operand stack means DUP duplicates the
+    // string, and the lifted output ends up with two independent
+    // allocations (`new_array(3)[0] = 8; return new_array(3);`).
+    // Materialise into a temp so all downstream stack references
+    // resolve to the same identifier — mirrors the NEWMAP / NEWARRAY0 /
+    // NEWSTRUCT0 fix in `high-level-collections.js`.
     case "NEWBUFFER": {
       const value = stripOuterParens(state.stack.pop() ?? "???");
-      state.stack.push(`new_buffer(${value})`);
+      const temp = `t${state.nextTempId}`;
+      state.nextTempId += 1;
+      state.statements.push(`let ${temp} = new_buffer(${value});`);
+      state.stack.push(temp);
       return true;
     }
     case "NEWARRAY": {
       const value = stripOuterParens(state.stack.pop() ?? "???");
-      state.stack.push(`new_array(${value})`);
+      const temp = `t${state.nextTempId}`;
+      state.nextTempId += 1;
+      state.statements.push(`let ${temp} = new_array(${value});`);
+      state.stack.push(temp);
       return true;
     }
     // NEWSTRUCT handled by tryCollectionExpression in high-level-collections.js
@@ -284,8 +347,8 @@ export function tryUnaryExpression(state, instruction) {
 export function tryBinaryExpression(stack, mnemonic) {
   const operator = BINARY_OPERATORS[mnemonic];
   if (operator) {
-    const right = stack.pop() ?? "/* stack_underflow */";
-    const left = stack.pop() ?? "/* stack_underflow */";
+    const right = stack.pop() ?? "???";
+    const left = stack.pop() ?? "???";
     stack.push(`${wrapExpression(left)} ${operator} ${wrapExpression(right)}`);
     return true;
   }

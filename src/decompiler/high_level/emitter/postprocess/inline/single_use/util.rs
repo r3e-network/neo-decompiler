@@ -1,16 +1,94 @@
 pub(super) fn is_safe_to_inline(expr: &str) -> bool {
-    // Don't inline function calls (may have side effects).
-    // Simple heuristic: if it contains '(' followed by something other than operators.
-    if expr.contains('(') {
-        // Allow simple parenthesized expressions.
-        let trimmed = expr.trim();
-        if trimmed.starts_with('(') && trimmed.ends_with(')') {
-            return true;
+    // No call → safe (literals, identifiers, arithmetic, etc.).
+    if !expr.contains('(') {
+        return true;
+    }
+    let trimmed = expr.trim();
+    // Plain parenthesised expression (`(a + b)`, `(x is null)`, etc.) — safe.
+    if trimmed.starts_with('(') && trimmed.ends_with(')') {
+        return true;
+    }
+    // Has a call: only safe when every call site is into a known
+    // pure NEO helper (math, buffer, type-check). Side-effecting
+    // calls (syscall, sub_0x, calla, callt, manifest method names)
+    // must not be inlined — moving them across other operations
+    // would reorder side effects.
+    rhs_calls_only_pure_helpers(trimmed)
+}
+
+/// Walk `expr` and return `true` only if every `name(` it contains
+/// names a known-pure NEO helper. Mirrors the logic in
+/// `simplify::rhs_calls_only_pure_helpers` for the dead-temp pass.
+fn rhs_calls_only_pure_helpers(expr: &str) -> bool {
+    let bytes = expr.as_bytes();
+    let mut in_string: Option<u8> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(quote) = in_string {
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+            if b == quote {
+                in_string = None;
+            }
+            i += 1;
+            continue;
         }
-        // Likely a function call.
-        return false;
+        if b == b'"' || b == b'\'' {
+            in_string = Some(b);
+            i += 1;
+            continue;
+        }
+        if b == b'(' {
+            let mut start = i;
+            while start > 0 {
+                let prev = bytes[start - 1];
+                if prev.is_ascii_alphanumeric() || prev == b'_' {
+                    start -= 1;
+                } else {
+                    break;
+                }
+            }
+            if start == i {
+                i += 1;
+                continue;
+            }
+            let ident = &expr[start..i];
+            if !is_pure_helper_identifier(ident) {
+                return false;
+            }
+        }
+        i += 1;
     }
     true
+}
+
+fn is_pure_helper_identifier(ident: &str) -> bool {
+    if matches!(
+        ident,
+        "abs"
+            | "sign"
+            | "sqrt"
+            | "min"
+            | "max"
+            | "pow"
+            | "modpow"
+            | "modmul"
+            | "within"
+            | "left"
+            | "right"
+            | "substr"
+            | "is_null"
+            | "keys"
+            | "values"
+            | "has_key"
+            | "len"
+    ) {
+        return true;
+    }
+    ident.starts_with("is_type_") || ident.starts_with("convert_to_")
 }
 
 pub(super) fn needs_parens(expr: &str) -> bool {

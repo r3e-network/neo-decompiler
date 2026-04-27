@@ -12,9 +12,19 @@ export function createState(
   const parameterNames = manifestMethod?.parameters?.length
     ? sanitizeParameterNames(manifestMethod.parameters)
     : Array.from({ length: inferredArgCount }, (_, index) => `arg${index}`);
+  // Pre-populate the operand stack with the parameter names ONLY when
+  // the method does not start with `INITSLOT`. INITSLOT pops args off
+  // the stack into the arg slots, so pre-populating in that case
+  // creates phantom `argN` values that linger past LDARG/RET and
+  // surface as spurious bare-expression statements (e.g. `return 1;
+  // arg0;`). Mirrors the Rust `set_argument_labels` guard.
+  const startsWithInitslot =
+    instructions[0]?.opcode?.mnemonic === "INITSLOT";
   return {
     stack:
-      manifestMethod?.parameters?.length || inferredArgCount === 0
+      manifestMethod?.parameters?.length ||
+      inferredArgCount === 0 ||
+      startsWithInitslot
         ? []
         : [...parameterNames],
     statements: [],

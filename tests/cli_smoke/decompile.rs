@@ -13,13 +13,27 @@ fn decompile_command_outputs_high_level_by_default() {
     let nef_path = dir.path().join("contract.nef");
     std::fs::write(&nef_path, build_sample_nef()).unwrap();
 
-    neo_decompiler_cmd()
+    let assert = neo_decompiler_cmd()
         .arg("decompile")
         .arg(&nef_path)
         .assert()
         .success()
         .stdout(contains("contract NeoContract"))
         .stdout(contains("GasToken::Transfer"));
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf-8 stdout");
+    // Default output should be clean: no per-instruction trace
+    // comments. A trace comment looks like `// 0000: PUSH2`.
+    assert!(
+        !stdout.lines().any(|line| {
+            let trimmed = line.trim_start();
+            trimmed.starts_with("// 0")
+                && trimmed.len() > 8
+                && trimmed.as_bytes().get(7) == Some(&b':')
+        }),
+        "default decompile output should not include `// XXXX: OPCODE` trace comments:\n{}",
+        stdout,
+    );
 }
 
 #[test]
@@ -28,6 +42,9 @@ fn decompile_command_accepts_inline_single_use_temps_flag() {
     let nef_path = dir.path().join("contract.nef");
     std::fs::write(&nef_path, build_sample_nef()).unwrap();
 
+    // `--inline-single-use-temps` is now a no-op alias for the
+    // default behaviour (kept for backwards compatibility); the
+    // smoke test still asserts the flag is accepted by clap.
     neo_decompiler_cmd()
         .arg("decompile")
         .arg("--inline-single-use-temps")
@@ -35,6 +52,36 @@ fn decompile_command_accepts_inline_single_use_temps_flag() {
         .assert()
         .success()
         .stdout(contains("contract NeoContract"));
+}
+
+#[test]
+fn decompile_trace_comments_flag_re_enables_per_instruction_comments() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+
+    neo_decompiler_cmd()
+        .arg("decompile")
+        .arg("--trace-comments")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("// 0000: "));
+}
+
+#[test]
+fn decompile_no_inline_temps_keeps_let_t_lines_visible() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+
+    neo_decompiler_cmd()
+        .arg("decompile")
+        .arg("--no-inline-temps")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("let t"));
 }
 
 #[test]
@@ -98,6 +145,33 @@ fn decompile_command_supports_csharp_format() {
         .success()
         .stdout(contains("namespace NeoDecompiler.Generated"))
         .stdout(contains("public static string symbol()"));
+}
+
+#[test]
+fn decompile_output_format_accepts_csharp_and_legacy_alias() {
+    // `--format` and `--output-format` now accept the same `csharp`
+    // token; the legacy kebab-case `c-sharp` form is kept as an alias
+    // for back-compat with any scripts that pinned the old spelling.
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    let manifest_path = dir.path().join("contract.manifest.json");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+    std::fs::write(&manifest_path, SAMPLE_MANIFEST).unwrap();
+
+    for spelling in ["csharp", "c-sharp"] {
+        neo_decompiler_cmd()
+            .arg("--manifest")
+            .arg(&manifest_path)
+            .arg("decompile")
+            .arg("--format")
+            .arg("csharp")
+            .arg("--output-format")
+            .arg(spelling)
+            .arg(&nef_path)
+            .assert()
+            .success()
+            .stdout(contains("namespace NeoDecompiler.Generated"));
+    }
 }
 
 #[test]

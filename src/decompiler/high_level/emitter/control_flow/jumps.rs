@@ -148,14 +148,28 @@ impl HighLevelEmitter {
                     let returns_value =
                         self.callt_returns_value.get(index).copied().unwrap_or(true);
                     self.push_comment(instruction);
+                    // Always emit the token call — even if the evaluation
+                    // stack doesn't carry enough values (e.g. malformed
+                    // bytecode, or a missed lift earlier in the method).
+                    // Earlier this branch dropped the call entirely on
+                    // underflow and just emitted a structured warning,
+                    // leaving the rendered source missing the CALLT
+                    // entirely; the JS port has always substituted `???`
+                    // for missing args and emitted the call shape so the
+                    // reader can see what was attempted.
                     if self.stack.len() < arg_count {
                         self.stack_underflow(instruction, arg_count);
-                        return;
                     }
+                    // Internal calls (and CALLT) use right-to-left push
+                    // order (C convention), so popping yields arguments
+                    // in correct left-to-right display order — no
+                    // reverse needed before joining.
                     let mut args = Vec::with_capacity(arg_count);
                     for _ in 0..arg_count {
                         if let Some(value) = self.pop_stack_value() {
                             args.push(value);
+                        } else {
+                            args.push("???".to_string());
                         }
                     }
                     let args = args.join(", ");

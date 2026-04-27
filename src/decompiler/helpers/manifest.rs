@@ -31,3 +31,18 @@ pub(in super::super) fn format_permission_entry(permission: &ManifestPermission)
         permission.methods.describe()
     )
 }
+
+/// Stringify a manifest `extra` scalar (string, number, boolean) for
+/// the human-readable forms emitted by both renderers — the high-level
+/// `// Key: <value>` comment and the C# `[ManifestExtra("Key",
+/// "<value>")]` attribute. Returns `None` for nested objects, arrays,
+/// or `null`: those have no canonical short form, so callers drop the
+/// entry rather than emit ambiguous output.
+pub(in super::super) fn render_extra_scalar(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}

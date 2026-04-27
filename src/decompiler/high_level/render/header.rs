@@ -28,6 +28,12 @@ pub(super) fn write_contract_header(
         util::format_hash_be(&script_hash)
     )
     .unwrap();
+    if !nef.header.compiler.is_empty() {
+        writeln!(output, "    // compiler: {}", nef.header.compiler).unwrap();
+    }
+    if !nef.header.source.is_empty() {
+        writeln!(output, "    // source: {}", nef.header.source).unwrap();
+    }
 
     if let Some(manifest) = manifest {
         manifest_summary::write_manifest_summary(output, manifest);

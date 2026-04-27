@@ -3,9 +3,11 @@
   "$id": "https://github.com/r3e-network/neo-decompiler/docs/schema/tokens.schema.json",
   "title": "neo-decompiler tokens report",
   "type": "object",
-  "required": ["file", "method_tokens", "warnings"],
+  "required": ["file", "script_hash_le", "script_hash_be", "method_tokens", "warnings"],
   "properties": {
     "file": {"type": "string"},
+    "script_hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
+    "script_hash_be": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
     "method_tokens": {
       "type": "array",
       "items": {"$ref": "#/definitions/methodToken"}

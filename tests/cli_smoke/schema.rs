@@ -33,8 +33,8 @@ fn schema_command_outputs_embedded_schema() {
         .expect("list schemas");
     assert!(list.status.success());
     let listing = String::from_utf8_lossy(&list.stdout);
-    assert!(listing.contains("info v1.1.0 -"));
-    assert!(listing.contains("disasm v1.1.0 -"));
+    assert!(listing.contains("info v1.3.0 -"));
+    assert!(listing.contains("disasm v1.3.0 -"));
 
     let json_list = neo_decompiler_cmd()
         .arg("schema")
@@ -45,7 +45,7 @@ fn schema_command_outputs_embedded_schema() {
     let entries: Value = serde_json::from_slice(&json_list.stdout).expect("json list");
     assert!(entries.is_array());
     assert_eq!(entries[0]["name"], Value::String("info".into()));
-    assert_eq!(entries[0]["version"], Value::String("1.1.0".into()));
+    assert_eq!(entries[0]["version"], Value::String("1.3.0".into()));
     assert_eq!(
         entries[0]["path"],
         Value::String("docs/schema/info.schema.json".into())

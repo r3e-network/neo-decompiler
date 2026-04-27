@@ -556,14 +556,35 @@ function rewriteIfGotoToWhile(statements) {
 // ─── Pass 5: eliminate_fallthrough_gotos ────────────────────────────────────
 
 function eliminateFallthroughGotos(statements) {
+  // Also strips the try-context `leave label_X;` form (lifted from
+  // ENDTRY). The transfer is "dead" whenever the resume target sits on
+  // the next executable line *or* one or more close-braces past it
+  // (e.g. a `leave LABEL;` that is the last statement of a catch body
+  // whose closing `}` is immediately followed by `LABEL:`). In that
+  // case the C#/Rust backends would emit identical control flow either
+  // way, so the explicit transfer is just noise.
   for (let i = 0; i < statements.length; i++) {
     const trimmed = statements[i].trim();
-    const labelMatch = GOTO_LABEL_RE.exec(trimmed);
+    const labelMatch =
+      GOTO_LABEL_RE.exec(trimmed) ?? LEAVE_LABEL_RE.exec(trimmed);
     if (!labelMatch) continue;
     const label = labelMatch[1];
-    const next = nextCodeLine(statements, i);
-    if (next >= 0 && statements[next].trim() === `${label}:`) {
-      statements[i] = "";
+    const labelLine = `${label}:`;
+    // Walk forward past blank/comment/close-brace lines to find the
+    // next executable statement. If it is the matching label, the
+    // transfer is dead — control would have reached the label through
+    // structural fall-out anyway.
+    let probe = i + 1;
+    while (probe < statements.length) {
+      const t = statements[probe].trim();
+      if (t === "" || t.startsWith("//") || t === "}") {
+        probe++;
+        continue;
+      }
+      if (t === labelLine) {
+        statements[i] = "";
+      }
+      break;
     }
   }
 }
@@ -1117,7 +1138,22 @@ function removeEmptyIf(statements) {
 function stripStackComments(statements) {
   for (let i = 0; i < statements.length; i++) {
     const trimmed = statements[i].trim();
-    if (trimmed.startsWith("// drop ") || trimmed.startsWith("// remove second")) {
+    if (
+      trimmed.startsWith("// drop ") ||
+      trimmed.startsWith("// remove second") ||
+      // `// xdrop stack[N] (removed X)` and the dynamic-index variant
+      // are accurate but read as VM-internal noise — Rust strips them
+      // already; mirror that so the two ports stay byte-identical on
+      // contracts that hit XDROP.
+      trimmed.startsWith("// xdrop stack") ||
+      // ROT / TUCK / REVERSEN / CLEAR also leave purely descriptive
+      // VM-mechanics annotations; the data-flow is captured in the
+      // subsequent variable references, so the comment is redundant.
+      trimmed.startsWith("// rotate top") ||
+      trimmed.startsWith("// tuck top") ||
+      trimmed.startsWith("// reverse top") ||
+      trimmed === "// clear stack"
+    ) {
       statements[i] = "";
       continue;
     }
@@ -1126,21 +1162,6 @@ function stripStackComments(statements) {
       if (pos >= 0) {
         statements[i] = statements[i].slice(0, pos);
       }
-    }
-  }
-}
-
-// Strip informational slot-declaration comments emitted from INITSLOT /
-// INITSSLOT. These document the runtime layout but read as noise alongside
-// lifted source code, so clean mode removes them.
-function stripSlotDeclarationComments(statements) {
-  for (let i = 0; i < statements.length; i++) {
-    const trimmed = statements[i].trim();
-    if (
-      trimmed.startsWith("// declare ") &&
-      (trimmed.endsWith(" arguments") || trimmed.endsWith(" static slots"))
-    ) {
-      statements[i] = "";
     }
   }
 }
@@ -1723,6 +1744,14 @@ export function postprocess(statements, options = {}) {
   // Pass 8b (optional, matches Rust inline_single_use_temps)
   if (options.inlineSingleUseTemps) {
     inlineSingleUseTemps(statements);
+    // Inlining can collapse the body that was sitting between a
+    // `leave/goto LABEL;` and its `LABEL:` target, turning the
+    // previously-preserved transfer into a now-eliminable
+    // fallthrough. Re-run elimination + orphan-label cleanup so the
+    // pair drops out instead of sticking around in clean output.
+    // Mirrors the Rust core.rs pass order.
+    eliminateFallthroughGotos(statements);
+    removeOrphanedLabels(statements);
   }
   // Pass 9
   rewriteCompoundAssignments(statements);
@@ -1736,12 +1765,6 @@ export function postprocess(statements, options = {}) {
   removeEmptyIf(statements);
   // Pass 14
   stripStackComments(statements);
-  // Optional: strip informational slot-declaration comments in clean mode.
-  // Matches the Rust emitter's `emit_trace_comments=false` behaviour for
-  // INITSLOT/INITSSLOT.
-  if (options.clean || options.cleanOutput) {
-    stripSlotDeclarationComments(statements);
-  }
   // Pass 15
   eliminateIdentityTemps(statements);
   // Pass 16

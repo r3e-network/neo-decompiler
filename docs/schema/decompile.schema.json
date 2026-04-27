@@ -5,6 +5,7 @@
   "type": "object",
   "required": [
     "file",
+    "compiler",
     "script_hash_le",
     "script_hash_be",
     "csharp",
@@ -17,6 +18,8 @@
   "properties": {
     "file": {"type": "string"},
     "manifest_path": {"type": ["string", "null"]},
+    "compiler": {"type": "string"},
+    "source": {"type": ["string", "null"]},
     "script_hash_le": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
     "script_hash_be": {"type": "string", "pattern": "^[0-9A-F]{40}$"},
     "csharp": {"type": "string"},

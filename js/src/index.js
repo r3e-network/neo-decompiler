@@ -7,6 +7,7 @@ import { renderGroupedPseudocode } from "./grouped-pseudocode.js";
 import { renderHighLevelMethodGroups } from "./high-level.js";
 import { parseManifest } from "./manifest.js";
 import { buildMethodGroups } from "./methods.js";
+import { describeMethodToken } from "./native-contracts.js";
 import { renderPseudocode } from "./pseudocode.js";
 import { inferTypes } from "./types.js";
 import { buildXrefs } from "./xrefs.js";
@@ -28,6 +29,21 @@ export {
   ManifestParseError,
 };
 
+/**
+ * Parse a NEF blob and return its instruction stream plus rendered
+ * pseudocode (no manifest correlation, no high-level lifting).
+ *
+ * @param {Uint8Array | ArrayBuffer | number[]} bytes - Raw NEF bytes.
+ * @param {Object} [options] - Disassembly options.
+ * @param {boolean} [options.failOnUnknownOpcodes] - Throw instead of
+ *   emitting `UNKNOWN_0xNN` when an unknown opcode is encountered.
+ * @returns {{
+ *   nef: import('./index').NefFile,
+ *   instructions: import('./index').Instruction[],
+ *   warnings: string[],
+ *   pseudocode: string,
+ * }}
+ */
 export function decompileBytes(bytes, options = {}) {
   const nef = parseNef(bytes);
   const disassembly = disassembleScript(nef.script, options);
@@ -39,6 +55,12 @@ export function decompileBytes(bytes, options = {}) {
   };
 }
 
+/**
+ * Run the full analysis pipeline (CFG, xrefs, type inference) against
+ * a NEF and an optional manifest. Returns the same fields as
+ * `decompileBytes` plus method groups, call graph, xrefs, and
+ * inferred types.
+ */
 export function analyzeBytes(bytes, manifestInput = null, options = {}) {
   const manifest = manifestInput ? parseManifest(manifestInput) : null;
   const result = decompileBytes(bytes, options);
@@ -53,6 +75,16 @@ export function analyzeBytes(bytes, manifestInput = null, options = {}) {
   };
 }
 
+/**
+ * Like `decompileBytes` but with a manifest, so methods can be
+ * grouped by their declared offsets and the grouped pseudocode
+ * surface (`groupedPseudocode`) becomes available.
+ *
+ * @param {Uint8Array | ArrayBuffer | number[]} bytes
+ * @param {string | object} manifestInput - Manifest JSON string or
+ *   parsed object.
+ * @param {Object} [options]
+ */
 export function decompileBytesWithManifest(bytes, manifestInput, options = {}) {
   const manifest = parseManifest(manifestInput);
   const result = decompileBytes(bytes, options);
@@ -65,6 +97,17 @@ export function decompileBytesWithManifest(bytes, manifestInput, options = {}) {
   };
 }
 
+/**
+ * Decompile a NEF directly to high-level pseudocode (no manifest).
+ * The resulting `highLevel` string is the human-readable surface
+ * that mirrors the Rust CLI's `--format high-level` default.
+ *
+ * @param {Uint8Array | ArrayBuffer | number[]} bytes
+ * @param {Object} [options] - See `DecompileOptions` in index.d.ts;
+ *   the most useful are `clean: true` (the default-equivalent
+ *   shorthand for inlined temps and no trace comments) and
+ *   `emitTraceComments: true` (re-enable per-instruction trace).
+ */
 export function decompileHighLevelBytes(bytes, options = {}) {
   const result = decompileBytes(bytes, options);
   const methodGroups = buildMethodGroups(result.instructions, null);
@@ -78,6 +121,15 @@ export function decompileHighLevelBytes(bytes, options = {}) {
   };
 }
 
+/**
+ * High-level decompile + manifest correlation in one call. Same
+ * `highLevel` surface as `decompileHighLevelBytes`, plus method
+ * groups and grouped pseudocode for callers that want both views.
+ *
+ * @param {Uint8Array | ArrayBuffer | number[]} bytes
+ * @param {string | object} manifestInput
+ * @param {Object} [options]
+ */
 export function decompileHighLevelBytesWithManifest(bytes, manifestInput, options = {}) {
   const manifest = parseManifest(manifestInput);
   const result = decompileBytes(bytes, options);
@@ -101,11 +153,24 @@ function buildHighLevelContext(methodGroups, nef, options = {}) {
     methodArgCountsByOffset: new Map(
       methodGroups.map((group) => [group.start, inferMethodArgCount(group, entryOffset)]),
     ),
-    calltLabels: nef.methodTokens.map((token) => token.method),
+    // Resolve token-call labels through the native-contract describe
+    // table so calls into known contracts render as
+    // `GasToken::Transfer(...)` rather than just `Transfer(...)`. The
+    // qualified form mirrors Rust's `callt_labels` (which already runs
+    // through `native_contracts::describe_method_token` →
+    // `formatted_label`). Falls back to the raw method name when the
+    // hash isn't in the native-contract table.
+    calltLabels: nef.methodTokens.map((token) => {
+      const hint = describeMethodToken(token.hash, token.method);
+      return hint ? hint.formattedLabel(token.method) : token.method;
+    }),
     calltParamCounts: nef.methodTokens.map((token) => token.parametersCount),
     calltReturnsValue: nef.methodTokens.map((token) => token.hasReturnValue),
+    methodTokens: nef.methodTokens,
     scriptHash: nef.scriptHash,
     scriptHashLE: nef.scriptHashLE,
+    compiler: nef.header?.compiler,
+    source: nef.header?.source,
     highLevelWarnings: [],
     postprocessOptions: {
       // `clean: true` is a convenience shorthand that enables every

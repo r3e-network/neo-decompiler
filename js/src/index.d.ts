@@ -92,14 +92,51 @@ export interface ManifestFeatures {
   payable: boolean;
 }
 
+export interface ManifestGroup {
+  /** Hex-encoded compressed public key (33 bytes / 66 hex chars). */
+  pubkey: string;
+  /** Base64-encoded signature over the contract script hash. */
+  signature: string;
+}
+
+/**
+ * Permission entry from `manifest.permissions`. The manifest spec
+ * accepts two `contract` forms: the wildcard string `"*"`, or a
+ * structured object with either `hash` (hex literal) or `group` (hex
+ * pubkey). Methods is either a string array or the wildcard `"*"`.
+ */
+export interface ManifestPermission {
+  contract: string | { hash?: string; group?: string };
+  methods: string[] | string;
+}
+
+/**
+ * `manifest.trusts` may be:
+ * - `null` (field absent),
+ * - the string `"*"` (wildcard — any contract may be trusted),
+ * - an array of hash strings (legacy bare-hash list), or
+ * - an object `{ hashes?: string[]; groups?: string[] }` (structured form).
+ */
+export type ManifestTrusts =
+  | null
+  | "*"
+  | string[]
+  | { hashes?: string[]; groups?: string[] };
+
 export interface ContractManifest {
   name: string;
-  groups: unknown[];
+  groups: ManifestGroup[];
   supportedStandards: string[];
   features: ManifestFeatures;
   abi: ManifestAbi;
-  permissions: unknown[];
-  trusts: unknown[] | null;
+  permissions: ManifestPermission[];
+  trusts: ManifestTrusts;
+  /**
+   * Free-form metadata from `manifest.extra` (e.g. `Author`, `Email`).
+   * The spec allows any JSON value, so this is left as `unknown`.
+   * The high-level renderer stringifies string/number/boolean scalars
+   * and silently drops nested objects/arrays/null.
+   */
   extra: unknown;
 }
 

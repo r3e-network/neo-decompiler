@@ -84,11 +84,24 @@ impl HighLevelEmitter {
             CallT => self.emit_indirect_call(instruction, "callt"),
             Try | TryL => self.emit_try_block(instruction),
             Endfinally => {
+                // When ENDFINALLY isn't already absorbed by the
+                // structured try/finally lift (`skip_jumps` set on
+                // recognised positions), surface it via the standard
+                // `// XXXX: ENDFINALLY` opcode-trace comment in
+                // verbose mode — same convention as every other
+                // opcode. The previous lowercase `// XXXX: endfinally`
+                // note clashed with the uppercase mnemonics around it.
                 if !self.skip_jumps.remove(&instruction.offset) {
-                    self.note(instruction, "endfinally");
+                    self.push_comment(instruction);
                 }
             }
-            Nop => self.note(instruction, "noop"),
+            // NOP has no observable effect on the lifted source — only
+            // surface the standard `// XXXX: NOP` opcode-trace comment
+            // (gated on emit_trace_comments). The previous `note(...,
+            // "noop")` produced a lowercase `// XXXX: noop` line that
+            // visually clashed with all the uppercase mnemonics
+            // surrounding it.
+            Nop => self.push_comment(instruction),
             _ => return false,
         }
 

@@ -96,6 +96,8 @@ impl Cli {
                     manifest_path: manifest_path
                         .or(self.manifest.clone())
                         .map(|p| p.display().to_string()),
+                    compiler: nef.header.compiler.trim_end_matches('\0').to_string(),
+                    source: (!nef.header.source.is_empty()).then(|| nef.header.source.clone()),
                     script_hash_le: util::format_hash(&script_hash),
                     script_hash_be: util::format_hash_be(&script_hash),
                     csharp: csharp.unwrap_or_default(),

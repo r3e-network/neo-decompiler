@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, basename } from "node:path";
+import { join, relative } from "node:path";
 import test from "node:test";
 
 import {
@@ -243,15 +243,20 @@ for (const nefPath of nefFiles) {
       return;
     }
 
-    // JS high-level -- use manifest when available (matching Rust auto-discovery)
+    // JS high-level -- use manifest when available (matching Rust auto-discovery).
+    // Pass `clean: true` so the JS render applies the same inline-single-use-temps
+    // postprocess pass the Rust CLI uses by default. Without this, JS temps stay
+    // un-inlined (`var t1 = 3; if (loc0 < t1) ...`) while the Rust CLI inlines
+    // them (`if (loc0 < 3) ...`), spuriously inflating the line-by-line diff
+    // counters this test logs.
     const manifestPath = findManifestForNef(nefPath);
     let jsResult;
     try {
       if (manifestPath) {
         const manifestJson = readFileSync(manifestPath, "utf-8");
-        jsResult = decompileHighLevelBytesWithManifest(bytes, manifestJson);
+        jsResult = decompileHighLevelBytesWithManifest(bytes, manifestJson, { clean: true });
       } else {
-        jsResult = decompileHighLevelBytes(bytes);
+        jsResult = decompileHighLevelBytes(bytes, { clean: true });
       }
     } catch (err) {
       assert.fail(`JS high-level threw but Rust succeeded: ${err.message}`);

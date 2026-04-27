@@ -20,7 +20,9 @@ impl Cli {
     ) -> Result<()> {
         self.write_stdout(|out| {
             writeln!(out, "File: {}", path.display())?;
-            writeln!(out, "Compiler: {}", nef.header.compiler)?;
+            if !nef.header.compiler.is_empty() {
+                writeln!(out, "Compiler: {}", nef.header.compiler)?;
+            }
             if !nef.header.source.is_empty() {
                 writeln!(out, "Source: {}", nef.header.source)?;
             }
@@ -54,12 +56,8 @@ impl Cli {
                         manifest.supported_standards.join(", ")
                     )?;
                 }
-                writeln!(
-                    out,
-                    "ABI methods: {} events: {}",
-                    manifest.abi.methods.len(),
-                    manifest.abi.events.len()
-                )?;
+                writeln!(out, "ABI methods: {}", manifest.abi.methods.len())?;
+                writeln!(out, "ABI events: {}", manifest.abi.events.len())?;
                 writeln!(
                     out,
                     "Features: storage={} payable={}",
@@ -88,6 +86,28 @@ impl Cli {
                 }
                 if let Some(trusts) = manifest.trusts.as_ref() {
                     writeln!(out, "Trusts: {}", trusts.describe())?;
+                }
+                if let Some(serde_json::Value::Object(map)) = manifest.extra.as_ref() {
+                    // Show only entries we can render without ambiguity —
+                    // strings/numbers/booleans. Objects, arrays, and `null`
+                    // have no canonical short form and would clutter the
+                    // text view; the JSON `info --format json` surface
+                    // exposes the raw structure for programmatic consumers.
+                    let renderable: Vec<(&String, String)> = map
+                        .iter()
+                        .filter_map(|(k, v)| match v {
+                            serde_json::Value::String(s) => Some((k, s.clone())),
+                            serde_json::Value::Bool(b) => Some((k, b.to_string())),
+                            serde_json::Value::Number(n) => Some((k, n.to_string())),
+                            _ => None,
+                        })
+                        .collect();
+                    if !renderable.is_empty() {
+                        writeln!(out, "Extra:")?;
+                        for (key, value) in renderable {
+                            writeln!(out, "    - {key}: {value}")?;
+                        }
+                    }
                 }
                 if let Some(path) = manifest_path {
                     writeln!(out, "Manifest path: {}", path.display())?;

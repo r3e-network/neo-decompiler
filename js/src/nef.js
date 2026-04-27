@@ -134,6 +134,24 @@ export function parseNef(input) {
   };
 }
 
+/**
+ * Return a `|`-joined human-readable description of the call flags set on
+ * the supplied bitmask, matching the Rust `describe_call_flags` helper.
+ * Returns `"None"` for the zero mask so the caller can render the flags
+ * in a single uniform shape.
+ */
+export function describeCallFlags(flags) {
+  if (flags === 0) {
+    return "None";
+  }
+  const labels = [];
+  if ((flags & 0x01) !== 0) labels.push("ReadStates");
+  if ((flags & 0x02) !== 0) labels.push("WriteStates");
+  if ((flags & 0x04) !== 0) labels.push("AllowCall");
+  if ((flags & 0x08) !== 0) labels.push("AllowNotify");
+  return labels.join("|");
+}
+
 function parseMethodTokens(bytes, startOffset) {
   let offset = startOffset;
   const countResult = readVarInt(bytes, offset);

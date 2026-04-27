@@ -244,9 +244,28 @@ impl HighLevelEmitter {
             // Pairs with the inliner: removing dead `let tN = pure_value;`
             // makes outputs after empty-if elimination read as natural code.
             Self::eliminate_dead_temps(&mut self.statements);
+            // Inliner adds `(...)` around multi-token substitutions for
+            // precedence safety; when the substitution lands inside an
+            // already-parenthesised context (e.g. `assert((x > 0))`)
+            // the result is doubly-parenthesised. Collapse those pairs.
+            Self::reduce_double_parens(&mut self.statements);
         }
+        // Inlining and dead-temp removal can collapse the body that was
+        // sitting between a `leave/goto LABEL;` and its `LABEL:` target,
+        // turning a previously-preserved transfer into a now-eliminable
+        // fallthrough. Re-run elimination + orphan-label cleanup so the
+        // pair drops out instead of sticking around in clean output.
+        Self::eliminate_fallthrough_gotos(&mut self.statements);
+        Self::remove_orphaned_labels(&mut self.statements);
         Self::rewrite_switch_statements(&mut self.statements);
         Self::rewrite_switch_break_gotos(&mut self.statements);
+        // Final formatting cleanup — join `}\n<chain>` pairs into the
+        // single-line K&R form `} <chain>` (where `<chain>` is `else
+        // {`, `else if cond {`, `catch (...) {`, or `finally {`).
+        // Runs last so other passes (which assert intermediate-state
+        // line vectors with separate `}` and `else {` entries) remain
+        // unaffected.
+        Self::join_close_brace_with_chain(&mut self.statements);
         self.statements.retain(|line| !line.trim().is_empty());
         super::HighLevelOutput {
             statements: self.statements,

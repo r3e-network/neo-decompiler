@@ -60,13 +60,24 @@ fn unknown_syscall_is_assumed_to_return_value() {
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
+    let high = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    // Unknown syscalls return a value to the simulated stack; the
+    // single-use-temps pass collapses `let t0 = syscall(0xDEADBEEF);
+    // return t0;` to `return syscall(0xDEADBEEF);` in clean mode.
+    // Earlier this was blocked by a trailing `// unknown syscall`
+    // annotation (which acted as an inliner barrier); the warning
+    // now renders as a leading `// warning: unknown syscall 0xHASH`
+    // line (iteration 97 unification), so the inliner can run.
     assert!(
-        decompilation
-            .high_level
-            .as_deref()
-            .expect("high-level output")
-            .contains("let t0 = syscall(0xDEADBEEF);"),
-        "unknown syscalls should conservatively push a stack value"
+        high.contains("syscall(0xDEADBEEF)"),
+        "unknown syscalls should conservatively push a stack value: {high}"
+    );
+    assert!(
+        high.contains("// warning: unknown syscall 0xDEADBEEF"),
+        "unknown-syscall warning should be visible inline: {high}"
     );
 }
 

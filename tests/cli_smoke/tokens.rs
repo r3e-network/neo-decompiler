@@ -43,6 +43,17 @@ fn tokens_command_supports_json_output() {
     assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0]["native_contract"]["label"], "GasToken::Transfer");
     assert!(value["warnings"].is_array());
+    // Tokens JSON also surfaces script_hash for cross-correlation
+    // with explorer URLs / info reports (parity with disasm and
+    // decompile JSON which already exposed it).
+    assert_eq!(
+        value["script_hash_le"],
+        Value::String("9DE87DC65A6A581E502CAE845C6F13645B10C5EA".into())
+    );
+    assert_eq!(
+        value["script_hash_be"],
+        Value::String("EAC5105B64136F5C84AE2C501E586A5AC67DE89D".into())
+    );
     assert_schema(SchemaKind::Tokens, &value);
 }
 

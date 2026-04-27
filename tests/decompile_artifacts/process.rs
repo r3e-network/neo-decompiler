@@ -118,10 +118,12 @@ fn decompile_and_write_outputs(
 ) -> ContractStatus {
     let high_level_path = output_base.with_extension("high-level.cs");
     let pseudocode_path = output_base.with_extension("pseudocode.txt");
+    let csharp_path = output_base.with_extension("csharp.cs");
     let error_path = output_base.with_extension("error.txt");
 
     create_parent(&high_level_path);
     create_parent(&pseudocode_path);
+    create_parent(&csharp_path);
     create_parent(&error_path);
 
     match decompiler.decompile_file_with_manifest(nef_path, Some(manifest_path), OutputFormat::All)
@@ -129,12 +131,15 @@ fn decompile_and_write_outputs(
         Ok(result) => {
             let high_level = result.high_level.as_deref().unwrap_or_default();
             let pseudocode = result.pseudocode.as_deref().unwrap_or_default();
+            let csharp = result.csharp.as_deref().unwrap_or_default();
             fs::write(&high_level_path, high_level.as_bytes()).unwrap_or_else(|err| {
                 panic!("failed to write {}: {err}", high_level_path.display())
             });
             fs::write(&pseudocode_path, pseudocode.as_bytes()).unwrap_or_else(|err| {
                 panic!("failed to write {}: {err}", pseudocode_path.display())
             });
+            fs::write(&csharp_path, csharp.as_bytes())
+                .unwrap_or_else(|err| panic!("failed to write {}: {err}", csharp_path.display()));
             ContractStatus::Success
         }
         Err(err) => {

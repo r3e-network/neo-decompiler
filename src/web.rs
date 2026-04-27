@@ -26,8 +26,17 @@ pub struct WebDecompileOptions {
     pub strict_manifest: bool,
     /// Fail fast instead of emitting `UNKNOWN_0x..` instructions and warnings.
     pub fail_on_unknown_opcodes: bool,
-    /// Enable the existing single-use temporary inlining pass.
+    /// Inline single-use temporaries into their consumers in the
+    /// rendered high-level / C# output. Defaults to `true` so the
+    /// browser surface mirrors the CLI's clean output by default;
+    /// callers wanting the un-inlined form (e.g. for cross-
+    /// referencing temps against trace comments) can flip this off.
     pub inline_single_use_temps: bool,
+    /// Emit per-instruction `// XXXX: OPCODE` trace comments above
+    /// each lifted statement. Defaults to `false` — the rendered
+    /// output is human-readable by default; callers debugging a
+    /// specific contract can opt back into trace comments.
+    pub emit_trace_comments: bool,
     /// Select which rendered outputs should be generated.
     pub output_format: OutputFormat,
 }
@@ -38,7 +47,8 @@ impl Default for WebDecompileOptions {
             manifest_json: None,
             strict_manifest: false,
             fail_on_unknown_opcodes: false,
-            inline_single_use_temps: false,
+            inline_single_use_temps: true,
+            emit_trace_comments: false,
             output_format: OutputFormat::All,
         }
     }
@@ -64,8 +74,14 @@ pub fn info_report(nef_bytes: &[u8], manifest_json: Option<&str>) -> Result<WebI
 /// Returns an error if the NEF container is invalid or disassembly fails.
 pub fn disasm_report(nef_bytes: &[u8], options: WebDisasmOptions) -> Result<WebDisasmReport> {
     let handling = unknown_handling(options.fail_on_unknown_opcodes);
+    // Parse the NEF directly so the report can surface script_hash
+    // alongside the instruction stream — parity with WebInfoReport
+    // and WebDecompileReport. The internal `disassemble_bytes` call
+    // also parses, but discards the NefFile after extracting the
+    // script.
+    let nef = NefParser::new().parse(nef_bytes)?;
     let output = Decompiler::with_unknown_handling(handling).disassemble_bytes(nef_bytes)?;
-    Ok(report::build_disasm_report(output))
+    Ok(report::build_disasm_report(&nef, output))
 }
 
 /// Build a browser-friendly decompilation report from in-memory bytes.
@@ -81,7 +97,8 @@ pub fn decompile_report(
     let manifest = parse_manifest(options.manifest_json.as_deref(), options.strict_manifest)?;
     let handling = unknown_handling(options.fail_on_unknown_opcodes);
     let decompiler = Decompiler::with_unknown_handling(handling)
-        .with_inline_single_use_temps(options.inline_single_use_temps);
+        .with_inline_single_use_temps(options.inline_single_use_temps)
+        .with_trace_comments(options.emit_trace_comments);
     let result =
         decompiler.decompile_bytes_with_manifest(nef_bytes, manifest, options.output_format)?;
     Ok(report::build_decompile_report(result))
@@ -130,13 +147,30 @@ struct JsDisasmOptions {
 }
 
 #[cfg(target_arch = "wasm32")]
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Deserialize)]
+#[serde(default)]
 struct JsDecompileOptions {
     manifest_json: Option<String>,
     strict_manifest: bool,
     fail_on_unknown_opcodes: bool,
     inline_single_use_temps: bool,
+    emit_trace_comments: bool,
     output_format: Option<String>,
+}
+
+#[cfg(target_arch = "wasm32")]
+impl Default for JsDecompileOptions {
+    fn default() -> Self {
+        let defaults = WebDecompileOptions::default();
+        Self {
+            manifest_json: None,
+            strict_manifest: false,
+            fail_on_unknown_opcodes: false,
+            inline_single_use_temps: defaults.inline_single_use_temps,
+            emit_trace_comments: defaults.emit_trace_comments,
+            output_format: None,
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -196,6 +230,7 @@ pub fn decompile_report_wasm(
             strict_manifest: options.strict_manifest,
             fail_on_unknown_opcodes: options.fail_on_unknown_opcodes,
             inline_single_use_temps: options.inline_single_use_temps,
+            emit_trace_comments: options.emit_trace_comments,
             output_format,
         },
     )

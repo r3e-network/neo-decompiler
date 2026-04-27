@@ -23,6 +23,8 @@ pub(in crate::cli) struct InfoReport {
 #[derive(Serialize)]
 pub(in crate::cli) struct TokensReport {
     pub(in crate::cli) file: String,
+    pub(in crate::cli) script_hash_le: String,
+    pub(in crate::cli) script_hash_be: String,
     pub(in crate::cli) method_tokens: Vec<MethodTokenReport>,
     pub(in crate::cli) warnings: Vec<String>,
 }
@@ -30,6 +32,8 @@ pub(in crate::cli) struct TokensReport {
 #[derive(Serialize)]
 pub(in crate::cli) struct DisasmReport {
     pub(in crate::cli) file: String,
+    pub(in crate::cli) script_hash_le: String,
+    pub(in crate::cli) script_hash_be: String,
     pub(in crate::cli) instructions: Vec<InstructionReport>,
     pub(in crate::cli) warnings: Vec<String>,
 }
@@ -38,6 +42,8 @@ pub(in crate::cli) struct DisasmReport {
 pub(in crate::cli) struct DecompileReport {
     pub(in crate::cli) file: String,
     pub(in crate::cli) manifest_path: Option<String>,
+    pub(in crate::cli) compiler: String,
+    pub(in crate::cli) source: Option<String>,
     pub(in crate::cli) script_hash_le: String,
     pub(in crate::cli) script_hash_be: String,
     pub(in crate::cli) csharp: String,

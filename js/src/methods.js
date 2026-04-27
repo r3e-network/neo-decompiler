@@ -1,5 +1,6 @@
 import { makeUniqueIdentifier, sanitizeIdentifier } from "./manifest.js";
 import { jumpTarget } from "./high-level-utils.js";
+import { hex16 } from "./util.js";
 
 const TERMINATOR_MNEMONICS = new Set(["RET", "THROW", "ABORT", "ABORTMSG"]);
 const BRANCH_MNEMONICS = new Set([
@@ -145,7 +146,13 @@ export function buildMethodGroups(instructions, manifest) {
     groups.push({
       start: offset,
       name: makeUniqueIdentifier(
-        offset === entryOffset ? "script_entry" : `sub_0x${offset.toString(16).padStart(4, "0")}`,
+        // Use uppercase hex (`0xABCD`) so the inferred-helper label
+        // matches Rust's `format!("sub_0x{start:04X}")`. Earlier this
+        // used `.toString(16).padStart(4, "0")` which lowercases A-F
+        // and silently diverged from Rust whenever the offset
+        // contained a hex letter (e.g. `sub_0x000a` vs Rust's
+        // `sub_0x000A`).
+        offset === entryOffset ? "script_entry" : `sub_0x${hex16(offset)}`,
         used,
       ),
       source: null,

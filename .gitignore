@@ -73,3 +73,5 @@ neo_csharp/**/obj/
 # Fuzz workspace artifacts
 /fuzz/Cargo.lock
 /fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/

@@ -193,7 +193,12 @@ pub(super) fn write_inferred_methods(
             .collect::<Vec<_>>()
             .join(", ");
 
-        writeln!(output).unwrap();
+        // Each inferred helper is preceded by the trailing blank line
+        // emitted by the previous method (the synthetic ScriptEntry from
+        // `write_fallback_entry`, the last manifest method from
+        // `write_manifest_methods`, or the previous iteration of this
+        // loop). Emitting another blank line here would double-space the
+        // separator.
         writeln!(
             output,
             "        private static dynamic sub_0x{start:04X}({params})"
@@ -251,13 +256,43 @@ fn write_script_entry_if_needed<'a>(
         "        // warning: manifest entry offset did not match script entry at 0x{entry_offset:04X}; using synthetic ScriptEntry"
     )
     .unwrap();
-    let entry_signature = format_method_signature("ScriptEntry", "", "void");
+    // Without a matching manifest entry the return type isn't known.
+    // Default to `object` and let the high-level lift preserve any
+    // return value (a hardcoded `void` here would make the emitter
+    // discard whatever the bytecode's RET was returning).
+    let (parameters, argument_labels) = synthetic_entry_arguments(&slice, entry_offset);
+    let entry_signature = format_method_signature("ScriptEntry", &parameters, "object");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, &slice, None, warnings, &context.body_context, true);
+    body::write_lifted_body(
+        output,
+        &slice,
+        (!argument_labels.is_empty()).then_some(argument_labels.as_slice()),
+        warnings,
+        &context.body_context,
+        false,
+    );
     writeln!(output, "        }}").unwrap();
     writeln!(output).unwrap();
     None
+}
+
+/// Build the `object arg0, object arg1, ...` parameter list and the
+/// matching `arg0`, `arg1`, ... label list for a synthetic ScriptEntry.
+/// `slice` is the bytecode slice covering the entry method, used to
+/// recover the INITSLOT-declared argument count. Returns `(parameters,
+/// labels)` where `labels` is empty when the method takes no
+/// arguments (the caller can short-circuit `argument_labels` with
+/// `then_some(...)`).
+fn synthetic_entry_arguments(slice: &[Instruction], entry_offset: usize) -> (String, Vec<String>) {
+    let arg_count =
+        crate::decompiler::helpers::initslot_argument_count_at(slice, entry_offset).unwrap_or(0);
+    let parameters = (0..arg_count)
+        .map(|i| format!("object arg{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let labels: Vec<String> = (0..arg_count).map(|i| format!("arg{i}")).collect();
+    (parameters, labels)
 }
 
 pub(super) fn write_fallback_entry(
@@ -286,11 +321,29 @@ pub(super) fn write_fallback_entry(
     };
 
     let entry_method_name = "ScriptEntry".to_string();
-    let entry_signature = format_method_signature(&entry_method_name, "", "void");
+    // No manifest is available, so the return type isn't known.
+    // Default to `object` (widest type) and let the high-level
+    // lift preserve any return value — a hardcoded `void` here
+    // would make the emitter discard whatever the bytecode's
+    // RET was returning.
+    let (parameters, argument_labels) = synthetic_entry_arguments(&slice, entry_offset);
+    let entry_signature = format_method_signature(&entry_method_name, &parameters, "object");
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(output, &slice, None, warnings, &context.body_context, true);
+    body::write_lifted_body(
+        output,
+        &slice,
+        (!argument_labels.is_empty()).then_some(argument_labels.as_slice()),
+        warnings,
+        &context.body_context,
+        false,
+    );
     writeln!(output, "        }}").unwrap();
+    // Trailing blank line for consistency with manifest-driven
+    // method emission (each manifest method ends with one); without
+    // this the close-brace of a synthetic ScriptEntry sits flush
+    // against the class close-brace.
+    writeln!(output).unwrap();
 }
 
 fn write_method_attributes(output: &mut String, method_name: &str, raw_name: &str, is_safe: bool) {

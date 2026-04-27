@@ -281,13 +281,24 @@ impl HighLevelEmitter {
         }
     }
 
-    /// Removes `goto label_X;` when the very next code line is `label_X:`.
+    /// Removes `goto label_X;` (or the try-context `leave label_X;` form)
+    /// when the resume target sits at the very next code line *or* one or
+    /// more close-braces past it.
+    ///
+    /// `leave` is the high-level encoding of `ENDTRY <target>` — semantically
+    /// "exit the try block, run finally, resume at target". When the resume
+    /// target is the next instruction, the lowered C#/pseudocode would
+    /// auto-execute finally on any try exit anyway, so the explicit transfer
+    /// is dead code that only adds visual noise. The same logic applies when
+    /// a `goto`/`leave` is the last statement of a block (e.g. a catch body)
+    /// whose closing `}` is immediately followed by the target label.
     pub(crate) fn eliminate_fallthrough_gotos(statements: &mut [String]) {
         let mut index = 0;
         while index < statements.len() {
             let trimmed = statements[index].trim().to_string();
             let Some(label) = trimmed
                 .strip_prefix("goto ")
+                .or_else(|| trimmed.strip_prefix("leave "))
                 .and_then(|s| s.strip_suffix(';'))
                 .map(|s| s.trim().to_string())
             else {
@@ -295,10 +306,22 @@ impl HighLevelEmitter {
                 continue;
             };
 
-            if let Some(next) = Self::next_code_line(statements, index) {
-                if statements[next].trim() == format!("{label}:") {
+            let label_line = format!("{label}:");
+            // Walk forward past blank/comment/close-brace lines to find the
+            // next executable statement. If it is the matching label, the
+            // transfer is dead — control would have reached the label
+            // through structural fall-out anyway.
+            let mut probe = index + 1;
+            while probe < statements.len() {
+                let t = statements[probe].trim();
+                if t.is_empty() || t.starts_with("//") || t == "}" {
+                    probe += 1;
+                    continue;
+                }
+                if t == label_line {
                     statements[index].clear();
                 }
+                break;
             }
             index += 1;
         }

@@ -42,6 +42,9 @@ impl Decompilation {
     /// Get the control flow graph as DOT format for visualization.
     ///
     /// The DOT output can be rendered using Graphviz or similar tools.
+    /// The graph carries a `label` attribute combining the contract
+    /// name (when a manifest is provided), the script hash, and the
+    /// instruction count, so a multi-CFG dump stays self-identifying.
     ///
     /// # Example
     /// ```ignore
@@ -52,7 +55,35 @@ impl Decompilation {
     /// ```
     #[must_use]
     pub fn cfg_to_dot(&self) -> String {
-        self.cfg.to_dot()
+        let title = self.cfg_dot_title();
+        let mut dot = self.cfg.to_dot();
+        // Splice the graph-level label between the `digraph CFG {`
+        // header and the existing `node [shape=box];` line. Keeping
+        // this layered above `cfg::to_dot` (rather than threading a
+        // title argument through) means the lower-level graph
+        // emitter remains agnostic of contract identity.
+        if let Some(rest) = dot.strip_prefix("digraph CFG {\n") {
+            let mut header = String::from("digraph CFG {\n");
+            header.push_str(&format!("  label=\"{title}\";\n"));
+            header.push_str("  labelloc=\"t\";\n");
+            header.push_str(rest);
+            dot = header;
+        }
+        dot
+    }
+
+    fn cfg_dot_title(&self) -> String {
+        let script_hash = crate::util::format_hash(&self.nef.script_hash());
+        let name = self
+            .manifest
+            .as_ref()
+            .map(|m| m.name.trim())
+            .filter(|n| !n.is_empty());
+        let count = self.instructions.len();
+        match name {
+            Some(name) => format!("{name} ({script_hash}, {count} instr)"),
+            None => format!("{script_hash} ({count} instr)"),
+        }
     }
 
     /// Get the cached SSA form for this decompilation, if available.
