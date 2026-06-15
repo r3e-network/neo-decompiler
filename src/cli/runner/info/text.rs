@@ -58,11 +58,15 @@ impl Cli {
                 }
                 writeln!(out, "ABI methods: {}", manifest.abi.methods.len())?;
                 writeln!(out, "ABI events: {}", manifest.abi.events.len())?;
-                writeln!(
-                    out,
-                    "Features: storage={} payable={}",
-                    manifest.features.storage, manifest.features.payable
-                )?;
+                // Neo N3 requires `features` to be empty; only surface it when
+                // a (malformed) manifest actually carries content.
+                if !manifest.features.is_empty() {
+                    writeln!(
+                        out,
+                        "Features: {}",
+                        serde_json::Value::Object(manifest.features.clone())
+                    )?;
+                }
                 if !manifest.groups.is_empty() {
                     writeln!(out, "Groups:")?;
                     for group in &manifest.groups {

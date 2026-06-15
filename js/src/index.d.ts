@@ -57,7 +57,11 @@ export interface NefFile {
   script: Uint8Array;
   header: NefHeader;
   methodTokens: MethodToken[];
+  /** Canonical display ("big-endian", 0x-prefixed explorer) form of the
+   * Hash160 script hash, as uppercase hex without the `0x` prefix. */
   scriptHash: string;
+  /** Little-endian (Neo internal `UInt160`) form of the script hash — the
+   * raw `RIPEMD160(SHA256(script))` digest, as uppercase hex. */
   scriptHashLE: string;
   checksum: number;
 }
@@ -87,10 +91,13 @@ export interface ManifestAbi {
   events: ManifestEvent[];
 }
 
-export interface ManifestFeatures {
-  storage: boolean;
-  payable: boolean;
-}
+/**
+ * Raw `features` object from the manifest. Neo N3 requires this to be
+ * an empty object (the legacy 2.x `storage`/`payable` flags do not
+ * exist in N3); tolerant parsing surfaces whatever a malformed
+ * manifest declared, and strict parsing rejects non-empty content.
+ */
+export type ManifestFeatures = Record<string, unknown>;
 
 export interface ManifestGroup {
   /** Hex-encoded compressed public key (33 bytes / 66 hex chars). */
@@ -100,15 +107,38 @@ export interface ManifestGroup {
 }
 
 /**
- * Permission entry from `manifest.permissions`. The manifest spec
- * accepts two `contract` forms: the wildcard string `"*"`, or a
- * structured object with either `hash` (hex literal) or `group` (hex
- * pubkey). Methods is either a string array or the wildcard `"*"`.
+ * Permission entry from `manifest.permissions`. The official manifest
+ * encoding uses a plain string for `contract`: the wildcard `"*"`, a
+ * 0x-prefixed 20-byte contract hash (42 chars), or a 33-byte group
+ * public key (66 hex chars). Any other value — including the
+ * non-official `{hash}`/`{group}` object forms — is a malformed
+ * descriptor (rejected in strict mode, kept verbatim in tolerant
+ * mode). Use `classifyPermissionContract` to classify by shape.
+ * Methods is either a string array or the wildcard `"*"`.
  */
 export interface ManifestPermission {
-  contract: string | { hash?: string; group?: string };
+  contract: unknown;
   methods: string[] | string;
 }
+
+/**
+ * Shape classification of a permission `contract` descriptor,
+ * mirroring the official `ContractPermissionDescriptor.FromJson()`.
+ */
+export type PermissionContractClassification =
+  | { kind: "wildcard"; value: "*" }
+  | { kind: "hash"; hash: string }
+  | { kind: "group"; group: string }
+  | { kind: "other"; value: unknown };
+
+/**
+ * Classify a permission `contract` descriptor by shape: `"*"` →
+ * wildcard, 42-char `0x`-hex → hash, 66-char hex → group, anything
+ * else → other (malformed).
+ */
+export function classifyPermissionContract(
+  value: unknown,
+): PermissionContractClassification;
 
 /**
  * `manifest.trusts` may be:
@@ -157,17 +187,65 @@ export interface MethodRef {
   name: string;
 }
 
-export interface CallTarget {
-  kind: "Internal" | "MethodToken" | "Syscall" | "Indirect";
-  method?: MethodRef;
-  hashLe?: string;
-  hashBe?: string;
-  name?: string;
-  tokenMethod?: string;
-  parametersCount?: number;
-  hasReturnValue?: boolean;
-  callFlags?: number;
+/**
+ * Direct CALL / CALL_L edge, or a CALLA edge whose function pointer was
+ * resolved to a known offset. `method` falls back to a synthesized
+ * `sub_0xNNNN` ref when the offset isn't a known method start.
+ */
+export interface InternalCallTarget {
+  kind: "Internal";
+  method: MethodRef;
 }
+
+/** SYSCALL edge. */
+export interface SyscallCallTarget {
+  kind: "Syscall";
+  /** Little-endian u32 syscall hash as decoded from the operand. */
+  hash: number;
+  /** Resolved syscall name, or `null` when the hash is unknown. */
+  name: string | null;
+  /**
+   * Whether the syscall pushes a return value. Unknown hashes default
+   * to `true`.
+   */
+  returnsValue: boolean;
+}
+
+/** CALLT edge whose token index resolved inside `nef.methodTokens`. */
+export interface MethodTokenCallTarget {
+  kind: "MethodToken";
+  /** Index into `nef.methodTokens` (the CALLT operand). */
+  index: number;
+  /** Token hash in little-endian byte order (uppercase hex). */
+  hashLe: string;
+  /** Token hash in big-endian byte order (uppercase hex). */
+  hashBe: string;
+  method: string;
+  parametersCount: number;
+  hasReturnValue: boolean;
+  callFlags: number;
+}
+
+/**
+ * Unresolvable call: a CALLT whose token index is out of range
+ * (`operand` is the index), or a CALLA whose function pointer could
+ * not be traced (`operand` is `null`).
+ */
+export interface IndirectCallTarget {
+  kind: "Indirect";
+  opcode: string;
+  operand: number | null;
+}
+
+/**
+ * Call-graph edge target, discriminated on `kind`. Shapes mirror the
+ * runtime objects produced by `buildCallGraph` in call-graph.js.
+ */
+export type CallTarget =
+  | InternalCallTarget
+  | SyscallCallTarget
+  | MethodTokenCallTarget
+  | IndirectCallTarget;
 
 export interface CallEdge {
   caller: MethodRef;

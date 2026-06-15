@@ -5,10 +5,7 @@ fn sample_manifest_json() -> &'static str {
         {
             "name": "ExampleContract",
             "groups": [],
-            "features": {
-                "storage": true,
-                "payable": false
-            },
+            "features": {},
             "supportedstandards": [
                 "NEP-17"
             ],
@@ -55,8 +52,7 @@ fn parses_manifest_json() {
     let manifest =
         ContractManifest::from_json_str(sample_manifest_json()).expect("manifest parsed");
     assert_eq!(manifest.name, "ExampleContract");
-    assert!(manifest.has_storage());
-    assert!(!manifest.is_payable());
+    assert!(manifest.features.is_empty());
     assert_eq!(manifest.supported_standards, vec!["NEP-17"]);
     assert_eq!(manifest.abi.methods.len(), 1);
     let method = &manifest.abi.methods[0];
@@ -181,4 +177,84 @@ fn strict_manifest_parsing_rejects_non_wildcard_trusts_string() {
         err,
         crate::error::Error::Manifest(crate::error::ManifestError::Validation { .. })
     ));
+}
+
+#[test]
+fn classifies_official_string_permission_descriptors() {
+    let json = r#"
+        {
+            "name": "DescriptorShapes",
+            "abi": { "methods": [], "events": [] },
+            "permissions": [
+                { "contract": "*", "methods": "*" },
+                { "contract": "0x0123456789abcdef0123456789abcdef01234567", "methods": "*" },
+                { "contract": "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c", "methods": "*" },
+                { "contract": "not-a-descriptor", "methods": "*" }
+            ]
+        }
+    "#;
+
+    let manifest = ContractManifest::from_json_str(json).expect("manifest parsed");
+    assert!(matches!(
+        manifest.permissions[0].contract,
+        ManifestPermissionContract::Wildcard(ref value) if value == "*"
+    ));
+    assert!(matches!(
+        manifest.permissions[1].contract,
+        ManifestPermissionContract::Hash { ref hash }
+            if hash == "0x0123456789abcdef0123456789abcdef01234567"
+    ));
+    assert!(matches!(
+        manifest.permissions[2].contract,
+        ManifestPermissionContract::Group { ref group }
+            if group == "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c"
+    ));
+    assert!(matches!(
+        manifest.permissions[3].contract,
+        ManifestPermissionContract::Other(_)
+    ));
+}
+
+#[test]
+fn strict_manifest_parsing_rejects_malformed_permission_descriptor() {
+    let json = r#"
+        {
+            "name": "InvalidDescriptor",
+            "abi": { "methods": [], "events": [] },
+            "permissions": [
+                { "contract": { "hash": "0x0123456789abcdef0123456789abcdef01234567" }, "methods": "*" }
+            ]
+        }
+    "#;
+
+    let err = ContractManifest::from_json_str_strict(json).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Manifest(crate::error::ManifestError::Validation { .. })
+    ));
+}
+
+#[test]
+fn strict_manifest_parsing_rejects_non_empty_features() {
+    let json = r#"
+        {
+            "name": "LegacyFeatures",
+            "abi": { "methods": [], "events": [] },
+            "features": { "storage": true }
+        }
+    "#;
+
+    let err = ContractManifest::from_json_str_strict(json).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Manifest(crate::error::ManifestError::Validation { .. })
+    ));
+
+    // Tolerant parsing keeps the raw object for inspection.
+    let manifest = ContractManifest::from_json_str(json).expect("tolerant parse");
+    assert_eq!(manifest.features.len(), 1);
+    assert_eq!(
+        manifest.features.get("storage"),
+        Some(&serde_json::Value::Bool(true))
+    );
 }

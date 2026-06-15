@@ -8,9 +8,8 @@ mod model;
 mod parse;
 
 pub use model::{
-    ContractManifest, ManifestAbi, ManifestEvent, ManifestFeatures, ManifestGroup, ManifestMethod,
-    ManifestParameter, ManifestPermission, ManifestPermissionContract, ManifestPermissionMethods,
-    ManifestTrusts,
+    ContractManifest, ManifestAbi, ManifestEvent, ManifestGroup, ManifestMethod, ManifestParameter,
+    ManifestPermission, ManifestPermissionContract, ManifestPermissionMethods, ManifestTrusts,
 };
 
 #[cfg(test)]

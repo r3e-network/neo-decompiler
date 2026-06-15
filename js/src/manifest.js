@@ -123,7 +123,7 @@ function parseAbiParameter(parameter, path) {
 
 function parseFeatures(features) {
   if (features === undefined) {
-    return { storage: false, payable: false };
+    return {};
   }
   if (features === null || typeof features !== "object" || Array.isArray(features)) {
     throw new ManifestParseError("features must be an object", {
@@ -131,22 +131,52 @@ function parseFeatures(features) {
       path: "features",
     });
   }
-  if (features.storage !== undefined && typeof features.storage !== "boolean") {
-    throw new ManifestParseError("features.storage must be a boolean", {
-      code: "InvalidType",
-      path: "features.storage",
-    });
+  // Neo N3's `ContractManifest.FromJson` requires `features` to be an
+  // empty object (the legacy 2.x storage/payable flags do not exist in
+  // N3). Tolerant parsing keeps the raw object so malformed manifests
+  // stay inspectable; strict parsing rejects non-empty content.
+  return { ...features };
+}
+
+/**
+ * Classify a permission `contract` descriptor by shape, mirroring the
+ * official `ContractPermissionDescriptor.FromJson()` (and the Rust
+ * port's `ManifestPermissionContract::classify`):
+ *
+ * - `"*"` — wildcard,
+ * - 42 characters, `0x` prefix + 40 hex digits — contract hash,
+ * - 66 hex characters — group public key,
+ * - anything else (including the non-official `{hash}`/`{group}`
+ *   object forms) — `other`, a malformed descriptor the official
+ *   parser rejects.
+ */
+export function classifyPermissionContract(value) {
+  if (typeof value === "string") {
+    if (value === "*") {
+      return { kind: "wildcard", value };
+    }
+    if (isHashDescriptor(value)) {
+      return { kind: "hash", hash: value };
+    }
+    if (isGroupDescriptor(value)) {
+      return { kind: "group", group: value };
+    }
   }
-  if (features.payable !== undefined && typeof features.payable !== "boolean") {
-    throw new ManifestParseError("features.payable must be a boolean", {
-      code: "InvalidType",
-      path: "features.payable",
-    });
-  }
-  return {
-    storage: features.storage === true,
-    payable: features.payable === true,
-  };
+  return { kind: "other", value };
+}
+
+const HEX_DIGITS = /^[0-9a-fA-F]+$/u;
+
+function isHashDescriptor(text) {
+  return (
+    text.length === 42 &&
+    (text.startsWith("0x") || text.startsWith("0X")) &&
+    HEX_DIGITS.test(text.slice(2))
+  );
+}
+
+function isGroupDescriptor(text) {
+  return text.length === 66 && HEX_DIGITS.test(text);
 }
 
 function parsePermission(perm, permIndex) {
@@ -225,12 +255,19 @@ function parseAbiEvent(event, eventIndex) {
 }
 
 function validateManifestStrict(manifest) {
+  if (Object.keys(manifest.features).length > 0) {
+    throw new ManifestParseError(
+      `features must be an empty object in Neo N3, got keys: ${Object.keys(manifest.features).join(", ")}`,
+      { code: "Validation", path: "features", value: manifest.features },
+    );
+  }
+
   for (let i = 0; i < manifest.permissions.length; i++) {
     const perm = manifest.permissions[i];
     if (perm && typeof perm === "object" && !Array.isArray(perm)) {
-      if (typeof perm.contract === "string" && perm.contract !== "*") {
+      if (classifyPermissionContract(perm.contract).kind === "other") {
         throw new ManifestParseError(
-          `permissions[${i}].contract wildcard must be "*", got ${JSON.stringify(perm.contract)}`,
+          `permissions[${i}].contract must be "*", a 0x-prefixed 20-byte contract hash, or a 33-byte group public key, got ${JSON.stringify(perm.contract)}`,
           { code: "Validation", path: `permissions[${i}].contract`, value: perm.contract },
         );
       }

@@ -1395,6 +1395,16 @@ function tryBuildSwitch(statements, start) {
     seen.add(c.value);
   }
 
+  // Consecutive standalone `if` blocks (no `else` links) only match `switch`
+  // semantics when at most one case can run. If a case body reassigns the
+  // scrutinee, a later `scrutinee == k` could also fire (a state-machine
+  // step), so a switch would assert wrong exclusivity. Require every case
+  // body to be provably exclusive — ends in a terminator or never reassigns
+  // the scrutinee — else leave the if-chain intact. Mirrors the Rust port.
+  if (!hasElseLink && !cases.every((c) => caseBodyIsSwitchSafe(c.body, scrutinee))) {
+    return null;
+  }
+
   const output = [`switch ${scrutinee} {`];
   for (const c of cases) {
     output.push(`case ${c.value} {`);
@@ -1408,6 +1418,44 @@ function tryBuildSwitch(statements, start) {
   }
   output.push("}");
   return { replacement: output, end: overallEnd };
+}
+
+// A standalone-`if` case body is safe to fold into a `switch` only when it
+// cannot fall through into a later case's comparison: either it ends in a
+// terminator, or it never reassigns the scrutinee. Mirrors the Rust port's
+// `case_body_is_switch_safe`.
+function caseBodyIsSwitchSafe(body, scrutinee) {
+  if (bodyEndsWithTerminator(body)) return true;
+  return !body.some((line) => statementReassigns(line, scrutinee));
+}
+
+function bodyEndsWithTerminator(body) {
+  for (let i = body.length - 1; i >= 0; i--) {
+    const trimmed = body[i].trim();
+    if (trimmed === "" || trimmed.startsWith("//") || trimmed === "{" || trimmed === "}") {
+      continue;
+    }
+    return isTerminatorStatement(trimmed);
+  }
+  return false;
+}
+
+function isTerminatorStatement(line) {
+  const t = line.trim();
+  return (
+    t === "return;" ||
+    t.startsWith("return ") ||
+    t.startsWith("throw") ||
+    t.startsWith("abort") ||
+    t.startsWith("goto ") ||
+    t === "break;" ||
+    t === "continue;"
+  );
+}
+
+function statementReassigns(line, scrutinee) {
+  const assign = parseAssignment(line);
+  return assign !== null && assign.lhs === scrutinee;
 }
 
 function resolveConditionExpression(statements, headerIndex, condition) {

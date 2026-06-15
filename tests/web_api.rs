@@ -12,7 +12,7 @@ const SAMPLE_MANIFEST: &str = r#"
     "name": "SampleToken",
     "groups": [],
     "supportedstandards": ["NEP-17"],
-    "features": { "storage": true, "payable": false },
+    "features": {},
     "abi": {
         "methods": [
             {
@@ -117,7 +117,7 @@ fn web_info_report_surfaces_manifest_extra_metadata() {
         "name": "Sample",
         "groups": [],
         "supportedstandards": [],
-        "features": { "storage": false, "payable": false },
+        "features": {},
         "abi": { "methods": [], "events": [] },
         "permissions": [{ "contract": "*", "methods": "*" }],
         "trusts": "*",

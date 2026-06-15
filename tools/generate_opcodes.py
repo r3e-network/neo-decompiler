@@ -54,7 +54,9 @@ def operand_encoding(name: str) -> str:
             return mapping[size]
         return f"OperandEncoding::Bytes({size // 8})"
     if name == "PUSHA":
-        return "OperandEncoding::U32"
+        # C# declares PUSHA's operand as a signed 32-bit relative offset
+        # (backward pointers are legal), so decode it as I32 — not U32.
+        return "OperandEncoding::I32"
     if name == "PUSHDATA1":
         return "OperandEncoding::Data1"
     if name == "PUSHDATA2":

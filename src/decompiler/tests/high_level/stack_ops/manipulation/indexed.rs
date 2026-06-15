@@ -1,8 +1,12 @@
 use super::super::super::*;
 
 #[test]
-fn high_level_lifts_pick_with_literal_index() {
+fn high_level_pick_of_literal_skips_temp() {
     // Script: PUSH1, PUSH2, PUSH1 (index), PICK, RET
+    // PICK duplicates a simple literal (`1`), so — like DUP/OVER/TUCK —
+    // it skips the temp materialization and just copies the value. No
+    // `// pick stack[N]` comment is emitted (parity with the JS port's
+    // `materialiseStackTopForDup`).
     let script = [0x11, 0x12, 0x11, 0x4D, 0x40];
     let nef_bytes = build_nef(&script);
     let decompilation = Decompiler::new()
@@ -14,12 +18,43 @@ fn high_level_lifts_pick_with_literal_index() {
         .as_deref()
         .expect("high-level output");
     assert!(
-        high_level.contains("pick stack[1]"),
-        "literal PICK should duplicate a stack value: {high_level}"
+        !high_level.contains("pick stack["),
+        "literal PICK should skip the temp/comment: {high_level}"
     );
     assert!(
-        high_level.contains("return t3;"),
-        "picked value should be returned: {high_level}"
+        !high_level.contains("insufficient values on stack for PICK"),
+        "literal PICK must not underflow: {high_level}"
+    );
+}
+
+#[test]
+fn high_level_pick_of_side_effecting_value_materializes_temp() {
+    // Script: SYSCALL(System.Runtime.GetTime) ; PUSH0 (index) ; PICK ;
+    //         ADD ; RET
+    // PICK duplicates the syscall result (a side-effecting expression).
+    // It must be hoisted into a temp so the call is evaluated once and
+    // referenced twice — not string-copied (which would emit two
+    // syscalls).
+    let script = [
+        0x41, 0xB7, 0xC3, 0x88, 0x03, // SYSCALL System.Runtime.GetTime
+        0x10, // PUSH0 (index)
+        0x4D, // PICK
+        0x9E, // ADD
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    let syscall_occurrences = high_level.matches("System.Runtime.GetTime").count();
+    assert_eq!(
+        syscall_occurrences, 1,
+        "PICK of a syscall result must evaluate it once (materialized temp): {high_level}"
     );
 }
 

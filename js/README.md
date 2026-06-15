@@ -39,8 +39,8 @@ console.log(result.highLevel);
 
 // With manifest for better output
 const manifest = parseManifest(manifestJson);
-const result = decompileHighLevelBytesWithManifest(nefBytes, manifest);
-console.log(result.highLevel);
+const withManifest = decompileHighLevelBytesWithManifest(nefBytes, manifest);
+console.log(withManifest.highLevel);
 
 // Full analysis: call graph, xrefs, types
 const analysis = analyzeBytes(nefBytes, manifestJson);
@@ -127,6 +127,9 @@ npm test
 
 | neo-decompiler-js | neo-decompiler (Rust) |
 |-------------------|-----------------------|
+| 1.5.0             | 0.8.0                 |
+| 1.4.0             | 0.7.0                 |
+| 1.3.0             | 0.6.3                 |
 | 1.2.1             | 0.6.2                 |
 | 1.2.0             | 0.6.2                 |
 | 1.1.1             | 0.6.1                 |

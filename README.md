@@ -85,7 +85,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 | Feature                     | Status | Description                                                 |
 | --------------------------- | ------ | ----------------------------------------------------------- |
-| Input Size Limits           | ✅     | 10 MiB NEF limit, 1 MiB manifest limit, 1 MiB operand limit |
+| Input Size Limits           | ✅     | 1 MiB NEF limit, 64 KiB manifest limit, 1 MiB operand limit |
 | Integer Overflow Protection | ✅     | Checked arithmetic in slice operations                      |
 | Malformed Input Handling    | ✅     | Graceful error reporting, no panics                         |
 | Fuzz Testing                | ✅     | cargo-fuzz targets for parser and disassembler              |
@@ -304,7 +304,7 @@ The wrapper exports:
 - `disasmReport(nefBytes, options?)`
 - `decompileReport(nefBytes, options?)`
 
-It accepts camelCase JS options and normalizes them to the wasm ABI. See [web/README.md](/home/neo/git/neo-decompiler/web/README.md) for package and demo usage.
+It accepts camelCase JS options and normalizes them to the wasm ABI. See [web/README.md](web/README.md) for package and demo usage.
 
 ## JavaScript Port
 
@@ -460,7 +460,7 @@ use neo_decompiler::{Decompiler, OutputFormat};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let decompiler = Decompiler::new();
-    let result = decompiler.decompile_file_with_manifest(
+    let mut result = decompiler.decompile_file_with_manifest(
         "contract.nef",
         Some("contract.manifest.json"),
         OutputFormat::All,

@@ -1,0 +1,14 @@
+{
+  "description": "Recorded upstream Neo C# sources for native contracts that do not exist in the vendored snapshot under neo_csharp/ (Governance and TokenManagement only exist on upstream master). tools/scrape_native_contracts.py reads these files alongside the vendored snapshot so that regeneration is fully offline and reproducible. Refresh with `python3 tools/scrape_native_contracts.py --refresh-upstream [REVISION]`.",
+  "repository": "https://github.com/neo-project/neo",
+  "revision": "a8c67fc8d437e3c19d7e7db2811f35236d9dd9d2",
+  "source_path": "src/Neo/SmartContract/Native",
+  "fetched": "2026-06-11",
+  "files": [
+    "NativeContract.cs",
+    "Governance.cs",
+    "TokenManagement.cs",
+    "TokenManagement.Fungible.cs",
+    "TokenManagement.NonFungible.cs"
+  ]
+}

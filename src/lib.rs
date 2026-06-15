@@ -39,5 +39,5 @@ pub use crate::decompiler::{Decompilation, Decompiler, OutputFormat};
 pub use crate::disassembler::{Disassembler, UnknownHandling};
 pub use crate::error::{Error, Result};
 pub use crate::instruction::{Instruction, OpCode, Operand};
-pub use crate::manifest::{ContractManifest, ManifestAbi, ManifestFeatures, ManifestMethod};
+pub use crate::manifest::{ContractManifest, ManifestAbi, ManifestMethod};
 pub use crate::nef::{MethodToken, NefFile, NefHeader, NefParser};

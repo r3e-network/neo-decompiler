@@ -11,7 +11,8 @@
    cd ..
    ```
 5. If the JS package version should track the release, update `js/package.json`
-   manually and run `cd js && npm test` to verify.
+   manually and run `cd js && npm test` to verify. Also add the new
+   JS/Rust version pair to the "Version Mapping" table in `js/README.md`.
 6. Run the full verification suite:
    ```bash
    just ci

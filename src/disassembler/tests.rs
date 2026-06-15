@@ -106,6 +106,62 @@ fn decodes_jump_long() {
 }
 
 #[test]
+fn decodes_pusha_backward_offset_as_signed_i32() {
+    // PUSHA carries a signed 32-bit relative offset (backward pointers
+    // are legal per the C# OpCode definition). A6 FF FF FF is -90 and
+    // must render as "-90" in listings, not as unsigned 4294967206.
+    let bytecode = [0x0A, 0xA6, 0xFF, 0xFF, 0xFF];
+    let instruction = Disassembler::new().disassemble(&bytecode).expect("success")[0].clone();
+    assert_eq!(instruction.opcode, OpCode::PushA);
+    assert_eq!(instruction.operand, Some(Operand::I32(-90)));
+    assert_eq!(instruction.operand.expect("operand").to_string(), "-90");
+}
+
+#[test]
+fn decodes_pusha_forward_offset_as_signed_i32() {
+    let bytecode = [0x0A, 0x05, 0x00, 0x00, 0x00, 0x40];
+    let instruction = Disassembler::new().disassemble(&bytecode).expect("success")[0].clone();
+    assert_eq!(instruction.opcode, OpCode::PushA);
+    assert_eq!(instruction.operand, Some(Operand::I32(5)));
+    assert_eq!(instruction.operand.expect("operand").to_string(), "5");
+}
+
+#[test]
+fn pusha_truncated_operand_returns_unexpected_eof() {
+    // PUSHA needs a 4-byte operand; provide only 3.
+    let bytecode = [0x0A, 0xA6, 0xFF, 0xFF];
+    let err = Disassembler::new().disassemble(&bytecode).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Disassembly(DisassemblyError::UnexpectedEof { offset: 0 })
+    ));
+}
+
+#[test]
+fn pushdata2_truncated_length_prefix_returns_unexpected_eof() {
+    // PUSHDATA2's 2-byte length prefix is itself truncated (1 byte).
+    let bytecode = [0x0D, 0x10];
+    let err = Disassembler::new().disassemble(&bytecode).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Disassembly(DisassemblyError::UnexpectedEof { offset: 0 })
+    ));
+}
+
+#[test]
+fn pushdata4_truncated_length_prefix_returns_unexpected_eof() {
+    // PUSHDATA4's 4-byte length prefix is itself truncated (3 bytes).
+    // The partial bytes would decode to 0xFFFFFF if read off the end —
+    // the error must still be UnexpectedEof, not OperandTooLarge.
+    let bytecode = [0x0E, 0xFF, 0xFF, 0xFF];
+    let err = Disassembler::new().disassemble(&bytecode).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Disassembly(DisassemblyError::UnexpectedEof { offset: 0 })
+    ));
+}
+
+#[test]
 fn decodes_syscall_operand_with_name() {
     // System.Runtime.Platform
     let bytecode = [0x41, 0xB2, 0x79, 0xFC, 0xF6];

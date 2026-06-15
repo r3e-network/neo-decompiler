@@ -50,7 +50,7 @@ fn decompilation_includes_call_graph_internal_calls() {
         {
             "name": "ExampleContract",
             "supportedstandards": [],
-            "features": {"storage": false, "payable": false},
+            "features": {},
             "abi": {
                 "methods": [
                     {
@@ -432,7 +432,7 @@ fn type_inference_uses_manifest_parameter_types_for_offsetless_entry_method() {
         {
             "name": "OffsetlessTypes",
             "supportedstandards": [],
-            "features": {"storage": false, "payable": false},
+            "features": {},
             "abi": {
                 "methods": [
                     {
@@ -1082,7 +1082,7 @@ fn decompilation_propagates_manifest_argument_types() {
         {
             "name": "ExampleContract",
             "supportedstandards": [],
-            "features": {"storage": false, "payable": false},
+            "features": {},
             "abi": {
                 "methods": [
                     {

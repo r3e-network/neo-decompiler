@@ -2,7 +2,12 @@
  * Differential fuzz tester: generates random valid NEF files and compares
  * the Rust CLI output against the JS API output.
  *
- * Usage:  node js/test/differential-fuzz.mjs
+ * For every generated case both the full disassembly text (offsets,
+ * mnemonics AND operand text) and the full high-level decompilation text
+ * plus the warnings list are compared, not just success/failure status.
+ *
+ * Usage:  node js/test/differential-fuzz.mjs [num-cases]
+ *         FUZZ_CASES=N node js/test/differential-fuzz.mjs
  */
 
 import { createHash } from "node:crypto";
@@ -18,7 +23,11 @@ import { OPCODES } from "../src/generated/opcodes.js";
 // Configuration
 // ---------------------------------------------------------------------------
 
-const NUM_CASES = 200;
+const NUM_CASES = (() => {
+  const raw = process.env.FUZZ_CASES ?? process.argv[2];
+  const n = Number.parseInt(raw ?? "", 10);
+  return Number.isInteger(n) && n > 0 ? n : 200;
+})();
 const ROOT = join(import.meta.dirname, "..", "..");
 const RUST_BIN = join(ROOT, "target", "release", "neo-decompiler");
 const TEMP_DIR = mkdtempSync(join(tmpdir(), "neo-diff-fuzz-"));
@@ -310,6 +319,77 @@ function runRustDecompile(nefPath) {
 }
 
 // ---------------------------------------------------------------------------
+// Output normalization + comparison helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Detach the trailing `Warnings:` block the Rust CLI appends to stdout
+ * (blank line, `Warnings:`, then `- ...` lines — see
+ * src/cli/runner/common.rs `write_warnings`). The JS API returns warnings
+ * as a separate array, so the bodies and the warning lists must each be
+ * compared on their own to be apples-to-apples — the same representational
+ * normalization js/test/differential.test.mjs relies on (body-only,
+ * trailing-whitespace-insensitive comparisons).
+ *
+ * Returns { body, warnings } where `warnings` has the leading "- " stripped.
+ */
+function splitRustWarnings(output) {
+  const lines = output.split("\n");
+  let end = lines.length;
+  while (end > 0 && lines[end - 1] === "") end--;
+  for (let i = end - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (line === "Warnings:") {
+      const tail = lines.slice(i + 1, end);
+      if (tail.length > 0 && tail.every((l) => l.startsWith("- "))) {
+        return {
+          body: lines.slice(0, i).join("\n"),
+          warnings: tail.map((l) => l.slice(2)),
+        };
+      }
+      break;
+    }
+    // Trailer lines can only be "- ..." entries; anything else means
+    // there is no warnings trailer at the end of this output.
+    if (!line.startsWith("- ")) break;
+  }
+  return { body: output, warnings: [] };
+}
+
+/** Locate the first differing line between two texts (1-based), or null. */
+function firstDiffLine(rustText, jsText) {
+  const rustLines = rustText.split("\n");
+  const jsLines = jsText.split("\n");
+  const max = Math.max(rustLines.length, jsLines.length);
+  for (let i = 0; i < max; i++) {
+    if ((rustLines[i] ?? null) !== (jsLines[i] ?? null)) {
+      return { line: i + 1, rust: rustLines[i] ?? "<missing>", js: jsLines[i] ?? "<missing>" };
+    }
+  }
+  return null;
+}
+
+/** Element-wise warnings-list comparison (both pipelines are deterministic). */
+function warningsDiffer(rustWarnings, jsWarnings) {
+  if (rustWarnings.length !== jsWarnings.length) return true;
+  return rustWarnings.some((w, i) => w !== jsWarnings[i]);
+}
+
+const MAX_OUTPUT_CHARS = 2000;
+
+/** Indent a (possibly truncated) output blob for mismatch reporting. */
+function renderOutputBlock(text) {
+  let shown = text;
+  if (shown.length > MAX_OUTPUT_CHARS) {
+    shown = `${shown.slice(0, MAX_OUTPUT_CHARS)}\n... (${text.length - MAX_OUTPUT_CHARS} more chars truncated)`;
+  }
+  return shown
+    .split("\n")
+    .map((l) => `    | ${l}`)
+    .join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Hand-crafted edge cases (targeted blind-spot probes)
 // ---------------------------------------------------------------------------
 
@@ -424,21 +504,38 @@ for (const ec of edgeCases) {
   const path = join(TEMP_DIR, `edge_${ec.name}.nef`);
   writeFileSync(path, nef);
 
-  const rustOk = runRustDisasm(path).ok;
+  const rustDisasm = runRustDisasm(path);
   let jsOk = false;
-  let jsCount = -1;
+  let jsResult = null;
   try {
-    const r = decompileBytes(nef);
+    jsResult = decompileBytes(nef);
     jsOk = true;
-    jsCount = r.instructions.length;
   } catch {}
 
-  // Disasm parity: both succeed or both fail
-  if (rustOk === jsOk) {
+  if (rustDisasm.ok !== jsOk) {
+    // Disasm parity: both must succeed or both must fail.
+    edgeStats.disagree++;
+    edgeMismatches.push({ name: ec.name, kind: "status", rustOk: rustDisasm.ok, jsOk });
+  } else if (!rustDisasm.ok) {
     edgeStats.agree++;
   } else {
-    edgeStats.disagree++;
-    edgeMismatches.push({ name: ec.name, rustOk, jsOk, jsCount });
+    // Both succeeded: compare the full disassembly text (including
+    // operands) and the warnings list, not just success status.
+    const { body, warnings } = splitRustWarnings(rustDisasm.output);
+    const textDiff = body.trimEnd() !== jsResult.pseudocode.trimEnd();
+    const warnDiff = warningsDiffer(warnings, jsResult.warnings);
+    if (textDiff || warnDiff) {
+      edgeStats.disagree++;
+      edgeMismatches.push({
+        name: ec.name,
+        kind: textDiff ? "text" : "warnings",
+        firstDiff: textDiff ? firstDiffLine(body.trimEnd(), jsResult.pseudocode.trimEnd()) : null,
+        rustWarnings: warnings,
+        jsWarnings: jsResult.warnings,
+      });
+    } else {
+      edgeStats.agree++;
+    }
   }
 }
 console.log(
@@ -447,7 +544,19 @@ console.log(
 );
 if (edgeMismatches.length > 0) {
   for (const m of edgeMismatches) {
-    console.log(`    MISMATCH: ${m.name}  rustOk=${m.rustOk} jsOk=${m.jsOk}`);
+    if (m.kind === "status") {
+      console.log(`    MISMATCH: ${m.name}  rustOk=${m.rustOk} jsOk=${m.jsOk}`);
+    } else if (m.kind === "text") {
+      console.log(
+        `    MISMATCH: ${m.name}  disasm text differs at line ${m.firstDiff.line}: ` +
+          `Rust=${JSON.stringify(m.firstDiff.rust)} JS=${JSON.stringify(m.firstDiff.js)}`,
+      );
+    } else {
+      console.log(
+        `    MISMATCH: ${m.name}  warnings differ: ` +
+          `Rust=${JSON.stringify(m.rustWarnings)} JS=${JSON.stringify(m.jsWarnings)}`,
+      );
+    }
   }
 }
 console.log();
@@ -469,10 +578,16 @@ const stats = {
   disasmCountMatch: 0,
   disasmCountMismatch: 0,
   disasmMnemonicMismatch: 0,
+  disasmTextMatch: 0,
+  disasmTextMismatch: 0,
+  disasmWarningsMismatch: 0,
   bothDecompileOk: 0,
   bothDecompileFail: 0,
   rustDecompileOnlyFail: 0,
   jsDecompileOnlyFail: 0,
+  decompileTextMatch: 0,
+  decompileTextMismatch: 0,
+  decompileWarningsMismatch: 0,
 };
 
 const mismatches = [];
@@ -524,7 +639,14 @@ for (let i = 0; i < NUM_CASES; i++) {
         const m = l.trim().match(/^[0-9A-Fa-f]+:\s+(\S+)/);
         return m ? m[1] : "?";
       });
-      const jsMnemonics = jsResult.instructions.map((i) => i.opcode.mnemonic);
+      // Render unknown opcodes the way both text surfaces do
+      // (UNKNOWN_0xNN) so this check flags real divergences instead of
+      // the JS API's internal "UNKNOWN" mnemonic spelling.
+      const jsMnemonics = jsResult.instructions.map((i) =>
+        i.opcode.mnemonic === "UNKNOWN"
+          ? `UNKNOWN_0x${i.opcode.byte.toString(16).padStart(2, "0").toUpperCase()}`
+          : i.opcode.mnemonic,
+      );
       let mnemonicDiff = false;
       for (let j = 0; j < rustCount; j++) {
         if (rustMnemonics[j] !== jsMnemonics[j]) {
@@ -544,6 +666,42 @@ for (let i = 0; i < NUM_CASES; i++) {
       }
       if (mnemonicDiff) {
         stats.disasmMnemonicMismatch++;
+      }
+    }
+
+    // Compare the FULL disassembly text — offsets, mnemonics AND operand
+    // text — plus the warnings list. The Rust CLI appends a "Warnings:"
+    // trailer to stdout while the JS API returns warnings separately, so
+    // detach the trailer first (see splitRustWarnings).
+    const { body: rustDisasmBody, warnings: rustDisasmWarnings } = splitRustWarnings(
+      rustDisasm.output,
+    );
+    const jsDisasmText = jsResult.pseudocode;
+    if (rustDisasmBody.trimEnd() === jsDisasmText.trimEnd()) {
+      stats.disasmTextMatch++;
+    } else {
+      stats.disasmTextMismatch++;
+      if (mismatches.length < 50) {
+        mismatches.push({
+          file: nefPath,
+          type: "disasm_text",
+          scriptHex: Buffer.from(script).toString("hex"),
+          rustText: rustDisasmBody,
+          jsText: jsDisasmText,
+          firstDiff: firstDiffLine(rustDisasmBody.trimEnd(), jsDisasmText.trimEnd()),
+        });
+      }
+    }
+    if (warningsDiffer(rustDisasmWarnings, jsResult.warnings)) {
+      stats.disasmWarningsMismatch++;
+      if (mismatches.length < 50) {
+        mismatches.push({
+          file: nefPath,
+          type: "disasm_warnings",
+          scriptHex: Buffer.from(script).toString("hex"),
+          rustWarnings: rustDisasmWarnings,
+          jsWarnings: jsResult.warnings,
+        });
       }
     }
   } else if (!rustDisasm.ok && !jsDisasmOk) {
@@ -572,10 +730,14 @@ for (let i = 0; i < NUM_CASES; i++) {
   // ---- High-level decompilation comparison ----
   const rustDecompile = runRustDecompile(nefPath);
 
+  // Pass `clean: true` so the JS render applies the same
+  // inline-single-use-temps postprocess pass (and no trace comments) the
+  // Rust CLI uses by default — same normalization differential.test.mjs
+  // applies so the texts compare apples-to-apples.
   let jsHighOk = false;
   let jsHighResult = null;
   try {
-    jsHighResult = decompileHighLevelBytes(nefBytes);
+    jsHighResult = decompileHighLevelBytes(nefBytes, { clean: true });
     jsHighOk = true;
   } catch {
     jsHighOk = false;
@@ -583,6 +745,41 @@ for (let i = 0; i < NUM_CASES; i++) {
 
   if (rustDecompile.ok && jsHighOk) {
     stats.bothDecompileOk++;
+
+    // Compare the FULL high-level output text plus the warnings list.
+    // The Rust CLI's stdout is high-level text followed by an optional
+    // "Warnings:" trailer; the JS API returns { highLevel, warnings }.
+    const { body: rustHighBody, warnings: rustHighWarnings } = splitRustWarnings(
+      rustDecompile.output,
+    );
+    const jsHighText = jsHighResult.highLevel;
+    if (rustHighBody.trimEnd() === jsHighText.trimEnd()) {
+      stats.decompileTextMatch++;
+    } else {
+      stats.decompileTextMismatch++;
+      if (mismatches.length < 50) {
+        mismatches.push({
+          file: nefPath,
+          type: "decompile_text",
+          scriptHex: Buffer.from(script).toString("hex"),
+          rustText: rustHighBody,
+          jsText: jsHighText,
+          firstDiff: firstDiffLine(rustHighBody.trimEnd(), jsHighText.trimEnd()),
+        });
+      }
+    }
+    if (warningsDiffer(rustHighWarnings, jsHighResult.warnings)) {
+      stats.decompileWarningsMismatch++;
+      if (mismatches.length < 50) {
+        mismatches.push({
+          file: nefPath,
+          type: "decompile_warnings",
+          scriptHex: Buffer.from(script).toString("hex"),
+          rustWarnings: rustHighWarnings,
+          jsWarnings: jsHighResult.warnings,
+        });
+      }
+    }
   } else if (!rustDecompile.ok && !jsHighOk) {
     stats.bothDecompileFail++;
   } else if (!rustDecompile.ok && jsHighOk) {
@@ -631,12 +828,18 @@ console.log(`  JS-only failure:           ${stats.jsDisasmOnlyFail}`);
 console.log(`  Instruction count match:   ${stats.disasmCountMatch}`);
 console.log(`  Instruction count MISMATCH:${stats.disasmCountMismatch}`);
 console.log(`  Mnemonic sequence MISMATCH:${stats.disasmMnemonicMismatch}`);
+console.log(`  Full text match:           ${stats.disasmTextMatch}`);
+console.log(`  Full text MISMATCH:        ${stats.disasmTextMismatch}`);
+console.log(`  Warnings MISMATCH:         ${stats.disasmWarningsMismatch}`);
 console.log();
 console.log("--- High-level decompilation ---");
 console.log(`  Both succeeded:            ${stats.bothDecompileOk}`);
 console.log(`  Both failed:               ${stats.bothDecompileFail}`);
 console.log(`  Rust-only failure:         ${stats.rustDecompileOnlyFail}`);
 console.log(`  JS-only failure:           ${stats.jsDecompileOnlyFail}`);
+console.log(`  Full text match:           ${stats.decompileTextMatch}`);
+console.log(`  Full text MISMATCH:        ${stats.decompileTextMismatch}`);
+console.log(`  Warnings MISMATCH:         ${stats.decompileWarningsMismatch}`);
 
 if (mismatches.length > 0) {
   console.log();
@@ -657,25 +860,51 @@ if (mismatches.length > 0) {
       console.log(`  Rust mnemonic: ${m.rust}`);
       console.log(`  JS mnemonic:   ${m.js}`);
     }
+    if (m.type === "disasm_text" || m.type === "decompile_text") {
+      if (m.firstDiff) {
+        console.log(`  First differing line: ${m.firstDiff.line}`);
+        console.log(`    Rust: ${JSON.stringify(m.firstDiff.rust)}`);
+        console.log(`    JS:   ${JSON.stringify(m.firstDiff.js)}`);
+      }
+      console.log(`  --- Rust output ---`);
+      console.log(renderOutputBlock(m.rustText.trimEnd()));
+      console.log(`  --- JS output ---`);
+      console.log(renderOutputBlock(m.jsText.trimEnd()));
+    }
+    if (m.type === "disasm_warnings" || m.type === "decompile_warnings") {
+      console.log(`  Rust warnings: ${JSON.stringify(m.rustWarnings)}`);
+      console.log(`  JS warnings:   ${JSON.stringify(m.jsWarnings)}`);
+    }
     if (m.rustOutput) console.log(`  Rust output: ${m.rustOutput}`);
   }
 }
 
-// Cleanup
-try {
-  rmSync(TEMP_DIR, { recursive: true, force: true });
-} catch {
-  // best-effort cleanup
+// Cleanup — but keep the failing inputs around when something diverged so
+// they can be replayed against both implementations.
+if (mismatches.length > 0 || edgeMismatches.length > 0) {
+  console.log();
+  console.log(`Keeping temp dir with generated inputs for replay: ${TEMP_DIR}`);
+} else {
+  try {
+    rmSync(TEMP_DIR, { recursive: true, force: true });
+  } catch {
+    // best-effort cleanup
+  }
 }
 
 console.log();
 if (
+  edgeStats.disagree === 0 &&
   stats.disasmCountMismatch === 0 &&
   stats.disasmMnemonicMismatch === 0 &&
+  stats.disasmTextMismatch === 0 &&
+  stats.disasmWarningsMismatch === 0 &&
   stats.jsDisasmOnlyFail === 0 &&
   stats.rustDisasmOnlyFail === 0 &&
   stats.jsDecompileOnlyFail === 0 &&
-  stats.rustDecompileOnlyFail === 0
+  stats.rustDecompileOnlyFail === 0 &&
+  stats.decompileTextMismatch === 0 &&
+  stats.decompileWarningsMismatch === 0
 ) {
   console.log("RESULT: All fuzz cases agree between Rust and JS implementations.");
 } else {

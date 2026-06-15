@@ -818,7 +818,7 @@ impl OpCode {
             OpCode::Pushint256 => OperandEncoding::Bytes(32),
             OpCode::PushT => OperandEncoding::None,
             OpCode::PushF => OperandEncoding::None,
-            OpCode::PushA => OperandEncoding::U32,
+            OpCode::PushA => OperandEncoding::I32,
             OpCode::PushNull => OperandEncoding::None,
             OpCode::Pushdata1 => OperandEncoding::Data1,
             OpCode::Pushdata2 => OperandEncoding::Data2,

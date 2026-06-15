@@ -1,6 +1,7 @@
 use crate::instruction::Instruction;
 
 use super::super::super::HighLevelEmitter;
+use super::is_simple_literal_or_identifier;
 
 impl HighLevelEmitter {
     pub(in super::super::super) fn emit_pick(&mut self, instruction: &Instruction) {
@@ -15,6 +16,15 @@ impl HighLevelEmitter {
         if let Some(index) = index_literal {
             if index < self.stack.len() {
                 let source = self.stack[self.stack.len() - 1 - index].clone();
+                // Skip the temp for a simple literal/identifier (same
+                // optimization as `dup_top`/`over_second`/`emit_tuck`):
+                // duplicating a bare expression string is safe and the
+                // JS port's `materialiseStackTopForDup` does the same, so
+                // this keeps PICK output byte-identical across ports.
+                if is_simple_literal_or_identifier(&source) {
+                    self.stack.push(source);
+                    return;
+                }
                 let temp = self.next_temp();
                 self.statements
                     .push(format!("let {temp} = {source}; // pick stack[{index}]"));

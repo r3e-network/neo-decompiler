@@ -100,19 +100,22 @@ export function pushImmediate(state, instruction) {
     return true;
   }
   if (instruction.operand !== null) {
-    if (instruction.operand.kind === "U32" && mnemonic === "PUSHA") {
-      // PUSHA operand is U32-encoded but represents a signed I32 relative offset.
-      // Mirror Rust's `resolve_pusha_display`: when the absolute target
-      // resolves to a known method label use `&{label}` (e.g.
-      // `&sub_0x000C`); otherwise fall back to `&fn_0xNNNN` with
-      // uppercase hex. Earlier this pushed the bare integer (`123`),
-      // which lost the function-pointer semantics and conflated PUSHA
-      // with PUSHINT operands.
-      const signedOffset = instruction.operand.value | 0;
-      const target = instruction.offset + signedOffset;
+    if (instruction.operand.kind === "I32" && mnemonic === "PUSHA") {
+      // PUSHA carries a signed I32 relative offset. Mirror Rust's
+      // `resolve_pusha_display`: when the absolute target resolves to a
+      // known method label use `&{label}` (e.g. `&sub_0x000C`); when it
+      // lands on no known method use `&fn_0xNNNN` with uppercase hex;
+      // and when it falls before the script start entirely (negative
+      // target — Rust's `checked_add_signed` returns None) fall back to
+      // the bare signed delta with no pointer-target tracking.
+      const target = instruction.offset + instruction.operand.value;
+      if (target < 0) {
+        stack.push(`${instruction.operand.value}`);
+        return true;
+      }
       const labelMap = state.context?.methodLabelsByOffset;
       const resolved = labelMap?.get(target) ?? null;
-      const hex = (target >>> 0).toString(16).padStart(4, "0").toUpperCase();
+      const hex = target.toString(16).padStart(4, "0").toUpperCase();
       const expression = resolved ? `&${resolved}` : `&fn_0x${hex}`;
       stack.push(expression);
       pointerTargetsByExpression.set(expression, target);

@@ -80,7 +80,7 @@ fn sample_manifest() -> ContractManifest {
             {
                 "name": "ExampleContract",
                 "supportedstandards": ["NEP-17"],
-                "features": {"storage": true, "payable": false},
+                "features": {},
                 "abi": {
                     "methods": [
                         {

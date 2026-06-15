@@ -24,6 +24,10 @@ pub(super) fn read_varint(bytes: &[u8], offset: usize) -> Result<(u32, usize)> {
     let first = *bytes
         .get(offset)
         .ok_or(NefError::UnexpectedEof { offset })?;
+    // Matches the reference `MemoryReader.ReadVarInt`: the prefix selects the
+    // width and only the maximum value is validated. Non-canonical encodings
+    // (e.g. `FD 05 00` for 5) are accepted, because NEF checksums cover the
+    // raw bytes and such files are valid on-chain.
     let (value, consumed) = match first {
         0x00..=0xFC => (first as u32, 1),
         0xFD => {
@@ -51,10 +55,6 @@ pub(super) fn read_varint(bytes: &[u8], offset: usize) -> Result<(u32, usize)> {
             (value as u32, 9)
         }
     };
-
-    if consumed != varint_encoded_len(value) {
-        return Err(NefError::NonCanonicalVarInt { offset }.into());
-    }
 
     Ok((value, consumed))
 }

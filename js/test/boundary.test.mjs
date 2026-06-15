@@ -13,6 +13,7 @@ import {
   decompileBytes,
   decompileHighLevelBytes,
   analyzeBytes,
+  NefParseError,
 } from "../src/index.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -343,43 +344,68 @@ test("boundary: ENDFINALLY without preceding TRY", () => {
   assert.doesNotThrow(() => decompileHighLevelBytes(buildNef({ script })));
 });
 
-test("boundary: very long method name in token", () => {
-  const longName = "a".repeat(1000);
+test("boundary: max-length method name in token (32 bytes per MethodToken.Deserialize)", () => {
+  const maxName = "a".repeat(32);
   const hash = new Uint8Array(20).fill(0xab);
   const nef = buildNef({
     tokens: [{
       hash,
-      method: longName,
+      method: maxName,
       params: 0,
       hasReturn: false,
       callFlags: 0x0f,
     }],
     script: new Uint8Array([0x37, 0x00, 0x00, 0x40]),
   });
-  
+
   const parsed = parseNef(nef);
-  assert.equal(parsed.methodTokens[0].method, longName);
+  assert.equal(parsed.methodTokens[0].method, maxName);
 });
 
-test("boundary: max method tokens", () => {
-  const tokens = [];
-  for (let i = 0; i < 256; i++) {
-    tokens.push({
-      hash: new Uint8Array(20).fill(i),
-      method: `method${i}`,
-      params: i % 16,
-      hasReturn: i % 2 === 0,
-      callFlags: 0x0f,
-    });
-  }
-  
+test("boundary: method name longer than 32 bytes is rejected", () => {
+  const hash = new Uint8Array(20).fill(0xab);
   const nef = buildNef({
-    tokens,
+    tokens: [{
+      hash,
+      method: "a".repeat(33),
+      params: 0,
+      hasReturn: false,
+      callFlags: 0x0f,
+    }],
     script: new Uint8Array([0x37, 0x00, 0x00, 0x40]),
   });
-  
-  const parsed = parseNef(nef);
-  assert.equal(parsed.methodTokens.length, 256);
+
+  assert.throws(() => parseNef(nef), (error) => {
+    assert.ok(error instanceof NefParseError);
+    assert.equal(error.details.code, "InvalidMethodToken");
+    return true;
+  });
+});
+
+test("boundary: max method tokens (128 per NefFile.Deserialize)", () => {
+  const makeTokens = (count) => {
+    const tokens = [];
+    for (let i = 0; i < count; i++) {
+      tokens.push({
+        hash: new Uint8Array(20).fill(i % 256),
+        method: `method${i}`,
+        params: i % 16,
+        hasReturn: i % 2 === 0,
+        callFlags: 0x0f,
+      });
+    }
+    return tokens;
+  };
+
+  const script = new Uint8Array([0x37, 0x00, 0x00, 0x40]);
+  const parsed = parseNef(buildNef({ tokens: makeTokens(128), script }));
+  assert.equal(parsed.methodTokens.length, 128);
+
+  assert.throws(() => parseNef(buildNef({ tokens: makeTokens(129), script })), (error) => {
+    assert.ok(error instanceof NefParseError);
+    assert.equal(error.details.code, "TooManyMethodTokens");
+    return true;
+  });
 });
 
 test("boundary: all syscall hashes", () => {
@@ -412,21 +438,25 @@ test("boundary: reserved bytes must be zero", () => {
   assert.throws(() => parseNef(new Uint8Array(data)));
 });
 
-test("boundary: non-canonical varint encoding", () => {
-  // Encoding 1 as 0xfd 0x01 0x00 is non-canonical (should be 0x01)
+test("boundary: non-canonical varint encoding is accepted (matches MemoryReader.ReadVarInt)", () => {
+  // Encoding 1 as 0xfd 0x01 0x00 is non-canonical (canonical is 0x01),
+  // but the reference MemoryReader.ReadVarInt has no canonicality check
+  // and NEF checksums cover the raw bytes, so such files are valid
+  // on-chain and must parse.
   const data = [];
   data.push(...Buffer.from("NEF3"));
   data.push(...new Uint8Array(64));
-  data.push(0xfd, 0x01, 0x00); // non-canonical: using 2 bytes for value 1
-  data.push(...new Uint8Array(1)); // source
+  data.push(0xfd, 0x01, 0x00); // non-canonical: 2-byte prefix for value 1
+  data.push(...new Uint8Array(1)); // source (1 byte)
   data.push(0); // reserved
   data.push(0); // tokens
   data.push(0, 0); // reserved word
   data.push(1, 0x40); // script
   const checksum = computeChecksum(data);
   data.push(...checksum);
-  
-  assert.throws(() => parseNef(new Uint8Array(data)));
+
+  const parsed = parseNef(new Uint8Array(data));
+  assert.equal(parsed.script.length, 1);
 });
 
 test("boundary: all collection opcodes", () => {

@@ -82,6 +82,57 @@ fn unknown_syscall_is_assumed_to_return_value() {
 }
 
 #[test]
+fn syscall_arguments_render_in_declaration_order() {
+    // Script: NEWARRAY0 ; PUSHDATA1 "evt" ; SYSCALL(System.Runtime.Notify) ; RET
+    // The devpack pushes syscall arguments right-to-left, so the state
+    // array goes first and the event name ends on top: pop order equals
+    // the declared signature Notify(eventName, state). A reversal bug
+    // used to render this as syscall("System.Runtime.Notify", [], "evt").
+    let script = [
+        0xC2, // NEWARRAY0 (state)
+        0x0C, 0x03, b'e', b'v', b't', // PUSHDATA1 "evt" (eventName, on top)
+        0x41, 0x95, 0x01, 0x6F, 0x61, // SYSCALL System.Runtime.Notify
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("syscall(\"System.Runtime.Notify\", \"evt\","),
+        "event name must render as the first Notify argument: {high_level}"
+    );
+}
+
+#[test]
+fn storage_put_arguments_render_in_pop_order() {
+    // Script: PUSH1 ; PUSH2 ; PUSH3 ; SYSCALL(System.Storage.Put) ; RET
+    // Pop order is 3, 2, 1 (top first) and equals declaration order; the
+    // old code reversed it to 1, 2, 3.
+    let script = [0x11, 0x12, 0x13, 0x41, 0xE6, 0x3F, 0x18, 0x84, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("syscall(\"System.Storage.Put\", 3, 2, 1)"),
+        "Storage.Put arguments must render in pop order: {high_level}"
+    );
+}
+
+#[test]
 fn void_storage_syscall_is_emitted_as_statement() {
     // Script: PUSH0 ; PUSH0 ; PUSH0 ; SYSCALL(System.Storage.Put) ; RET
     // System.Storage.Put takes 3 args (context, key, value)

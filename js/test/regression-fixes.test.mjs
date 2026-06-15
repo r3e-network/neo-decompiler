@@ -1,8 +1,14 @@
 /**
- * Regression tests for three specific bug fixes:
+ * Regression tests for specific bug fixes:
  *  1. PUSHA signed offset (call-graph.js, high-level-slots.js)
  *  2. Disassembler bounds checks for truncated operands (disassembler.js)
  *  3. Inline use-count: countIdentifier vs containsIdentifier (postprocess.js)
+ *  4. Detached-tail detection must mirror Rust's
+ *     collect_post_ret_method_offsets (methods.js)
+ *  5. PUSHDATA2/4 length prefixes must be bounds-checked before decoding
+ *     (disassembler.js readLength)
+ *  6. PUSHA operand decoded as signed I32, matching the C# definition
+ *     (generated/opcodes.js, call-graph.js, high-level-slots.js)
  */
 
 import assert from "node:assert/strict";
@@ -10,10 +16,12 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 
 import {
+  buildMethodGroups,
   decompileBytes,
   decompileHighLevelBytes,
   disassembleScript,
 } from "../src/index.js";
+import { formatOperand } from "../src/disassembler.js";
 import { DisassemblyError } from "../src/errors.js";
 
 // ─── Helpers (same as boundary.test.mjs) ───────────────────────────────────
@@ -128,12 +136,12 @@ test("PUSHA signed offset: backward pointer target is negative relative to instr
     (inst) => inst.opcode.mnemonic === "PUSHA",
   );
   assert.ok(pushaInst, "PUSHA instruction should exist");
-  // The operand is encoded as U32 but the signed reinterpretation yields -4
-  // At offset 0, the pointer target should be 0 + (-4) = -4
-  const signedOffset = pushaInst.operand.value | 0;
-  assert.equal(signedOffset, -4, "operand reinterpreted as I32 should be -4");
+  // PUSHA's operand is decoded as a signed I32 (matching the C# OpCode
+  // definition), so the value is already -4 with no reinterpretation.
+  assert.equal(pushaInst.operand.kind, "I32", "PUSHA operand should be I32");
+  assert.equal(pushaInst.operand.value, -4, "operand decoded as I32 should be -4");
   assert.equal(
-    pushaInst.offset + signedOffset,
+    pushaInst.offset + pushaInst.operand.value,
     -4,
     "pointer target should be -4",
   );
@@ -169,7 +177,7 @@ const truncationCases = [
   ["Jump8 (JMP)",      0x22, 1],   // JMP: Jump8, needs 1 byte
   ["Jump32 (JMP_L)",   0x23, 4],   // JMP_L: Jump32, needs 4 bytes
   ["U16 (CALLT)",      0x37, 2],   // CALLT: U16, needs 2 bytes
-  ["U32 (PUSHA)",      0x0A, 4],   // PUSHA: U32, needs 4 bytes
+  ["I32 (PUSHA)",      0x0A, 4],   // PUSHA: I32, needs 4 bytes
   ["Syscall (SYSCALL)", 0x41, 4],  // SYSCALL: Syscall, needs 4 bytes
 ];
 
@@ -387,6 +395,170 @@ test("inline use-count: countIdentifier counts correctly", () => {
   assert.ok(
     output.includes("loc0"),
     `loc0 should be preserved (used twice):\n${output}`,
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug 4: Detached-tail detection must mirror Rust's
+// collect_post_ret_method_offsets — an incoming edge from ANOTHER baseline
+// method is positive evidence FOR splitting; only same-method edges suppress.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test("detached tail: branched into only from a DIFFERENT method is split", () => {
+  // 0x0000  JMP +8          (entry method branches into the tail at 0x0008)
+  // 0x0002  RET
+  // 0x0003  INITSLOT 0,0    (baseline method start)
+  // 0x0006  PUSH1
+  // 0x0007  RET             (terminator inside sub_0x0003)
+  // 0x0008  PUSH2           <- tail: incoming edge only from offset 0,
+  // 0x0009  RET                which is OUTSIDE [3, inf) -> must split
+  const script = new Uint8Array([
+    0x22, 0x08,       // JMP +8
+    0x40,             // RET
+    0x57, 0x00, 0x00, // INITSLOT 0 locals, 0 args
+    0x11,             // PUSH1
+    0x40,             // RET
+    0x12,             // PUSH2
+    0x40,             // RET
+  ]);
+  const { instructions } = disassembleScript(script);
+  const groups = buildMethodGroups(instructions, null);
+  assert.deepEqual(
+    groups.map((group) => group.start),
+    [0, 3, 8],
+    `tail at 0x0008 must become its own method: ${JSON.stringify(groups.map((g) => [g.start, g.name]))}`,
+  );
+  assert.equal(groups[2].name, "sub_0x0008");
+});
+
+test("detached tail: branched into from the SAME method is NOT split", () => {
+  // 0x0000  PUSH1
+  // 0x0001  JMPIF +4        (same-method forward branch to 0x0005)
+  // 0x0003  PUSH2
+  // 0x0004  RET             (terminator)
+  // 0x0005  PUSH3           <- tail: incoming edge from offset 1, INSIDE
+  // 0x0006  RET                the method range -> stays attached
+  const script = new Uint8Array([
+    0x11,             // PUSH1
+    0x24, 0x04,       // JMPIF +4
+    0x12,             // PUSH2
+    0x40,             // RET
+    0x13,             // PUSH3
+    0x40,             // RET
+  ]);
+  const { instructions } = disassembleScript(script);
+  const groups = buildMethodGroups(instructions, null);
+  assert.deepEqual(
+    groups.map((group) => group.start),
+    [0],
+    `same-method branch target must not split: ${JSON.stringify(groups.map((g) => [g.start, g.name]))}`,
+  );
+});
+
+test("detached tail: no incoming edges is split", () => {
+  // 0x0000  PUSH1
+  // 0x0001  RET             (terminator)
+  // 0x0002  PUSH2           <- tail: nothing branches here -> split
+  // 0x0003  RET
+  const script = new Uint8Array([
+    0x11, // PUSH1
+    0x40, // RET
+    0x12, // PUSH2
+    0x40, // RET
+  ]);
+  const { instructions } = disassembleScript(script);
+  const groups = buildMethodGroups(instructions, null);
+  assert.deepEqual(groups.map((group) => group.start), [0, 2]);
+  assert.equal(groups[1].name, "sub_0x0002");
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug 5: PUSHDATA2/4 length prefixes must be bounds-checked before decoding.
+// A truncated prefix previously coerced out-of-bounds reads (undefined) to 0,
+// fabricating a length and surfacing OperandTooLarge instead of the
+// UnexpectedEof that the Rust port reports for the same bytes.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const truncatedPrefixCases = [
+  // PUSHDATA2 (0x0D): 2-byte prefix, only 1 byte present.
+  ["PUSHDATA2 mid-2-byte prefix", new Uint8Array([0x0d, 0x10])],
+  // PUSHDATA4 (0x0E): 4-byte prefix, only 3 bytes present. The partial
+  // bytes would decode to 0xFFFFFF (> MAX_OPERAND_LEN) if read off the
+  // end, which used to throw OperandTooLarge for a length that does not
+  // exist in the input.
+  ["PUSHDATA4 mid-4-byte prefix", new Uint8Array([0x0e, 0xff, 0xff, 0xff])],
+];
+
+for (const [description, script] of truncatedPrefixCases) {
+  for (const [mode, options] of [
+    ["tolerant", {}],
+    ["strict", { failOnUnknownOpcodes: true }],
+  ]) {
+    test(`truncated length prefix: ${description} throws UnexpectedEof (${mode} mode)`, () => {
+      try {
+        disassembleScript(script, options);
+        assert.fail("should have thrown");
+      } catch (err) {
+        assert.ok(
+          err instanceof DisassemblyError,
+          `expected DisassemblyError, got ${err.constructor.name}: ${err.message}`,
+        );
+        // Rust returns DisassemblyError::UnexpectedEof { offset: 0 } for
+        // these bytes (read_bytes_prefixed -> read_slice on the prefix).
+        assert.equal(
+          err.details.code,
+          "UnexpectedEof",
+          `expected code UnexpectedEof, got ${err.details?.code}`,
+        );
+        assert.equal(err.details.offset, 0);
+      }
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bug 6: PUSHA operand is a signed 32-bit relative offset (C# OpCode.cs),
+// not unsigned. A6 FF FF FF must decode and render as -90, and an
+// out-of-range (negative) target falls back to the bare signed delta in
+// high-level output, mirroring Rust's resolve_pusha_display.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test("PUSHA I32: operand bytes A6 FF FF FF decode as -90 and render as -90", () => {
+  const script = new Uint8Array([0x0a, 0xa6, 0xff, 0xff, 0xff, 0x40]);
+  const { instructions } = disassembleScript(script);
+  const pusha = instructions[0];
+  assert.equal(pusha.opcode.mnemonic, "PUSHA");
+  assert.equal(pusha.operand.kind, "I32");
+  assert.equal(pusha.operand.value, -90);
+  assert.equal(formatOperand(pusha.operand), "-90");
+});
+
+test("PUSHA I32: out-of-range negative target falls back to bare delta in high-level", () => {
+  // PUSHA at offset 0 with delta -90: target would be -90, before the
+  // script start. Rust's checked_add_signed fails and the display falls
+  // back to the raw signed delta — no fake &fn_0xFFFFFFA6 pointer.
+  const script = new Uint8Array([0x0a, 0xa6, 0xff, 0xff, 0xff, 0x40]);
+  const nef = buildNef({ script });
+  const result = decompileHighLevelBytes(nef);
+  assert.ok(
+    result.highLevel.includes("return -90;"),
+    `expected bare delta fallback:\n${result.highLevel}`,
+  );
+  assert.ok(
+    !result.highLevel.includes("fn_0xFFFFFF"),
+    `must not wrap a negative target into a fake pointer:\n${result.highLevel}`,
+  );
+});
+
+test("PUSHA I32: in-range forward target renders as &fn_0xNNNN pointer", () => {
+  // PUSHA at offset 0 with delta +5 resolves to offset 5 (RET), which is
+  // not a method start, so the &fn_0x0005 fallback label is used.
+  const script = new Uint8Array([0x0a, 0x05, 0x00, 0x00, 0x00, 0x40]);
+  const nef = buildNef({ script });
+  const result = decompileHighLevelBytes(nef);
+  assert.ok(
+    result.highLevel.includes("&fn_0x0005"),
+    `expected pointer label for in-range target:\n${result.highLevel}`,
   );
 });
 

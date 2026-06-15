@@ -27,7 +27,10 @@ impl HighLevelEmitter {
             let param_count = info.map(|i| i.param_count).unwrap_or(0) as usize;
             let syscall_name = info.map(|i| i.name).unwrap_or("unknown syscall");
 
-            // Pop arguments from the stack (rightmost argument was pushed last).
+            // Syscall arguments are pushed right-to-left (Cdecl) by the
+            // devpack, so parameters[0] sits on top of the stack at SYSCALL
+            // and `ApplicationEngine.OnSysCall` pops it first: pop order
+            // already equals declaration order.
             let mut args: Vec<String> = Vec::with_capacity(param_count);
             let mut missing_argument = false;
             for _ in 0..param_count {
@@ -57,7 +60,10 @@ impl HighLevelEmitter {
                 // emitted the comment unconditionally.
                 self.warn(instruction, &message);
             }
-            args.reverse();
+            // Do NOT reverse: unlike `emit_call`'s VM intrinsics (operands
+            // pushed left-to-right), syscall pop order is declaration order.
+            // This matches the internal-call/CALLT convention documented in
+            // `control_flow/jumps.rs`.
             let arg_list = args.join(", ");
 
             if let Some(info) = info {

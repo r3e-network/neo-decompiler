@@ -324,6 +324,22 @@ fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>,
         }
     }
 
+    // Consecutive standalone `if` blocks (no `else` links) are only
+    // equivalent to a `switch` when at most one case can run. The original
+    // bytecode executes each `if x == k { ... }` in sequence, so if a case
+    // body reassigns the scrutinee a later comparison can also fire — a
+    // common state-machine step pattern. A `switch` would assert exactly one
+    // case runs, changing program semantics. Require every case body to be
+    // provably exclusive (ends in a terminator, or never reassigns the
+    // scrutinee) before rewriting; otherwise leave the if-chain intact.
+    if !has_else_link
+        && !cases
+            .iter()
+            .all(|(_, body)| case_body_is_switch_safe(body, &scrutinee))
+    {
+        return None;
+    }
+
     let mut output = Vec::new();
     output.push(format!("switch {scrutinee} {{"));
     for (value, body) in &cases {
@@ -517,6 +533,43 @@ fn find_next_guarded_header_after_case_prelude(
         return None;
     }
     None
+}
+
+/// A standalone-`if` case body is safe to fold into a `switch` only when it
+/// cannot fall through into a later case's comparison: either it ends in a
+/// terminator (so control never reaches the next `if`), or it never
+/// reassigns the scrutinee (so a later `scrutinee == k` can't newly match).
+fn case_body_is_switch_safe(body: &[String], scrutinee: &str) -> bool {
+    if body_ends_with_terminator(body) {
+        return true;
+    }
+    !body.iter().any(|line| statement_reassigns(line, scrutinee))
+}
+
+fn body_ends_with_terminator(body: &[String]) -> bool {
+    for line in body.iter().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed == "{" || trimmed == "}" {
+            continue;
+        }
+        return is_terminator_statement(trimmed);
+    }
+    false
+}
+
+fn is_terminator_statement(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed == "return;"
+        || trimmed.starts_with("return ")
+        || trimmed.starts_with("throw")
+        || trimmed.starts_with("abort")
+        || trimmed.starts_with("goto ")
+        || trimmed == "break;"
+        || trimmed == "continue;"
+}
+
+fn statement_reassigns(line: &str, scrutinee: &str) -> bool {
+    HighLevelEmitter::parse_assignment(line).is_some_and(|assignment| assignment.lhs == scrutinee)
 }
 
 fn parse_inline_if_goto(line: &str) -> Option<(String, String)> {

@@ -25,24 +25,32 @@ export function tryCollectionExpression(state, instruction) {
   }
   if (mnemonic === "NEWARRAY_T") {
     const size = stripOuterParens(state.stack.pop() ?? "???");
-    const targetName = convertTargetName(instruction.operand) ?? "unknown";
+    const targetName = convertTargetName(instruction.operand);
+    // Unrecognized StackItemType bytes surface as the raw byte (0xNN),
+    // matching the ISTYPE fallback and the Rust port, so the reader can
+    // see which type the bytecode actually requested.
+    const typeText =
+      targetName !== null ? `"${targetName}"` : formatTypeByte(instruction.operand);
     const temp = `t${state.nextTempId}`;
     state.nextTempId += 1;
-    state.statements.push(`let ${temp} = new_array_t(${size}, "${targetName}");`);
+    state.statements.push(`let ${temp} = new_array_t(${size}, ${typeText});`);
     state.stack.push(temp);
     return true;
   }
   if (mnemonic === "NEWMAP") {
+    // `Map()` (not `{}`) — matches the Rust emitter and keeps the
+    // map/struct distinction visible in the lifted source.
     const temp = `t${state.nextTempId}`;
     state.nextTempId += 1;
-    state.statements.push(`let ${temp} = {};`);
+    state.statements.push(`let ${temp} = Map();`);
     state.stack.push(temp);
     return true;
   }
   if (mnemonic === "NEWSTRUCT0") {
+    // `Struct()` (not `{}`) — matches the Rust emitter.
     const temp = `t${state.nextTempId}`;
     state.nextTempId += 1;
-    state.statements.push(`let ${temp} = {};`);
+    state.statements.push(`let ${temp} = Struct();`);
     state.stack.push(temp);
     return true;
   }
@@ -94,6 +102,10 @@ export function tryCollectionExpression(state, instruction) {
     const targetName = convertTargetName(instruction.operand);
     if (targetName !== null) {
       state.stack.push(`is_type_${targetName}(${value})`);
+    } else if (instruction.operand !== null) {
+      // Keep the raw type byte (0xNN) so the reader can tell which type
+      // is being tested — mirrors the Rust port's fallback.
+      state.stack.push(`is_type(${value}, ${formatTypeByte(instruction.operand)})`);
     } else {
       state.stack.push(`is_type(${value})`);
     }
@@ -175,6 +187,17 @@ export function tryCollectionStatement(state, instruction) {
   return false;
 }
 
+// Render an unrecognized StackItemType operand byte as uppercase hex
+// (`0xNN`), byte-identical to Rust's `format_type_operand` fallback.
+function formatTypeByte(operand) {
+  const byte =
+    operand.kind === "U8" ? operand.value : operand.kind === "I8" ? operand.value & 0xff : null;
+  if (byte === null) {
+    return "unknown";
+  }
+  return `0x${byte.toString(16).padStart(2, "0").toUpperCase()}`;
+}
+
 // Hard cap on the number of elements rendered inline for PACK/PACKMAP/
 // PACKSTRUCT. Hand-written contracts almost never PACK more than a few
 // dozen items at once, while pathological or malformed inputs can drive
@@ -192,23 +215,45 @@ function emitPackExpression(state, mnemonic, stripOuterParens) {
     return true;
   }
 
-  // Drain only as many concrete stack values as the stack actually has
-  // (capped at PACK_MAX_INLINE). When the caller asked for more than the
-  // stack can supply, render the remainder as a single underflow note
-  // rather than emitting N copies of `???` per missing slot.
-  const drainCount = Math.min(count, state.stack.length, PACK_MAX_INLINE);
-  const elements = [];
+  // PACKMAP pops a key/value PAIR per entry — `Pop: 2n+1 item(s)` per
+  // OpCode.cs — with the key popped before its value; PACK/PACKSTRUCT
+  // pop one item per entry (`Pop: n+1`).
+  const isMap = mnemonic === "PACKMAP";
+  const unit = isMap ? 2 : 1;
+
+  // Drain only as many concrete stack entries as the stack actually has
+  // (capped at PACK_MAX_INLINE entries). When the caller asked for more
+  // than the stack can supply, render the remainder as a single
+  // underflow note rather than emitting N copies of `???` per missing
+  // slot.
+  const drainCount = Math.min(count, Math.floor(state.stack.length / unit), PACK_MAX_INLINE);
+  const rendered = [];
   for (let index = 0; index < drainCount; index += 1) {
-    elements.push(stripOuterParens(state.stack.pop() ?? "???"));
+    if (isMap) {
+      const key = stripOuterParens(state.stack.pop() ?? "???");
+      const value = stripOuterParens(state.stack.pop() ?? "???");
+      rendered.push(`${key}: ${value}`);
+    } else {
+      rendered.push(stripOuterParens(state.stack.pop() ?? "???"));
+    }
   }
   const remainder = count - drainCount;
   if (remainder > 0) {
-    elements.push(`/* ${remainder} more element${remainder === 1 ? "" : "s"} */`);
+    const noun = isMap
+      ? remainder === 1 ? "entry" : "entries"
+      : remainder === 1 ? "element" : "elements";
+    rendered.push(`/* ${remainder} more ${noun} */`);
   }
 
-  const expression = renderPackedExpression(mnemonic, elements);
+  const expression = renderPackedExpression(mnemonic, rendered);
   state.stack.push(expression);
-  state.packedValuesByExpression.set(expression, [...elements]);
+  // UNPACK of a map pushes key/value pairs plus the ENTRY count
+  // (`Push: 2n+1`, OpCode.cs) — the flat element replay models
+  // arrays/structs only, so skip tracking for maps and let UNPACK take
+  // its honest unknown-source path (mirrors the Rust port).
+  if (!isMap) {
+    state.packedValuesByExpression.set(expression, [...rendered]);
+  }
   return true;
 }
 

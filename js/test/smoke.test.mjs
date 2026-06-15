@@ -356,18 +356,28 @@ test("SMOKE: manifest abi and feature/standards strict typing (matches Rust)", (
     () => parseManifest(JSON.stringify({ name: "C", abi: null })),
     (err) => err.details.code === "MissingField" && err.details.path === "abi",
   );
-  // features.storage must be boolean (Rust serde rejects coercion)
+  // features must be an object; tolerant parsing keeps the raw content
+  // (N3 requires it empty — strict mode rejects non-empty, see the
+  // strict-mode tests).
   assert.throws(
     () =>
       parseManifest(
         JSON.stringify({
           name: "C",
           abi: { methods: [], events: [] },
-          features: { storage: "yes" },
+          features: "legacy",
         }),
       ),
-    (err) => err.details.code === "InvalidType" && err.details.path === "features.storage",
+    (err) => err.details.code === "InvalidType" && err.details.path === "features",
   );
+  const legacyFeatures = parseManifest(
+    JSON.stringify({
+      name: "C",
+      abi: { methods: [], events: [] },
+      features: { storage: true },
+    }),
+  );
+  assert.deepEqual(legacyFeatures.features, { storage: true });
   // supportedstandards must be array
   assert.throws(
     () =>
@@ -492,11 +502,30 @@ test("SMOKE: strict mode accepts canonical wildcards and concrete entries", () =
     abi: { methods: [], events: [] },
     permissions: [
       { contract: "*", methods: "*" },
-      { contract: { hash: "0x1234567890abcdef1234567890abcdef12345678" }, methods: ["transfer"] },
+      { contract: "0x1234567890abcdef1234567890abcdef12345678", methods: ["transfer"] },
+      {
+        contract: "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
+        methods: "*",
+      },
     ],
     trusts: "*",
   });
   assert.doesNotThrow(() => parseManifest(canonical, { strict: true }));
+
+  // The non-official object descriptor form is a malformed descriptor:
+  // rejected in strict mode (the official toolchain only emits strings).
+  const objectDescriptor = JSON.stringify({
+    name: "C",
+    abi: { methods: [], events: [] },
+    permissions: [
+      { contract: { hash: "0x1234567890abcdef1234567890abcdef12345678" }, methods: ["transfer"] },
+    ],
+  });
+  assert.throws(
+    () => parseManifest(objectDescriptor, { strict: true }),
+    (err) => err.details.code === "Validation",
+  );
+  assert.doesNotThrow(() => parseManifest(objectDescriptor));
 
   const arrayTrusts = JSON.stringify({
     name: "C",

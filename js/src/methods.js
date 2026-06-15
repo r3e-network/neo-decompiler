@@ -3,51 +3,89 @@ import { jumpTarget } from "./high-level-utils.js";
 import { hex16 } from "./util.js";
 
 const TERMINATOR_MNEMONICS = new Set(["RET", "THROW", "ABORT", "ABORTMSG"]);
+// Mirrors Rust's `collect_control_flow_edges`: the conditional/unconditional
+// jump family plus ENDTRY/ENDTRY_L (TRY/TRY_L targets are decoded from their
+// Bytes operand below). CALL/CALL_L are deliberately NOT in this set — Rust
+// treats call targets as baseline method starts (`collect_call_targets`),
+// not as intra-method control flow, so a CALL into a post-terminator tail
+// must not suppress (or force) a split here.
 const BRANCH_MNEMONICS = new Set([
   "JMP", "JMP_L", "JMPIF", "JMPIF_L", "JMPIFNOT", "JMPIFNOT_L",
   "JMPEQ", "JMPEQ_L", "JMPNE", "JMPNE_L",
   "JMPGT", "JMPGT_L", "JMPGE", "JMPGE_L",
   "JMPLT", "JMPLT_L", "JMPLE", "JMPLE_L",
-  "CALL", "CALL_L", "ENDTRY", "ENDTRY_L",
+  "ENDTRY", "ENDTRY_L",
 ]);
 
-function collectPostTerminatorStarts(instructions, starts) {
-  // Collect (sourceOffset, targetOffset) edges. The set of targets answers
-  // "is X branched into?" and the source list answers "does anything in
-  // range [a,b] branch to a target in (b, end)?" — both needed to mirror
-  // the Rust port's "detached tail" detection.
+// Collect (sourceOffset, targetOffset) control-flow edges, mirroring Rust's
+// `collect_control_flow_edges` + `relative_target_with_delta`: a target is
+// only recorded when it is non-negative and lands on a decoded instruction
+// boundary (`knownOffsets`).
+function collectControlFlowEdges(instructions, knownOffsets) {
   const edges = [];
+  const pushEdge = (source, delta) => {
+    const target = source + delta;
+    if (target >= 0 && knownOffsets.has(target)) {
+      edges.push([source, target]);
+    }
+  };
   for (const instruction of instructions) {
-    if (BRANCH_MNEMONICS.has(instruction.opcode.mnemonic)) {
-      const target = jumpTarget(instruction);
-      if (target !== null) edges.push([instruction.offset, target]);
+    const mnemonic = instruction.opcode.mnemonic;
+    if (BRANCH_MNEMONICS.has(mnemonic)) {
+      const operand = instruction.operand;
+      if (operand?.kind === "Jump" || operand?.kind === "Jump32") {
+        pushEdge(instruction.offset, operand.value);
+      }
     } else if (
-      instruction.opcode.mnemonic === "TRY" &&
+      mnemonic === "TRY" &&
       instruction.operand?.kind === "Bytes" &&
       instruction.operand.value.length === 2
     ) {
       for (const byte of instruction.operand.value) {
-        const signed = byte > 127 ? byte - 256 : byte;
-        if (signed !== 0) edges.push([instruction.offset, instruction.offset + signed]);
+        pushEdge(instruction.offset, byte > 127 ? byte - 256 : byte);
       }
     } else if (
-      instruction.opcode.mnemonic === "TRY_L" &&
+      mnemonic === "TRY_L" &&
       instruction.operand?.kind === "Bytes" &&
       instruction.operand.value.length === 8
     ) {
       const v = instruction.operand.value;
-      for (const offset of [0, 4]) {
-        const u = v[offset] | (v[offset + 1] << 8) | (v[offset + 2] << 16) | (v[offset + 3] << 24);
-        if (u !== 0) edges.push([instruction.offset, instruction.offset + u]);
+      for (const base of [0, 4]) {
+        const delta =
+          v[base] | (v[base + 1] << 8) | (v[base + 2] << 16) | (v[base + 3] << 24);
+        pushEdge(instruction.offset, delta);
       }
     }
   }
-  const branchTargets = new Set(edges.map(([_, t]) => t));
+  return edges;
+}
 
-  // The "current method" range for a candidate split at offset X is the
-  // span between the most-recent baseline start ≤ X and the next baseline
-  // start > X. If any instruction in that range branches forward past X
-  // (but within the range), the method body extends past X — bail.
+// Mirror of Rust's `collect_post_ret_method_offsets`. For each instruction
+// `next` that follows a terminator, find the baseline method range
+// [methodStart, methodEnd) containing the terminator and classify the
+// incoming edges of `next` by source:
+//   - an edge from ANOTHER baseline method is positive evidence FOR a
+//     split (only foreign code reaches the tail, so it cannot be part of
+//     the current method's straight-line body);
+//   - an edge from the SAME baseline method keeps the tail attached;
+//   - with no incoming edges at all, the tail splits unless something in
+//     the current method branches forward past `next` but still inside the
+//     range (e.g. a catch handler reached only via the TRY operand).
+function collectPostTerminatorStarts(instructions, starts) {
+  const knownOffsets = new Set(instructions.map((instruction) => instruction.offset));
+  const edges = collectControlFlowEdges(instructions, knownOffsets);
+
+  // target offset -> [source offsets] (Rust's `edges_by_target`).
+  const edgesByTarget = new Map();
+  for (const [source, target] of edges) {
+    const sources = edgesByTarget.get(target);
+    if (sources) sources.push(source);
+    else edgesByTarget.set(target, [source]);
+  }
+
+  // Snapshot the baseline starts before any additions: Rust passes the
+  // pre-extension `baseline_starts` clone, so offsets promoted by this
+  // very loop must not shrink the ranges of later candidates.
   const baselineStartsSorted = [...starts].sort((a, b) => a - b);
   const lastStartLE = (offset) => {
     let lo = 0, hi = baselineStartsSorted.length;
@@ -56,7 +94,7 @@ function collectPostTerminatorStarts(instructions, starts) {
       if (baselineStartsSorted[mid] <= offset) lo = mid + 1;
       else hi = mid;
     }
-    return lo > 0 ? baselineStartsSorted[lo - 1] : 0;
+    return lo > 0 ? baselineStartsSorted[lo - 1] : null;
   };
   const firstStartGT = (offset) => {
     for (const s of baselineStartsSorted) if (s > offset) return s;
@@ -67,19 +105,31 @@ function collectPostTerminatorStarts(instructions, starts) {
     const current = instructions[i];
     const next = instructions[i + 1];
     if (!TERMINATOR_MNEMONICS.has(current.opcode.mnemonic)) continue;
-    if (starts.has(next.offset)) continue;
-    if (branchTargets.has(next.offset)) continue;
 
-    const methodStart = lastStartLE(current.offset);
+    // Rust: `baseline_starts.range(..=current.offset).next_back()
+    //        .unwrap_or(current.offset)` and the first start after it.
+    const methodStart = lastStartLE(current.offset) ?? current.offset;
     const methodEnd = firstStartGT(methodStart);
-    const reaches = edges.some(
-      ([src, tgt]) =>
-        src >= methodStart && src < methodEnd &&
-        tgt > next.offset && tgt < methodEnd,
-    );
-    if (reaches) continue;
 
-    starts.add(next.offset);
+    const incoming = edgesByTarget.get(next.offset) ?? [];
+    const hasIncomingFromSameBaselineMethod = incoming.some(
+      (source) => source >= methodStart && source < methodEnd,
+    );
+    const hasIncomingFromOtherBaselineMethod = incoming.some(
+      (source) => source < methodStart || source >= methodEnd,
+    );
+    const hasSameBaselineIncomingLaterInRange = edges.some(
+      ([source, target]) =>
+        source >= methodStart && source < methodEnd &&
+        target > next.offset && target < methodEnd,
+    );
+
+    const detachedTailAfterTerminator =
+      hasIncomingFromOtherBaselineMethod ||
+      (!hasIncomingFromSameBaselineMethod && !hasSameBaselineIncomingLaterInRange);
+    if (detachedTailAfterTerminator) {
+      starts.add(next.offset);
+    }
   }
 }
 

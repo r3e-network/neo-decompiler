@@ -122,24 +122,39 @@ fn rejects_oversized_u64_varint_for_source_length() {
 }
 
 #[test]
-fn rejects_non_canonical_varint_for_source_length() {
+fn accepts_non_canonical_varint_for_source_length() {
+    // The reference MemoryReader.ReadVarInt has no canonicality check: the
+    // prefix selects the width and only the value range is validated, so a
+    // source length of 5 encoded as `FD 05 00` must parse as 5.
     let script = vec![0x40];
     let mut data = Vec::new();
     data.extend_from_slice(&MAGIC);
     data.extend_from_slice(&[0u8; 64]);
     data.push(0xFD);
-    data.extend_from_slice(&0u16.to_le_bytes());
-    data.push(0);
-    data.push(0);
+    data.extend_from_slice(&5u16.to_le_bytes());
+    data.extend_from_slice(b"src:5");
+    data.push(0); // reserved byte
+    data.push(0); // zero tokens
     data.extend_from_slice(&0u16.to_le_bytes());
     write_varint(&mut data, script.len() as u32);
     data.extend_from_slice(&script);
     let checksum = NefParser::calculate_checksum(&data);
     data.extend_from_slice(&checksum.to_le_bytes());
 
-    let err = NefParser::new().parse(&data).unwrap_err();
+    let nef = NefParser::new().parse(&data).expect("parse succeeds");
+    assert_eq!(nef.header.source, "src:5");
+    assert_eq!(nef.script, script);
+}
+
+#[test]
+fn rejects_leading_0xff_magic() {
+    // Cross-port vector: a 0xFF-leading file must fail magic validation
+    // (and not crash on text decoding, as the JS port once did).
+    let mut bytes = build_sample(&[0x40]);
+    bytes[0] = 0xFF;
+    let err = NefParser::new().parse(&bytes).unwrap_err();
     assert!(matches!(
         err,
-        crate::error::Error::Nef(NefError::NonCanonicalVarInt { offset: 68 })
+        crate::error::Error::Nef(NefError::InvalidMagic { .. })
     ));
 }

@@ -398,7 +398,11 @@ fn infer_types_in_slice(
             OpCode::Pack => {
                 let count = pop_or_unknown(&mut stack);
                 if let Some(count) = count.int_literal.and_then(|v| usize::try_from(v).ok()) {
-                    for _ in 0..count {
+                    // Clamp to the actual stack depth: the count literal is
+                    // attacker-controlled (up to i64::MAX) and popping an
+                    // empty abstract stack only yields unknowns, so iterating
+                    // past the real depth is an unbounded busy-loop.
+                    for _ in 0..count.min(stack.len()) {
                         let _ = pop_or_unknown(&mut stack);
                     }
                 }
@@ -407,7 +411,10 @@ fn infer_types_in_slice(
             OpCode::Packmap => {
                 let count = pop_or_unknown(&mut stack);
                 if let Some(count) = count.int_literal.and_then(|v| usize::try_from(v).ok()) {
-                    for _ in 0..count {
+                    // PACKMAP pops a key/value pair per entry (`Pop: 2n+1`,
+                    // OpCode.cs); clamp like PACK to bound attacker-controlled
+                    // counts.
+                    for _ in 0..count.saturating_mul(2).min(stack.len()) {
                         let _ = pop_or_unknown(&mut stack);
                     }
                 }
@@ -416,7 +423,8 @@ fn infer_types_in_slice(
             OpCode::Packstruct => {
                 let count = pop_or_unknown(&mut stack);
                 if let Some(count) = count.int_literal.and_then(|v| usize::try_from(v).ok()) {
-                    for _ in 0..count {
+                    // Clamp like PACK to bound attacker-controlled counts.
+                    for _ in 0..count.min(stack.len()) {
                         let _ = pop_or_unknown(&mut stack);
                     }
                 }

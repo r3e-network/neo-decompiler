@@ -36,8 +36,9 @@ export function buildCallGraph(nef, instructions, methodGroups) {
       continue;
     }
 
-    if (mnemonic === "PUSHA" && instruction.operand?.kind === "U32") {
-      valueStack.push(pointerValue(relativePointerTarget(instruction)));
+    if (mnemonic === "PUSHA" && instruction.operand?.kind === "I32") {
+      const target = relativePointerTarget(instruction);
+      valueStack.push(target !== null ? pointerValue(target) : null);
       continue;
     }
 
@@ -292,7 +293,7 @@ function pointerTargetBeforeIndex(instructions, index, localValues, staticValues
       cursor -= 1;
       continue;
     }
-    if (previous.opcode.mnemonic === "PUSHA" && previous.operand?.kind === "U32") {
+    if (previous.opcode.mnemonic === "PUSHA" && previous.operand?.kind === "I32") {
       return relativePointerTarget(previous);
     }
     const local = isLoadLocal(previous.opcode.mnemonic)
@@ -454,9 +455,11 @@ function propagateCallArguments(
 }
 
 function relativePointerTarget(instruction) {
-  // PUSHA operand is encoded as U32 but represents a signed I32 relative offset
-  const signedOffset = instruction.operand.value | 0;
-  return instruction.offset + signedOffset;
+  // PUSHA carries a signed I32 relative offset (backward pointers are
+  // legal). Mirrors Rust's `pusha_absolute_target`: a target that falls
+  // before the script start is unresolvable (`checked_add_signed` → None).
+  const target = instruction.offset + instruction.operand.value;
+  return target >= 0 ? target : null;
 }
 
 function pointerValue(target) {

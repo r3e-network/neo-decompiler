@@ -5,7 +5,7 @@ import { disassembleScript } from "./disassembler.js";
 import { SYSCALLS } from "./generated/syscalls.js";
 import { renderGroupedPseudocode } from "./grouped-pseudocode.js";
 import { renderHighLevelMethodGroups } from "./high-level.js";
-import { parseManifest } from "./manifest.js";
+import { classifyPermissionContract, parseManifest } from "./manifest.js";
 import { buildMethodGroups } from "./methods.js";
 import { describeMethodToken } from "./native-contracts.js";
 import { renderPseudocode } from "./pseudocode.js";
@@ -16,6 +16,7 @@ export {
   buildCallGraph,
   buildMethodGroups,
   buildXrefs,
+  classifyPermissionContract,
   inferTypes,
   parseManifest,
   parseNef,
@@ -103,10 +104,15 @@ export function decompileBytesWithManifest(bytes, manifestInput, options = {}) {
  * that mirrors the Rust CLI's `--format high-level` default.
  *
  * @param {Uint8Array | ArrayBuffer | number[]} bytes
- * @param {Object} [options] - See `DecompileOptions` in index.d.ts;
- *   the most useful are `clean: true` (the default-equivalent
- *   shorthand for inlined temps and no trace comments) and
- *   `emitTraceComments: true` (re-enable per-instruction trace).
+ * @param {Object} [options] - See `DecompileOptions` in index.d.ts.
+ * @param {boolean} [options.clean] - Opt-in maximum-readability
+ *   shorthand: enables `inlineSingleUseTemps` and strips informational
+ *   slot-declaration comments. Off by default.
+ * @param {boolean} [options.inlineSingleUseTemps] - Inline single-use
+ *   `tN` temporaries into their use site. Off by default; implied by
+ *   `clean: true`.
+ * @param {boolean} [options.failOnUnknownOpcodes] - Throw instead of
+ *   emitting `UNKNOWN_0xNN` when an unknown opcode is encountered.
  */
 export function decompileHighLevelBytes(bytes, options = {}) {
   const result = decompileBytes(bytes, options);

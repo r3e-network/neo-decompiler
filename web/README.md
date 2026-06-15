@@ -6,18 +6,20 @@ code gets a stable, typed API without duplicating the decompiler logic.
 
 ## Build
 
-From the repository root:
+From this directory:
 
 ```bash
-wasm-pack build --target web --out-dir web/pkg --features web --no-default-features
+npm install
+npm run build:wasm
 ```
 
-That generates the wasm glue under `web/dist/pkg/`.
+That runs `wasm-pack build .. --target web --out-dir web/dist/pkg --features web --no-default-features`
+followed by `scripts/prepare-wasm-package.mjs`, generating the wasm glue under
+`web/dist/pkg/`.
 
 Then build the TypeScript wrapper:
 
 ```bash
-npm install
 npm run build:ts
 ```
 

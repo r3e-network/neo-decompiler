@@ -841,3 +841,79 @@ fn decompile_all_comparison_jumps() {
         "comparison jumps should not emit not-yet-translated placeholders: {high_level}"
     );
 }
+
+#[test]
+fn packmap_pops_key_value_pairs_and_renders_entries() {
+    // Script: PUSH4 ; PUSH3 ; PUSH2 ; PUSH1 ; PUSH2 (count) ; PACKMAP ; RET
+    // PACKMAP pops 2n+1 items (OpCode.cs): count=2, then key=1, value=2,
+    // key=3, value=4. The old code popped only n items, dropping half the
+    // map and leaving stale entries on the simulated stack.
+    let nef_bytes = build_nef(&[0x14, 0x13, 0x12, 0x11, 0x12, 0xBE, 0x40]);
+    let decompilation = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("Map(1: 2, 3: 4)"),
+        "PACKMAP should render key/value pairs in pop order: {high_level}"
+    );
+}
+
+#[test]
+fn huge_pack_count_terminates_quickly() {
+    // Script: PUSHINT64 i64::MAX ; PACK ; RET
+    // The count literal is attacker-controlled; both the high-level
+    // emitter and the type-inference pass must clamp their drain loops
+    // (this hung at 100% CPU before the clamp in analysis/types.rs).
+    let mut script = vec![0x03];
+    script.extend_from_slice(&i64::MAX.to_le_bytes());
+    script.extend_from_slice(&[0xC0, 0x40]); // PACK ; RET
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds despite the pathological count");
+    assert!(decompilation.high_level.is_some());
+}
+
+#[test]
+fn huge_packmap_count_terminates_quickly() {
+    let mut script = vec![0x03];
+    script.extend_from_slice(&i64::MAX.to_le_bytes());
+    script.extend_from_slice(&[0xBE, 0x40]); // PACKMAP ; RET
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds despite the pathological count");
+    assert!(decompilation.high_level.is_some());
+}
+
+#[test]
+fn invalid_type_bytes_render_as_raw_hex() {
+    // Script: PUSH1 ; NEWARRAY_T 0x99 ; DROP ; PUSH1 ; ISTYPE 0x99 ; RET
+    // 0x99 is not a valid StackItemType: both fallbacks surface the raw
+    // byte (uppercase hex) instead of dropping it or emitting an
+    // unquoted `unknown` placeholder.
+    let nef_bytes = build_nef(&[0x11, 0xC4, 0x99, 0x45, 0x11, 0xD9, 0x99, 0x40]);
+    let decompilation = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("new_array_t(1, 0x99)"),
+        "NEWARRAY_T fallback should keep the raw type byte: {high_level}"
+    );
+    assert!(
+        high_level.contains("is_type(1, 0x99)"),
+        "ISTYPE fallback should keep the raw type byte: {high_level}"
+    );
+}

@@ -21,46 +21,80 @@ impl HighLevelEmitter {
             // emitted statement and per-iteration `missing_pack_item()`
             // synthetic-temp lines. Hand-written contracts rarely PACK
             // more than a few dozen items, so 64 is a generous ceiling
-            // for normal cases.
+            // for normal cases. For PACKMAP the cap applies to ENTRIES
+            // (key/value pairs).
             const PACK_MAX_INLINE: usize = 64;
+            // PACKMAP pops a key/value PAIR per entry — `Pop: 2n+1 item(s)`
+            // per OpCode.cs — with the key popped before its value;
+            // PACK/PACKSTRUCT pop one item per entry (`Pop: n+1`).
+            let is_map = kind == "map";
+            let unit = if is_map { 2 } else { 1 };
             let cap = PACK_MAX_INLINE.min(need);
-            let mut elements = Vec::with_capacity(cap);
+            let mut rendered = Vec::with_capacity(cap);
+            let mut elements = Vec::with_capacity(cap * unit);
             for _ in 0..cap {
-                if let Some((value, literal)) = self.pop_stack_value_with_literal() {
-                    if let Some(literal) = literal {
-                        self.literal_values.insert(value.clone(), literal);
+                let mut unit_values = Vec::with_capacity(unit);
+                for _ in 0..unit {
+                    if let Some((value, literal)) = self.pop_stack_value_with_literal() {
+                        if let Some(literal) = literal {
+                            self.literal_values.insert(value.clone(), literal);
+                        }
+                        unit_values.push(value);
+                    } else {
+                        let missing_temp = self.next_temp();
+                        self.statements.push(format!(
+                            "let {missing_temp} = missing_pack_item(); // synthetic missing element for literal pack"
+                        ));
+                        unit_values.push(missing_temp);
                     }
-                    elements.push(value);
-                } else {
-                    let missing_temp = self.next_temp();
-                    self.statements.push(format!(
-                        "let {missing_temp} = missing_pack_item(); // synthetic missing element for literal pack"
-                    ));
-                    elements.push(missing_temp);
                 }
+                if is_map {
+                    rendered.push(format!("{}: {}", unit_values[0], unit_values[1]));
+                } else {
+                    rendered.push(unit_values[0].clone());
+                }
+                elements.extend(unit_values);
             }
             if need > cap {
+                // The VM still consumes the elided entries: drain whatever
+                // the simulated stack actually holds (bounded by its depth)
+                // so subsequent instructions bind the right operands, but
+                // render them as a single elision marker.
+                let mut excess = (need - cap).saturating_mul(unit);
+                while excess > 0 && self.pop_stack_value().is_some() {
+                    excess -= 1;
+                }
                 let remainder = need - cap;
-                elements.push(format!(
-                    "/* {remainder} more element{} */",
-                    if remainder == 1 { "" } else { "s" }
-                ));
+                let noun = match (is_map, remainder == 1) {
+                    (true, true) => "entry",
+                    (true, false) => "entries",
+                    (false, true) => "element",
+                    (false, false) => "elements",
+                };
+                rendered.push(format!("/* {remainder} more {noun} */"));
+                elements.push(format!("/* {remainder} more {noun} */"));
             }
             // Neo VM PACK: first popped item becomes array[0], second becomes
             // array[1], etc.  Since we pop in stack order (top-first), the
             // elements vector is already in correct array-index order — do NOT
-            // reverse.
+            // reverse. PACKMAP entries are likewise added in pop order.
             let temp = self.next_temp();
-            let body = elements.join(", ");
-            let ctor = match kind {
-                "map" => format!("Map({})", body),
-                "struct" => format!("Struct({})", body),
-                _ => format!("[{body}]"),
+            let body = rendered.join(", ");
+            let (ctor, noun) = match kind {
+                "map" => (format!("Map({body})"), "entry(s)"),
+                "struct" => (format!("Struct({body})"), "element(s)"),
+                _ => (format!("[{body}]"), "element(s)"),
             };
             self.statements
-                .push(format!("let {temp} = {ctor}; // pack {need} element(s)"));
-            self.packed_values_by_name
-                .insert(temp.clone(), elements.clone());
+                .push(format!("let {temp} = {ctor}; // pack {need} {noun}"));
+            // UNPACK of a map pushes key/value pairs plus the ENTRY count
+            // (`Push: 2n+1`, OpCode.cs) — the flat element replay below
+            // models arrays/structs only, so skip tracking for maps and
+            // let UNPACK take its honest unknown-source path.
+            if !is_map {
+                self.packed_values_by_name
+                    .insert(temp.clone(), elements.clone());
+            }
             self.stack.push(temp);
         } else {
             let temp = self.next_temp();

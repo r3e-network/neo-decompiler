@@ -76,8 +76,7 @@
       "required": [
         "name",
         "supported_standards",
-        "storage",
-        "payable",
+        "features",
         "groups",
         "methods",
         "events",
@@ -90,8 +89,7 @@
           "type": "array",
           "items": {"type": "string"}
         },
-        "storage": {"type": "boolean"},
-        "payable": {"type": "boolean"},
+        "features": {"type": "object"},
         "groups": {
           "type": "array",
           "items": {"$ref": "#/definitions/groupSummary"}

@@ -5,6 +5,76 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-15 (Rust) / [1.5.0] - 2026-06-15 (JS)
+
+This release is a large correctness pass driven by a full audit of both
+ports. Several fixes change observable output or public surface and are
+**breaking**: the `script_hash_le` / `script_hash_be` (and JS
+`scriptHash` / `scriptHashLE`) values were inverted and are now correct;
+the `info` / `decompile` JSON reports and bundled schemas replace the
+legacy `storage` / `payable` booleans with a raw `features` object; and
+the Rust crate no longer re-exports `ManifestFeatures`. Direct consumers
+of those fields/types must update.
+
+### Fixed
+
+- **Script-hash endianness was inverted in every label.** `util::hash160`
+  reversed the raw `RIPEMD160(SHA256(..))` digest, which made
+  `script_hash_le` / "Script hash (LE)" emit the big-endian display order
+  and `script_hash_be` emit the internal little-endian order — across the
+  CLI `info` text, the `info` / `disasm` / `decompile` / `tokens` JSON
+  reports, the web report, and the decompiled headers, on both ports. The
+  raw digest *is* Neo's little-endian `UInt160`; the reverse is now applied
+  only for the explorer/display form. JS `parseNef().scriptHash` /
+  `.scriptHashLE` field semantics were corrected to match.
+- **`PACKMAP` consumed half its operands.** The shared pack emitter popped
+  `n` items instead of the `2n` key/value pairs the Neo VM removes, dropping
+  half the map and corrupting the simulated stack for the rest of the
+  method. Now pops pairs and renders `Map(k: v, …)` (both ports + the
+  type-inference pass).
+- **Syscall arguments rendered in reverse order.** Multi-argument syscalls
+  (`System.Storage.Put`, `System.Runtime.Notify`, …) printed their
+  parameters backwards; pop order already equals declaration order, so the
+  erroneous reversal was removed (both ports).
+- **Denial-of-service hang on a crafted `PACK`/`PACKMAP`/`PACKSTRUCT`
+  count.** An attacker-controlled literal count (up to `i64::MAX`) drove
+  unbounded loops in the type-inference pass and the entry-depth simulator
+  (`helpers/lifted.rs`); both are now clamped to the real stack depth.
+- **`NEF` parsing tightened to the spec:** method-token count limited to 128
+  and method-name length to 32 bytes (matching `NefFile`/`MethodToken`
+  deserialization); non-canonical var-ints are now accepted (the reference
+  `MemoryReader` performs no canonicality check); the JS port reports an
+  invalid magic as a structured `NefParseError` instead of a raw
+  `TypeError`.
+- **Manifest fidelity:** official string permission descriptors
+  (`"*"` / `0x`-hash / group pubkey) are classified by shape like the
+  reference `ContractPermissionDescriptor`; the legacy 2.x `features`
+  storage/payable flags are no longer modelled (N3 requires an empty
+  object, enforced in strict mode).
+- **Native-contract & syscall tables:** added NeoToken `getCandidates`;
+  removed non-`[ContractMethod]` phantoms (`OnManifestCompose`,
+  `VoteInternal`, `ShouldRefreshCommittee`); corrected the Governance method
+  set against the upstream sources; regenerated the stale JS syscall hash
+  table (13 entries had `hash` fields contradicting their map keys).
+- **Disassembler:** `PUSHA` is decoded as a signed `I32` relative offset
+  (backward function pointers are legal); the JS `PUSHDATA2`/`PUSHDATA4`
+  length prefix is bounds-checked before decoding; invalid `ISTYPE` /
+  `NEWARRAY_T` type bytes render the raw `0xNN` byte consistently on both
+  ports.
+- **Structuring:** `PICK`/`TUCK` no longer string-copy side-effecting
+  expressions (they materialise a temp like `DUP`/`OVER`); the
+  consecutive-`if` → `switch` rewrite is suppressed when a case body
+  reassigns the scrutinee (which would change semantics).
+- **JS port parity:** `NEWSTRUCT0`/`NEWMAP` render `Struct()`/`Map()` (not
+  `{}`); post-terminator method-boundary detection mirrors the Rust rule.
+
+### Documentation
+
+- Corrected the README library example (`let mut result`), the input-size
+  limits row (1 MiB NEF / 64 KiB manifest / 1 MiB operand), a leaked
+  absolute-path link, the web build command, the JS version-mapping table,
+  a duplicate-`const` usage snippet, and a JSDoc option that never existed.
+
 ## [0.7.0] - 2026-04-28 (Rust) / [1.4.0] - 2026-04-28 (JS)
 
 This release surfaces a large body of metadata that previously lived

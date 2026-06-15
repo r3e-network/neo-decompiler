@@ -14,9 +14,14 @@ pub struct ContractManifest {
     /// Optional signature groups.
     #[serde(default)]
     pub groups: Vec<ManifestGroup>,
-    /// Declared feature flags.
+    /// Raw `features` object carried by the manifest.
+    ///
+    /// Neo N3's `ContractManifest.FromJson` requires this to be an empty
+    /// JSON object (the legacy 2.x `storage`/`payable` flags do not exist in
+    /// N3). The raw map is kept so tolerant parsing can surface whatever a
+    /// malformed manifest declared; strict parsing rejects non-empty objects.
     #[serde(default)]
-    pub features: ManifestFeatures,
+    pub features: serde_json::Map<String, Value>,
     /// Supported standards declared by the contract (e.g. `NEP-17`).
     #[serde(default, rename = "supportedstandards")]
     pub supported_standards: Vec<String>,
@@ -40,16 +45,4 @@ pub struct ManifestGroup {
     pub pubkey: String,
     /// Signature for the group.
     pub signature: String,
-}
-
-/// Manifest feature flags indicating supported runtime capabilities.
-#[derive(Debug, Clone, Deserialize, Default)]
-#[serde(default)]
-pub struct ManifestFeatures {
-    /// Whether the contract uses storage.
-    #[serde(default)]
-    pub storage: bool,
-    /// Whether the contract is payable.
-    #[serde(default)]
-    pub payable: bool,
 }

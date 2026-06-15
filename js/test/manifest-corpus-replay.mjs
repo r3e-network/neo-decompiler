@@ -3,7 +3,11 @@
  * through both Rust (via CLI --manifest flag with /dev/null script) and JS
  * parseManifest. Verifies success/failure outcomes match.
  *
- * Usage:  node js/test/manifest-corpus-replay.mjs
+ * A missing or empty corpus directory is an error (exit 1) so the script
+ * cannot silently test nothing. Pass --allow-missing (or set
+ * CORPUS_ALLOW_MISSING=1) to opt back into a soft skip (exit 0).
+ *
+ * Usage:  node js/test/manifest-corpus-replay.mjs [--allow-missing]
  */
 
 import { execFileSync } from "node:child_process";
@@ -46,12 +50,35 @@ const stats = {
 };
 const mismatches = [];
 
+const ALLOW_MISSING =
+  process.argv.includes("--allow-missing") || process.env.CORPUS_ALLOW_MISSING === "1";
+
+function corpusUnavailable(reason) {
+  try {
+    rmSync(TEMP_DIR, { recursive: true, force: true });
+  } catch {}
+  console.error(`ERROR: corpus dir ${reason}: ${CORPUS_DIR}`);
+  if (ALLOW_MISSING) {
+    console.error(
+      "--allow-missing/CORPUS_ALLOW_MISSING set: soft skip, nothing was tested.",
+    );
+    process.exit(0);
+  }
+  console.error(
+    "Refusing to silently test nothing. Populate the corpus dir (e.g. via " +
+      "`cargo fuzz`) or pass --allow-missing / set CORPUS_ALLOW_MISSING=1 to soft-skip.",
+  );
+  process.exit(1);
+}
+
 let entries;
 try {
   entries = readdirSync(CORPUS_DIR);
 } catch {
-  console.error(`No corpus dir: ${CORPUS_DIR}`);
-  process.exit(0);
+  corpusUnavailable("missing");
+}
+if (entries.length === 0) {
+  corpusUnavailable("empty");
 }
 
 console.log(`Replaying ${entries.length} manifest corpus inputs...`);
@@ -107,6 +134,10 @@ for (const e of entries) {
       });
     }
   }
+}
+
+if (stats.total === 0) {
+  corpusUnavailable("contains no usable inputs");
 }
 
 console.log();

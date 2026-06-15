@@ -1,10 +1,7 @@
 {
     "name": "Permissions",
     "groups": [],
-    "features": {
-        "storage": false,
-        "payable": false
-    },
+    "features": {},
     "supportedstandards": [
         "Test-1"
     ],
@@ -22,24 +19,18 @@
     },
     "permissions": [
         {
-            "contract": {
-                "hash": "0x0123456789abcdef0123456789abcdef01234567"
-            },
+            "contract": "0x0123456789abcdef0123456789abcdef01234567",
             "methods": [
                 "symbol",
                 "decimals"
             ]
         },
         {
-            "contract": {
-                "group": "02abcdef"
-            },
+            "contract": "02abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
             "methods": "*"
         }
     ],
-    "trusts": {
-        "groups": [
-            "02abcdef"
-        ]
-    }
+    "trusts": [
+        "02abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
+    ]
 }

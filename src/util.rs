@@ -25,13 +25,20 @@ pub(crate) fn format_hash_be(bytes: &[u8]) -> String {
     upper_hex_string(&reversed)
 }
 
-/// Compute the Neo Hash160 (RIPEMD160(SHA256(data))) and return the little-endian bytes.
+/// Compute the Neo Hash160 (`RIPEMD160(SHA256(data))`) and return the
+/// little-endian bytes.
+///
+/// The raw `RIPEMD160(SHA256(..))` digest IS Neo's internal little-endian
+/// `UInt160` byte order — the explorer/display ("big-endian", `0x`-prefixed)
+/// form is this digest reversed. So the digest is returned as-is: callers use
+/// [`format_hash`] for the little-endian rendering and [`format_hash_be`] for
+/// the display rendering. (Reversing here would invert both, which is exactly
+/// the bug this comment exists to prevent.)
 pub(crate) fn hash160(data: &[u8]) -> [u8; 20] {
     let sha = Sha256::digest(data);
     let ripemd = Ripemd160::digest(sha);
     let mut output = [0u8; 20];
     output.copy_from_slice(&ripemd);
-    output.reverse(); // align with Neo's little-endian UInt160 representation
     output
 }
 

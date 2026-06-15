@@ -150,7 +150,12 @@ export function tryStackShapeOperation(state, instruction) {
         state.stack.push(temp);
         return true;
       }
-      const source = state.stack[state.stack.length - 1 - index];
+      // Materialise the picked slot into a temp before duplicating, the
+      // same hazard DUP/OVER guard against: a side-effecting expression
+      // (CALL/SYSCALL/CALLT result) copied by string would evaluate twice.
+      // Simple identifiers/literals are left as-is (skip-on-literal).
+      const sourceSlot = state.stack.length - 1 - index;
+      const source = materialiseStackTopForDup(state, state.stack[sourceSlot], sourceSlot);
       state.stack.push(source);
       const packed = resolvePackedValue(state, source);
       if (packed) {
@@ -167,10 +172,12 @@ export function tryStackShapeOperation(state, instruction) {
       return true;
     case "TUCK":
       if (state.stack.length >= 2) {
-        const top = state.stack[state.stack.length - 1];
+        // Materialise the top into a temp before tucking a copy below the
+        // second item — same double-evaluation hazard as DUP/OVER/PICK.
+        // Simple identifiers/literals are left as-is (skip-on-literal).
+        const top = materialiseStackTopForDup(state, state.stack[state.stack.length - 1]);
         state.stack.splice(state.stack.length - 2, 0, top);
       }
-      state.statements.push("// tuck top of stack");
       return true;
     case "ROLL": {
       const indexText = state.stack.pop();

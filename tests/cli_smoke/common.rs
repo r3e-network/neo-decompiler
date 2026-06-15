@@ -107,7 +107,7 @@ pub(crate) const SAMPLE_MANIFEST: &str = r#"
         }
     ],
     "supportedstandards": ["NEP-17"],
-    "features": { "storage": true, "payable": false },
+    "features": {},
     "abi": {
         "methods": [
             {
@@ -122,11 +122,11 @@ pub(crate) const SAMPLE_MANIFEST: &str = r#"
     },
     "permissions": [
         {
-            "contract": { "hash": "0x0123456789ABCDEFFEDCBA987654321001234567" },
+            "contract": "0x0123456789ABCDEFFEDCBA987654321001234567",
             "methods": ["symbol"]
         },
         {
-            "contract": { "group": "03ABCD" },
+            "contract": "03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c",
             "methods": "*"
         }
     ],

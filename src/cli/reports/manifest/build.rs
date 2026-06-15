@@ -9,8 +9,7 @@ pub(in crate::cli) fn summarize_manifest(manifest: &ContractManifest) -> Manifes
     ManifestSummary {
         name: manifest.name.clone(),
         supported_standards: manifest.supported_standards.clone(),
-        storage: manifest.features.storage,
-        payable: manifest.features.payable,
+        features: manifest.features.clone(),
         groups: manifest
             .groups
             .iter()

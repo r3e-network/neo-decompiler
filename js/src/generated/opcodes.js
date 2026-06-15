@@ -8,7 +8,7 @@ export const OPCODES = new Map([
   [0x05, { name: "Pushint256", mnemonic: "PUSHINT256", byte: 0x05, operandEncoding: {"kind":"Bytes","length":32} }],
   [0x08, { name: "PushT", mnemonic: "PUSHT", byte: 0x08, operandEncoding: {"kind":"None"} }],
   [0x09, { name: "PushF", mnemonic: "PUSHF", byte: 0x09, operandEncoding: {"kind":"None"} }],
-  [0x0A, { name: "PushA", mnemonic: "PUSHA", byte: 0x0A, operandEncoding: {"kind":"U32"} }],
+  [0x0A, { name: "PushA", mnemonic: "PUSHA", byte: 0x0A, operandEncoding: {"kind":"I32"} }],
   [0x0B, { name: "PushNULL", mnemonic: "PUSHNULL", byte: 0x0B, operandEncoding: {"kind":"None"} }],
   [0x0C, { name: "Pushdata1", mnemonic: "PUSHDATA1", byte: 0x0C, operandEncoding: {"kind":"Data1"} }],
   [0x0D, { name: "Pushdata2", mnemonic: "PUSHDATA2", byte: 0x0D, operandEncoding: {"kind":"Data2"} }],

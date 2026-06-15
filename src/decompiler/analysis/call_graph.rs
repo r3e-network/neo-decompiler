@@ -244,8 +244,10 @@ pub(super) fn calla_target_from_pusha(instructions: &[Instruction], index: usize
 }
 
 fn pusha_absolute_target(instruction: &Instruction) -> Option<usize> {
+    // PUSHA's operand is decoded as a signed I32 relative offset (the
+    // generated opcode table uses `OperandEncoding::I32`); no u32→i32
+    // reinterpretation is needed.
     let delta = match instruction.operand {
-        Some(Operand::U32(value)) => i32::from_le_bytes(value.to_le_bytes()) as isize,
         Some(Operand::I32(value)) => value as isize,
         _ => return None,
     };

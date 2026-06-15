@@ -68,7 +68,9 @@ function operandEncoding(name) {
     return ["Bytes", size / 8];
   }
 
-  if (name === "PUSHA") return "U32";
+  // C# declares PUSHA's operand as a signed 32-bit relative offset
+  // (backward pointers are legal), so decode it as I32 — not U32.
+  if (name === "PUSHA") return "I32";
   if (name === "PUSHDATA1") return "Data1";
   if (name === "PUSHDATA2") return "Data2";
   if (name === "PUSHDATA4") return "Data4";

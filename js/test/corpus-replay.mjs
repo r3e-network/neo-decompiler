@@ -3,7 +3,11 @@
  * and fuzz/corpus/fuzz_decompile through both the Rust CLI and the JS API,
  * then verifies they agree on success / failure for each input.
  *
- * Usage:  node js/test/corpus-replay.mjs
+ * A missing or empty corpus directory is an error (exit 1) so the script
+ * cannot silently test nothing. Pass --allow-missing (or set
+ * CORPUS_ALLOW_MISSING=1) to opt back into a soft skip (exit 0).
+ *
+ * Usage:  node js/test/corpus-replay.mjs [--allow-missing]
  */
 
 import { execFileSync } from "node:child_process";
@@ -45,22 +49,53 @@ const stats = {
 };
 const mismatches = [];
 
+const ALLOW_MISSING =
+  process.argv.includes("--allow-missing") || process.env.CORPUS_ALLOW_MISSING === "1";
+
 const cases = [];
+const emptyDirs = [];
 for (const dir of CORPUS_DIRS) {
   let entries;
   try {
     entries = readdirSync(dir);
   } catch {
+    emptyDirs.push({ dir, reason: "missing" });
     continue;
   }
+  let found = 0;
   for (const e of entries) {
     const p = join(dir, e);
     try {
       const s = statSync(p);
       if (s.isFile() && s.size > 0 && s.size <= 1024 * 1024) {
         cases.push(p);
+        found++;
       }
     } catch {}
+  }
+  if (found === 0) {
+    emptyDirs.push({ dir, reason: "no usable inputs" });
+  }
+}
+
+if (emptyDirs.length > 0) {
+  for (const { dir, reason } of emptyDirs) {
+    console.error(`ERROR: corpus dir ${reason}: ${dir}`);
+  }
+  if (ALLOW_MISSING) {
+    console.error(
+      "--allow-missing/CORPUS_ALLOW_MISSING set: skipping missing corpus dirs (soft skip).",
+    );
+    if (cases.length === 0) {
+      console.error("No corpus inputs available; nothing was tested.");
+      process.exit(0);
+    }
+  } else {
+    console.error(
+      "Refusing to silently test nothing. Populate the corpus dirs (e.g. via " +
+        "`cargo fuzz`) or pass --allow-missing / set CORPUS_ALLOW_MISSING=1 to soft-skip.",
+    );
+    process.exit(1);
   }
 }
 

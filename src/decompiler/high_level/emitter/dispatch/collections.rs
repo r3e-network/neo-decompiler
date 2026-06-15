@@ -12,11 +12,20 @@ impl HighLevelEmitter {
             Newarray0 => self.push_literal(instruction, "[]".into()),
             Newarray => self.unary_op(instruction, |val| format!("new_array({val})")),
             NewarrayT => {
+                // Unrecognized StackItemType bytes surface as the raw byte
+                // (0xNN), matching the ISTYPE fallback, so the reader can
+                // see which type the bytecode actually requested.
                 let ty = instruction
                     .operand
                     .as_ref()
                     .and_then(super::super::convert_target_name)
                     .map(|t| format!("{t:?}"))
+                    .or_else(|| {
+                        instruction
+                            .operand
+                            .as_ref()
+                            .map(super::super::format_type_operand)
+                    })
                     .unwrap_or_else(|| "unknown".to_string());
                 self.unary_op(instruction, |val| format!("new_array_t({val}, {ty})"))
             }

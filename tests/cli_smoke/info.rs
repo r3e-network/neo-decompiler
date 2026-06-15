@@ -22,10 +22,10 @@ fn info_command_prints_header() {
         .stdout(contains("#0: hash="))
         .stdout(contains("(GasToken::Transfer)"))
         .stdout(contains(
-            "Script hash (LE): 9DE87DC65A6A581E502CAE845C6F13645B10C5EA",
+            "Script hash (LE): EAC5105B64136F5C84AE2C501E586A5AC67DE89D",
         ))
         .stdout(contains(
-            "Script hash (BE): EAC5105B64136F5C84AE2C501E586A5AC67DE89D",
+            "Script hash (BE): 9DE87DC65A6A581E502CAE845C6F13645B10C5EA",
         ))
         .stdout(contains(
             "flags=0x0F (ReadStates|WriteStates|AllowCall|AllowNotify)",
@@ -52,7 +52,7 @@ fn info_command_supports_json_output() {
     let value: Value = serde_json::from_slice(&output.stdout).expect("valid json");
     assert_eq!(
         value["script_hash_le"],
-        Value::String("9DE87DC65A6A581E502CAE845C6F13645B10C5EA".into())
+        Value::String("EAC5105B64136F5C84AE2C501E586A5AC67DE89D".into())
     );
     let tokens = value["method_tokens"].as_array().expect("tokens array");
     assert!(!tokens.is_empty());
@@ -79,7 +79,7 @@ fn info_command_supports_json_output() {
     );
     assert_eq!(
         value["manifest"]["permissions"][1]["contract"]["value"],
-        Value::String("03ABCD".into())
+        Value::String("03b209fd4f53a7170ea4444e0cb0a6bb6a53c2bd016926989cf85f9b0fba17a70c".into())
     );
     assert_eq!(
         value["manifest"]["groups"][0]["pubkey"],

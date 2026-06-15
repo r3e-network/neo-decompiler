@@ -20,6 +20,7 @@ import {
 } from "./high-level-slots.js";
 import { renderUntranslatedInstruction, stripOuterParens } from "./high-level-utils.js";
 import {
+  classifyPermissionContract,
   extractContractName,
   formatManifestParameters,
   formatManifestType,
@@ -96,10 +97,14 @@ export function renderHighLevelMethodGroups(groups, manifest, context = null) {
       const formatted = manifest.supportedStandards.map((s) => `"${s}"`).join(", ");
       lines.push(`    supported_standards = [${formatted}];`);
     }
-    if (manifest.features?.storage || manifest.features?.payable) {
+    // Valid Neo N3 manifests carry an empty `features` object; only a
+    // malformed manifest has content here, surfaced verbatim (mirrors
+    // the Rust manifest summary renderer).
+    if (manifest.features && Object.keys(manifest.features).length > 0) {
       lines.push(`    features {`);
-      if (manifest.features.storage) lines.push(`        storage = true;`);
-      if (manifest.features.payable) lines.push(`        payable = true;`);
+      for (const [key, value] of Object.entries(manifest.features)) {
+        lines.push(`        ${key} = ${JSON.stringify(value)};`);
+      }
       lines.push(`    }`);
     }
     if (manifest.groups?.length) {
@@ -118,17 +123,21 @@ export function renderHighLevelMethodGroups(groups, manifest, context = null) {
     if (manifest.permissions?.length) {
       lines.push(`    permissions {`);
       for (const perm of manifest.permissions) {
+        // Mirror Rust's `ManifestPermissionContract::describe()`:
+        // wildcard verbatim, `hash:`/`group:` prefixes for official
+        // string descriptors, raw JSON for malformed descriptors.
+        const classified = classifyPermissionContract(perm.contract);
         const contractPart =
-          typeof perm.contract === "string"
-            ? `contract=${perm.contract}`
-            : perm.contract?.hash
-              ? `contract=hash:${perm.contract.hash}`
-              : perm.contract?.group
-                ? `contract=group:${perm.contract.group}`
-                : `contract=${JSON.stringify(perm.contract)}`;
+          classified.kind === "wildcard"
+            ? `contract=${classified.value}`
+            : classified.kind === "hash"
+              ? `contract=hash:${classified.hash}`
+              : classified.kind === "group"
+                ? `contract=group:${classified.group}`
+                : `contract=${JSON.stringify(classified.value)}`;
         const methodsPart =
-          perm.methods === "*"
-            ? "methods=*"
+          typeof perm.methods === "string"
+            ? `methods=${perm.methods}`
             : Array.isArray(perm.methods)
               ? `methods=[${perm.methods.map((m) => `"${m}"`).join(", ")}]`
               : `methods=${JSON.stringify(perm.methods)}`;

@@ -46,10 +46,11 @@ const NATIVE_CONTRACTS = [
       0x94, 0x67, 0xC6, 0x05, 0x9D, 0x15, 0xE7, 0x4C,
     ]),
     methods: [
-      "GetCandidateVote", "GetCommittee", "GetCommitteeAddress",
-      "GetGasPerBlock", "GetNextBlockValidators", "GetRegisterPrice",
-      "GetVoteTarget", "ShouldRefreshCommittee", "UnclaimedGas",
-      "VoteInternal",
+      "GetAllCandidates", "GetCandidateVote", "GetCandidates",
+      "GetCommittee", "GetCommitteeAddress", "GetGasPerBlock",
+      "GetNextBlockValidators", "GetRegisterPrice", "GetVoteTarget",
+      "RegisterCandidate", "SetGasPerBlock", "SetRegisterPrice",
+      "UnclaimedGas", "UnregisterCandidate", "Vote",
     ],
   },
   {
@@ -120,8 +121,7 @@ const NATIVE_CONTRACTS = [
       0x61, 0x01, 0x13, 0x19, 0xF3, 0xCF, 0xA4, 0xD2,
     ]),
     methods: [
-      "BalanceOf", "Decimals", "OnManifestCompose", "Symbol", "TotalSupply",
-      "Transfer",
+      "BalanceOf", "Decimals", "Symbol", "TotalSupply", "Transfer",
     ],
   },
   {
@@ -140,9 +140,9 @@ const NATIVE_CONTRACTS = [
     ]),
     methods: [
       "BalanceOf", "Decimals", "GetAccountState", "GetAllCandidates",
-      "GetCandidateVote", "GetCommittee", "GetCommitteeAddress",
-      "GetGasPerBlock", "GetNextBlockValidators", "GetRegisterPrice",
-      "OnManifestCompose", "OnNEP17Payment", "RegisterCandidate",
+      "GetCandidateVote", "GetCandidates", "GetCommittee",
+      "GetCommitteeAddress", "GetGasPerBlock", "GetNextBlockValidators",
+      "GetRegisterPrice", "OnNEP17Payment", "RegisterCandidate",
       "SetGasPerBlock", "SetRegisterPrice", "Symbol", "TotalSupply",
       "Transfer", "UnclaimedGas", "UnregisterCandidate", "Vote",
     ],

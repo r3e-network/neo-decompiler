@@ -14,10 +14,17 @@ const MAX_NEF_FILE_SIZE = 0x10_0000;
 const FIXED_HEADER_SIZE = 68;
 const CHECKSUM_SIZE = 4;
 const MAGIC = "NEF3";
+// 'NEF3' interpreted as a little-endian uint32, per the reference
+// `NefFile.Magic` definition.
+const MAGIC_U32 = 0x3346454e;
 const MAX_SOURCE_LEN = 256;
-const MAX_METHOD_TOKENS = 256;
+// Reference: `NefFile.Deserialize` reads tokens with
+// `reader.ReadSerializableArray<MethodToken>(128)`.
+const MAX_METHOD_TOKENS = 128;
 const MAX_SCRIPT_LEN = 0x8_0000;
-const MAX_METHOD_NAME_LEN = 1024;
+// Reference: `MethodToken.Deserialize` reads the method name with
+// `reader.ReadVarString(32)`.
+const MAX_METHOD_NAME_LEN = 32;
 const CALL_FLAGS_ALLOWED_MASK = 0x0f;
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -37,12 +44,15 @@ export function parseNef(input) {
   }
 
   let offset = 0;
+  // The spec treats magic as a uint32 (0x3346454E); compare numerically
+  // rather than decoding text so invalid UTF-8 in the first four bytes
+  // still surfaces as InvalidMagic instead of a raw TypeError.
   const magicBytes = slice(bytes, offset, 4);
-  const actualMagic = textDecoder.decode(magicBytes);
-  if (actualMagic !== MAGIC) {
+  if (readU32LE(magicBytes, 0) !== MAGIC_U32) {
+    const actualHex = upperHex(magicBytes);
     throw new NefParseError(
-      `invalid magic bytes: expected ${JSON.stringify(MAGIC)}, got ${JSON.stringify(actualMagic)}`,
-      { code: "InvalidMagic", expected: MAGIC, actual: actualMagic },
+      `invalid magic bytes: expected ${JSON.stringify(MAGIC)}, got 0x${actualHex}`,
+      { code: "InvalidMagic", expected: MAGIC, actual: actualHex },
     );
   }
   offset += 4;
@@ -122,15 +132,19 @@ export function parseNef(input) {
   const scriptHashBytes = computeScriptHash(script);
   return {
     header: {
-      magic: actualMagic,
+      magic: MAGIC,
       compiler,
       source,
     },
     methodTokens,
     script,
     checksum,
-    scriptHash: upperHex(scriptHashBytes),
-    scriptHashLE: upperHexReversed(scriptHashBytes),
+    // The raw RIPEMD160(SHA256(..)) digest IS Neo's internal little-endian
+    // UInt160 order; the explorer/display ("big-endian", 0x-prefixed) form
+    // is that digest reversed. `scriptHashLE` is therefore the raw digest
+    // and `scriptHash` (the canonical display form) is the reversal.
+    scriptHash: upperHexReversed(scriptHashBytes),
+    scriptHashLE: upperHex(scriptHashBytes),
   };
 }
 
@@ -268,13 +282,10 @@ function readVarInt(bytes, offset) {
     consumed = 9;
   }
 
-  if (consumed !== varIntEncodedLength(value)) {
-    throw new NefParseError(`varint is not canonically encoded at offset ${offset}`, {
-      code: "NonCanonicalVarInt",
-      offset,
-    });
-  }
-
+  // Matches the reference `MemoryReader.ReadVarInt`: the prefix selects
+  // the width and only the maximum value is validated. Non-canonical
+  // encodings (e.g. `FD 05 00` for 5) are accepted, because NEF
+  // checksums cover the raw bytes and such files are valid on-chain.
   return { value, consumed };
 }
 
@@ -310,13 +321,6 @@ function readVarBytes(bytes, offset, maxLength) {
   }
   const start = offset + consumed;
   return { value: new Uint8Array(slice(bytes, start, length)), consumed: consumed + length };
-}
-
-function varIntEncodedLength(value) {
-  if (value <= 0xfc) return 1;
-  if (value <= 0xffff) return 3;
-  if (value <= 0xffffffff) return 5;
-  return 9;
 }
 
 function slice(bytes, start, length) {

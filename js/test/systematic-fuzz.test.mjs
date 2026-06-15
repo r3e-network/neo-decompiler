@@ -935,7 +935,9 @@ test("method-tokens: all call flag combinations", () => {
   }
 });
 
-test("method-tokens: long method name (500 chars)", () => {
+test("method-tokens: name longer than the 32-byte spec limit is rejected", () => {
+  // MethodToken.Deserialize reads the name with ReadVarString(32); the
+  // reference implementation rejects anything longer.
   const longName = "a".repeat(500);
   const token = {
     hash: new Uint8Array(20).fill(0xAB),
@@ -946,8 +948,7 @@ test("method-tokens: long method name (500 chars)", () => {
   };
   const script = new Uint8Array([0x37, 0x00, 0x00, 0x40]);
   const nef = buildNef({ tokens: [token], script });
-  const parsed = parseNef(nef);
-  assert.equal(parsed.methodTokens[0].method, longName);
+  assert.throws(() => parseNef(nef), (error) => error.details.code === "InvalidMethodToken");
 });
 
 test("method-tokens: token with 0 params and no return", () => {

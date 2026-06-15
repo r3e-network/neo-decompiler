@@ -113,6 +113,11 @@ export function trySyscall(state, instruction) {
   const info = SYSCALLS.get(hash) ?? null;
   const argCount = info?.param_count ?? 0;
   const returnsValue = info?.returns_value ?? true;
+  // Syscall arguments are pushed right-to-left (Cdecl) by the devpack,
+  // so parameters[0] sits on top of the stack at SYSCALL and
+  // `ApplicationEngine.OnSysCall` pops it first: pop order already
+  // equals declaration order — do NOT reverse (matches the
+  // internal-call path in popCallArguments).
   const args = [];
   let missingArgument = false;
   for (let index = 0; index < argCount; index += 1) {
@@ -124,7 +129,6 @@ export function trySyscall(state, instruction) {
       args.push(stripOuterParens(value));
     }
   }
-  args.reverse();
 
   const call = info
     ? args.length > 0

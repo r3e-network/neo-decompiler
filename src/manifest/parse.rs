@@ -7,16 +7,30 @@ use crate::error::{ManifestError, Result};
 use super::{ContractManifest, MAX_MANIFEST_SIZE};
 
 fn validate_manifest_strict(manifest: &ContractManifest) -> Result<()> {
+    if !manifest.features.is_empty() {
+        return Err(ManifestError::Validation {
+            message: format!(
+                "features must be an empty object in Neo N3, got keys: {}",
+                manifest
+                    .features
+                    .keys()
+                    .map(String::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+        .into());
+    }
+
     for (index, permission) in manifest.permissions.iter().enumerate() {
-        if let super::ManifestPermissionContract::Wildcard(value) = &permission.contract {
-            if value != "*" {
-                return Err(ManifestError::Validation {
-                    message: format!(
-                        "permissions[{index}].contract wildcard must be \"*\", got {value:?}"
-                    ),
-                }
-                .into());
+        if let super::ManifestPermissionContract::Other(value) = &permission.contract {
+            return Err(ManifestError::Validation {
+                message: format!(
+                    "permissions[{index}].contract must be \"*\", a 0x-prefixed 20-byte \
+                     contract hash, or a 33-byte group public key, got {value}"
+                ),
             }
+            .into());
         }
 
         if let super::ManifestPermissionMethods::Wildcard(value) = &permission.methods {
@@ -128,18 +142,6 @@ impl ContractManifest {
         let manifest = Self::from_bytes(&data)?;
         validate_manifest_strict(&manifest)?;
         Ok(manifest)
-    }
-
-    /// Convenience helper returning true when the manifest declares storage support.
-    #[must_use]
-    pub fn has_storage(&self) -> bool {
-        self.features.storage
-    }
-
-    /// Convenience helper returning true when the manifest declares payable support.
-    #[must_use]
-    pub fn is_payable(&self) -> bool {
-        self.features.payable
     }
 }
 

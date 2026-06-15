@@ -78,13 +78,12 @@ pub(super) fn write_contract_open(
     }
 
     if let Some(manifest) = manifest {
-        if manifest.features.storage || manifest.features.payable {
+        // Valid Neo N3 manifests carry an empty `features` object; only a
+        // malformed manifest has content here, surfaced verbatim.
+        if !manifest.features.is_empty() {
             writeln!(output, "        // features:").unwrap();
-            if manifest.features.storage {
-                writeln!(output, "        //   storage = true").unwrap();
-            }
-            if manifest.features.payable {
-                writeln!(output, "        //   payable = true").unwrap();
+            for (key, value) in &manifest.features {
+                writeln!(output, "        //   {key} = {value}").unwrap();
             }
         }
         if !manifest.groups.is_empty() {

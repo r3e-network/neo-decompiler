@@ -53,16 +53,21 @@
     "name": "Governance",
     "script_hash": "67ca70350663bf258ca513049467c6059d15e74c",
     "methods": [
+      "GetAllCandidates",
       "GetCandidateVote",
+      "GetCandidates",
       "GetCommittee",
       "GetCommitteeAddress",
       "GetGasPerBlock",
       "GetNextBlockValidators",
       "GetRegisterPrice",
       "GetVoteTarget",
-      "ShouldRefreshCommittee",
+      "RegisterCandidate",
+      "SetGasPerBlock",
+      "SetRegisterPrice",
       "UnclaimedGas",
-      "VoteInternal"
+      "UnregisterCandidate",
+      "Vote"
     ]
   },
   {
@@ -167,7 +172,6 @@
     "methods": [
       "BalanceOf",
       "Decimals",
-      "OnManifestCompose",
       "Symbol",
       "TotalSupply",
       "Transfer"
@@ -192,12 +196,12 @@
       "GetAccountState",
       "GetAllCandidates",
       "GetCandidateVote",
+      "GetCandidates",
       "GetCommittee",
       "GetCommitteeAddress",
       "GetGasPerBlock",
       "GetNextBlockValidators",
       "GetRegisterPrice",
-      "OnManifestCompose",
       "OnNEP17Payment",
       "RegisterCandidate",
       "SetGasPerBlock",

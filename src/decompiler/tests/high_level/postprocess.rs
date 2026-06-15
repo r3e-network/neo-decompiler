@@ -628,3 +628,55 @@ fn rewrite_switch_statements_skips_consecutive_ifs_with_different_scrutinee() {
         .iter()
         .any(|line| line.trim_start().starts_with("switch ")));
 }
+
+#[test]
+fn rewrite_switch_keeps_if_chain_when_case_body_reassigns_scrutinee() {
+    // Three standalone `if loc0 == k { ... }` blocks where the first body
+    // reassigns `loc0`. In the bytecode the later comparisons can still
+    // fire after the mutation, so folding into a `switch` (which asserts
+    // exactly one case runs) would change semantics — leave it alone.
+    let mut statements = vec![
+        "if loc0 == 0 {".to_string(),
+        "    loc0 = 1;".to_string(),
+        "    do0;".to_string(),
+        "}".to_string(),
+        "if loc0 == 1 {".to_string(),
+        "    do1;".to_string(),
+        "}".to_string(),
+        "if loc0 == 2 {".to_string(),
+        "    do2;".to_string(),
+        "}".to_string(),
+    ];
+    let original = statements.clone();
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    assert_eq!(
+        statements, original,
+        "scrutinee-mutating if-chain must not be rewritten to a switch"
+    );
+}
+
+#[test]
+fn rewrite_switch_folds_standalone_ifs_when_bodies_terminate() {
+    // The same shape but every case body ends in a terminator, so exactly
+    // one can run regardless of any mutation — safe to fold.
+    let mut statements = vec![
+        "if loc0 == 0 {".to_string(),
+        "    return 0;".to_string(),
+        "}".to_string(),
+        "if loc0 == 1 {".to_string(),
+        "    return 1;".to_string(),
+        "}".to_string(),
+        "if loc0 == 2 {".to_string(),
+        "    return 2;".to_string(),
+        "}".to_string(),
+    ];
+
+    HighLevelEmitter::rewrite_switch_statements(&mut statements);
+
+    assert!(
+        statements.iter().any(|line| line.trim() == "switch loc0 {"),
+        "terminator-ending standalone ifs should fold into a switch: {statements:?}"
+    );
+}

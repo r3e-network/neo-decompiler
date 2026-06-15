@@ -189,13 +189,19 @@ function readPrefixedBytes(bytecode, offset, prefixLength) {
 }
 
 function readLength(bytecode, start, prefixLength, offset) {
+  // Bounds-check the FULL length prefix before decoding it, mirroring
+  // Rust's `read_bytes_prefixed` (operand.rs), which calls `read_slice`
+  // for the whole prefix first. Reading via readU16LE/readU32LE directly
+  // coerced out-of-bounds bytes (undefined) to 0, fabricating a partial
+  // length from a truncated prefix and then surfacing the wrong error
+  // (OperandTooLarge) instead of UnexpectedEof.
   switch (prefixLength) {
     case 1:
       return readSlice(bytecode, start, 1, offset)[0];
     case 2:
-      return readU16LE(bytecode, start);
+      return readU16LE(readSlice(bytecode, start, 2, offset), 0);
     case 4:
-      return readU32LE(bytecode, start);
+      return readU32LE(readSlice(bytecode, start, 4, offset), 0);
     default:
       return 0;
   }

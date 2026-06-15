@@ -17,13 +17,12 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
         writeln!(output, "    supported_standards = [{standards}];").unwrap();
     }
 
-    if manifest.features.storage || manifest.features.payable {
+    // Valid Neo N3 manifests carry an empty `features` object; only a
+    // malformed manifest has content here, surfaced verbatim.
+    if !manifest.features.is_empty() {
         writeln!(output, "    features {{").unwrap();
-        if manifest.features.storage {
-            writeln!(output, "        storage = true;").unwrap();
-        }
-        if manifest.features.payable {
-            writeln!(output, "        payable = true;").unwrap();
+        for (key, value) in &manifest.features {
+            writeln!(output, "        {key} = {value};").unwrap();
         }
         writeln!(output, "    }}").unwrap();
     }

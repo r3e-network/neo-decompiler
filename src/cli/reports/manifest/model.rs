@@ -5,8 +5,9 @@ use serde_json::Value;
 pub(in crate::cli) struct ManifestSummary {
     pub(super) name: String,
     pub(super) supported_standards: Vec<String>,
-    pub(super) storage: bool,
-    pub(super) payable: bool,
+    /// Raw `features` object from the manifest. Empty for every valid Neo N3
+    /// manifest; surfaced verbatim so malformed manifests stay inspectable.
+    pub(super) features: serde_json::Map<String, Value>,
     pub(super) groups: Vec<GroupSummary>,
     pub(super) methods: usize,
     pub(super) events: usize,

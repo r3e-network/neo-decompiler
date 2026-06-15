@@ -83,6 +83,14 @@ fn infer_entry_stack_arg_count_for_inferred_start(
     estimate_required_entry_stack_depth(&instructions[lo..hi])
 }
 
+/// Upper bound on how many items a single instruction may pop during
+/// entry-depth inference. The pop count for `PACK`/`PACKMAP`/`PACKSTRUCT`
+/// comes from an attacker-controlled literal (up to `i64::MAX`); without a
+/// cap the `while`/`for` loops below would grow and drain the simulated
+/// stack billions of times. No real method needs anywhere near this many
+/// entry-stack slots, so clamping here cannot affect a valid contract.
+const MAX_SIMULATED_POPS: usize = 1024;
+
 fn estimate_required_entry_stack_depth(instructions: &[Instruction]) -> Option<usize> {
     let mut required_entry_depth = 0usize;
     let mut simulated_stack: Vec<Option<usize>> = Vec::new();
@@ -229,8 +237,11 @@ fn stack_effect_for_arg_inference(
         }),
         Pack | Packmap | Packstruct => {
             let count = simulated_stack.last().copied().flatten()?;
+            // Clamp the attacker-controlled count so the entry-depth
+            // simulation below stays bounded (see `MAX_SIMULATED_POPS`).
+            let pops = count.saturating_add(1).min(MAX_SIMULATED_POPS);
             Some(StackEffect {
-                pops: count + 1,
+                pops,
                 pushes: vec![None],
             })
         }

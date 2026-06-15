@@ -304,8 +304,9 @@ fn collect_warnings(tokens: &[MethodTokenReport]) -> Vec<String> {
 struct ManifestSummary {
     name: String,
     supported_standards: Vec<String>,
-    storage: bool,
-    payable: bool,
+    /// Raw `features` object from the manifest. Empty for every valid Neo N3
+    /// manifest; surfaced verbatim so malformed manifests stay inspectable.
+    features: serde_json::Map<String, Value>,
     groups: Vec<GroupSummary>,
     methods: usize,
     events: usize,
@@ -386,8 +387,7 @@ fn summarize_manifest(manifest: &ContractManifest) -> ManifestSummary {
     ManifestSummary {
         name: manifest.name.clone(),
         supported_standards: manifest.supported_standards.clone(),
-        storage: manifest.features.storage,
-        payable: manifest.features.payable,
+        features: manifest.features.clone(),
         groups: manifest
             .groups
             .iter()
