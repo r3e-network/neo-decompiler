@@ -31,7 +31,11 @@ pub fn lookup(hash: u32) -> Option<&'static SyscallInfo> {
         .map(|index| &generated::SYSCALLS[index])
 }
 
-/// Returns true if the syscall is known to push a value onto the stack.
+/// Returns whether the syscall pushes a value onto the stack.
+///
+/// Known syscalls report their table value; unknown hashes conservatively
+/// default to `true` (assume a value is produced) so the lifter keeps the
+/// pushed result on the evaluation stack rather than silently dropping it.
 #[must_use]
 pub fn returns_value(hash: u32) -> bool {
     lookup(hash).map(|info| info.returns_value).unwrap_or(true)

@@ -138,7 +138,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | Try/Catch Nesting Fix         | ✅     | Correct catch/finally sibling ordering in control flow reconstruction        |
 | 101-Contract Audit Validation | ✅     | Comprehensive parity testing against full Neo N3 devpack                     |
 
-### Planned Features (v0.7.x+)
+### Planned Features (Future Work)
 
 | Feature               | Priority | Description                                           |
 | --------------------- | -------- | ----------------------------------------------------- |
@@ -456,7 +456,7 @@ APIs and want to avoid pulling in CLI-only dependencies, disable default
 features in your `Cargo.toml`:
 
 ```toml
-neo-decompiler = { version = "0.7", default-features = false }
+neo-decompiler = { version = "0.8", default-features = false }
 ```
 
 ```rust
