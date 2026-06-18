@@ -51,7 +51,15 @@ export function formatPushdata(bytes) {
   if (!decodable) {
     return `0x${upperHex(bytes)}`;
   }
-  return `"${decoded.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  // Escape control characters so the literal is unambiguous and matches the
+  // Rust format_pushdata helper (a raw newline also breaks the C# render path).
+  // Backslash first so escapes aren't double-escaped.
+  return `"${decoded
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t")}"`;
 }
 
 const PUSH_LIT_RE = /^PUSH(\d+|M1)$/u;

@@ -17,7 +17,7 @@ pub(super) fn collect_csharp_parameters(parameters: &[ManifestParameter]) -> Vec
         .iter()
         .map(|param| CSharpParameter {
             name: make_unique_identifier(sanitize_csharp_identifier(&param.name), &mut used_names),
-            ty: format_manifest_type_csharp(&param.kind),
+            ty: format_manifest_type_csharp(&param.kind, false),
         })
         .collect()
 }
@@ -30,9 +30,12 @@ pub(super) fn format_csharp_parameters(params: &[CSharpParameter]) -> String {
         .join(", ")
 }
 
-pub(super) fn format_manifest_type_csharp(kind: &str) -> String {
+pub(super) fn format_manifest_type_csharp(kind: &str, for_return: bool) -> String {
     match kind.to_ascii_lowercase().as_str() {
-        "void" => "void".into(),
+        // `void` is only legal in return position. In a parameter / event-arg
+        // position it would render the illegal `void` / `Action<void>`
+        // (C# error CS1547), so fall through to the `object` default there.
+        "void" if for_return => "void".into(),
         "boolean" | "bool" => "bool".into(),
         "integer" | "int" => "BigInteger".into(),
         "string" => "string".into(),

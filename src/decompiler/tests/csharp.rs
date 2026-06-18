@@ -1358,3 +1358,79 @@ fn csharpize_expression_preserves_multibyte_in_cat_path() {
         "var t0 = \"naïve\" + y;"
     );
 }
+
+#[test]
+fn csharp_escapes_control_chars_in_pushdata_string_literal() {
+    // PUSHDATA1 "a\nb" (a, raw newline, b) + RET. A raw newline inside a C#
+    // string constant is error CS1010, so the lifted literal must escape it.
+    let nef_bytes = build_nef(&[0x0C, 0x03, b'a', b'\n', b'b', 0x40]);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds");
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains(r#""a\nb""#),
+        "newline in PUSHDATA string must be escaped as \\n: {csharp}"
+    );
+    assert!(
+        !csharp.contains("a\nb"),
+        "a raw newline must not appear inside the C# string literal: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_non_void_method_with_empty_body_throws_not_implemented() {
+    // `prologue` spans [0,3) = INITSLOT only, which lifts to no statements.
+    // A non-void (Integer) return with no body is C# error CS0161, so the
+    // renderer must emit a throwing stub rather than a bare comment.
+    let nef_bytes = build_nef(&[0x57, 0x00, 0x00, 0x11, 0x12, 0x9E, 0x40, 0x20, 0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"{"name":"Demo","abi":{"methods":[
+            {"name":"prologue","returntype":"Integer","offset":0,"parameters":[],"safe":false},
+            {"name":"body","returntype":"Integer","offset":3,"parameters":[],"safe":false}
+        ],"events":[]}}"#,
+    )
+    .expect("manifest parsed");
+    // Clean mode (trace comments off) is the user-facing compilable C# output —
+    // the mode the CLI `decompile --format csharp` emits. There INITSLOT lifts
+    // to no statements, so `prologue`'s body is empty.
+    let decompilation = Decompiler::new()
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("BigInteger prologue()"),
+        "prologue should render with its declared return type: {csharp}"
+    );
+    assert!(
+        csharp.contains("throw new NotImplementedException();"),
+        "non-void method with an empty lifted body must throw, not emit a bare comment: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_void_event_parameter_renders_as_object_not_void() {
+    // An event arg typed `Void` previously rendered `Action<void>`
+    // (C# error CS1547: void cannot be a type argument). It must map to
+    // `object` in non-return position.
+    let nef_bytes = build_nef(&[0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"{"name":"Ev","abi":{"methods":[
+            {"name":"main","returntype":"Void","offset":0,"parameters":[],"safe":false}
+        ],"events":[{"name":"Boom","parameters":[{"name":"x","type":"Void"}]}]}}"#,
+    )
+    .expect("manifest parsed");
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("Action<object> Boom"),
+        "void event parameter must render as object: {csharp}"
+    );
+    assert!(
+        !csharp.contains("Action<void>"),
+        "void must never appear as a generic type argument: {csharp}"
+    );
+}

@@ -47,7 +47,17 @@ pub(super) fn format_pushdata(bytes: &[u8]) -> String {
         return "\"\"".to_string();
     }
     if let Some(s) = try_decode_string_literal(bytes) {
-        format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
+        // Escape control characters so the quoted literal is unambiguous and,
+        // in the C# render path, compiles (a raw newline in a "..." constant is
+        // C# error CS1010). Backslash first so escapes aren't double-escaped.
+        format!(
+            "\"{}\"",
+            s.replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n")
+                .replace('\r', "\\r")
+                .replace('\t', "\\t")
+        )
     } else {
         format!("0x{}", hex::encode_upper(bytes))
     }

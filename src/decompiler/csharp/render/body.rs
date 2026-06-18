@@ -66,7 +66,15 @@ pub(super) fn write_lifted_body(
     warnings.extend(result.warnings);
     let mut statements = result.statements;
     if statements.is_empty() {
-        writeln!(output, "            // no instructions decoded").unwrap();
+        // A non-void method with no body fails to compile (C# error CS0161:
+        // not all code paths return a value). Mirror the empty-slice stub in
+        // render/methods.rs and throw; void methods can keep the bare comment
+        // since C# supplies the implicit return.
+        if returns_void {
+            writeln!(output, "            // no instructions decoded").unwrap();
+        } else {
+            writeln!(output, "            throw new NotImplementedException();").unwrap();
+        }
         return;
     }
 

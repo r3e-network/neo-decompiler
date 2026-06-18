@@ -29,7 +29,7 @@ pub(super) fn write_events(output: &mut String, manifest: &ContractManifest) {
         let param_types: Vec<String> = event
             .parameters
             .iter()
-            .map(|p| format_manifest_type_csharp(&p.kind))
+            .map(|p| format_manifest_type_csharp(&p.kind, false))
             .collect();
         let action_ty = if param_types.is_empty() {
             "Action".to_string()
