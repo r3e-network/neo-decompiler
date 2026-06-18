@@ -331,14 +331,18 @@ fn find_matching_brace(statements: &[String], open_idx: usize) -> Option<usize> 
         if trimmed.is_empty() || trimmed.starts_with("//") {
             continue;
         }
-        if trimmed.ends_with('{') {
-            depth += 1;
-        }
+        // Evaluate the close before the open so a combined `} else {` /
+        // `} else if ... {` line first closes the current block (returning the
+        // if-body's matching brace), matching the separate-line form. For lines
+        // that are only an open or only a close the order is irrelevant.
         if trimmed == "}" || trimmed.starts_with("} ") {
             depth -= 1;
             if depth == 0 {
                 return Some(i);
             }
+        }
+        if trimmed.ends_with('{') {
+            depth += 1;
         }
     }
     None
@@ -556,5 +560,17 @@ mod tests {
         for (i, line) in s.iter().enumerate().take(6).skip(1) {
             assert!(line.is_empty(), "line {i} should be blank: {:?}", line);
         }
+    }
+
+    #[test]
+    fn find_matching_brace_closes_at_combined_else_line() {
+        // A combined `} else {` line must be treated as the if-body's matching
+        // close (so the else branch is preserved), matching the separate-line
+        // form. Index 2 is the `} else {`; index 4 is the outer close.
+        let statements = stmts(&["if cond {", "    a;", "} else {", "    b;", "}"]);
+        assert_eq!(find_matching_brace(&statements, 0), Some(2));
+        // The separate-line form is unchanged: the if-body closes at its own `}`.
+        let separate = stmts(&["if cond {", "    a;", "}", "else {", "    b;", "}"]);
+        assert_eq!(find_matching_brace(&separate, 0), Some(2));
     }
 }

@@ -472,8 +472,11 @@ fn is_literal(value: &str) -> bool {
 }
 
 fn is_temp(value: &str) -> bool {
+    // A temp identifier is `t` followed by at least one digit (`t0`, `t12`),
+    // matching the JS port's `^t\d+$`. The non-empty digit requirement avoids
+    // treating a bare `t` as a temp.
     let value = value.trim();
-    value.starts_with('t') && value[1..].chars().all(|ch| ch.is_ascii_digit())
+    value.len() > 1 && value.starts_with('t') && value[1..].bytes().all(|b| b.is_ascii_digit())
 }
 
 fn find_first_if_in_range(statements: &[String], start: usize, end: usize) -> Option<usize> {
@@ -503,13 +506,37 @@ fn find_next_if_after_case_prelude(statements: &[String], start: usize) -> Optio
         if is_if_open(trimmed) {
             return Some(index);
         }
-        if HighLevelEmitter::parse_assignment(statements[index].as_str()).is_some() {
-            index += 1;
-            continue;
+        // Only skip a genuine case-value temp definition: a `tN = …` whose temp
+        // feeds the upcoming case comparison (so it is referenced by the next
+        // code statement). Anything else must block the fold so it is not
+        // spliced away and silently dropped — a real local assignment
+        // (`loc5 = effect();`) AND a temp that captures a side-effecting call
+        // and discards it (`let t7 = Foo(arg);`, not consumed by the next case).
+        if let Some(assign) = HighLevelEmitter::parse_assignment(statements[index].as_str()) {
+            if is_temp(&assign.lhs) && temp_consumed_by_next_code(statements, index, &assign.lhs) {
+                index += 1;
+                continue;
+            }
         }
         return None;
     }
     None
+}
+
+/// A case-value temp prelude (`tN = <value>;`) feeds the upcoming comparison, so
+/// `tN` is referenced by the next code statement (e.g. `tN = loc0 == tM;` or
+/// `if tN { … }`). A temp that captures a side-effecting call and is discarded
+/// is not referenced; treat it as a real statement so the switch fold is blocked
+/// and it is preserved.
+fn temp_consumed_by_next_code(statements: &[String], index: usize, temp: &str) -> bool {
+    statements
+        .iter()
+        .skip(index + 1)
+        .find(|stmt| {
+            let trimmed = stmt.trim();
+            !trimmed.is_empty() && !trimmed.starts_with("//")
+        })
+        .is_some_and(|stmt| HighLevelEmitter::contains_identifier(stmt, temp))
 }
 
 fn find_next_guarded_header_after_case_prelude(
@@ -526,9 +553,15 @@ fn find_next_guarded_header_after_case_prelude(
         if parse_inline_if_goto(trimmed).is_some() || is_if_open(trimmed) {
             return Some(index);
         }
-        if HighLevelEmitter::parse_assignment(statements[index].as_str()).is_some() {
-            index += 1;
-            continue;
+        // See find_next_if_after_case_prelude: only skip a case-value temp that
+        // feeds the upcoming comparison; a real inter-case assignment or a temp
+        // capturing a discarded side-effecting call must block the fold so it is
+        // not silently dropped.
+        if let Some(assign) = HighLevelEmitter::parse_assignment(statements[index].as_str()) {
+            if is_temp(&assign.lhs) && temp_consumed_by_next_code(statements, index, &assign.lhs) {
+                index += 1;
+                continue;
+            }
         }
         return None;
     }
@@ -714,4 +747,84 @@ fn end_of_if_chain(statements: &[String], start: usize) -> Option<usize> {
         return HighLevelEmitter::find_block_end(statements, next);
     }
     Some(if_end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::HighLevelEmitter;
+
+    #[test]
+    fn switch_fold_preserves_non_temp_inter_case_statement() {
+        // Regression: a real (non-temp) assignment between consecutive
+        // standalone-if cases must block the switch fold so it is not silently
+        // spliced away and dropped from the output.
+        let mut statements = vec![
+            "if loc0 == 0 {".to_string(),
+            "    do0();".to_string(),
+            "}".to_string(),
+            "loc5 = side_effect();".to_string(),
+            "if loc0 == 1 {".to_string(),
+            "    do1();".to_string(),
+            "}".to_string(),
+            "if loc0 == 2 {".to_string(),
+            "    do2();".to_string(),
+            "}".to_string(),
+        ];
+        HighLevelEmitter::rewrite_switch_statements(&mut statements);
+        assert!(
+            statements
+                .iter()
+                .any(|s| s.trim() == "loc5 = side_effect();"),
+            "non-temp inter-case statement must survive: {statements:?}"
+        );
+    }
+
+    #[test]
+    fn switch_fold_preserves_side_effecting_temp_between_cases() {
+        // Regression (adversarial): a temp capturing a discarded side-effecting
+        // call between cases is NOT a case-value definition and must block the
+        // fold so the call is not silently dropped.
+        let mut statements = vec![
+            "if loc0 == 0 {".to_string(),
+            "    do0();".to_string(),
+            "    return;".to_string(),
+            "}".to_string(),
+            "let t7 = Foo(arg);".to_string(),
+            "if loc0 == 1 {".to_string(),
+            "    do1();".to_string(),
+            "    return;".to_string(),
+            "}".to_string(),
+            "if loc0 == 2 {".to_string(),
+            "    do2();".to_string(),
+            "    return;".to_string(),
+            "}".to_string(),
+        ];
+        HighLevelEmitter::rewrite_switch_statements(&mut statements);
+        assert!(
+            statements.iter().any(|s| s.trim() == "let t7 = Foo(arg);"),
+            "side-effecting temp must survive: {statements:?}"
+        );
+    }
+
+    #[test]
+    fn switch_fold_still_applies_to_consecutive_cases() {
+        // Without an inter-case statement, three consecutive standalone-if cases
+        // must still fold into a switch (the legitimate target pattern).
+        let mut statements = vec![
+            "if loc0 == 0 {".to_string(),
+            "    do0();".to_string(),
+            "}".to_string(),
+            "if loc0 == 1 {".to_string(),
+            "    do1();".to_string(),
+            "}".to_string(),
+            "if loc0 == 2 {".to_string(),
+            "    do2();".to_string(),
+            "}".to_string(),
+        ];
+        HighLevelEmitter::rewrite_switch_statements(&mut statements);
+        assert!(
+            statements.iter().any(|s| s.trim().starts_with("switch ")),
+            "consecutive standalone-if cases should still fold to a switch: {statements:?}"
+        );
+    }
 }

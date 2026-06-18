@@ -78,9 +78,11 @@ pub(in crate::decompiler) fn csharpize_statement(line: &str) -> String {
     if trimmed == "loop {" {
         return "while (true) {".to_string();
     }
-    if trimmed.starts_with("if ") && trimmed.ends_with(" {") {
-        let condition = trimmed[3..trimmed.len() - 2].trim();
-        return format!("if ({}) {{", csharpize_expression(condition));
+    if let Some(condition) = trimmed
+        .strip_prefix("if ")
+        .and_then(|rest| rest.strip_suffix(" {"))
+    {
+        return format!("if ({}) {{", csharpize_expression(condition.trim()));
     }
     if let Some(condition) = trimmed
         .strip_prefix("else if ")
@@ -94,9 +96,11 @@ pub(in crate::decompiler) fn csharpize_statement(line: &str) -> String {
     {
         return format!("}} else if ({}) {{", csharpize_expression(condition.trim()));
     }
-    if trimmed.starts_with("while ") && trimmed.ends_with(" {") {
-        let condition = trimmed[6..trimmed.len() - 2].trim();
-        return format!("while ({}) {{", csharpize_expression(condition));
+    if let Some(condition) = trimmed
+        .strip_prefix("while ")
+        .and_then(|rest| rest.strip_suffix(" {"))
+    {
+        return format!("while ({}) {{", csharpize_expression(condition.trim()));
     }
     if trimmed.starts_with("for (") && trimmed.ends_with(" {") {
         let inner = &trimmed[4..trimmed.len() - 2];
@@ -276,11 +280,30 @@ fn rewrite_numeric_helpers(line: &str) -> String {
     let mut in_string: Option<u8> = None;
     while i < bytes.len() {
         let b = bytes[i];
+        // Copy any non-ASCII (multibyte UTF-8) character verbatim. A helper
+        // pattern can only begin with ASCII, and slicing `&line[i..]` at a
+        // multibyte continuation byte would panic (not a char boundary), so
+        // advance one whole character at a time here. The `is_char_boundary`
+        // guard keeps this panic-free even if an earlier match advanced `i`
+        // into the middle of a character.
+        if !b.is_ascii() {
+            if line.is_char_boundary(i) {
+                let ch = line[i..].chars().next().unwrap_or('\u{FFFD}');
+                out.push(ch);
+                i += ch.len_utf8();
+            } else {
+                i += 1;
+            }
+            continue;
+        }
         if let Some(quote) = in_string {
             out.push(b as char);
             if b == b'\\' && i + 1 < bytes.len() {
-                out.push(bytes[i + 1] as char);
-                i += 2;
+                // Skip the escaped character (so an escaped quote does not end
+                // the string), copying it whole in case it is multibyte.
+                let esc = line[i + 1..].chars().next().unwrap_or('\u{FFFD}');
+                out.push(esc);
+                i += 1 + esc.len_utf8();
                 continue;
             }
             if b == quote {
@@ -579,7 +602,11 @@ fn format_helper_with_casts(rest: &str, rule: &HelperRule) -> Option<HelperRewri
     let parts = split_top_level_args(args);
     let mut rendered = Vec::with_capacity(parts.len());
     for (index, part) in parts.iter().enumerate() {
-        let trimmed = part.trim();
+        // Normalize each argument through the same expression rewriter the
+        // non-cast helpers use, so nested NEO helper calls (abs/min/sqrt/
+        // is_null/convert_to_*, ` cat `) become compilable C# rather than being
+        // emitted verbatim (e.g. `pow(abs(x), 2)` → `BigInteger.Pow(BigInteger.Abs(x), 2)`).
+        let normalized = csharpize_expression(part.trim());
         if rule.int_cast_args.contains(&index) {
             // Same idea as `wrap_int_cast_unless_literal`: defensive
             // `(int)` casts are necessary for variable / expression
@@ -587,9 +614,9 @@ fn format_helper_with_casts(rest: &str, rule: &HelperRule) -> Option<HelperRewri
             // bare integer literals are unambiguously `int` to the C#
             // parser, so emit `pow(2, 8)` → `BigInteger.Pow(2, 8)`
             // rather than `BigInteger.Pow(2, (int)(8))`.
-            rendered.push(wrap_int_cast_unless_literal(trimmed));
+            rendered.push(wrap_int_cast_unless_literal(&normalized));
         } else {
-            rendered.push(trimmed.to_string());
+            rendered.push(normalized);
         }
     }
     let body = format!("{}({})", rule.replacement, rendered.join(", "));

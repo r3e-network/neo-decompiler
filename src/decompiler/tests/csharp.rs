@@ -1308,3 +1308,38 @@ fn csharp_single_entry_typed_trusts_stay_on_one_line() {
         "single-entry trusts should not break into a block: {csharp}"
     );
 }
+
+#[test]
+fn csharpize_statement_does_not_panic_on_degenerate_headers() {
+    // Regression: empty-condition `if {` / `while {` headers used raw byte
+    // slicing (`trimmed[3..len-2]`) which panicked with begin > end. They must
+    // be handled without panicking.
+    let _ = csharpize_statement("if {");
+    let _ = csharpize_statement("while {");
+    // Regression (adversarial): a multibyte UTF-8 character outside a string
+    // literal (e.g. a method-token name) previously panicked in the helper
+    // rewriter via `&line[i..]` landing mid-character. It must be preserved.
+    assert_eq!(csharpize_statement("é(t0);"), "é(t0);");
+    assert_eq!(
+        csharpize_statement("let t0 = \"café\";"),
+        "var t0 = \"café\";"
+    );
+    let _ = csharpize_statement("naïve(abs(x));");
+    // Well-formed headers still convert.
+    assert_eq!(csharpize_statement("if loc0 == 1 {"), "if (loc0 == 1) {");
+    assert_eq!(
+        csharpize_statement("while loc0 < 3 {"),
+        "while (loc0 < 3) {"
+    );
+}
+
+#[test]
+fn csharpize_nested_helper_calls_in_cast_path_helpers() {
+    // pow/left/right/substr take the int-cast argument path; nested NEO helper
+    // calls in their arguments must still be rewritten to compilable C# rather
+    // than emitted verbatim.
+    assert_eq!(
+        csharpize_statement("let t0 = pow(abs(x), 2);"),
+        "var t0 = BigInteger.Pow(BigInteger.Abs(x), 2);"
+    );
+}

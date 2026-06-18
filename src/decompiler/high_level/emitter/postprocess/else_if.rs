@@ -43,14 +43,17 @@ impl HighLevelEmitter {
         let mut depth = 1;
         for (i, stmt) in statements.iter().enumerate().skip(start + 1) {
             let trimmed = stmt.trim();
-            if trimmed.ends_with('{') {
-                depth += 1;
-            }
+            // Close before open so a combined `} else {` line first closes the
+            // current block (see overflow_collapse::find_matching_brace). For
+            // open-only or close-only lines the order is irrelevant.
             if trimmed == "}" || trimmed.starts_with("} ") {
                 depth -= 1;
                 if depth == 0 {
                     return Some(i);
                 }
+            }
+            if trimmed.ends_with('{') {
+                depth += 1;
             }
         }
         None
