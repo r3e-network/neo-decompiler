@@ -75,7 +75,12 @@ fn high_level_rewrites_haskey_as_function_call() {
     // Script: NEWMAP, PUSH0, HASKEY, RET
     let script = [0xC8, 0x10, 0xCB, 0x40];
     let nef_bytes = build_nef(&script);
+    // Clean mode (single-use inlining) is the path that previously malformed
+    // the output: it inlines the map temp into the RET, yielding
+    // `return t0 has_key 0`, which the infix->call rewrite then mangled into
+    // `has_key(return t0, 0)`.
     let decompilation = Decompiler::new()
+        .with_inline_single_use_temps(true)
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -90,6 +95,18 @@ fn high_level_rewrites_haskey_as_function_call() {
     assert!(
         !high_level.contains(" has_key "),
         "infix has_key should not appear after rewrite: {high_level}"
+    );
+    // Regression: when the HASKEY result flows straight into RET, the call
+    // must stay a tail expression (`return has_key(...)`), not have the
+    // `return` keyword swallowed into its first argument
+    // (`has_key(return t0, 0)` — malformed, value lost).
+    assert!(
+        !high_level.contains("has_key(return"),
+        "return must not be nested inside the has_key call: {high_level}"
+    );
+    assert!(
+        high_level.contains("return has_key("),
+        "HASKEY result should flow into the return: {high_level}"
     );
 }
 

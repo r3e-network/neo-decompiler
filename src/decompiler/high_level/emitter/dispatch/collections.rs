@@ -45,7 +45,13 @@ impl HighLevelEmitter {
             Popitem => self.emit_call(instruction, "pop_item", 1, true),
             Isnull => self.unary_op(instruction, |val| format!("is_null({val})")),
             Istype => self.emit_is_type(instruction),
-            Haskey => self.binary_op(instruction, "has_key"),
+            // Emit the call form directly (`has_key(target, key)`) rather than
+            // an infix `target has_key key` that a later pass rewrites: the
+            // infix->call rewrite mangles a tail-position result into
+            // `has_key(return target, key)` once single-use inlining has folded
+            // the map temp into the RET. Emitting the call up front keeps the
+            // result a tail expression and matches the JS port.
+            Haskey => self.emit_call(instruction, "has_key", 2, true),
             Keys => self.unary_op(instruction, |val| format!("keys({val})")),
             Values => self.unary_op(instruction, |val| format!("values({val})")),
             Size => self.unary_op(instruction, |val| format!("len({val})")),
