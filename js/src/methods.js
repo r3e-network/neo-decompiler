@@ -133,7 +133,12 @@ function collectPostTerminatorStarts(instructions, starts) {
   }
 }
 
-export function buildMethodGroups(instructions, manifest) {
+export function buildMethodGroups(instructions, manifest, options = {}) {
+  // `includePostTerminatorTails` defaults to true (presentation grouping). The
+  // analysis path passes false to match the Rust port's `analysis::MethodTable`,
+  // which excludes detached post-terminator tails that are only useful for
+  // presentation-time rendering.
+  const includePostTerminatorTails = options.includePostTerminatorTails ?? true;
   const entryOffset = instructions[0]?.offset ?? 0;
   const used = new Set();
   const methods = manifest?.abi?.methods ?? [];
@@ -166,7 +171,13 @@ export function buildMethodGroups(instructions, manifest) {
   // surrounding method body. Without this, contracts whose bytecode lays
   // out helpers as straight-line tails after the entry method's RET
   // collapse into a single function with multiple `return`s.
-  collectPostTerminatorStarts(instructions, starts);
+  //
+  // This is a presentation-time heuristic: the Rust analysis grouping
+  // (`analysis::MethodTable`) deliberately omits these tails, so callers that
+  // want analysis-parity grouping pass `includePostTerminatorTails: false`.
+  if (includePostTerminatorTails) {
+    collectPostTerminatorStarts(instructions, starts);
+  }
 
   const groups = [];
   const offsets = [...starts].sort((left, right) => left - right);

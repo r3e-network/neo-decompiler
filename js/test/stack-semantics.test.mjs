@@ -124,3 +124,56 @@ test("switch guard: terminator-ending standalone if-chain still folds into a swi
     "terminator-ending case bodies should fold into a switch",
   );
 });
+
+test("stack-semantics: PACK with count > inline cap still drains every consumed element", () => {
+  // INITSLOT(1 local) ; 70x PUSH1 ; PUSHINT8 70 ; PACK ; STLOC0 ; RET
+  // The inline render is capped at 64 entries, but the VM pops all 70. The
+  // simulated stack must be fully drained, otherwise STLOC0 stores the array
+  // while stale operands remain and RET returns one of them (`return 1;`).
+  const script = [0x57, 0x01, 0x00];
+  for (let i = 0; i < 70; i += 1) script.push(0x11);
+  script.push(0x00, 70, 0xc0, 0x70, 0x40);
+  const output = highLevel(script);
+  assert.match(output, /\/\* 6 more elements \*\//);
+  assert.match(output, /return;/);
+  assert.ok(
+    !/return 1;/.test(output),
+    `stale packed operands must be drained, not returned: ${output}`,
+  );
+});
+
+test("postprocess: empty-if/else inversion keeps braces balanced", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "if cond {",
+    "}",
+    "else {",
+    "loc0 = 5;",
+    "}",
+    "return loc0;",
+  ];
+  postprocess(statements, {});
+  const balance = statements.reduce((acc, line) => {
+    const t = line.trim();
+    return acc + (t.match(/{/g) || []).length - (t.match(/}/g) || []).length;
+  }, 0);
+  assert.equal(balance, 0, `unbalanced braces: ${JSON.stringify(statements)}`);
+  assert.ok(
+    statements.join("\n").includes("if !(cond) {\nloc0 = 5;\n}"),
+    `inverted if must retain the else body and its closer: ${JSON.stringify(statements)}`,
+  );
+});
+
+test("postprocess: ' get '/' has_key ' inside a string literal is not rewritten as an index", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const getCase = ['return "a get b";'];
+  postprocess(getCase, {});
+  assert.equal(getCase[0], 'return "a get b";');
+  const hasKeyCase = ['return "x has_key y";'];
+  postprocess(hasKeyCase, {});
+  assert.equal(hasKeyCase[0], 'return "x has_key y";');
+  // A real ` get ` operator outside strings is still rewritten to indexing.
+  const real = ["let t0 = loc0 get t1;"];
+  postprocess(real, {});
+  assert.equal(real[0], "let t0 = loc0[t1];");
+});

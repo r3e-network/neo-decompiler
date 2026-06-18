@@ -627,16 +627,19 @@ function rewriteLabelGotoToLoop(statements) {
     }
     // Bail if there are other references to the label anywhere — a second
     // goto means the label is a structured-jump target, not just a back-edge.
-    let extraRefs = 0;
+    // (`labelDecl` is hoisted out of the scan; the loop short-circuits on the
+    // first extra reference.)
+    const labelDecl = `${label}:`;
+    let hasOtherReference = false;
     for (let i = 0; i < statements.length; i++) {
       if (i === index || i === gotoIdx) continue;
       const t = statements[i].trim();
-      if (t === `${label}:` || t.includes(gotoTarget)) {
-        extraRefs++;
+      if (t === labelDecl || t.includes(gotoTarget)) {
+        hasOtherReference = true;
         break;
       }
     }
-    if (extraRefs > 0) {
+    if (hasOtherReference) {
       index++;
       continue;
     }
@@ -993,31 +996,42 @@ function rewriteExpr(expr) {
   expr = expr.trim();
   if (expr === "") return "";
 
-  const getPos = expr.indexOf(" get ");
-  const hasKeyPos = expr.indexOf(" has_key ");
-  let pos, kind;
-  if (getPos >= 0 && hasKeyPos >= 0) {
-    if (getPos < hasKeyPos) {
-      pos = getPos;
-      kind = "get";
-    } else {
-      pos = hasKeyPos;
-      kind = "has_key";
-    }
-  } else if (getPos >= 0) {
-    pos = getPos;
-    kind = "get";
-  } else if (hasKeyPos >= 0) {
-    pos = hasKeyPos;
-    kind = "has_key";
-  } else return expr;
+  // Find the leftmost " get " / " has_key " operator that sits OUTSIDE a string
+  // literal, so a literal like "a get b" is not mistaken for an index/has_key.
+  const op = findExprOp(expr);
+  if (!op) return expr;
+  const { pos, kind } = op;
 
-  // `left` cannot contain another " get " or " has_key " (else it would
-  // have been the leftmost match), so skip a recursive scan over it.
+  // `left` cannot contain another top-level (non-string) " get " / " has_key "
+  // (else it would have been the leftmost match), so skip a recursive scan.
   const left = expr.slice(0, pos).trim();
   const right = expr.slice(pos + (kind === "get" ? 5 : 10));
   if (kind === "get") return `${left}[${rewriteExpr(right)}]`;
   return `has_key(${left}, ${rewriteExpr(right)})`;
+}
+
+// Locate the leftmost ` get ` / ` has_key ` operator not enclosed in a string
+// literal. Returns `{ pos, kind }` or `null`.
+function findExprOp(s) {
+  let inString = false;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (inString) {
+      if (c === "\\") {
+        i += 1; // skip the escaped character
+        continue;
+      }
+      if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (s.startsWith(" get ", i)) return { pos: i, kind: "get" };
+    if (s.startsWith(" has_key ", i)) return { pos: i, kind: "has_key" };
+  }
+  return null;
 }
 
 function splitArgs(text) {
@@ -1098,7 +1112,10 @@ function invertEmptyIfElse(statements) {
     const negated = negateCondition(cond);
     const indent = leadingWhitespace(statements[index]);
     statements[index] = `${indent}if ${negated} {`;
-    statements.splice(elseEnd, 1);
+    // Drop the empty if-body `}` and the `else {` opener. The else block's own
+    // closing `}` (at elseEnd) is intentionally retained — it becomes the closer
+    // for the inverted `if`, keeping brace balance intact. (elseEnd is still used
+    // above as a well-formedness guard.)
     statements.splice(closeIf, 2);
   }
 }

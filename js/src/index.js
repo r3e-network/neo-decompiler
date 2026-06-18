@@ -66,13 +66,21 @@ export function analyzeBytes(bytes, manifestInput = null, options = {}) {
   const manifest = manifestInput ? parseManifest(manifestInput) : null;
   const result = decompileBytes(bytes, options);
   const methodGroups = buildMethodGroups(result.instructions, manifest);
+  // Analysis (call graph / xrefs / types) groups on the same baseline as the
+  // Rust port's `analysis::MethodTable`, which excludes post-terminator
+  // detached tails (a presentation-only heuristic). Using the tail-included
+  // `methodGroups` here would attribute padding/tail chunks to spurious method
+  // entries that the Rust analysis never reports, diverging the two ports.
+  const analysisGroups = buildMethodGroups(result.instructions, manifest, {
+    includePostTerminatorTails: false,
+  });
   return {
     ...result,
     manifest,
     methodGroups,
-    callGraph: buildCallGraph(result.nef, result.instructions, methodGroups),
-    xrefs: buildXrefs(result.instructions, methodGroups),
-    types: inferTypes(result.instructions, methodGroups, manifest),
+    callGraph: buildCallGraph(result.nef, result.instructions, analysisGroups),
+    xrefs: buildXrefs(result.instructions, analysisGroups),
+    types: inferTypes(result.instructions, analysisGroups, manifest),
   };
 }
 

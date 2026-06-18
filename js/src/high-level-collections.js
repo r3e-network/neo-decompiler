@@ -243,6 +243,16 @@ function emitPackExpression(state, mnemonic, stripOuterParens) {
       ? remainder === 1 ? "entry" : "entries"
       : remainder === 1 ? "element" : "elements";
     rendered.push(`/* ${remainder} more ${noun} */`);
+    // The cap above bounds only how many entries are RENDERED inline; the VM
+    // still pops every element the count names. Drain the elided units from the
+    // simulated stack (bounded by its actual depth) so subsequent instructions
+    // bind the right operands — mirrors the Rust port
+    // (high_level/emitter/stack/expressions/collections.rs).
+    let excess = remainder * unit;
+    while (excess > 0 && state.stack.length > 0) {
+      state.stack.pop();
+      excess -= 1;
+    }
   }
 
   const expression = renderPackedExpression(mnemonic, rendered);

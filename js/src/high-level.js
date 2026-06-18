@@ -311,7 +311,9 @@ function formatManifestTrusts(trusts) {
   }
   if (Array.isArray(trusts)) {
     if (trusts.length === 0) {
-      return null;
+      // An explicit empty `trusts: []` (trust nobody) renders as `[]`, matching
+      // the Rust port's ManifestTrusts::describe (`trusts = [];`).
+      return "[]";
     }
     if (trusts.every((entry) => typeof entry === "string")) {
       return `[${trusts.map((entry) => `"${entry}"`).join(", ")}]`;
@@ -380,12 +382,37 @@ function renderMethodSignature(group, used, context = null) {
   return `fn ${name}(${args})`;
 }
 
+// Maximum number of instructions a single method body may have before
+// high-level lifting is skipped in favour of a fallback note. The stack-lifting
+// and postprocess passes are worst-case O(n²) in the per-method statement
+// count, so a maliciously crafted in-cap NEF packed with crossing jumps would
+// otherwise take a very long time to lift. Real Neo contract methods are
+// gas-bounded and far smaller; the raw instruction stream stays available via
+// the disassembler. Mirrors the Rust port's MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS.
+export const MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS = 16384;
+
 export function liftMethodBody(
   instructions,
   manifestMethod = null,
   context = emptyContext(),
   methodOffset = instructions[0]?.offset ?? 0,
 ) {
+  if (instructions.length > MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS) {
+    const offsetHex = (instructions[0]?.offset ?? 0)
+      .toString(16)
+      .padStart(4, "0")
+      .toUpperCase();
+    return {
+      statements: [
+        `// method body too large for high-level lifting: ${instructions.length} instructions ` +
+          `exceeds the ${MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS}-instruction limit; use the disassembler for the full listing`,
+      ],
+      warnings: [
+        `high-level: method at 0x${offsetHex} skipped — ${instructions.length} instructions ` +
+          `exceeds the high-level lifting limit (${MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS})`,
+      ],
+    };
+  }
   let result;
   const switchLift = CONTROL_FLOW.tryLiftSimpleSwitch(instructions, manifestMethod, context, methodOffset);
   if (switchLift !== null) {

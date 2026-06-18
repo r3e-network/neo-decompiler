@@ -265,13 +265,13 @@ function readVarInt(bytes, offset) {
     value = first;
     consumed = 1;
   } else if (first === 0xfd) {
-    value = readU16LE(slice(bytes, offset + 1, 2), 0);
+    value = readU16LE(sliceVarintWidth(bytes, offset, 2), 0);
     consumed = 3;
   } else if (first === 0xfe) {
-    value = readU32LE(slice(bytes, offset + 1, 4), 0);
+    value = readU32LE(sliceVarintWidth(bytes, offset, 4), 0);
     consumed = 5;
   } else {
-    const wide = readU64LE(slice(bytes, offset + 1, 8), 0);
+    const wide = readU64LE(sliceVarintWidth(bytes, offset, 8), 0);
     if (wide > BigInt(0xffffffff)) {
       throw new NefParseError(`varint exceeds supported range at offset ${offset}`, {
         code: "IntegerOverflow",
@@ -329,6 +329,18 @@ function slice(bytes, start, length) {
     throw unexpectedEof(start);
   }
   return bytes.subarray(start, end);
+}
+
+// Read `length` varint width bytes that follow the 0xFD/0xFE/0xFF prefix at
+// `prefixOffset`. On truncation, report the prefix offset — matching the Rust
+// port's `read_varint`, which surfaces the prefix position rather than the
+// position of the missing width byte.
+function sliceVarintWidth(bytes, prefixOffset, length) {
+  const start = prefixOffset + 1;
+  if (start + length > bytes.byteLength) {
+    throw unexpectedEof(prefixOffset);
+  }
+  return bytes.subarray(start, start + length);
 }
 
 function unexpectedEof(offset) {

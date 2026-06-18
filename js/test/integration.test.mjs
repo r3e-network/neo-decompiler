@@ -433,3 +433,40 @@ test("integration: full analysis output structure validation", () => {
 });
 
 console.log("Integration tests loaded");
+
+test("integration: analysis grouping excludes post-terminator tails (parity with Rust MethodTable)", () => {
+  // main() at 0 (PUSH1; RET), 4 NOPs of padding, helper() at 6 (PUSH1; PUSH1; ADD; RET).
+  // The padding after RET is a post-terminator tail: the presentation grouping
+  // promotes it to a method start, but the analysis grouping must not — matching
+  // the Rust analysis::MethodTable, which omits presentation-only tails.
+  const script = [0x11, 0x40, 0x21, 0x21, 0x21, 0x21, 0x11, 0x11, 0x9e, 0x40];
+  const manifest = JSON.stringify({
+    name: "MultiMethod",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Integer", offset: 0 },
+        { name: "helper", parameters: [], returntype: "Integer", offset: 6 },
+      ],
+      events: [],
+    },
+    permissions: [],
+    trusts: "*",
+  });
+  const result = analyzeBytes(buildNef({ script }), manifest);
+  const analysisOffsets = result.callGraph.methods
+    .map((m) => m.offset)
+    .sort((a, b) => a - b);
+  assert.deepEqual(
+    analysisOffsets,
+    [0, 6],
+    `analysis must group only on stable starts (no post-terminator tail): ${JSON.stringify(analysisOffsets)}`,
+  );
+  // The presentation grouping still surfaces the detached tail at offset 2.
+  const presentationOffsets = result.methodGroups
+    .map((g) => g.start)
+    .sort((a, b) => a - b);
+  assert.ok(
+    presentationOffsets.includes(2),
+    `presentation grouping should still surface the post-terminator tail: ${JSON.stringify(presentationOffsets)}`,
+  );
+});

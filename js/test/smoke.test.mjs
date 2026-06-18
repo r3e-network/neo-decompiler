@@ -536,3 +536,28 @@ test("SMOKE: strict mode accepts canonical wildcards and concrete entries", () =
 });
 
 console.log("Smoke tests loaded");
+
+test("SMOKE: oversized method hits the high-level cap (DoS guard)", () => {
+  // A method packed with crossing JMPIFs would drive the O(n^2) lift passes
+  // for a very long time; exceeding the per-method cap must fall back to a
+  // note instead. (20000 > MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS.)
+  const K = 20000;
+  const script = new Uint8Array(K * 3 + 1);
+  for (let i = 0; i < K; i += 1) {
+    script[i * 3] = 0x11; // PUSH1
+    script[i * 3 + 1] = 0x24; // JMPIF
+    script[i * 3 + 2] = 0x05; // +5 (crossing)
+  }
+  script[K * 3] = 0x40; // RET
+  const nef = buildNefFromScript(script);
+  const result = decompileHighLevelBytes(nef);
+  assert.ok(result.highLevel.length > 0, "should still produce output");
+  assert.ok(
+    result.highLevel.includes("too large for high-level lifting"),
+    "oversized method should fall back to the cap note",
+  );
+  assert.ok(
+    result.warnings.some((w) => w.includes("exceeds the high-level lifting limit")),
+    "should surface a skip warning",
+  );
+});

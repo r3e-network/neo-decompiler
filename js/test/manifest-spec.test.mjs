@@ -150,3 +150,41 @@ test("manifest-spec: NEF invalid magic surfaces InvalidMagic even for invalid UT
     return true;
   });
 });
+
+// ─── permissions[].methods type validation (mirrors Rust's untagged enum
+//     ManifestPermissionMethods: Wildcard(String) | Methods(Vec<String>)) ────
+
+test("manifest-spec: rejects non-string/non-array permission methods (parity with Rust)", () => {
+  const base = { name: "C", abi: { methods: [], events: [] } };
+  for (const bad of [5, {}, [1, 2], [true]]) {
+    const json = JSON.stringify({
+      ...base,
+      permissions: [{ contract: "*", methods: bad }],
+    });
+    assert.throws(
+      () => parseManifest(json),
+      /methods must be a wildcard string or an array of strings/,
+      `methods=${JSON.stringify(bad)} should be rejected`,
+    );
+  }
+  // Valid shapes still parse.
+  assert.doesNotThrow(() =>
+    parseManifest(
+      JSON.stringify({ ...base, permissions: [{ contract: "*", methods: "*" }] }),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    parseManifest(
+      JSON.stringify({
+        ...base,
+        permissions: [{ contract: "*", methods: ["transfer"] }],
+      }),
+    ),
+  );
+  // Absent methods stays valid (serde default).
+  assert.doesNotThrow(() =>
+    parseManifest(
+      JSON.stringify({ ...base, permissions: [{ contract: "*" }] }),
+    ),
+  );
+});

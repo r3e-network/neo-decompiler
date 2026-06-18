@@ -20,9 +20,21 @@ export function buildCallGraph(nef, instructions, methodGroups) {
   let currentMethodOffset = methods[0]?.offset ?? 0;
   let currentArgValues = methodArgValues.get(currentMethodOffset) ?? [];
 
+  // Instructions and methods are both sorted by ascending offset, so attribute
+  // each instruction to its enclosing method with a single forward-moving
+  // cursor (O(N+M)) instead of rescanning every method per instruction (O(N*M)).
+  let methodCursor = 0;
+  const fallbackCaller = methods[0] ?? { offset: 0, name: "script_entry" };
+
   for (let index = 0; index < instructions.length; index += 1) {
     const instruction = instructions[index];
-    const caller = methodForOffset(methods, instruction.offset);
+    while (
+      methodCursor + 1 < methods.length &&
+      methods[methodCursor + 1].offset <= instruction.offset
+    ) {
+      methodCursor += 1;
+    }
+    const caller = methods[methodCursor] ?? fallbackCaller;
     const mnemonic = instruction.opcode.mnemonic;
 
     if (index > 0 && methodStartOffsets.has(instruction.offset)) {
@@ -257,16 +269,6 @@ export function buildCallGraph(nef, instructions, methodGroups) {
   }
 
   return { methods, edges };
-}
-
-function methodForOffset(methods, offset) {
-  let current = methods[0] ?? { offset: 0, name: "script_entry" };
-  for (const method of methods) {
-    if (method.offset <= offset) {
-      current = method;
-    }
-  }
-  return current;
 }
 
 function resolveMethodTarget(methodByOffset, targetOffset) {

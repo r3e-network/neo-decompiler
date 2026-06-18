@@ -193,6 +193,21 @@ function parsePermission(perm, permIndex) {
       path: `${path}.contract`,
     });
   }
+  // Mirror the Rust untagged enum `ManifestPermissionMethods`
+  // (`Wildcard(String) | Methods(Vec<String>)`): when present, `methods` must
+  // be a string or an array of strings. `undefined` stays valid (serde default).
+  if (perm.methods !== undefined) {
+    const validMethods =
+      typeof perm.methods === "string" ||
+      (Array.isArray(perm.methods) &&
+        perm.methods.every((method) => typeof method === "string"));
+    if (!validMethods) {
+      throw new ManifestParseError(
+        `${path}.methods must be a wildcard string or an array of strings`,
+        { code: "InvalidType", path: `${path}.methods` },
+      );
+    }
+  }
   return perm;
 }
 
