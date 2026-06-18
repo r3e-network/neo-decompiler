@@ -1434,3 +1434,73 @@ fn csharp_void_event_parameter_renders_as_object_not_void() {
         "void must never appear as a generic type argument: {csharp}"
     );
 }
+
+#[test]
+fn csharp_wraps_only_oversized_integer_literals() {
+    // PUSHINT256 = 1<<200 (a 61-digit value, > ulong.MaxValue) + RET. A bare
+    // decimal literal above ulong.MaxValue is C# error CS1021, so it must
+    // become BigInteger.Parse("…").
+    let mut script = vec![0x05];
+    let mut operand = vec![0u8; 32];
+    operand[25] = 0x01; // bit 200
+    script.extend_from_slice(&operand);
+    script.push(0x40);
+    let nef_bytes = build_nef(&script);
+    let csharp = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds")
+        .csharp
+        .expect("csharp output");
+    assert!(
+        csharp.contains(
+            r#"BigInteger.Parse("1606938044258990275541962092341162602522202993782792835301376")"#
+        ),
+        "oversized integer literal must be wrapped in BigInteger.Parse: {csharp}"
+    );
+
+    // Boundary + non-decimal cases via the statement rewriter:
+    // u64::MAX fits in a C# `ulong` literal — leave it bare.
+    assert_eq!(
+        csharpize_statement("return 18446744073709551615;"),
+        "return 18446744073709551615;"
+    );
+    // u64::MAX + 1 exceeds `ulong` — wrap it.
+    assert_eq!(
+        csharpize_statement("return 18446744073709551616;"),
+        r#"return BigInteger.Parse("18446744073709551616");"#
+    );
+    // Small literals, hex (syscall hashes), and label identifiers are untouched.
+    assert_eq!(csharpize_statement("return 42;"), "return 42;");
+    assert!(!csharpize_statement("let t0 = syscall(0xDEADBEEF);").contains("BigInteger.Parse"));
+    assert!(!csharpize_statement("goto label_0x0010;").contains("BigInteger.Parse"));
+}
+
+#[test]
+fn csharp_renders_oversized_hex_blob_as_byte_array() {
+    // PUSHDATA1 of 20 non-printable bytes (0xA0..0xB3) + RET. The lift renders
+    // a non-printable blob as `0x<HEX>`; a >16-digit hex value is C# error
+    // CS1021 as an integer, so it must become a byte[] literal.
+    let blob: Vec<u8> = (0..20).map(|i| 0xA0 + i).collect();
+    let mut script = vec![0x0C, 20];
+    script.extend_from_slice(&blob);
+    script.push(0x40);
+    let nef_bytes = build_nef(&script);
+    let csharp = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds")
+        .csharp
+        .expect("csharp output");
+    assert!(
+        csharp.contains("new byte[] { 0xA0, 0xA1,") && csharp.contains("0xB3 }"),
+        "wide hex blob must render as a byte[] literal: {csharp}"
+    );
+
+    // Short hex (syscall hashes, CALLT indices, labels) must NOT be touched.
+    assert!(!csharpize_statement("let t0 = syscall(0xEFBEADDE);").contains("byte[]"));
+    assert!(!csharpize_statement("let t0 = callt(0x0000);").contains("byte[]"));
+    assert!(!csharpize_statement("goto label_0x0010;").contains("byte[]"));
+}

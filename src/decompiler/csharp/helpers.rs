@@ -336,6 +336,16 @@ fn rewrite_numeric_helpers(line: &str) -> String {
                 i += consumed;
                 continue;
             }
+            if let Some((rendered, consumed)) = match_big_byte_literal(&line[i..]) {
+                out.push_str(&rendered);
+                i += consumed;
+                continue;
+            }
+            if let Some((rendered, consumed)) = match_big_integer_literal(&line[i..]) {
+                out.push_str(&rendered);
+                i += consumed;
+                continue;
+            }
             if let Some(rule) = match_numeric_helper(&bytes[i..]) {
                 if !rule.int_cast_args.is_empty() {
                     if let Some(rendered) = format_helper_with_casts(&line[i..], &rule) {
@@ -354,6 +364,104 @@ fn rewrite_numeric_helpers(line: &str) -> String {
         i += 1;
     }
     out
+}
+
+/// Wrap a bare decimal integer literal that exceeds C#'s `ulong` range in
+/// `BigInteger.Parse("…")`. A literal above `ulong.MaxValue` is C# error CS1021
+/// ("integral constant is too large"), which the lift hits for large
+/// PUSHINT128/PUSHINT256 operands. `System.Numerics` is already imported by the
+/// C# preamble, so `BigInteger.Parse` is in scope.
+///
+/// The caller guarantees `s` begins at an identifier boundary (so digits inside
+/// `t12`/`loc5` are never matched). Only the magnitude is wrapped, so a leading
+/// unary `-` stays valid (`-BigInteger.Parse("…")`). Hex (`0x…`) and literals
+/// that continue into an identifier or a `.` are left untouched.
+fn match_big_integer_literal(s: &str) -> Option<(String, usize)> {
+    let bytes = s.as_bytes();
+    if bytes.is_empty() || !bytes[0].is_ascii_digit() {
+        return None;
+    }
+    let mut j = 0;
+    while j < bytes.len() && bytes[j].is_ascii_digit() {
+        j += 1;
+    }
+    if j < bytes.len() {
+        let after = bytes[j];
+        // `0x…` hex prefix, an identifier continuation, or a fractional/member
+        // `.` means this digit run is not a standalone decimal literal.
+        if after == b'x'
+            || after == b'X'
+            || after.is_ascii_alphabetic()
+            || after == b'_'
+            || after == b'.'
+        {
+            return None;
+        }
+    }
+    let digits = &s[..j];
+    if !decimal_exceeds_u64(digits) {
+        return None;
+    }
+    Some((format!("BigInteger.Parse(\"{digits}\")"), j))
+}
+
+/// Rewrite an oversized `0x…` hex blob into a C# `new byte[] { … }` literal.
+///
+/// The high-level lift renders a non-printable PUSHDATA operand as `0x<HEX>`.
+/// When that blob is wider than 8 bytes (> 16 hex digits) it cannot be a C#
+/// integer literal (above `ulong` → error CS1021). A run that long is also
+/// unambiguously a byte blob: every other `0x…` the lift emits — syscall hashes
+/// (8 digits), CALLT indices and jump targets (≤ 4 digits) — is shorter, so a
+/// length cutoff cannot misfire on them. Short hex is left untouched.
+///
+/// `new byte[] { … }` compiles wherever a byte array is assignable (an `object`
+/// return, an expression operand). A manifest-typed return such as `UInt160`
+/// still needs a cast the text rewriter can't infer here, but eliminating the
+/// uncompilable integer literal is the correct minimal fix.
+fn match_big_byte_literal(s: &str) -> Option<(String, usize)> {
+    let bytes = s.as_bytes();
+    if bytes.len() < 2 || bytes[0] != b'0' || !(bytes[1] == b'x' || bytes[1] == b'X') {
+        return None;
+    }
+    let mut j = 2;
+    while j < bytes.len() && bytes[j].is_ascii_hexdigit() {
+        j += 1;
+    }
+    let hex = &s[2..j];
+    // > 16 nibbles (beyond ulong) and whole bytes only.
+    if hex.len() <= 16 || hex.len() % 2 != 0 {
+        return None;
+    }
+    // Must be a complete token, not the prefix of a longer identifier.
+    if j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
+        return None;
+    }
+    let mut rendered = String::from("new byte[] { ");
+    for (idx, pair) in hex.as_bytes().chunks_exact(2).enumerate() {
+        if idx > 0 {
+            rendered.push_str(", ");
+        }
+        rendered.push_str("0x");
+        rendered.push(pair[0] as char);
+        rendered.push(pair[1] as char);
+    }
+    rendered.push_str(" }");
+    Some((rendered, j))
+}
+
+/// Whether a run of decimal digits represents a value greater than
+/// `u64::MAX` (18446744073709551615) — i.e. beyond what a C# `ulong` literal
+/// can hold. Compared by length then lexically to avoid overflowing any fixed
+/// integer width (PUSHINT256 values can be up to 78 digits).
+fn decimal_exceeds_u64(digits: &str) -> bool {
+    const U64_MAX: &str = "18446744073709551615";
+    let trimmed = digits.trim_start_matches('0');
+    let significant = if trimmed.is_empty() { "0" } else { trimmed };
+    match significant.len().cmp(&U64_MAX.len()) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Less => false,
+        std::cmp::Ordering::Equal => significant > U64_MAX,
+    }
 }
 
 struct HelperRule {
