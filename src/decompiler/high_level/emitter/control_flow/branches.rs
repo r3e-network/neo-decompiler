@@ -109,10 +109,22 @@ impl HighLevelEmitter {
         };
         let condition = format!("{left} {symbol} {right}");
 
+        let false_target = target as usize;
+        if self.has_crossing_closer(false_target)
+            || self.has_internal_crossing_branch(instruction.offset, false_target)
+        {
+            // A structured `if` here would cross another open block's closer and
+            // produce malformed mis-nested output (e.g. a double `else`). Emit a
+            // guarded goto on the jump condition instead, mirroring the unary
+            // JMPIF path (`emit_unary_if_block`). The jump fires when the
+            // structured fall-through condition is false.
+            self.emit_conditional_goto(instruction, &format!("!({condition})"), false_target);
+            return;
+        }
+
         self.push_comment(instruction);
         self.statements.push(format!("if {condition} {{"));
 
-        let false_target = target as usize;
         // Save stack state so it can be restored when the if-body closes.
         // This handles cases where the if-body terminates (throw/return/abort)
         // and clears the stack — the code after the if-block still needs the

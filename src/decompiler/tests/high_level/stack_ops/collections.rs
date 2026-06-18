@@ -115,3 +115,28 @@ fn high_level_istype_respects_operand_tag() {
         "High-level output should not use the two-argument shorthand: {high_level}"
     );
 }
+
+#[test]
+fn pack_literal_underflow_renders_elision_marker_not_synthetic_temps() {
+    // Regression (adversarial parity): PACK n with fewer than n values on the
+    // stack must render the elided remainder as a single `/* N more */` marker
+    // (matching the JS port) rather than synthesizing missing_pack_item() temps.
+    // Script: PUSH1 PUSH1 PUSH1 PUSH5 PACK RET (3 values, PACK asks for 5).
+    let script = [0x11, 0x11, 0x11, 0x15, 0xC0, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        high_level.contains("/* 2 more elements */"),
+        "underflowing PACK should render an elision marker: {high_level}"
+    );
+    assert!(
+        !high_level.contains("missing_pack_item"),
+        "underflowing PACK should not synthesize missing_pack_item temps: {high_level}"
+    );
+}

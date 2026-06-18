@@ -5,12 +5,17 @@ use super::CfgBuilder;
 
 impl<'a> CfgBuilder<'a> {
     pub(super) fn offset_to_block_id(&self, offset: usize, leaders: &[usize]) -> BlockId {
-        for (i, &leader) in leaders.iter().enumerate().rev() {
-            if leader <= offset {
-                return BlockId::new(i);
-            }
+        // `leaders` is sorted ascending, so binary-search for the index of the
+        // largest leader <= offset instead of a linear reverse scan. The scan
+        // was called once per terminator (one per block), making CFG
+        // construction O(blocks^2) — a decompiler-hang DoS for a branch-dense
+        // in-cap NEF (every jump creates a block).
+        let p = leaders.partition_point(|&leader| leader <= offset);
+        if p == 0 {
+            BlockId::ENTRY
+        } else {
+            BlockId::new(p - 1)
         }
-        BlockId::ENTRY
     }
 
     pub(super) fn instruction_end_offset(&self, index: usize) -> Option<usize> {

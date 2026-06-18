@@ -1343,3 +1343,18 @@ fn csharpize_nested_helper_calls_in_cast_path_helpers() {
         "var t0 = BigInteger.Pow(BigInteger.Abs(x), 2);"
     );
 }
+
+#[test]
+fn csharpize_expression_preserves_multibyte_in_cat_path() {
+    // Regression (adversarial recheck): rewrite_cat_operator runs first in
+    // csharpize_expression and previously mangled multibyte UTF-8 (push b as char
+    // re-encodes as Latin-1) when the line contained ` cat `.
+    assert_eq!(
+        csharpize_statement("let t0 = café cat x;"),
+        "var t0 = café + x;"
+    );
+    assert_eq!(
+        csharpize_statement("let t0 = \"naïve\" cat y;"),
+        "var t0 = \"naïve\" + y;"
+    );
+}

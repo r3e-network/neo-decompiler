@@ -156,3 +156,39 @@ fn high_level_else_branch_restores_pre_branch_stack_snapshot() {
         "else entry should restore the pre-branch stack snapshot before REVERSE3: {high_level}"
     );
 }
+
+#[test]
+fn crossing_comparison_branch_does_not_emit_malformed_double_else() {
+    // Regression (adversarial): a comparison branch (JMPLT etc.) whose if-body
+    // contains an inner comparison branch that crosses the outer block's closer
+    // previously produced a structurally invalid double `else`. The crossing
+    // guard now emits a guarded goto, keeping the output well-formed.
+    let script = [
+        0x11, 0x12, 0x30, 0x08, 0x13, 0x14, 0x30, 0x06, 0x15, 0x40, 0x16, 0x40, 0x17, 0x40,
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    // Output must be brace-balanced (well-formed)...
+    let balance: i32 = high_level
+        .chars()
+        .map(|c| match c {
+            '{' => 1,
+            '}' => -1,
+            _ => 0,
+        })
+        .sum();
+    assert_eq!(balance, 0, "output must be brace-balanced: {high_level}");
+    // ...and must not contain a second `else` for a single `if` (the malformed
+    // double-else shape). With three returns and one structured if, at most one
+    // `else {` may appear.
+    assert!(
+        high_level.matches("else {").count() <= 1,
+        "crossing comparison branch must not produce a second else: {high_level}"
+    );
+}

@@ -29,7 +29,13 @@ impl HighLevelEmitter {
             // PACK/PACKSTRUCT pop one item per entry (`Pop: n+1`).
             let is_map = kind == "map";
             let unit = if is_map { 2 } else { 1 };
-            let cap = PACK_MAX_INLINE.min(need);
+            // Bound the inline width by the actual simulated stack depth as well,
+            // so a genuine literal-count underflow (PACK n with fewer than n
+            // values on the stack) renders the elided remainder as a single
+            // `/* N more */` marker instead of synthesizing `missing_pack_item()`
+            // temps — matching the JS port for byte-for-byte parity.
+            let avail = self.stack.len() / unit;
+            let cap = PACK_MAX_INLINE.min(need).min(avail);
             let mut rendered = Vec::with_capacity(cap);
             let mut elements = Vec::with_capacity(cap * unit);
             for _ in 0..cap {

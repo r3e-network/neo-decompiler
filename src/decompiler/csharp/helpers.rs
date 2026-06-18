@@ -749,11 +749,27 @@ fn rewrite_cat_operator(line: &str) -> String {
     let mut in_string: Option<u8> = None;
     while i < bytes.len() {
         let b = bytes[i];
+        // Copy any non-ASCII (multibyte UTF-8) character verbatim. ` cat ` and
+        // the quote/escape markers are all ASCII, so multibyte bytes only ever
+        // need pass-through; `b as char` would re-encode them as Latin-1 and
+        // corrupt the UTF-8. The is_char_boundary guard keeps this panic-free.
+        if !b.is_ascii() {
+            if line.is_char_boundary(i) {
+                let ch = line[i..].chars().next().unwrap_or('\u{FFFD}');
+                out.push(ch);
+                i += ch.len_utf8();
+            } else {
+                i += 1;
+            }
+            continue;
+        }
         if let Some(quote) = in_string {
             out.push(b as char);
             if b == b'\\' && i + 1 < bytes.len() {
-                out.push(bytes[i + 1] as char);
-                i += 2;
+                // Copy the escaped character whole in case it is multibyte.
+                let esc = line[i + 1..].chars().next().unwrap_or('\u{FFFD}');
+                out.push(esc);
+                i += 1 + esc.len_utf8();
                 continue;
             }
             if b == quote {
