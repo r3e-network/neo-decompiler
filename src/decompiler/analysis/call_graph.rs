@@ -368,10 +368,8 @@ fn trace_pointer_target_from_value_source(
 
         let domain = if let Some(slot) = local_load_index(instruction) {
             SlotDomain::Local(slot)
-        } else if let Some(slot) = static_load_index(instruction) {
-            SlotDomain::Static(slot)
         } else {
-            return None;
+            SlotDomain::Static(static_load_index(instruction)?)
         };
 
         let store_index = find_slot_store_before(instructions, source_index, domain)?;
@@ -406,10 +404,8 @@ fn trace_argument_index_from_value_source(
 
         let domain = if let Some(slot) = local_load_index(instruction) {
             SlotDomain::Local(slot)
-        } else if let Some(slot) = static_load_index(instruction) {
-            SlotDomain::Static(slot)
         } else {
-            return None;
+            SlotDomain::Static(static_load_index(instruction)?)
         };
 
         let store_index = find_slot_store_before(instructions, source_index, domain)?;
