@@ -190,7 +190,13 @@ jobs:
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
       - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli --version 0.2.108 --locked
+        # Match the wasm-bindgen crate version in Cargo.lock, otherwise
+        # `wasm-pack --mode no-install` fails with "Not able to find or install
+        # a local wasm-bindgen". Derive it from the lockfile so it cannot drift.
+        run: |
+          version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)"
+          echo "Installing wasm-bindgen-cli ${version} (matched to Cargo.lock)"
+          cargo install wasm-bindgen-cli --version "${version}" --locked
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
