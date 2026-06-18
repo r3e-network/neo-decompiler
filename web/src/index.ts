@@ -21,6 +21,7 @@ export interface DecompileOptions {
   strictManifest?: boolean;
   failOnUnknownOpcodes?: boolean;
   inlineSingleUseTemps?: boolean;
+  emitTraceComments?: boolean;
   outputFormat?: OutputFormat;
 }
 
@@ -121,14 +122,14 @@ export interface PermissionSummary {
 export interface ManifestSummary {
   name: string;
   supported_standards: string[];
-  storage: boolean;
-  payable: boolean;
+  features: Record<string, unknown>;
   groups: GroupSummary[];
   methods: number;
   events: number;
   permissions: PermissionSummary[];
   trusts?: TrustSummary | null;
   abi: AbiSummary;
+  extra?: unknown;
 }
 
 export interface MethodRef {
@@ -226,11 +227,15 @@ export interface WebInfoReport {
 }
 
 export interface WebDisasmReport {
+  script_hash_le: string;
+  script_hash_be: string;
   instructions: InstructionReport[];
   warnings: string[];
 }
 
 export interface WebDecompileReport {
+  compiler: string;
+  source?: string | null;
   script_hash_le: string;
   script_hash_be: string;
   csharp: string;
@@ -367,6 +372,9 @@ function normalizeDecompileOptions(
   }
   if (options.inlineSingleUseTemps !== undefined) {
     normalized.inline_single_use_temps = options.inlineSingleUseTemps;
+  }
+  if (options.emitTraceComments !== undefined) {
+    normalized.emit_trace_comments = options.emitTraceComments;
   }
   if (options.outputFormat !== undefined) {
     normalized.output_format = options.outputFormat;
