@@ -58,12 +58,23 @@ export function tryTokenCall(state, instruction) {
   if (index === null) {
     return false;
   }
-  const label =
-    state.context.calltLabels[index] ?? `callt(0x${hex16(index)})`;
+  const resolved = state.context.calltLabels[index];
+  if (resolved === undefined) {
+    // Unresolved/out-of-range token: mirror Rust (jumps.rs emit_indirect_call) —
+    // bind the bare `callt(0xHEX)` token call to a temp WITHOUT consuming or
+    // appending arguments. The fallback label already reads as a call, so the
+    // previous `${label}(${args})` produced an invalid double-call
+    // `callt(0xHEX)()`.
+    const temp = `t${state.nextTempId}`;
+    state.nextTempId += 1;
+    state.statements.push(`let ${temp} = callt(0x${hex16(index)});`);
+    state.stack.push(temp);
+    return true;
+  }
   const argCount = state.context.calltParamCounts[index] ?? 0;
   const returnsValue = state.context.calltReturnsValue[index] ?? true;
-  const args = popCallArguments(state, instruction, label, argCount);
-  const expression = `${label}(${args.join(", ")})`;
+  const args = popCallArguments(state, instruction, resolved, argCount);
+  const expression = `${resolved}(${args.join(", ")})`;
   if (returnsValue) {
     state.stack.push(expression);
   } else {
