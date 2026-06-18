@@ -1,5 +1,5 @@
 import { SYSCALLS } from "./generated/syscalls.js";
-import { hex16, upperHex } from "./util.js";
+import { hexOffset, upperHex } from "./util.js";
 
 export function buildCallGraph(nef, instructions, methodGroups) {
   const methods = methodGroups.map((group) => ({
@@ -185,6 +185,19 @@ export function buildCallGraph(nef, instructions, methodGroups) {
 
     if ((mnemonic === "CALL" || mnemonic === "CALL_L") && isJumpOperand(instruction.operand)) {
       const targetOffset = instruction.offset + instruction.operand.value;
+      if (targetOffset < 0) {
+        // A CALL_L whose absolute target is negative (malformed backward delta)
+        // cannot be a real method. Mirror the Rust port, which emits an
+        // UnresolvedInternal edge with the raw signed target instead of
+        // fabricating an Internal edge at a negative offset.
+        edges.push({
+          caller,
+          callOffset: instruction.offset,
+          opcode: mnemonic,
+          target: { kind: "UnresolvedInternal", target: targetOffset },
+        });
+        continue;
+      }
       propagateCallArguments(
         methodArgValues,
         methodArgCountsByOffset,
@@ -275,7 +288,7 @@ function resolveMethodTarget(methodByOffset, targetOffset) {
   return (
     methodByOffset.get(targetOffset) ?? {
       offset: targetOffset,
-      name: `sub_0x${hex16(targetOffset)}`,
+      name: `sub_0x${hexOffset(targetOffset)}`,
     }
   );
 }

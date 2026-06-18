@@ -1,6 +1,6 @@
 import { SYSCALLS } from "./generated/syscalls.js";
 import { jumpTarget, stripOuterParens } from "./high-level-utils.js";
-import { hex16, hex32 } from "./util.js";
+import { hex16, hex32, hexOffset } from "./util.js";
 
 export function tryInternalCall(state, instruction) {
   const mnemonic = instruction.opcode.mnemonic;
@@ -19,7 +19,7 @@ export function tryInternalCall(state, instruction) {
   // Earlier this used `sub_0x` with lowercase digits, conflating
   // OOB/unknown calls with regular helper definitions.
   const callee =
-    state.context.methodLabelsByOffset.get(target) ?? `call_0x${hex16(target)}`;
+    state.context.methodLabelsByOffset.get(target) ?? `call_0x${hexOffset(target)}`;
   const argCount = state.context.methodArgCountsByOffset.get(target) ?? 0;
   const args = popCallArguments(state, instruction, callee, argCount);
   state.stack.push(`${callee}(${args.join(", ")})`);
@@ -40,7 +40,7 @@ export function tryIndirectCall(state, instruction) {
   if (resolvedTarget !== null) {
     const callee =
       state.context.methodLabelsByOffset.get(resolvedTarget) ??
-      `sub_0x${hex16(resolvedTarget)}`;
+      `sub_0x${hexOffset(resolvedTarget)}`;
     const argCount = state.context.methodArgCountsByOffset.get(resolvedTarget) ?? 0;
     const args = popCallArguments(state, instruction, callee, argCount);
     state.stack.push(`${callee}(${args.join(", ")})`);

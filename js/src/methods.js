@@ -1,6 +1,6 @@
 import { makeUniqueIdentifier, sanitizeIdentifier } from "./manifest.js";
 import { jumpTarget } from "./high-level-utils.js";
-import { hex16 } from "./util.js";
+import { hexOffset } from "./util.js";
 
 const TERMINATOR_MNEMONICS = new Set(["RET", "THROW", "ABORT", "ABORTMSG"]);
 // Mirrors Rust's `collect_control_flow_edges`: the conditional/unconditional
@@ -213,7 +213,7 @@ export function buildMethodGroups(instructions, manifest, options = {}) {
         // and silently diverged from Rust whenever the offset
         // contained a hex letter (e.g. `sub_0x000a` vs Rust's
         // `sub_0x000A`).
-        offset === entryOffset ? "script_entry" : `sub_0x${hex16(offset)}`,
+        offset === entryOffset ? "script_entry" : `sub_0x${hexOffset(offset)}`,
         used,
       ),
       source: null,

@@ -1,11 +1,11 @@
 import { formatOperand } from "./disassembler.js";
-import { hex8, hex16 } from "./util.js";
+import { hex8, hexOffset } from "./util.js";
 
 export function renderPseudocode(instructions) {
   const lines = [];
   for (let i = 0; i < instructions.length; i++) {
     const instruction = instructions[i];
-    let line = `${hex16(instruction.offset)}: ${renderMnemonic(instruction)}`;
+    let line = `${hexOffset(instruction.offset)}: ${renderMnemonic(instruction)}`;
     if (instruction.operand !== null) {
       line += ` ${formatOperand(instruction.operand)}`;
     }

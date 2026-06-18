@@ -43,6 +43,15 @@ export function hex16(value) {
   return HEX_TABLE[(value >>> 8) & 0xff] + HEX_TABLE[value & 0xff];
 }
 
+// Uppercase hex of an instruction OFFSET, zero-padded to a minimum of 4 digits
+// and never truncated — mirrors the Rust port's `format!("{:04X}")`. Use this
+// (not hex16) for offset-derived names like `sub_0x…`, `label_0x…`, `call_0x…`
+// and pseudocode offset columns, since Neo scripts may exceed 0xFFFF bytes
+// (up to MAX_SCRIPT_LEN = 0x80000), where hex16 would silently truncate.
+export function hexOffset(value) {
+  return value.toString(16).toUpperCase().padStart(4, "0");
+}
+
 // 4-byte (8-hex-digit) zero-padded uppercase hex of an unsigned 32-bit value.
 export function hex32(value) {
   return (

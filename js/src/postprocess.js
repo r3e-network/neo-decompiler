@@ -862,6 +862,18 @@ function inlineForIncrementTemps(statements) {
       if (line.startsWith("let ")) {
         const assign = parseAssignment(line);
         if (assign && containsIdentifier(forParts.increment, assign.lhs)) {
+          // Only inline+delete the definition when the temp is used nowhere
+          // else (besides its own def and the for-header increment) AND its
+          // value is pure (no call). Otherwise clearing the definition would
+          // dangle a still-live reference, and moving a side-effecting RHS into
+          // the increment would change evaluation order. Mirrors the Rust port.
+          const usedElsewhere = statements.some(
+            (stmt, i) => i !== cursor && i !== index && containsIdentifier(stmt, assign.lhs),
+          );
+          if (usedElsewhere || assign.rhs.includes("(")) {
+            cursor++;
+            continue;
+          }
           const replaced = replaceIdentifier(forParts.increment, assign.lhs, assign.rhs);
           statements[index] = `for (${forParts.init}; ${forParts.condition}; ${replaced}) {`;
           statements[cursor] = "";

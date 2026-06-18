@@ -1,6 +1,6 @@
 import { isSimpleConditional, popConditionForLoop } from "./high-level-control-flow-shared.js";
 import { jumpTarget } from "./high-level-utils.js";
-import { hex16 } from "./util.js";
+import { hexOffset } from "./util.js";
 
 export function collectLabelTargets(instructions) {
   const knownOffsets = new Set(instructions.map((instruction) => instruction.offset));
@@ -67,5 +67,5 @@ export function tryControlTransferFallback(state, instruction) {
 }
 
 export function labelName(offset) {
-  return `label_0x${hex16(offset)}`;
+  return `label_0x${hexOffset(offset)}`;
 }
