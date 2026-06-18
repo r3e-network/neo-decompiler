@@ -135,6 +135,23 @@ impl HighLevelEmitter {
     /// `<setup> while COND { <body> <phi> <setup> }` — recovering while-loop
     /// semantics from backward unconditional JMPs inside if-blocks.
     pub(crate) fn rewrite_if_goto_to_while(statements: &mut Vec<String>) {
+        // The pass can only succeed when a matching `goto label_X;` exists
+        // (checked at lines below inside the if-block). Pre-collect those once
+        // so labels with no corresponding goto are skipped in O(1) instead of
+        // each running an unbounded forward `next_if_line` scan to the tail of
+        // the vector. Without this guard the pass is O(labels × N): a crafted
+        // in-cap NEF that emits many `label_X:` lines with no following `if`
+        // drives it quadratic — a decompiler-hang DoS.
+        let goto_targets: std::collections::HashSet<String> = statements
+            .iter()
+            .map(|s| s.trim())
+            .filter(|t| t.starts_with("goto label_") && t.ends_with(';'))
+            .map(str::to_string)
+            .collect();
+        if goto_targets.is_empty() {
+            return;
+        }
+
         let mut index = 0;
         while index < statements.len() {
             let trimmed = statements[index].trim().to_string();
@@ -145,6 +162,13 @@ impl HighLevelEmitter {
                 continue;
             };
             if !label.starts_with("label_") {
+                index += 1;
+                continue;
+            }
+
+            // Fast-skip: with no `goto label_X;` anywhere, the search below can
+            // only fail, so skip the unbounded `next_if_line` scan entirely.
+            if !goto_targets.contains(format!("goto {label};").as_str()) {
                 index += 1;
                 continue;
             }

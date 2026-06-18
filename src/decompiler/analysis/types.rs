@@ -136,11 +136,20 @@ pub fn infer_types(instructions: &[Instruction], manifest: Option<&ContractManif
     let mut statics = vec![ValueType::Unknown; static_count];
 
     let mut methods = Vec::new();
+    // `instructions` is sorted by offset and `table.spans()` is sorted by start
+    // with contiguous ranges, so sweep a single forward cursor instead of
+    // re-filtering the whole instruction stream per span (O(instructions *
+    // spans), quadratic on call-dense bytecode). See build_xrefs.
+    let mut cursor = 0usize;
     for span in table.spans() {
-        let slice: Vec<&Instruction> = instructions
-            .iter()
-            .filter(|ins| ins.offset >= span.start && ins.offset < span.end)
-            .collect();
+        while cursor < instructions.len() && instructions[cursor].offset < span.start {
+            cursor += 1;
+        }
+        let begin = cursor;
+        while cursor < instructions.len() && instructions[cursor].offset < span.end {
+            cursor += 1;
+        }
+        let slice: Vec<&Instruction> = instructions[begin..cursor].iter().collect();
 
         let (locals_count, args_count) = scan_slot_counts(&slice).unwrap_or((0, 0));
         let mut locals = vec![ValueType::Unknown; locals_count];

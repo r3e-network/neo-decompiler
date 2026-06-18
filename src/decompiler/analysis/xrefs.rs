@@ -64,11 +64,21 @@ pub fn build_xrefs(instructions: &[Instruction], manifest: Option<&ContractManif
     let static_count = scan_static_slot_count(instructions).unwrap_or(0);
 
     let mut methods = Vec::new();
+    // `instructions` is sorted by offset and `table.spans()` is sorted by start
+    // with contiguous [start, end) ranges, so sweep a single forward cursor over
+    // the instruction stream instead of re-filtering the whole stream per span
+    // (which is O(instructions * spans) — quadratic when call-dense bytecode
+    // makes nearly every instruction a method start).
+    let mut cursor = 0usize;
     for span in table.spans() {
-        let slice: Vec<&Instruction> = instructions
-            .iter()
-            .filter(|ins| ins.offset >= span.start && ins.offset < span.end)
-            .collect();
+        while cursor < instructions.len() && instructions[cursor].offset < span.start {
+            cursor += 1;
+        }
+        let begin = cursor;
+        while cursor < instructions.len() && instructions[cursor].offset < span.end {
+            cursor += 1;
+        }
+        let slice: Vec<&Instruction> = instructions[begin..cursor].iter().collect();
         let (locals_count, args_count) = scan_slot_counts(&slice).unwrap_or((0, 0));
 
         let mut method_xrefs = MethodXrefs {

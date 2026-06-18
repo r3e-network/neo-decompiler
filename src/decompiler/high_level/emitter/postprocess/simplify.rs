@@ -154,6 +154,21 @@ impl HighLevelEmitter {
     /// not used anywhere else.  This pattern arises from stack-based codegen
     /// where every VM instruction produces a temp that is immediately stored.
     pub(crate) fn collapse_temp_into_store(statements: &mut [String]) {
+        // Pre-scan: count, per temp identifier `tN`, the number of distinct
+        // statement lines it appears on. A temp on exactly 2 lines (its `let`
+        // definition + a single use) is not used later, so it can be collapsed
+        // without re-scanning the suffix of the vector for every temp. This
+        // replaces the previous O(n) per-temp forward scans (O(n^2) overall on
+        // attacker-chosen instruction counts) with an O(n) prepass + O(1)
+        // lookups, mirroring the JS port (collapseTempIntoStore).
+        let mut temp_line_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for stmt in statements.iter() {
+            for tok in Self::temp_tokens(stmt) {
+                *temp_line_counts.entry(tok).or_insert(0) += 1;
+            }
+        }
+
         let mut index = 0;
         while index + 1 < statements.len() {
             let trimmed = statements[index].trim();
@@ -183,10 +198,9 @@ impl HighLevelEmitter {
             // Try assignment pattern: `[let] X = tN;`
             if let Some(a2) = Self::parse_assignment(trimmed_next) {
                 if a2.rhs == *temp {
-                    let used_later = statements
-                        .iter()
-                        .skip(next + 1)
-                        .any(|s| Self::contains_identifier(s, temp));
+                    // temp on exactly 2 lines (definition + this use) => not
+                    // referenced anywhere else, safe to collapse.
+                    let used_later = temp_line_counts.get(temp).copied().unwrap_or(0) > 2;
                     if !used_later {
                         let indent =
                             &statements[next][..statements[next].len() - trimmed_next.len()];
@@ -204,10 +218,7 @@ impl HighLevelEmitter {
             }
             // Try `return tN;` pattern
             if trimmed_next == format!("return {};", temp) {
-                let used_later = statements
-                    .iter()
-                    .skip(next + 1)
-                    .any(|s| Self::contains_identifier(s, temp));
+                let used_later = temp_line_counts.get(temp).copied().unwrap_or(0) > 2;
                 if !used_later {
                     let indent = &statements[next][..statements[next].len() - trimmed_next.len()];
                     statements[next] = format!("{indent}return {};", a1.rhs);
@@ -399,6 +410,47 @@ impl HighLevelEmitter {
     fn is_temp_ident(s: &str) -> bool {
         s.strip_prefix('t')
             .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+    }
+
+    /// Extract the distinct `tN` temp tokens (whole identifiers) appearing in a
+    /// line, matching the JS `\bt\d+\b` token regex with identifier-boundary
+    /// semantics. Used by `collapse_temp_into_store`'s line-count prepass.
+    fn temp_tokens(line: &str) -> std::collections::HashSet<String> {
+        let bytes = line.as_bytes();
+        let mut out = std::collections::HashSet::new();
+        let mut i = 0;
+        while i < bytes.len() {
+            // Token must start at an identifier boundary with `t` followed by
+            // at least one digit.
+            let boundary_ok =
+                i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+            if boundary_ok && bytes[i] == b't' {
+                let mut j = i + 1;
+                while j < bytes.len() && bytes[j].is_ascii_digit() {
+                    j += 1;
+                }
+                // Need at least one digit, and the char after must not extend
+                // the identifier (no trailing letter/digit/underscore).
+                let after_ok =
+                    j == bytes.len() || !(bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_');
+                if j > i + 1 && after_ok {
+                    out.insert(line[i..j].to_string());
+                    i = j;
+                    continue;
+                }
+            }
+            // Skip to the end of the current identifier run so we don't match
+            // `t1` inside `foot1bar` etc.
+            if bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' {
+                i += 1;
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
+        out
     }
 
     fn negate_condition(cond: &str) -> String {
