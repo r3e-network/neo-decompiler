@@ -103,7 +103,7 @@ Parse a Neo N3 contract manifest JSON.
 
 ```
 contract MyContract {
-    fn transfer(from: Hash160, to: Hash160, amount: Integer) -> Boolean {
+    fn transfer(from: hash160, to: hash160, amount: int) -> bool {
         if from != sender() {
             if !verify_signature(from) {
                 return false;

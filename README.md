@@ -118,9 +118,10 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 | Feature                    | Status | Description                                                                  |
 | -------------------------- | ------ | ---------------------------------------------------------------------------- |
-| SSA Transformation         | ✅     | Static Single Assignment form with φ nodes and variable versions             |
+| SSA Skeleton               | ✅     | Structural SSA form: dominance info + versioned `PUSH0`–`PUSH16` assignments  |
 | Dominance Analysis         | ✅     | Immediate dominators, dominator tree, dominance frontiers                    |
 | SSA Rendering              | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars)            |
+| Full φ-node Placement      | 🚧     | φ-node data model present; cross-block def/use tracking + placement is WIP    |
 | Strict Manifest Validation | ✅     | Global `--strict-manifest` flag plus strict manifest parser APIs             |
 | Entry-Offset Safety        | ✅     | Synthetic script-entry emission when ABI method offsets don't match entry    |
 | Disassembly Fast Path      | ✅     | `disasm` command decodes instruction streams without full decompile analysis |
@@ -188,10 +189,12 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   actual script entry.
 - Control Flow Graph (CFG) construction with DOT export (`Decompilation::cfg_to_dot`) and
   reachability helpers for dead-code detection (`Cfg::unreachable_blocks`)
-- SSA (Static Single Assignment) transformation via `cfg.to_ssa()` or `Decompilation::compute_ssa()`:
+- SSA (Static Single Assignment) skeleton via `cfg.to_ssa()` or `Decompilation::compute_ssa()`:
   - Dominance analysis (immediate dominators, dominator tree, dominance frontiers)
-  - φ node placement at control flow merge points
+  - Versioned assignments for `PUSH0`–`PUSH16`; other opcodes are carried as comment statements
   - SSA form rendering with variable versions and statistics
+  - Note: φ-node placement across the full instruction set is not yet implemented (the
+    `PhiNode` data model and dominance frontiers exist, but no φ nodes are inserted yet)
 - Best-effort analysis output in both the library and JSON decompile report:
   call graph (`CALL*`, `CALLT`, `SYSCALL`), slot cross-references, and inferred primitive/collection types
 - Syscall lifting that resolves human-readable names and suppresses phantom
@@ -435,8 +438,9 @@ Download pre-built binaries from the [releases page](https://github.com/r3e-netw
 ### From source
 
 ```bash
-# Install from a tagged release (replace the tag as needed)
-cargo install --git https://github.com/r3e-network/neo-decompiler --tag v0.7.0 --locked
+# Install from a tagged release (replace vX.Y.Z with a published release tag,
+# e.g. from the GitHub releases page)
+cargo install --git https://github.com/r3e-network/neo-decompiler --tag vX.Y.Z --locked
 
 # Or install the latest development version
 cargo install --git https://github.com/r3e-network/neo-decompiler --locked
