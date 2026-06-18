@@ -297,3 +297,37 @@ fn decompile_command_strict_manifest_rejects_invalid_manifest_values() {
         .failure()
         .stderr(contains("manifest validation error"));
 }
+
+#[test]
+fn decompile_renders_requested_format_even_when_output_format_excludes_it() {
+    // Regression: `--format <view>` previously produced empty output (exit 0)
+    // when `--output-format` did not include that view. The requested view must
+    // always render; `--output-format` is upgraded to cover it.
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("contract.nef");
+    std::fs::write(&nef_path, build_sample_nef()).unwrap();
+
+    // C# view requested, but output-format names only pseudocode.
+    neo_decompiler_cmd()
+        .arg("decompile")
+        .arg("--format")
+        .arg("csharp")
+        .arg("--output-format")
+        .arg("pseudocode")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("public static"));
+
+    // High-level view requested, output-format names only csharp.
+    neo_decompiler_cmd()
+        .arg("decompile")
+        .arg("--format")
+        .arg("high-level")
+        .arg("--output-format")
+        .arg("csharp")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("contract NeoContract"));
+}

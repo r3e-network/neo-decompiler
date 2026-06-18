@@ -25,11 +25,28 @@ impl Cli {
             .with_inline_single_use_temps(inline_single_use_temps)
             .with_trace_comments(!no_trace_comments);
         let manifest_path = self.resolve_manifest_path(path);
-        // Use explicit output_format, but ensure All is used for JSON format
-        let effective_output_format = if matches!(format, DecompileFormat::Json) {
-            OutputFormat::All
-        } else {
+        // `--format` selects which view is printed; `--output-format` selects
+        // which views are computed. When the requested view is not among the
+        // computed ones the printed output is silently empty (exit 0), so when
+        // `--output-format` does not cover `--format` upgrade to `All`. Both and
+        // Json need several views, so they always require `All`. `--output-format`
+        // is still honored whenever it already covers the requested view.
+        let output_format_covers_view = match format {
+            DecompileFormat::Pseudocode => {
+                matches!(output_format, OutputFormat::Pseudocode | OutputFormat::All)
+            }
+            DecompileFormat::HighLevel => {
+                matches!(output_format, OutputFormat::HighLevel | OutputFormat::All)
+            }
+            DecompileFormat::Csharp => {
+                matches!(output_format, OutputFormat::CSharp | OutputFormat::All)
+            }
+            DecompileFormat::Both | DecompileFormat::Json => output_format == OutputFormat::All,
+        };
+        let effective_output_format = if output_format_covers_view {
             output_format
+        } else {
+            OutputFormat::All
         };
 
         let data = Self::read_nef_bytes(path)?;

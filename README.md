@@ -267,6 +267,12 @@ cargo build --release
 # source, script hash, manifest path, manifest summary, analysis)
 ./target/release/neo-decompiler decompile --format json path/to/contract.nef
 
+# `--format` selects the view that is printed. The optional `--output-format`
+# (default: all) limits which views are computed, as a performance hint:
+#   --output-format pseudocode | high-level | csharp | all
+# `--format` always wins — if the requested view is not covered by
+# `--output-format`, all views are generated so the output is never empty.
+
 # Inspect method tokens
 ./target/release/neo-decompiler tokens path/to/contract.nef
 
