@@ -223,15 +223,22 @@ function parseAbiMethod(method, methodIndex) {
   requireString(method?.name, `${path}.name`);
   requireString(method?.returntype, `${path}.returntype`);
   requireArrayIfPresent(method.parameters, `${path}.parameters`);
-  if (
-    method.offset !== undefined &&
-    method.offset !== null &&
-    typeof method.offset !== "number"
-  ) {
-    throw new ManifestParseError(`${path}.offset must be a number`, {
-      code: "InvalidType",
-      path: `${path}.offset`,
-    });
+  if (method.offset !== undefined && method.offset !== null) {
+    // Rust deserializes offset as Option<i32>: serde rejects non-integers and
+    // out-of-range values. Mirror that here (JSON.parse cannot distinguish the
+    // `3.0` float-syntax that Rust also rejects, but every other case matches)
+    // so a crafted manifest is rejected consistently across both ports.
+    if (
+      typeof method.offset !== "number" ||
+      !Number.isInteger(method.offset) ||
+      method.offset < -2147483648 ||
+      method.offset > 2147483647
+    ) {
+      throw new ManifestParseError(
+        `${path}.offset must be an i32 integer`,
+        { code: "InvalidType", path: `${path}.offset` },
+      );
+    }
   }
   if (method.safe !== undefined && typeof method.safe !== "boolean") {
     throw new ManifestParseError(`${path}.safe must be a boolean`, {

@@ -188,3 +188,30 @@ test("manifest-spec: rejects non-string/non-array permission methods (parity wit
     ),
   );
 });
+
+// Method offset must be an i32 integer, matching Rust's Option<i32> serde
+// deserialization (mirrors src/manifest deserializing offset as i32: non-integer
+// and out-of-range numbers are rejected).
+test("manifest-spec: method offset rejects non-integer and out-of-range values", () => {
+  const withOffset = (offset) =>
+    JSON.stringify({
+      name: "Off",
+      abi: {
+        methods: [{ name: "m", returntype: "Integer", offset, parameters: [], safe: false }],
+        events: [],
+      },
+    });
+
+  for (const bad of [3.9, 1e21, 2147483648, -2147483649]) {
+    assert.throws(
+      () => parseManifest(withOffset(bad)),
+      (err) => err.details.code === "InvalidType" && err.details.path.endsWith(".offset"),
+      `offset ${bad} must be rejected`,
+    );
+  }
+  // Valid i32 offsets (including negative, which Rust accepts then nulls
+  // downstream) parse without throwing.
+  for (const ok of [0, 3, 2147483647, -5]) {
+    assert.doesNotThrow(() => parseManifest(withOffset(ok)), `offset ${ok} must be accepted`);
+  }
+});
