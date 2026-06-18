@@ -26,6 +26,24 @@ pub(super) fn write_lifted_body(
     context: &LiftedBodyContext<'_>,
     returns_void: bool,
 ) {
+    if instructions.len() > super::super::super::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS {
+        let offset = instructions.first().map(|i| i.offset).unwrap_or(0);
+        writeln!(
+            output,
+            "            // method body too large for high-level lifting: {} instructions \
+             exceeds the {}-instruction limit; use `disasm` for the full listing",
+            instructions.len(),
+            super::super::super::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS
+        )
+        .unwrap();
+        warnings.push(format!(
+            "csharp: method at 0x{offset:04X} skipped — {} instructions exceeds the \
+             high-level lifting limit ({})",
+            instructions.len(),
+            super::super::super::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS
+        ));
+        return;
+    }
     let mut emitter = HighLevelEmitter::with_program(instructions);
     if let Some(labels) = argument_labels {
         emitter.set_argument_labels(labels);

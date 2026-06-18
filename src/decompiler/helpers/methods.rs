@@ -140,31 +140,55 @@ fn collect_post_ret_method_offsets(
     let known_offsets: BTreeSet<usize> = instructions.iter().map(|ins| ins.offset).collect();
     let control_flow_edges = collect_control_flow_edges(instructions, &known_offsets);
 
-    // Build HashMap indices for O(1) lookups instead of 3× O(n) linear scans.
-    // edges_by_target: target_offset -> list of source offsets
+    // Resolve the baseline method `[start, end)` that contains `offset`.
+    let method_range = |offset: usize| -> (usize, usize) {
+        let start = baseline_starts
+            .range(..=offset)
+            .next_back()
+            .copied()
+            .unwrap_or(offset);
+        let end = baseline_starts
+            .range((start + 1)..)
+            .next()
+            .copied()
+            .unwrap_or(usize::MAX);
+        (start, end)
+    };
+
+    // edges_by_target: target_offset -> source offsets that branch to it.
     let mut edges_by_target: HashMap<usize, Vec<usize>> = HashMap::new();
-    // edges_by_source: source_offset -> list of target offsets
-    let mut edges_by_source: HashMap<usize, Vec<usize>> = HashMap::new();
+    // max_forward_in_method: baseline method start -> the furthest forward-edge
+    // target that stays inside that method. Precomputing this once turns the
+    // "is there an in-method edge past `next`?" test into an O(1) lookup instead
+    // of an O(method length) scan per terminator. Without it the whole pass is
+    // O(n²) and a crafted in-cap NEF (many crossing jumps in one method) hangs
+    // the decompiler.
+    let mut max_forward_in_method: HashMap<usize, usize> = HashMap::new();
     for &(source, target) in &control_flow_edges {
         edges_by_target.entry(target).or_default().push(source);
-        edges_by_source.entry(source).or_default().push(target);
+        let (m_start, m_end) = method_range(source);
+        if target < m_end {
+            max_forward_in_method
+                .entry(m_start)
+                .and_modify(|t| *t = (*t).max(target))
+                .or_insert(target);
+        }
     }
 
     let mut starts = instructions
         .windows(2)
         .filter_map(|pair| {
             let current = &pair[0];
+            // Only the instruction immediately after a terminator can begin a
+            // detached tail, so skip the analysis for every other pair.
+            if !matches!(
+                current.opcode,
+                OpCode::Ret | OpCode::Throw | OpCode::Abort | OpCode::Abortmsg
+            ) {
+                return None;
+            }
             let next = &pair[1];
-            let method_start = baseline_starts
-                .range(..=current.offset)
-                .next_back()
-                .copied()
-                .unwrap_or(current.offset);
-            let method_end = baseline_starts
-                .range((method_start + 1)..)
-                .next()
-                .copied()
-                .unwrap_or(usize::MAX);
+            let (method_start, method_end) = method_range(current.offset);
 
             let incoming = edges_by_target.get(&next.offset);
             let has_incoming_from_same_baseline_method = incoming.is_some_and(|sources| {
@@ -173,22 +197,17 @@ fn collect_post_ret_method_offsets(
             let has_incoming_from_other_baseline_method = incoming.is_some_and(|sources| {
                 sources.iter().any(|&s| s < method_start || s >= method_end)
             });
-            let has_same_baseline_incoming_later_in_range = known_offsets
-                .range(method_start..method_end)
-                .any(|&src_off| {
-                    edges_by_source.get(&src_off).is_some_and(|targets| {
-                        targets.iter().any(|&t| t > next.offset && t < method_end)
-                    })
-                });
+            // Equivalent to scanning every in-method edge for a target in
+            // (next.offset, method_end): the per-method maximum forward target
+            // (already bounded to < method_end) exceeds next.offset iff one exists.
+            let has_same_baseline_incoming_later_in_range = max_forward_in_method
+                .get(&method_start)
+                .is_some_and(|&max_target| max_target > next.offset);
 
             let detached_tail_after_terminator = has_incoming_from_other_baseline_method
                 || (!has_incoming_from_same_baseline_method
                     && !has_same_baseline_incoming_later_in_range);
-            let is_terminator = matches!(
-                current.opcode,
-                OpCode::Ret | OpCode::Throw | OpCode::Abort | OpCode::Abortmsg
-            );
-            (is_terminator && detached_tail_after_terminator).then_some(next.offset)
+            detached_tail_after_terminator.then_some(next.offset)
         })
         .collect::<Vec<_>>();
     starts.sort_unstable();

@@ -18,6 +18,19 @@ use helpers::{
 };
 use types::{DoWhileLoop, LiteralValue, LoopContext, LoopJump, SlotKind};
 
+/// Maximum number of instructions a single method body may have before
+/// high-level lifting is skipped in favour of a fallback note.
+///
+/// Several stack-lifting and structural passes are worst-case O(n²) in the
+/// per-method statement count (e.g. crossing-branch detection and single-use
+/// temp inlining). A maliciously crafted in-cap NEF (≤ 1 MiB) can pack a single
+/// method with hundreds of thousands of crossing jumps, which would otherwise
+/// hang the decompiler for a very long time. Real Neo contract methods are
+/// gas-bounded and orders of magnitude smaller than this limit, so capping here
+/// guards against the denial-of-service without affecting any practical input.
+/// The raw instruction stream remains available via the `disasm` command.
+pub(crate) const MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS: usize = 16384;
+
 #[derive(Debug, Default)]
 pub(crate) struct HighLevelEmitter {
     stack: Vec<String>,

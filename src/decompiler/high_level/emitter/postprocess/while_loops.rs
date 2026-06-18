@@ -121,11 +121,10 @@ impl HighLevelEmitter {
             }
             // Replace matching gotos inside the switch with break
             let goto_target = format!("goto {label};");
-            for i in index + 1..end {
-                if statements[i].trim() == goto_target {
-                    let indent =
-                        &statements[i][..statements[i].len() - statements[i].trim_start().len()];
-                    statements[i] = format!("{indent}break;");
+            for stmt in statements.iter_mut().take(end).skip(index + 1) {
+                if stmt.trim() == goto_target {
+                    let indent = stmt[..stmt.len() - stmt.trim_start().len()].to_string();
+                    *stmt = format!("{indent}break;");
                 }
             }
             index = end + 1;
@@ -208,6 +207,23 @@ impl HighLevelEmitter {
     /// produced by the Neo C# compiler; lifting it removes both the label
     /// and the goto, leaving idiomatic source.
     pub(crate) fn rewrite_label_goto_to_loop(statements: &mut [String]) {
+        // A `label_X:` can only fold into a `loop { }` when a matching STANDALONE
+        // `goto label_X;` exists. Pre-collect those lines once so labels without
+        // one are skipped in O(1) instead of each scanning the whole tail of the
+        // vector. Without this the pass is O(labels × N): a crafted in-cap NEF
+        // that emits many guarded gotos (e.g. crossing JMPIF chains, whose gotos
+        // render as inline `if c { goto X; }` and never match the standalone
+        // form) drives it quadratic — a decompiler-hang DoS.
+        let standalone_gotos: std::collections::HashSet<String> = statements
+            .iter()
+            .map(|stmt| stmt.trim())
+            .filter(|trimmed| trimmed.starts_with("goto label_") && trimmed.ends_with(';'))
+            .map(str::to_string)
+            .collect();
+        if standalone_gotos.is_empty() {
+            return;
+        }
+
         let mut index = 0;
         while index < statements.len() {
             let trimmed = statements[index].trim().to_string();
@@ -225,6 +241,12 @@ impl HighLevelEmitter {
 
             // Find the matching `goto label_X;` at the same brace depth.
             let goto_target = format!("goto {label};");
+            // Fast-skip: with no standalone goto for this label, the forward
+            // search below can only fail, so skip the scan entirely.
+            if !standalone_gotos.contains(&goto_target) {
+                index += 1;
+                continue;
+            }
             let mut depth = 0i32;
             let mut goto_idx = None;
             for (j, stmt) in statements.iter().enumerate().skip(index + 1) {
@@ -252,17 +274,16 @@ impl HighLevelEmitter {
             // Bail if any other reference to the label appears anywhere —
             // a second goto means the label is a structured-jump target,
             // not just a back-edge for an infinite loop, and lifting would
-            // change semantics.
-            let occurrences = statements
-                .iter()
-                .enumerate()
-                .filter(|(i, stmt)| {
-                    *i != index
-                        && *i != goto_idx
-                        && (stmt.trim() == format!("{label}:") || stmt.contains(&goto_target))
-                })
-                .count();
-            if occurrences > 0 {
+            // change semantics. (`label_decl` is hoisted out of the scan so it
+            // is allocated once rather than per statement, and `.any()`
+            // short-circuits on the first extra reference.)
+            let label_decl = format!("{label}:");
+            let has_other_reference = statements.iter().enumerate().any(|(i, stmt)| {
+                i != index
+                    && i != goto_idx
+                    && (stmt.trim() == label_decl || stmt.contains(&goto_target))
+            });
+            if has_other_reference {
                 index += 1;
                 continue;
             }

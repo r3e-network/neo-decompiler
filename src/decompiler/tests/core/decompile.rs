@@ -917,3 +917,33 @@ fn invalid_type_bytes_render_as_raw_hex() {
         "ISTYPE fallback should keep the raw type byte: {high_level}"
     );
 }
+
+#[test]
+fn oversized_method_hits_high_level_lifting_cap() {
+    // A method with more instructions than the high-level lifting cap must fall
+    // back to a note instead of running the worst-case O(n²) lift passes — a
+    // crafted in-cap NEF (many crossing jumps) would otherwise hang the
+    // decompiler. The disassembly remains available separately.
+    let mut script = Vec::new();
+    for _ in 0..20_000 {
+        script.extend_from_slice(&[0x11, 0x24, 0x05]); // PUSH1 ; JMPIF +5 (crossing)
+    }
+    script.push(0x40); // RET
+    let nef_bytes = build_nef(&script);
+    let result = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+    let high_level = result.high_level.as_deref().expect("high-level output");
+    assert!(
+        high_level.contains("too large for high-level lifting"),
+        "oversized method should fall back to the cap note: {high_level}"
+    );
+    assert!(
+        result
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("exceeds the high-level lifting limit")),
+        "should surface a skip warning: {:?}",
+        result.warnings
+    );
+}
