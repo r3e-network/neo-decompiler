@@ -85,7 +85,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 
 | Feature                     | Status | Description                                                 |
 | --------------------------- | ------ | ----------------------------------------------------------- |
-| Input Size Limits           | ✅     | 1 MiB NEF limit, 64 KiB manifest limit, 1 MiB operand limit |
+| Input Size Limits           | ✅     | 1 MiB NEF limit, 65535-byte (~64 KiB) manifest limit, 1 MiB operand limit |
 | Integer Overflow Protection | ✅     | Checked arithmetic in slice operations                      |
 | Malformed Input Handling    | ✅     | Graceful error reporting, no panics                         |
 | Fuzz Testing                | ✅     | cargo-fuzz targets for parser and disassembler              |
