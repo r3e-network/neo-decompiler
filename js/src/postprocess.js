@@ -195,11 +195,14 @@ function findMatchingBrace(statements, openIdx) {
   for (let i = openIdx + 1; i < statements.length; i++) {
     const t = statements[i].trim();
     if (isBlank(t)) continue;
-    if (t.endsWith("{")) depth++;
+    // Close before open so a combined `} else {` line first closes the current
+    // block (mirrors the Rust find_matching_brace). For open-only or close-only
+    // lines the order is irrelevant.
     if (t === "}" || t.startsWith("} ")) {
       depth--;
       if (depth === 0) return i;
     }
+    if (t.endsWith("{")) depth++;
   }
   return -1;
 }
@@ -499,7 +502,11 @@ function rewriteIfGotoToWhile(statements) {
     }
     const label = labelMatch[1];
 
-    // Find next if...{ after label
+    // Find the next `if ... {` after the label. Mirror the Rust port's
+    // `next_if_line`, which scans unconditionally: any setup statements between
+    // the label and the loop condition are duplicated into the lifted while
+    // loop by the code below, so a non-assignment setup line must not abort the
+    // scan (which previously left such loops unstructured, diverging from Rust).
     let ifIdx = -1;
     for (let i = index + 1; i < statements.length; i++) {
       const t = statements[i].trim();
@@ -507,7 +514,6 @@ function rewriteIfGotoToWhile(statements) {
         ifIdx = i;
         break;
       }
-      if (!isBlank(t) && parseAssignment(t) === null) break;
     }
     if (ifIdx < 0) {
       index++;
@@ -1545,13 +1551,36 @@ function findNextIfAfterCasePrelude(statements, start) {
       continue;
     }
     if (isIfOpen(t)) return index;
-    if (parseAssignment(t) !== null) {
+    // Only skip a genuine case-value temp that feeds the upcoming comparison
+    // (referenced by the next code statement). Any other inter-case statement
+    // must block the fold so it is not spliced away and silently dropped — a
+    // real local assignment (`loc5 = effect();`) AND a temp that captures a
+    // discarded side-effecting call (`let t7 = Foo(arg);`).
+    const assign = parseAssignment(t);
+    if (
+      assign !== null &&
+      isTempIdent(assign.lhs) &&
+      tempConsumedByNextCode(statements, index, assign.lhs)
+    ) {
       index++;
       continue;
     }
     return -1;
   }
   return -1;
+}
+
+// A case-value temp prelude (`tN = <value>;`) feeds the upcoming comparison, so
+// `tN` is referenced by the next code statement. A temp capturing a discarded
+// side-effecting call is not referenced; treat it as a real statement so the
+// switch fold is blocked and it is preserved. Mirrors the Rust port.
+function tempConsumedByNextCode(statements, index, temp) {
+  for (let i = index + 1; i < statements.length; i++) {
+    const t = statements[i].trim();
+    if (t === "" || t.startsWith("//")) continue;
+    return containsIdentifier(statements[i], temp);
+  }
+  return false;
 }
 
 // ─── Pass 18: rewrite_switch_break_gotos ───────────────────────────────────

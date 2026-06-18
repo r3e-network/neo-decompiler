@@ -177,3 +177,48 @@ test("postprocess: ' get '/' has_key ' inside a string literal is not rewritten 
   postprocess(real, {});
   assert.equal(real[0], "let t0 = loc0[t1];");
 });
+
+test("postprocess: switch fold preserves non-temp inter-case statements", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "if loc0 == 0 {",
+    "    do0();",
+    "}",
+    "loc5 = side_effect();",
+    "if loc0 == 1 {",
+    "    do1();",
+    "}",
+    "if loc0 == 2 {",
+    "    do2();",
+    "}",
+  ];
+  postprocess(statements, {});
+  assert.ok(
+    statements.some((line) => line.trim() === "loc5 = side_effect();"),
+    `non-temp inter-case statement must survive: ${JSON.stringify(statements)}`,
+  );
+});
+
+test("postprocess: switch fold preserves a side-effecting temp between cases", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "if loc0 == 0 {",
+    "    do0();",
+    "    return;",
+    "}",
+    "let t7 = Foo(arg);",
+    "if loc0 == 1 {",
+    "    do1();",
+    "    return;",
+    "}",
+    "if loc0 == 2 {",
+    "    do2();",
+    "    return;",
+    "}",
+  ];
+  postprocess(statements, {});
+  assert.ok(
+    statements.some((line) => line.trim() === "let t7 = Foo(arg);"),
+    `side-effecting temp must survive: ${JSON.stringify(statements)}`,
+  );
+});
