@@ -7,11 +7,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- **Minimum supported Rust version raised to 1.85.** The resolved `clap`
-  dependency pulls in `clap_builder` 4.6, whose manifest requires the
-  `edition2024` Cargo feature (stabilized in Rust 1.85). The previously declared
-  MSRV of 1.83 could not actually build the crate; `Cargo.toml`, the CI MSRV
-  matrix, and the README now state 1.85.
+- **Minimum supported Rust version raised to 1.86.** The resolved dependency
+  tree requires it: the `icu` crates (pulled via `jsonschema` → `idna`) require
+  rustc 1.86, and `clap_builder` 4.6 requires the `edition2024` manifest (Rust
+  1.85). The previously declared MSRV of 1.83 could not actually build the
+  crate; `Cargo.toml`, the CI MSRV matrix, and the README now state 1.86.
 
 ### Fixed
 

@@ -727,9 +727,10 @@ Recent project history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Minimum supported Rust version
 
-The MSRV is Rust `1.85` (required by the `clap` dependency's `edition2024`
-manifest). CI runs the test suite on the MSRV plus stable/beta/nightly to catch
-regressions early.
+The MSRV is Rust `1.86`, set by the dependency tree: the resolved `icu` crates
+(via `jsonschema` → `idna`) require rustc 1.86, and `clap` requires the
+`edition2024` manifest (1.85). CI runs the test suite on the MSRV plus
+stable/beta/nightly to catch regressions early.
 
 ## License
 
