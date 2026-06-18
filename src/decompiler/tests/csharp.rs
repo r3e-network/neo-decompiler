@@ -1504,3 +1504,34 @@ fn csharp_renders_oversized_hex_blob_as_byte_array() {
     assert!(!csharpize_statement("let t0 = callt(0x0000);").contains("byte[]"));
     assert!(!csharpize_statement("goto label_0x0010;").contains("byte[]"));
 }
+
+#[test]
+fn csharp_renders_map_literal_as_collection_initializer() {
+    // PUSH4 PUSH3 PUSH2 PUSH1 PUSH2(count) PACKMAP RET => Map(1: 2, 3: 4). The
+    // `Map(k: v)` form's `:` is invalid in a C# call (CS1026); it must render
+    // as a collection initializer.
+    let script = [0x14, 0x13, 0x12, 0x11, 0x12, 0xBE, 0x40];
+    let nef_bytes = build_nef(&script);
+    let csharp = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds")
+        .csharp
+        .expect("csharp output");
+    assert!(
+        csharp.contains("new Map<object, object> { [1] = 2, [3] = 4 }"),
+        "non-empty map literal must render as a C# collection initializer: {csharp}"
+    );
+    assert!(
+        !csharp.contains("Map(1: 2"),
+        "the invalid `Map(k: v)` form must not appear: {csharp}"
+    );
+
+    // The empty map keeps the constructor form, and the statement rewriter
+    // leaves a non-map `Map(...)` (none exists in the lift) untouched.
+    assert_eq!(
+        csharpize_statement("let t0 = Map();"),
+        "var t0 = new Map<object, object>();"
+    );
+}

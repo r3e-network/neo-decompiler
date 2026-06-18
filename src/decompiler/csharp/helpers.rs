@@ -336,6 +336,11 @@ fn rewrite_numeric_helpers(line: &str) -> String {
                 i += consumed;
                 continue;
             }
+            if let Some((rendered, consumed)) = match_map_literal(&line[i..]) {
+                out.push_str(&rendered);
+                i += consumed;
+                continue;
+            }
             if let Some((rendered, consumed)) = match_big_byte_literal(&line[i..]) {
                 out.push_str(&rendered);
                 i += consumed;
@@ -403,6 +408,103 @@ fn match_big_integer_literal(s: &str) -> Option<(String, usize)> {
         return None;
     }
     Some((format!("BigInteger.Parse(\"{digits}\")"), j))
+}
+
+/// Rewrite a non-empty PACKMAP literal `Map(k1: v1, k2: v2)` into a C# map
+/// collection initializer `new Map<object, object> { [k1] = v1, [k2] = v2 }`.
+///
+/// The high-level lift renders PACKMAP as `Map(key: value, …)`, whose `:`
+/// separators are not valid inside a C# call (error CS1026). The empty `Map()`
+/// form is handled by [`match_collection_constructor`]; a body carrying a
+/// `/* N more … */` truncation marker is left untouched (it is an incomplete
+/// literal that cannot be rendered faithfully). Keys and values are recursively
+/// run through [`csharpize_expression`] so nested helpers/maps are translated.
+fn match_map_literal(rest: &str) -> Option<(String, usize)> {
+    let inner = rest.strip_prefix("Map(")?;
+    let close = matching_paren(inner)?;
+    let body = inner[..close].trim();
+    if body.is_empty() || body.contains("/*") {
+        return None;
+    }
+    let mut entries = Vec::new();
+    for entry in split_top_level_args(body) {
+        let (key, value) = split_top_level_colon(entry)?;
+        entries.push(format!(
+            "[{}] = {}",
+            csharpize_expression(key.trim()),
+            csharpize_expression(value.trim())
+        ));
+    }
+    let consumed = "Map(".len() + close + 1;
+    Some((
+        format!("new Map<object, object> {{ {} }}", entries.join(", ")),
+        consumed,
+    ))
+}
+
+/// Index of the `)` that closes an already-opened paren at the start of `s`
+/// (i.e. `s` is the text *after* the opening `(`). String- and nesting-aware
+/// over `()[]{}`. Returns `None` if unbalanced.
+fn matching_paren(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string: Option<u8> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(quote) = in_string {
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+            if b == quote {
+                in_string = None;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' | b'\'' => in_string = Some(b),
+            b')' if depth == 0 => return Some(i),
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Split a single map entry `key: value` at its first top-level `:`
+/// (string/nesting aware). Returns `None` when no top-level `:` is present.
+fn split_top_level_colon(entry: &str) -> Option<(&str, &str)> {
+    let bytes = entry.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string: Option<u8> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(quote) = in_string {
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
+                continue;
+            }
+            if b == quote {
+                in_string = None;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' | b'\'' => in_string = Some(b),
+            b'(' | b'[' | b'{' => depth += 1,
+            b')' | b']' | b'}' => depth -= 1,
+            b':' if depth == 0 => return Some((&entry[..i], &entry[i + 1..])),
+            _ => {}
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Rewrite an oversized `0x…` hex blob into a C# `new byte[] { … }` literal.
