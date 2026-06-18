@@ -14,7 +14,14 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # beta and nightly run for early warning but must not gate the build: their
+    # clippy lint set changes with every toolchain release, so `-D warnings`
+    # there fails on forward-looking lints unrelated to this crate. Only stable
+    # (plus the separate MSRV job) gates. fail-fast is disabled so a beta/nightly
+    # failure never cancels the stable run.
+    continue-on-error: ${{ matrix.rust != 'stable' }}
     strategy:
+      fail-fast: false
       matrix:
         rust:
           - stable
