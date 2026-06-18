@@ -5,6 +5,56 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-06-19 (Rust) / [1.5.1] - 2026-06-19 (JS)
+
+A correctness, robustness, and C#-rendering hardening pass over both the Rust
+core and the JS port. Nothing here changes the public API or breaks output
+contracts; every change is a bug fix, a complexity bound, or a documentation
+correction.
+
+### Fixed
+
+- **PICKITEM rendered malformed brackets inside a call.** An array/map index
+  passed to a function (`len(arr[i])`, `abs(arr[i])`, an index inside
+  `new_struct(...)`) interleaved the closing `)` and `]` into `len(arr[i)]`.
+  PICKITEM now emits bracket form at the source so nested brackets stay
+  balanced, matching the JS port.
+- **HASKEY swallowed the `return` keyword.** When a HASKEY result flowed
+  straight into `RET`, the infix→call rewrite produced `has_key(return t0, 1)`
+  with the value lost. HASKEY now emits call form directly.
+- **C# output now compiles for several constructs that previously did not:**
+  control characters in string literals (CS1010), non-void methods with an
+  empty lifted body (CS0161), `Void` parameter / event-arg types (CS1547),
+  oversized PUSHINT / PUSHDATA literals (CS1021 → `BigInteger.Parse` / `byte[]`),
+  and non-empty map literals (`Map(k: v)` → `new Map<object, object> { [k] = v }`).
+- **CLI `--format <view>` no longer prints empty output** when `--output-format`
+  does not include that view — the requested view is always generated.
+- **Rust/JS parity fixes:** an unresolved CALLT token binds a temp instead of
+  double-calling (`callt(0x1)()`); the JS manifest parser rejects non-i32 method
+  offsets like the Rust `Option<i32>` deserializer; call-graph offsets for large
+  and negative targets are resolved correctly; and switch-fold / control-flow
+  reconstruction is aligned across the two ports.
+- **CFG construction and high-level lifting** correctness on degenerate and
+  oversized inputs (switch-fold statement loss, C# render panics, analysis edge
+  cases).
+- **Web / wasm surface:** `disasmReport` and `infoReport` accept an empty
+  options object like `decompileReport`; the report interfaces align with the
+  wasm ABI.
+
+### Performance
+
+- **Linearized several O(n²) scans** in the analysis and high-level postprocess
+  passes (cross-references, type inference, label/loop rewrites), removing
+  super-linear blow-up on attacker-chosen instruction counts within the 512 KiB
+  script cap.
+- **Bounded high-level lifting cost** with a per-method instruction cap.
+
+### Documentation
+
+- Corrected the `returns_value` rustdoc, the manifest size limit (65535 bytes),
+  the README dependency version and roadmap labels, and the SSA / type-analysis
+  docs to match the code.
+
 ## [0.8.0] - 2026-06-15 (Rust) / [1.5.0] - 2026-06-15 (JS)
 
 This release is a large correctness pass driven by a full audit of both
