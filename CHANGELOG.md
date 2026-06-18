@@ -5,6 +5,23 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Minimum supported Rust version raised to 1.85.** The resolved `clap`
+  dependency pulls in `clap_builder` 4.6, whose manifest requires the
+  `edition2024` Cargo feature (stabilized in Rust 1.85). The previously declared
+  MSRV of 1.83 could not actually build the crate; `Cargo.toml`, the CI MSRV
+  matrix, and the README now state 1.85.
+
+### Fixed
+
+- **CI: the web package build was broken by a stale `wasm-bindgen-cli` pin.**
+  The publish and CI workflows installed `wasm-bindgen-cli` 0.2.108 while the
+  `wasm-bindgen` crate in `Cargo.lock` is 0.2.125, so `wasm-pack --mode
+  no-install` failed with "Not able to find or install a local wasm-bindgen"
+  and silently broke the web npm publish for several releases. The CLI version
+  is now derived from `Cargo.lock` so it cannot drift.
+
 ## [0.8.1] - 2026-06-19 (Rust) / [1.5.1] - 2026-06-19 (JS)
 
 A correctness, robustness, and C#-rendering hardening pass over both the Rust

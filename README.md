@@ -727,8 +727,9 @@ Recent project history is tracked in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Minimum supported Rust version
 
-The MSRV is Rust `1.83`. CI runs the test suite on the MSRV plus stable/beta/nightly
-to catch regressions early.
+The MSRV is Rust `1.85` (required by the `clap` dependency's `edition2024`
+manifest). CI runs the test suite on the MSRV plus stable/beta/nightly to catch
+regressions early.
 
 ## License
 
