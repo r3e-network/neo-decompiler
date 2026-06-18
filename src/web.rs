@@ -135,6 +135,7 @@ use wasm_bindgen::prelude::*;
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 struct JsInfoOptions {
     manifest_json: Option<String>,
     strict_manifest: bool,
@@ -142,6 +143,7 @@ struct JsInfoOptions {
 
 #[cfg(target_arch = "wasm32")]
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 struct JsDisasmOptions {
     fail_on_unknown_opcodes: bool,
 }
