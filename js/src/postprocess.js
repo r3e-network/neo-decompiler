@@ -603,6 +603,19 @@ function eliminateFallthroughGotos(statements) {
 // removal so that downstream passes see only the structured loop.
 
 function rewriteLabelGotoToLoop(statements) {
+  // Pre-collect the standalone `goto label_X;` lines once. A `label_X:` can only
+  // fold into a `loop { }` when a matching standalone goto exists, so labels
+  // without one are skipped in O(1) instead of each running the forward
+  // goto-search to the end of the vector — without this the pass is
+  // O(labels × N), a decompiler-hang DoS for guarded-goto-dense output. Mirrors
+  // the Rust port (rewrite_label_goto_to_loop).
+  const standaloneGotos = new Set();
+  for (const stmt of statements) {
+    const t = stmt.trim();
+    if (t.startsWith("goto label_") && t.endsWith(";")) standaloneGotos.add(t);
+  }
+  if (standaloneGotos.size === 0) return;
+
   let index = 0;
   while (index < statements.length) {
     const trimmed = statements[index].trim();
@@ -613,6 +626,11 @@ function rewriteLabelGotoToLoop(statements) {
     }
     const label = labelMatch[1];
     const gotoTarget = `goto ${label};`;
+    // Fast-skip: no matching standalone goto -> the forward search can only fail.
+    if (!standaloneGotos.has(gotoTarget)) {
+      index++;
+      continue;
+    }
     let depth = 0;
     let gotoIdx = -1;
     for (let j = index + 1; j < statements.length; j++) {
