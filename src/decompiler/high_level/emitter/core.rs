@@ -211,10 +211,23 @@ impl HighLevelEmitter {
     }
 
     pub(crate) fn finish(mut self) -> super::HighLevelOutput {
-        // BTreeMap iterates in key order — no sort needed.
+        // Flush remaining block closers (BTreeMap iterates in key order — no
+        // sort needed). Clamp to the current open-brace depth: a closer is
+        // registered whenever a `try`/`catch`/`finally` body is opened, but the
+        // matching `catch {`/`finally {` header is only emitted when the walk
+        // reaches that target offset. A malformed TRY whose catch/finally
+        // operand points out of bounds registers a closer whose header is never
+        // emitted, so without clamping `finish()` would push a stray `}` and
+        // unbalance the output. Clamping never affects well-formed input, where
+        // the remaining closers exactly match the open blocks.
+        let mut depth = Self::open_brace_depth(&self.statements);
         for (_, count) in self.pending_closers {
             for _ in 0..count {
+                if depth <= 0 {
+                    break;
+                }
                 self.statements.push("}".into());
+                depth -= 1;
             }
         }
         Self::rewrite_else_if_chains(&mut self.statements);
@@ -271,5 +284,23 @@ impl HighLevelEmitter {
             statements: self.statements,
             warnings: self.warnings,
         }
+    }
+
+    /// Net open-brace depth across the emitted statements, using the same
+    /// structural heuristic as the postprocess passes: a line that ends with
+    /// `{` opens a block and a line that is exactly `}` (or starts with `} `)
+    /// closes one. Braces inside string literals never reach the end of a
+    /// statement line, so they do not affect the count.
+    fn open_brace_depth(statements: &[String]) -> i32 {
+        let mut depth = 0i32;
+        for line in statements {
+            let trimmed = line.trim();
+            if trimmed.ends_with('{') {
+                depth += 1;
+            } else if trimmed == "}" || trimmed.starts_with("} ") {
+                depth -= 1;
+            }
+        }
+        depth
     }
 }

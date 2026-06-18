@@ -71,7 +71,7 @@ pub(super) fn write_manifest_methods(
             writeln!(output, "            throw new NotImplementedException();").unwrap();
         } else {
             let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-            let is_void = method.return_type == "Void";
+            let is_void = return_type == "void";
             body::write_lifted_body(
                 output,
                 &slice,
@@ -124,7 +124,7 @@ pub(super) fn write_manifest_methods(
                 slice
             };
             let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-            let is_void = method.return_type == "Void";
+            let is_void = return_type == "void";
             body::write_lifted_body(
                 output,
                 &slice,

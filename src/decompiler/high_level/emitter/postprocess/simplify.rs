@@ -53,7 +53,8 @@ impl HighLevelEmitter {
                 continue;
             }
             let else_line = close_if + 1;
-            let Some(else_end) = Self::find_block_end(statements, else_line) else {
+            // Require a well-formed (terminated) else block; bail otherwise.
+            let Some(_else_end) = Self::find_block_end(statements, else_line) else {
                 index += 1;
                 continue;
             };
@@ -61,11 +62,12 @@ impl HighLevelEmitter {
             let indent = &statements[index][..statements[index].len() - trimmed.len()];
             let cond = &trimmed[3..trimmed.len() - 2]; // strip "if " and " {"
             let negated = Self::negate_condition(cond);
-            // Replace: remove empty if body + else wrapper, rewrite header
+            // Rewrite the empty-if header to the negated condition, then drop the
+            // empty if-body `}` and the `else {` opener. The else block's own
+            // closing `}` is intentionally retained — it becomes the closer for
+            // the inverted `if`, keeping brace balance intact. Comments from the
+            // empty if-body are kept as bytecode annotations.
             statements[index] = format!("{indent}if {negated} {{");
-            // Remove closing `}` of else block, then the `}` and `else {` lines.
-            // Comments from the empty if-body are kept as bytecode annotations.
-            statements.remove(else_end);
             statements.drain(close_if..=else_line);
             // Don't advance — re-check at same index
         }
@@ -401,6 +403,12 @@ impl HighLevelEmitter {
 
     fn negate_condition(cond: &str) -> String {
         let cond = cond.trim();
+        // Compound boolean conditions: flipping a single comparison operator is
+        // not a valid negation (De Morgan), so wrap the whole expression. This
+        // matches the JS port's `negateCondition`.
+        if cond.contains(" && ") || cond.contains(" || ") {
+            return format!("!({cond})");
+        }
         // Flip comparison operators
         for (op, neg) in [
             (" == ", " != "),
@@ -515,4 +523,61 @@ fn is_pure_helper_identifier(ident: &str) -> bool {
     // Type-prefixed helpers: `is_type_bool`, `convert_to_integer`,
     // etc. (suffix is one of NEO's stack-item type names).
     ident.starts_with("is_type_") || ident.starts_with("convert_to_")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::HighLevelEmitter;
+
+    fn brace_balance(statements: &[String]) -> i32 {
+        let mut balance = 0i32;
+        for line in statements {
+            let trimmed = line.trim();
+            balance += trimmed.matches('{').count() as i32;
+            balance -= trimmed.matches('}').count() as i32;
+        }
+        balance
+    }
+
+    #[test]
+    fn invert_empty_if_else_keeps_braces_balanced() {
+        // Regression: the empty-if/else inversion previously deleted the else
+        // block's closing brace, leaving the inverted `if` unterminated.
+        let mut statements = vec![
+            "if cond {".to_string(),
+            "}".to_string(),
+            "else {".to_string(),
+            "loc0 = 5;".to_string(),
+            "}".to_string(),
+            "return loc0;".to_string(),
+        ];
+        HighLevelEmitter::invert_empty_if_else(&mut statements);
+        assert_eq!(brace_balance(&statements), 0, "unbalanced: {statements:?}");
+        let joined = statements.join("\n");
+        assert!(
+            joined.contains("if !(cond) {\nloc0 = 5;\n}"),
+            "inverted if must retain the else body and its closer: {joined}"
+        );
+    }
+
+    #[test]
+    fn invert_empty_if_else_wraps_compound_condition() {
+        // A single operator flip is not a valid negation of `a && b`; the pass
+        // must wrap the whole expression (De Morgan-safe) to match the JS port.
+        let mut statements = vec![
+            "if a == 1 && b == 2 {".to_string(),
+            "}".to_string(),
+            "else {".to_string(),
+            "loc0 = 5;".to_string(),
+            "}".to_string(),
+        ];
+        HighLevelEmitter::invert_empty_if_else(&mut statements);
+        assert_eq!(brace_balance(&statements), 0, "unbalanced: {statements:?}");
+        assert!(
+            statements
+                .iter()
+                .any(|s| s.trim() == "if !(a == 1 && b == 2) {"),
+            "compound condition must be wrapped, not operator-flipped: {statements:?}"
+        );
+    }
 }

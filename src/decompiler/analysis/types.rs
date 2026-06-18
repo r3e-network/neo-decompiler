@@ -381,8 +381,8 @@ fn infer_types_in_slice(
 
             // Collections
             OpCode::Newarray0 => stack.push(StackValue::with_type(ValueType::Array)),
-            OpCode::Newarray => {
-                let _ = pop_or_unknown(&mut stack); // count
+            OpCode::Newarray | OpCode::NewarrayT => {
+                let _ = pop_or_unknown(&mut stack); // count (NEWARRAY_T also carries an element-type operand)
                 stack.push(StackValue::with_type(ValueType::Array));
             }
             OpCode::Newmap => stack.push(StackValue::with_type(ValueType::Map)),
@@ -479,13 +479,17 @@ fn infer_types_in_slice(
                 stack.push(StackValue::with_type(ValueType::Boolean));
             }
             OpCode::Convert => {
-                let value = pop_or_unknown(&mut stack);
+                // CONVERT deterministically yields the target type regardless of
+                // the input type, so push the decoded target directly instead of
+                // joining with the consumed value's type (which over-widened to
+                // Any). Mirrors the JS port. Unknown operands fall back to Any.
+                let _ = pop_or_unknown(&mut stack);
                 let target = instr
                     .operand
                     .as_ref()
                     .and_then(convert_target_type)
                     .unwrap_or(ValueType::Any);
-                stack.push(StackValue::with_type(target.join(value.ty)));
+                stack.push(StackValue::with_type(target));
             }
 
             // Arithmetic + comparisons (subset)

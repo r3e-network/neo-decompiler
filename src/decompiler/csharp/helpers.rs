@@ -607,14 +607,20 @@ fn split_top_level_args(args: &str) -> Vec<&str> {
     let mut start = 0usize;
     let mut depth = 0i32;
     let mut in_string: Option<u8> = None;
-    for (i, &b) in bytes.iter().enumerate() {
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
         if let Some(quote) = in_string {
-            if b == b'\\' {
+            // Skip the escaped character so an escaped quote (`\"`) inside a
+            // string literal does not prematurely terminate the string.
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
                 continue;
             }
             if b == quote {
                 in_string = None;
             }
+            i += 1;
             continue;
         }
         match b {
@@ -627,6 +633,7 @@ fn split_top_level_args(args: &str) -> Vec<&str> {
             }
             _ => {}
         }
+        i += 1;
     }
     if !args.is_empty() {
         parts.push(&args[start..]);
@@ -637,14 +644,19 @@ fn split_top_level_args(args: &str) -> Vec<&str> {
 fn find_matching_close_paren(bytes: &[u8]) -> Option<usize> {
     let mut depth: i32 = 0;
     let mut in_string: Option<u8> = None;
-    for (i, &b) in bytes.iter().enumerate() {
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
         if let Some(quote) = in_string {
-            if b == b'\\' {
+            // Skip the escaped character (see split_top_level_args).
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
                 continue;
             }
             if b == quote {
                 in_string = None;
             }
+            i += 1;
             continue;
         }
         match b {
@@ -658,6 +670,7 @@ fn find_matching_close_paren(bytes: &[u8]) -> Option<usize> {
             }
             _ => {}
         }
+        i += 1;
     }
     None
 }
@@ -669,14 +682,19 @@ fn split_top_level_comma(args: &str) -> Option<(&str, &str)> {
     let bytes = args.as_bytes();
     let mut depth = 0i32;
     let mut in_string: Option<u8> = None;
-    for (i, &b) in bytes.iter().enumerate() {
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
         if let Some(quote) = in_string {
-            if b == b'\\' {
+            // Skip the escaped character (see split_top_level_args).
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2;
                 continue;
             }
             if b == quote {
                 in_string = None;
             }
+            i += 1;
             continue;
         }
         match b {
@@ -686,6 +704,7 @@ fn split_top_level_comma(args: &str) -> Option<(&str, &str)> {
             b',' if depth == 0 => return Some((&args[..i], &args[i + 1..])),
             _ => {}
         }
+        i += 1;
     }
     None
 }

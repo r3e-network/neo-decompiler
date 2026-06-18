@@ -95,6 +95,21 @@ fn manifest_from_bytes_rejects_oversized_payloads() {
 }
 
 #[test]
+fn manifest_from_json_str_rejects_oversized_payloads() {
+    // The string entry point (used by library and wasm callers) must enforce
+    // the same cap as the byte/file paths.
+    let oversized = "a".repeat((MAX_MANIFEST_SIZE + 1) as usize);
+    let err = ContractManifest::from_json_str(&oversized).unwrap_err();
+    assert!(matches!(
+        err,
+        crate::error::Error::Manifest(crate::error::ManifestError::FileTooLarge {
+            size,
+            max
+        }) if size == MAX_MANIFEST_SIZE + 1 && max == MAX_MANIFEST_SIZE
+    ));
+}
+
+#[test]
 fn parses_wildcard_permission_variants() {
     let json = r#"
         {

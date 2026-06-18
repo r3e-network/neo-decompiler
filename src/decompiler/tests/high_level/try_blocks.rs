@@ -238,3 +238,33 @@ fn high_level_models_catch_entry_stack_with_exception_value() {
         "catch entry STLOC0 should not underflow the stack: {high_level}"
     );
 }
+
+#[test]
+fn malformed_try_out_of_bounds_handlers_keep_braces_balanced() {
+    // A TRY whose catch/finally offsets point far out of bounds: the matching
+    // `catch {`/`finally {` headers are never emitted (their target offsets are
+    // never reached during the walk), but a closer is registered for each. The
+    // closer flush must clamp to the open-brace depth so the rendered output
+    // stays brace-balanced instead of emitting stray `}`.
+    let script = [0x3B, 0x7F, 0x7F, 0x40]; // TRY catch=+127 finally=+127 ; RET
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    let balance: i32 = high_level
+        .chars()
+        .map(|c| match c {
+            '{' => 1,
+            '}' => -1,
+            _ => 0,
+        })
+        .sum();
+    assert_eq!(
+        balance, 0,
+        "malformed try output must stay brace-balanced:\n{high_level}"
+    );
+}

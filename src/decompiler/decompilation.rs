@@ -115,7 +115,8 @@ impl Decompilation {
     /// After calling this, `ssa()` will return `Some(...)`.
     pub fn compute_ssa(&mut self) {
         if self.ssa.is_none() && self.cfg.block_count() > 0 {
-            // Use SsaBuilder with both instructions and CFG for full SSA construction
+            // Build the structural SSA skeleton (dominance info + versioned PUSH
+            // assignments) from the instructions and CFG. See `SsaBuilder`.
             let builder = SsaBuilder::new(&self.cfg, &self.instructions);
             self.ssa = Some(builder.build());
         }

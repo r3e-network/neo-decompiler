@@ -86,8 +86,13 @@ impl ContractManifest {
     ///
     /// # Errors
     ///
-    /// Returns an error if the JSON does not match the expected manifest schema.
+    /// Returns an error if the payload exceeds the size limit or the JSON does
+    /// not match the expected manifest schema.
     pub fn from_json_str(input: &str) -> Result<Self> {
+        // Enforce the same size cap as every other string/byte entry point so
+        // library and wasm callers (which reach the parser through here) cannot
+        // bypass it.
+        ensure_manifest_size(input.len() as u64)?;
         input.parse()
     }
 

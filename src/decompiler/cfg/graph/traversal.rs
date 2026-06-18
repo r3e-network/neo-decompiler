@@ -9,23 +9,28 @@ impl Cfg {
     pub fn reverse_postorder(&self) -> Vec<BlockId> {
         let mut visited = BTreeSet::new();
         let mut postorder = Vec::new();
-        self.dfs_postorder(self.entry, &mut visited, &mut postorder);
+        // Iterative DFS post-order with an explicit stack to avoid native stack
+        // overflow on deeply nested CFGs produced by large or malformed
+        // bytecode (this is a public API reachable with attacker-controlled
+        // input). Each frame tracks a block and how many successors it has
+        // visited so far.
+        if visited.insert(self.entry) {
+            let mut stack: Vec<(BlockId, usize)> = vec![(self.entry, 0)];
+            while let Some((block, next_idx)) = stack.last_mut() {
+                let successors = self.successors(*block);
+                if *next_idx < successors.len() {
+                    let succ = successors[*next_idx];
+                    *next_idx += 1;
+                    if visited.insert(succ) {
+                        stack.push((succ, 0));
+                    }
+                } else {
+                    postorder.push(*block);
+                    stack.pop();
+                }
+            }
+        }
         postorder.reverse();
         postorder
-    }
-
-    fn dfs_postorder(
-        &self,
-        block: BlockId,
-        visited: &mut BTreeSet<BlockId>,
-        postorder: &mut Vec<BlockId>,
-    ) {
-        if !visited.insert(block) {
-            return;
-        }
-        for &succ in self.successors(block) {
-            self.dfs_postorder(succ, visited, postorder);
-        }
-        postorder.push(block);
     }
 }

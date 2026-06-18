@@ -69,7 +69,7 @@ pub(super) fn write_manifest_methods(
                 .unwrap();
             } else {
                 let labels = sanitize_parameter_names(&method.parameters);
-                let is_void = method.return_type == "Void";
+                let is_void = return_ty == "void";
                 body::write_method_body(
                     output,
                     slice,

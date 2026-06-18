@@ -1,20 +1,20 @@
 //! SSA construction from a CFG and instruction stream.
 //!
-//! Implements the two-phase SSA construction algorithm:
-//! 1. φ node insertion using dominance frontiers
-//! 2. Variable renaming via dominator tree traversal
+//! This produces a **structural SSA skeleton**, not a full data-flow SSA:
 //!
-//! # Current limitations
+//! - Each [`SsaForm`] carries precomputed dominance information (immediate
+//!   dominators, dominator tree, and dominance frontiers) for structural
+//!   queries.
+//! - Only `Push0`–`Push16` opcodes generate true versioned SSA assignments;
+//!   every other opcode (arithmetic, comparisons, control flow, etc.) is
+//!   lowered to a comment-only statement.
+//! - The φ-node data model exists (`PhiNode`, `SsaBlock::add_phi`), but the
+//!   skeleton does not track the cross-block variable definitions required to
+//!   place φ nodes, so none are inserted in practice.
 //!
-//! The builder currently produces a **skeleton** SSA form: only `Push0`–`Push16`
-//! opcodes generate true SSA assignments with versioned variables. All other
-//! opcodes (arithmetic, comparisons, control flow, etc.) are lowered to
-//! comment-only statements. This means the resulting [`SsaForm`] is useful for
-//! structural analysis (dominance, φ placement) but does **not** yet model
-//! data flow for the full Neo VM instruction set.
-//!
-//! Extending coverage requires mapping each opcode's stack effects to explicit
-//! SSA definitions and uses.
+//! Producing a full SSA form (real def/use chains plus φ placement and renaming)
+//! requires mapping each opcode's stack effects to explicit SSA definitions and
+//! uses — tracked as future work.
 
 #![allow(clippy::needless_return)]
 
@@ -25,7 +25,6 @@ use crate::instruction::Instruction;
 
 use super::dominance::{self, DominanceInfo};
 use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
-use super::variable::PhiNode;
 use super::variable::SsaVariable;
 
 /// Intermediate result from SSA block construction: (blocks, definitions, uses).
@@ -48,10 +47,6 @@ pub struct SsaBuilder<'a> {
 
     /// Current version number for each base variable name.
     versions: BTreeMap<String, usize>,
-
-    /// Locations where φ nodes should be inserted for each variable.
-    /// Maps base variable name -> set of blocks needing φ nodes.
-    phi_locations: BTreeMap<String, BTreeSet<BlockId>>,
 }
 
 impl<'a> SsaBuilder<'a> {
@@ -65,15 +60,14 @@ impl<'a> SsaBuilder<'a> {
             instructions,
             dominance,
             versions: BTreeMap::new(),
-            phi_locations: BTreeMap::new(),
         }
     }
 
-    /// Build SSA form from the CFG and instructions.
+    /// Build the structural SSA skeleton from the CFG and instructions.
     ///
-    /// This implements the two-phase SSA construction algorithm:
-    /// 1. Compute φ node placement using dominance frontiers
-    /// 2. Perform variable renaming via dominator tree traversal
+    /// Emits one SSA block per CFG block, carrying the precomputed dominance
+    /// information. Only `Push0`–`Push16` opcodes become versioned assignments;
+    /// no φ nodes are placed (see the module docs for the skeleton's scope).
     #[must_use]
     pub fn build(mut self) -> SsaForm {
         let (ssa_blocks, definitions, uses) = self.build_ssa_blocks();
@@ -86,7 +80,8 @@ impl<'a> SsaBuilder<'a> {
         }
     }
 
-    /// Build SSA blocks by placing φ nodes and renaming variables.
+    /// Build the per-block SSA skeleton (versioned `Push` assignments plus
+    /// comment statements for every other opcode).
     ///
     /// Returns the built blocks, definitions, and uses separately so the
     /// caller can assemble `SsaForm` without cloning `dominance`.
@@ -97,16 +92,6 @@ impl<'a> SsaBuilder<'a> {
 
         for block in self.cfg.blocks() {
             let mut ssa_block = SsaBlock::new();
-
-            // Add φ nodes for this block
-            for (var_name, locations) in &self.phi_locations {
-                if locations.contains(&block.id) {
-                    let phi_node = PhiNode::new(SsaVariable::initial(var_name.clone()));
-                    ssa_block.add_phi(phi_node);
-                    // Record φ node as defining a new version
-                    definitions.insert(SsaVariable::initial(var_name.clone()), block.id);
-                }
-            }
 
             // Add terminator information as comment
             match &block.terminator {
@@ -378,7 +363,6 @@ mod tests {
         let builder = SsaBuilder::new(&cfg, instructions);
 
         assert_eq!(builder.versions.len(), 0);
-        assert_eq!(builder.phi_locations.len(), 0);
     }
 
     #[test]

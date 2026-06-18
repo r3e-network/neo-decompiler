@@ -82,39 +82,62 @@ fn rewrite_expr(expr: &str) -> String {
         return String::new();
     }
 
-    let get_pos = expr.find(" get ");
-    let has_key_pos = expr.find(" has_key ");
-    let (pos, kind) = match (get_pos, has_key_pos) {
-        (Some(a), Some(b)) => {
-            if a < b {
-                (a, "get")
-            } else {
-                (b, "has_key")
-            }
-        }
-        (Some(a), None) => (a, "get"),
-        (None, Some(b)) => (b, "has_key"),
-        (None, None) => return expr.to_string(),
+    let Some((pos, kind)) = find_expr_op(expr) else {
+        return expr.to_string();
     };
 
     let (left, rest) = expr.split_at(pos);
-    let (op, right) = match kind {
-        "get" => (" get ", rest.strip_prefix(" get ").unwrap_or_default()),
-        _ => (
-            " has_key ",
-            rest.strip_prefix(" has_key ").unwrap_or_default(),
-        ),
+    let right = match kind {
+        "get" => rest.strip_prefix(" get ").unwrap_or_default(),
+        _ => rest.strip_prefix(" has_key ").unwrap_or_default(),
     };
 
     // Recurse to handle nested infix uses.
     let left = rewrite_expr(left);
     let right = rewrite_expr(right);
 
-    if op == " get " {
+    if kind == "get" {
         format!("{left}[{right}]")
     } else {
         format!("has_key({left}, {right})")
     }
+}
+
+/// Find the leftmost ` get ` / ` has_key ` operator that is not enclosed in a
+/// string literal, so a literal such as `"a get b"` is not mistaken for an
+/// index. Returns the byte offset (always at an ASCII space, hence a valid
+/// char boundary) and the operator kind.
+fn find_expr_op(expr: &str) -> Option<(usize, &'static str)> {
+    let bytes = expr.as_bytes();
+    let mut in_string = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if b == b'\\' && i + 1 < bytes.len() {
+                i += 2; // skip the escaped character
+                continue;
+            }
+            if b == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' {
+            in_string = true;
+            i += 1;
+            continue;
+        }
+        if bytes[i..].starts_with(b" get ") {
+            return Some((i, "get"));
+        }
+        if bytes[i..].starts_with(b" has_key ") {
+            return Some((i, "has_key"));
+        }
+        i += 1;
+    }
+    None
 }
 
 fn split_args(text: &str) -> Vec<String> {
@@ -142,4 +165,29 @@ fn split_args(text: &str) -> Vec<String> {
         out.push(current.trim().to_string());
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::super::HighLevelEmitter;
+
+    #[test]
+    fn rewrite_indexing_preserves_get_token_inside_string_literal() {
+        // Regression: ` get ` / ` has_key ` inside a string literal must not be
+        // mistaken for the index/has_key operators.
+        let mut statements = vec![
+            r#"return "a get b";"#.to_string(),
+            r#"return "x has_key y";"#.to_string(),
+        ];
+        HighLevelEmitter::rewrite_indexing_syntax(&mut statements);
+        assert_eq!(statements[0], r#"return "a get b";"#);
+        assert_eq!(statements[1], r#"return "x has_key y";"#);
+    }
+
+    #[test]
+    fn rewrite_indexing_still_rewrites_real_get_operator() {
+        let mut statements = vec!["let t0 = loc0 get t1;".to_string()];
+        HighLevelEmitter::rewrite_indexing_syntax(&mut statements);
+        assert_eq!(statements[0], "let t0 = loc0[t1];");
+    }
 }
