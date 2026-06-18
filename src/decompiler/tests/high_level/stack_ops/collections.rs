@@ -111,6 +111,31 @@ fn high_level_rewrites_haskey_as_function_call() {
 }
 
 #[test]
+fn high_level_pickitem_inside_call_keeps_brackets_balanced() {
+    // Script: PUSH1, PUSH1, PACK (=> [1]), PUSH0, PICKITEM (=> arr[0]), SIZE
+    // (=> len(arr[0])), RET. With single-use inlining the index access is
+    // embedded in the len(...) call. The infix `get` rewrite split on ` get `
+    // regardless of parentheses, producing the malformed `len(arr[0)]`;
+    // emitting bracket form at the source keeps it `len(arr[0])`.
+    let script = [0x11, 0x11, 0xC0, 0x10, 0xCE, 0xCA, 0x40];
+    let nef_bytes = build_nef(&script);
+    let high_level = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds")
+        .high_level
+        .expect("high-level output");
+    assert!(
+        !high_level.contains("[0)]") && !high_level.contains(" get "),
+        "index access inside a call must not interleave `)` and `]`: {high_level}"
+    );
+    assert!(
+        high_level.contains("len(") && high_level.contains("[0])"),
+        "PICKITEM result inside len() should render as len(arr[0]): {high_level}"
+    );
+}
+
+#[test]
 fn high_level_istype_respects_operand_tag() {
     // Script: PUSH1, ISTYPE array (0x40), RET
     let script = [0x11, 0xD9, 0x40, 0x40];

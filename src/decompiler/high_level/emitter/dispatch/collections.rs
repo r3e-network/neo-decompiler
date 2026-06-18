@@ -36,7 +36,7 @@ impl HighLevelEmitter {
             Packmap => self.emit_pack(instruction, "map"),
             Packstruct => self.emit_pack(instruction, "struct"),
             Unpack => self.emit_unpack(instruction),
-            Pickitem => self.binary_op(instruction, "get"),
+            Pickitem => self.binary_index(instruction),
             Setitem => self.emit_call(instruction, "set_item", 3, false),
             Append => self.emit_call(instruction, "append", 2, false),
             Reverseitems => self.emit_call(instruction, "reverse_items", 1, false),

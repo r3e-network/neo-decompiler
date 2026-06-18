@@ -82,6 +82,29 @@ impl HighLevelEmitter {
         self.stack.push(temp);
     }
 
+    /// Emit an index access `target[key]` (PICKITEM) directly as bracket form.
+    ///
+    /// Emitting `[]` at the source — rather than an infix `target get key`
+    /// that a later pass rewrites — keeps the brackets balanced once the temp
+    /// is inlined into a surrounding call. The infix→bracket rewrite split on
+    /// ` get ` regardless of parentheses, so `len(arr get i)` became the
+    /// malformed `len(arr[i)]`; the JS port already emits bracket form here.
+    pub(in super::super::super) fn binary_index(&mut self, instruction: &Instruction) {
+        self.push_comment(instruction);
+        if self.stack.len() < 2 {
+            self.stack_underflow(instruction, 2);
+            return;
+        }
+
+        let (Some(right), Some(left)) = (self.pop_stack_value(), self.pop_stack_value()) else {
+            return;
+        };
+        let temp = self.next_temp();
+        self.statements
+            .push(format!("let {temp} = {left}[{right}];"));
+        self.stack.push(temp);
+    }
+
     pub(in super::super::super) fn unary_op<F>(&mut self, instruction: &Instruction, build: F)
     where
         F: Fn(&str) -> String,
