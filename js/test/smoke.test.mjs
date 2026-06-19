@@ -390,6 +390,30 @@ test("SMOKE: manifest abi and feature/standards strict typing (matches Rust)", (
       ),
     (err) => err.details.code === "InvalidType" && err.details.path === "supportedstandards",
   );
+  // ...and every element must be a string (Rust deserializes Vec<String>);
+  // a non-string element is rejected, not carried into the parsed manifest.
+  assert.throws(
+    () =>
+      parseManifest(
+        JSON.stringify({
+          name: "C",
+          abi: { methods: [], events: [] },
+          supportedstandards: ["NEP-17", 42],
+        }),
+      ),
+    (err) => err.details.code === "InvalidType" && err.details.path === "supportedstandards",
+  );
+  // A well-formed all-string array still parses.
+  assert.deepEqual(
+    parseManifest(
+      JSON.stringify({
+        name: "C",
+        abi: { methods: [], events: [] },
+        supportedstandards: ["NEP-17", "NEP-11"],
+      }),
+    ).supportedStandards,
+    ["NEP-17", "NEP-11"],
+  );
 });
 
 test("SMOKE: manifest top-level name and groups required (matches Rust)", () => {

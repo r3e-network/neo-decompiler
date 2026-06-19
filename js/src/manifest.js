@@ -49,6 +49,19 @@ export function parseManifest(json, options = {}) {
       path: "supportedstandards",
     });
   }
+  // Rust deserializes this field as `Vec<String>`, so serde rejects any
+  // non-string element. Mirror that — without this check a number/object
+  // element would be carried verbatim into the parsed manifest, diverging
+  // from the authoritative Rust parser's reject decision.
+  if (
+    Array.isArray(value.supportedstandards) &&
+    !value.supportedstandards.every((entry) => typeof entry === "string")
+  ) {
+    throw new ManifestParseError("supportedstandards must be an array of strings", {
+      code: "InvalidType",
+      path: "supportedstandards",
+    });
+  }
 
   const features = parseFeatures(value.features);
 
