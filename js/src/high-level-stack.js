@@ -1,5 +1,20 @@
 import { convertTargetName, resolvePackedValue, stripOuterParens, wrapExpression } from "./high-level-utils.js";
 
+// Resolve a stack slot to a non-negative integer index ONLY when it is a pure
+// integer literal. ROLL/PICK/XDROP/REVERSEN take their count/index off the
+// operand stack, which holds expression *strings*. `Number.parseInt("1 + 1",
+// 10)` partial-parses to `1`, which would fold an arithmetically-computed index
+// into a confidently-wrong static slot (e.g. `roll(1 + 1)` rendered as a fixed
+// `return 11;`). Anything that is not a bare integer literal must fall to the
+// honest dynamic path, mirroring the Rust port's `take_usize_literal` (which
+// only reads the literal-values map).
+function literalIndex(text) {
+  if (typeof text !== "string" || !/^-?\d+$/.test(text.trim())) {
+    return Number.NaN;
+  }
+  return Number.parseInt(text, 10);
+}
+
 // Use `==` / `!=` (rather than JavaScript's `===` / `!==`) for parity
 // with the Rust port's high-level emitter — those forms also lower
 // cleanly to both Rust and C# without further rewriting. The `cat`
@@ -142,7 +157,7 @@ export function tryStackShapeOperation(state, instruction) {
       return true;
     case "PICK": {
       const indexText = state.stack.pop();
-      const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
+      const index = literalIndex(indexText);
       if (!Number.isFinite(index) || index < 0 || index >= state.stack.length) {
         const temp = `t${state.nextTempId}`;
         state.nextTempId += 1;
@@ -181,7 +196,7 @@ export function tryStackShapeOperation(state, instruction) {
       return true;
     case "ROLL": {
       const indexText = state.stack.pop();
-      const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
+      const index = literalIndex(indexText);
       if (Number.isFinite(index) && index >= 0 && index < state.stack.length) {
         const from = state.stack.length - 1 - index;
         const [value] = state.stack.splice(from, 1);
@@ -219,7 +234,7 @@ export function tryStackShapeOperation(state, instruction) {
       return true;
     case "REVERSEN": {
       const countText = state.stack.pop();
-      const count = countText !== undefined ? Number.parseInt(countText, 10) : Number.NaN;
+      const count = literalIndex(countText);
       if (Number.isFinite(count) && count >= 0 && count <= state.stack.length) {
         const stack = state.stack;
         let i = stack.length - count;
@@ -239,7 +254,7 @@ export function tryStackShapeOperation(state, instruction) {
     }
     case "XDROP": {
       const indexText = state.stack.pop();
-      const index = indexText !== undefined ? Number.parseInt(indexText, 10) : Number.NaN;
+      const index = literalIndex(indexText);
       if (Number.isFinite(index) && index >= 0 && index < state.stack.length) {
         const removeAt = state.stack.length - 1 - index;
         state.stack.splice(removeAt, 1);

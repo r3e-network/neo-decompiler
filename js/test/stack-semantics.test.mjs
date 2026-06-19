@@ -96,6 +96,22 @@ test("stack-semantics: unary NEGATE/INVERT/NOT preserve precedence over a compou
   assert.match(highLevel([0x12, 0x9b, 0x40]), /return -2;/);
 });
 
+test("stack-semantics: ROLL/PICK with a computed (non-literal) index fall to the dynamic form", () => {
+  // PUSH10 PUSH11 PUSH12 PUSH1 PUSH1 ADD ROLL RET — the index is `1 + 1`, a
+  // composite expression. A loose parseInt("1 + 1") folds it to slot 1 and
+  // emits a confidently-wrong `return 11;`; the honest lift is a dynamic roll
+  // (the VM rolls slot 2 = 10), matching the Rust port.
+  const roll = highLevel([0x1a, 0x1b, 0x1c, 0x11, 0x11, 0x9e, 0x52, 0x40]);
+  assert.match(roll, /roll\(1 \+ 1\)/);
+  assert.doesNotMatch(roll, /return 11;/);
+  // PICK with the same computed index → dynamic pick, not a fabricated slot.
+  const pick = highLevel([0x1a, 0x1b, 0x1c, 0x11, 0x11, 0x9e, 0x4d, 0x40]);
+  assert.match(pick, /pick\(1 \+ 1\)/);
+  assert.doesNotMatch(pick, /return 11;/);
+  // A bare literal index still resolves statically (PUSH2 ROLL → slot 2 = 10).
+  assert.match(highLevel([0x1a, 0x1b, 0x1c, 0x12, 0x52, 0x40]), /return 10;/);
+});
+
 test("switch guard: scrutinee-mutating standalone if-chain is not folded into a switch", async () => {
   const { postprocess } = await import("../src/postprocess.js");
   const statements = [

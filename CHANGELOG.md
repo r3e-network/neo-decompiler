@@ -27,6 +27,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   512 KiB script cap) that is quadratic. It now uses a single first-occurrence
   prepass with O(1) lookups, matching the sibling `collapse_temp_into_store`
   and the already-linearised JS port.
+- **JS: `ROLL`/`PICK`/`XDROP`/`REVERSEN` mis-resolved a computed index.** These
+  opcodes take their index/count off the operand stack, which holds expression
+  *strings*; the port resolved it with `Number.parseInt`, which partial-parses
+  a composite expression (`parseInt("1 + 1", 10) === 1`). An arithmetically
+  computed index was therefore folded into a confidently-wrong static slot — e.g.
+  `PUSH1 PUSH1 ADD ROLL` rendered as a fixed `return 11;` where the VM yields a
+  different element. The index is now resolved only from a bare integer literal
+  (mirroring the Rust core's `take_usize_literal`); anything else falls to the
+  honest dynamic form (`roll(1 + 1)`), matching the Rust port. (The Rust core was
+  already correct; this only affected the JS port.)
 - **JS: manifest-summary rendering diverged from the Rust core in four ways.**
   A `permissions` entry with no `methods` field rendered the literal
   `methods=undefined` instead of the Neo N3 wildcard default `methods=*`; the
