@@ -95,6 +95,18 @@ test("stack-semantics: PACK with a computed (non-literal) count renders pack_dyn
   assert.match(highLevel([0x17, 0x18, 0x12, 0xc0, 0x40]), /\[8, 7\]/);
 });
 
+test("stack-semantics: a dropped side-effecting call stays visible", () => {
+  // PUSH1 PUSH2 PUSH3 PUSH4 SYSCALL System.Contract.Call DROP RET — the call
+  // result is discarded, but a cross-contract call has an observable effect, so
+  // it must stay in the output (mirroring Rust's materialised `let tN = …;`).
+  // Previously the bare DROP silently discarded the whole call expression.
+  const callHash = syscallHash("System.Contract.Call");
+  const out = highLevel([0x11, 0x12, 0x13, 0x14, 0x41, ...callHash, 0x45, 0x40]);
+  assert.match(out, /syscall\("System\.Contract\.Call"/);
+  // A dropped pure value (arithmetic) is still discarded silently.
+  assert.doesNotMatch(highLevel([0x11, 0x12, 0x9e, 0x45, 0x40]), /1 \+ 2/);
+});
+
 test("stack-semantics: unary NEGATE/INVERT/NOT preserve precedence over a compound operand", () => {
   // PUSH2 ; PUSH3 ; ADD ; NEGATE ; RET — the negation applies to the whole
   // sum. A bare `-2 + 3` would parse as `(-2) + 3` (= 1), not `-(2 + 3)`

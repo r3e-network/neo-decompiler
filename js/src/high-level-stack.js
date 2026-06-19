@@ -1,5 +1,6 @@
 import {
   convertTargetName,
+  isPureRhs,
   literalIndex,
   resolvePackedValue,
   stripOuterParens,
@@ -98,9 +99,20 @@ export function tryStackShapeOperation(state, instruction) {
     case "DEPTH":
       state.stack.push(`${state.stack.length}`);
       return true;
-    case "DROP":
-      state.stack.pop();
+    case "DROP": {
+      const top = state.stack.pop();
+      // A discarded value-returning CALL/SYSCALL/CALLT (or any fault-capable
+      // expression) has an observable effect, so it stays visible even though
+      // the result is unused — mirroring Rust, which materialises every such
+      // op into a `let tN = …;` that survives the drop. Pure values (literals,
+      // identifiers, arithmetic, pure-helper calls) are dropped silently.
+      if (top !== undefined && !isPureRhs(top)) {
+        const temp = `t${state.nextTempId}`;
+        state.nextTempId += 1;
+        state.statements.push(`let ${temp} = ${stripOuterParens(top)};`);
+      }
       return true;
+    }
     case "CLEAR":
       state.stack.length = 0;
       state.statements.push("// clear stack");

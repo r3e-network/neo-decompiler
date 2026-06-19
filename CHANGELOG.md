@@ -39,6 +39,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
   core's `take_usize_literal`); anything else falls to the honest dynamic form
   (`roll(1 + 1)` / `pack_dynamic(1 + 1)`), matching the Rust port. (The Rust core
   was already correct; this only affected the JS port.)
+- **JS: `DROP` silently discarded a side-effecting call result.** Value-returning
+  calls are kept on the JS operand stack as their full expression string and only
+  emitted when consumed; a bare `DROP` popped that string without emitting
+  anything, so a cross-contract `System.Contract.Call` (or any syscall/`CALLT`/
+  internal call) invoked for its side effects with the result discarded
+  vanished entirely — the method body rendered as if it did nothing. `DROP` now
+  materialises a dropped impure expression into a `let tN = …;` statement
+  (mirroring the Rust core, which keeps such temps via its `is_pure_rhs`
+  dead-temp pass — now ported to the JS port); pure values (literals, arithmetic,
+  pure-helper calls) are still dropped silently. Verified parity-neutral via the
+  seeded differential-fuzz A/B (identical mismatch counts before/after).
 - **JS: manifest-summary rendering diverged from the Rust core in four ways.**
   A `permissions` entry with no `methods` field rendered the literal
   `methods=undefined` instead of the Neo N3 wildcard default `methods=*`; the

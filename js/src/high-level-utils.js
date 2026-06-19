@@ -159,6 +159,80 @@ export function literalIndex(text) {
   return Number.parseInt(text, 10);
 }
 
+// Mirror Rust's `is_pure_rhs` (high_level/emitter/postprocess/simplify.rs):
+// an expression has NO observable effect when its result is discarded iff it is
+// a literal/identifier/arithmetic value or calls only known-pure NEO helpers. A
+// division/modulo/indexing (which can fault) or a call to a side-effecting
+// target (a syscall, an internal `sub_*`/named call, a CALLT/native method) is
+// impure and must remain visible even when dropped.
+const PURE_HELPER_IDENTIFIERS = new Set([
+  "abs", "sign", "sqrt", "min", "max", "pow", "modpow", "modmul", "within",
+  "left", "right", "substr", "is_null", "keys", "values", "has_key", "len",
+]);
+
+function isPureHelperIdentifier(ident) {
+  return (
+    PURE_HELPER_IDENTIFIERS.has(ident) ||
+    ident.startsWith("is_type_") ||
+    ident.startsWith("convert_to_")
+  );
+}
+
+function rhsCallsOnlyPureHelpers(expr) {
+  let inString = null;
+  let i = 0;
+  while (i < expr.length) {
+    const ch = expr[i];
+    if (inString !== null) {
+      if (ch === "\\" && i + 1 < expr.length) {
+        i += 2;
+        continue;
+      }
+      if (ch === inString) {
+        inString = null;
+      }
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inString = ch;
+      i += 1;
+      continue;
+    }
+    if (ch === "(") {
+      let start = i;
+      while (start > 0 && /[A-Za-z0-9_]/.test(expr[start - 1])) {
+        start -= 1;
+      }
+      if (start === i) {
+        i += 1;
+        continue;
+      }
+      if (!isPureHelperIdentifier(expr.slice(start, i))) {
+        return false;
+      }
+    }
+    i += 1;
+  }
+  return true;
+}
+
+export function isPureRhs(rhs) {
+  const trimmed = rhs.trim();
+  if (trimmed === "") {
+    return false;
+  }
+  // Division, modulo, and indexing can fault, so treat them as impure.
+  if (/[\/%[]/.test(trimmed)) {
+    return false;
+  }
+  // No call site → pure (literals, identifiers, arithmetic).
+  if (!trimmed.includes("(")) {
+    return true;
+  }
+  return rhsCallsOnlyPureHelpers(trimmed);
+}
+
 export function formatOffset(offset) {
   return offset.toString(16).padStart(4, "0").toUpperCase();
 }
