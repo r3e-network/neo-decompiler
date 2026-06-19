@@ -192,3 +192,38 @@ fn crossing_comparison_branch_does_not_emit_malformed_double_else() {
         "crossing comparison branch must not produce a second else: {high_level}"
     );
 }
+
+#[test]
+fn crossing_unary_branch_does_not_emit_malformed_double_else() {
+    // Regression (adversarial): a unary JMPIF branch (not a comparison) whose
+    // if-body holds an inner JMPIF that crosses the outer block's closer
+    // previously produced a structurally invalid double `else` — the inner
+    // implicit-else span [false_offset, else_end) swallowed the outer if's
+    // continuation (the always-taken `return 9` here). The crossing-closer
+    // guard in detect_implicit_else now suppresses that implicit else.
+    // PUSH1; JMPIF +9; PUSH2; JMPIF +4; PUSH7; RET; PUSH8; RET; PUSH9; RET.
+    let script = [
+        0x11, 0x24, 0x09, 0x12, 0x24, 0x04, 0x17, 0x40, 0x18, 0x40, 0x19, 0x40,
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    let balance: i32 = high_level
+        .chars()
+        .map(|c| match c {
+            '{' => 1,
+            '}' => -1,
+            _ => 0,
+        })
+        .sum();
+    assert_eq!(balance, 0, "output must be brace-balanced: {high_level}");
+    assert!(
+        high_level.matches("else {").count() <= 1,
+        "crossing unary branch must not produce a second else: {high_level}"
+    );
+}

@@ -433,6 +433,22 @@ impl HighLevelEmitter {
             }
         }
 
+        // Don't create an implicit else whose body would cross an ENCLOSING
+        // if-block's closer. An else spanning [false_offset, else_end) that
+        // steps over a pending closer registered strictly inside that range
+        // swallows the enclosing if's continuation and produces a malformed
+        // double-else (`} else { … } else { … }` on one if). The inner block's
+        // own closer is not registered until after this returns, so an
+        // exclusive-both-ends check catches only genuinely enclosing closers —
+        // mirroring the crossing protection the comparison-jump path receives.
+        if self
+            .pending_closers
+            .keys()
+            .any(|&offset| offset > false_offset && offset < else_end)
+        {
+            return None;
+        }
+
         Some(else_end)
     }
 }

@@ -48,6 +48,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
   forever — misrepresenting a loop the VM re-evaluates every iteration. The
   negated form now inlines as `!(i > 3)`, matching the JS port (the Rust core was
   the lone divergence here; the bug affected `while`/`for`/`if` headers).
+- **A crossing unary branch emitted a malformed double-else.** When a `JMPIF`
+  branch's implicit-`else` body spanned past an enclosing `if`'s closer, it
+  swallowed the outer continuation and produced a structurally invalid
+  `} else { … } else { … }` on one `if` (the existing crossing guard only
+  covered the comparison-jump form). `detect_implicit_else` now also bails when
+  the else body would cross an enclosing block's closer, keeping the output
+  well-formed and the outer continuation correctly attached (matching the JS
+  port). Verified parity-neutral via the seeded differential-fuzz A/B.
 - **JS: `DROP` silently discarded a side-effecting call result.** Value-returning
   calls are kept on the JS operand stack as their full expression string and only
   emitted when consumed; a bare `DROP` popped that string without emitting
