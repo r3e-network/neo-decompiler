@@ -39,6 +39,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
   core's `take_usize_literal`); anything else falls to the honest dynamic form
   (`roll(1 + 1)` / `pack_dynamic(1 + 1)`), matching the Rust port. (The Rust core
   was already correct; this only affected the JS port.)
+- **A negated loop condition was hoisted into a loop-invariant temp.** When a
+  loop's top test is a `JMPIF` on a comparison (e.g. `while !(i > 3)`), the
+  emitter materialises `let t = i > 3;` and a `while !t {` header, but
+  `inline_condition_temps` only folded the temp back when the header used the
+  bare temp (`while t`), not the negated form (`while !t`). The comparison was
+  left computed once *before* the loop and the loop tested the invariant `!t`
+  forever — misrepresenting a loop the VM re-evaluates every iteration. The
+  negated form now inlines as `!(i > 3)`, matching the JS port (the Rust core was
+  the lone divergence here; the bug affected `while`/`for`/`if` headers).
 - **JS: `DROP` silently discarded a side-effecting call result.** Value-returning
   calls are kept on the JS operand stack as their full expression string and only
   emitted when consumed; a bare `DROP` popped that string without emitting
