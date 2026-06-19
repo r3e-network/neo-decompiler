@@ -84,6 +84,18 @@ test("stack-semantics: pathological PACK count terminates and does not balloon o
   assert.ok(output.length < 4096, "output must stay bounded for a huge PACK count");
 });
 
+test("stack-semantics: unary NEGATE/INVERT/NOT preserve precedence over a compound operand", () => {
+  // PUSH2 ; PUSH3 ; ADD ; NEGATE ; RET — the negation applies to the whole
+  // sum. A bare `-2 + 3` would parse as `(-2) + 3` (= 1), not `-(2 + 3)`
+  // (= -5), so the operand must be parenthesised to match the Rust port.
+  assert.match(highLevel([0x12, 0x13, 0x9e, 0x9b, 0x40]), /return -\(2 \+ 3\);/);
+  // INVERT (0x90) and NOT (0xaa) bind the same way.
+  assert.match(highLevel([0x12, 0x13, 0x9e, 0x90, 0x40]), /return ~\(2 \+ 3\);/);
+  assert.match(highLevel([0x12, 0x13, 0x9e, 0xaa, 0x40]), /return !\(2 \+ 3\);/);
+  // A simple operand stays bare (no spurious parentheses).
+  assert.match(highLevel([0x12, 0x9b, 0x40]), /return -2;/);
+});
+
 test("switch guard: scrutinee-mutating standalone if-chain is not folded into a switch", async () => {
   const { postprocess } = await import("../src/postprocess.js");
   const statements = [

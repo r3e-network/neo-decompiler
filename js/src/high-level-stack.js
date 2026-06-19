@@ -263,7 +263,11 @@ export function tryUnaryExpression(state, instruction) {
     }
     case "NOT": {
       const value = stripOuterParens(state.stack.pop() ?? "???");
-      state.stack.push(`!${value}`);
+      // Wrap a compound operand: `!`/`-`/`~` bind tighter than `+`/`*`/`==`,
+      // so a bare prefix on `a + b` would change the operator binding
+      // (`!a + b` parses as `(!a) + b`). Rust lifts these through a temp and
+      // re-parenthesises on inline, yielding `!(a + b)`; mirror that here.
+      state.stack.push(`!${wrapExpression(value)}`);
       return true;
     }
     case "INC": {
@@ -318,7 +322,9 @@ export function tryUnaryExpression(state, instruction) {
     // NEWSTRUCT handled by tryCollectionExpression in high-level-collections.js
     case "NEGATE": {
       const value = stripOuterParens(state.stack.pop() ?? "???");
-      state.stack.push(`-${value}`);
+      // See NOT: wrap a compound operand so `-(a + b)` is preserved rather
+      // than emitting `-a + b` (which parses as `(-a) + b`).
+      state.stack.push(`-${wrapExpression(value)}`);
       return true;
     }
     case "ABS": {
@@ -333,7 +339,9 @@ export function tryUnaryExpression(state, instruction) {
     }
     case "INVERT": {
       const value = stripOuterParens(state.stack.pop() ?? "???");
-      state.stack.push(`~${value}`);
+      // See NOT: wrap a compound operand so `~(a + b)` is preserved rather
+      // than emitting `~a + b` (which parses as `(~a) + b`).
+      state.stack.push(`~${wrapExpression(value)}`);
       return true;
     }
     case "ISNULL": {
