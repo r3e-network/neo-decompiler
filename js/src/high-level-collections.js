@@ -1,5 +1,6 @@
 import {
   convertTargetName,
+  literalIndex,
   resolvePackedValue,
   stripOuterParens,
   wrapExpression,
@@ -209,7 +210,10 @@ const PACK_MAX_INLINE = 64;
 
 function emitPackExpression(state, mnemonic, stripOuterParens) {
   const countText = state.stack.pop();
-  const count = countText !== undefined ? Number.parseInt(countText, 10) : Number.NaN;
+  // Resolve the count only from a bare integer literal; a computed count (e.g.
+  // `1 + 1`) must render as `pack_dynamic(...)`, not be partial-parsed into a
+  // wrong static element count. See literalIndex / the Rust take_usize_literal.
+  const count = literalIndex(countText);
   if (!Number.isFinite(count) || count < 0) {
     state.stack.push(`pack_dynamic(${countText ?? "???"})`);
     return true;

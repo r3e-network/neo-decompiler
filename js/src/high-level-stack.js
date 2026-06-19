@@ -1,19 +1,10 @@
-import { convertTargetName, resolvePackedValue, stripOuterParens, wrapExpression } from "./high-level-utils.js";
-
-// Resolve a stack slot to a non-negative integer index ONLY when it is a pure
-// integer literal. ROLL/PICK/XDROP/REVERSEN take their count/index off the
-// operand stack, which holds expression *strings*. `Number.parseInt("1 + 1",
-// 10)` partial-parses to `1`, which would fold an arithmetically-computed index
-// into a confidently-wrong static slot (e.g. `roll(1 + 1)` rendered as a fixed
-// `return 11;`). Anything that is not a bare integer literal must fall to the
-// honest dynamic path, mirroring the Rust port's `take_usize_literal` (which
-// only reads the literal-values map).
-function literalIndex(text) {
-  if (typeof text !== "string" || !/^-?\d+$/.test(text.trim())) {
-    return Number.NaN;
-  }
-  return Number.parseInt(text, 10);
-}
+import {
+  convertTargetName,
+  literalIndex,
+  resolvePackedValue,
+  stripOuterParens,
+  wrapExpression,
+} from "./high-level-utils.js";
 
 // Use `==` / `!=` (rather than JavaScript's `===` / `!==`) for parity
 // with the Rust port's high-level emitter — those forms also lower

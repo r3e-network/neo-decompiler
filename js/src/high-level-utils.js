@@ -144,6 +144,21 @@ export function stripOuterParens(value) {
   return value;
 }
 
+// Resolve a stack value to a non-negative integer ONLY when it is a pure
+// integer literal. ROLL/PICK/XDROP/REVERSEN/PACK take a count or index off the
+// operand stack, which holds expression *strings*. `Number.parseInt("1 + 1",
+// 10)` partial-parses to `1`, which would fold an arithmetically-computed
+// count/index into a confidently-wrong static value (e.g. `pack` rendering one
+// element instead of the dynamic form). Anything that is not a bare integer
+// literal must fall to the honest dynamic path, mirroring the Rust port's
+// `take_usize_literal` (which only reads the literal-values map).
+export function literalIndex(text) {
+  if (typeof text !== "string" || !/^-?\d+$/.test(text.trim())) {
+    return Number.NaN;
+  }
+  return Number.parseInt(text, 10);
+}
+
 export function formatOffset(offset) {
   return offset.toString(16).padStart(4, "0").toUpperCase();
 }

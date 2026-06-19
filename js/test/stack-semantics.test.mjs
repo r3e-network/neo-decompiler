@@ -84,6 +84,17 @@ test("stack-semantics: pathological PACK count terminates and does not balloon o
   assert.ok(output.length < 4096, "output must stay bounded for a huge PACK count");
 });
 
+test("stack-semantics: PACK with a computed (non-literal) count renders pack_dynamic", () => {
+  // PUSH7 PUSH8 PUSH1 PUSH1 ADD PACK RET — count = 1 + 1 (composite). A loose
+  // parseInt("1 + 1") folds it to 1 and packs only [8]; the honest lift is the
+  // dynamic form (the VM packs 2 elements), matching the Rust port.
+  const out = highLevel([0x17, 0x18, 0x11, 0x11, 0x9e, 0xc0, 0x40]);
+  assert.match(out, /pack_dynamic\(1 \+ 1\)/);
+  assert.doesNotMatch(out, /return \[8\];/);
+  // A bare literal count still packs statically.
+  assert.match(highLevel([0x17, 0x18, 0x12, 0xc0, 0x40]), /\[8, 7\]/);
+});
+
 test("stack-semantics: unary NEGATE/INVERT/NOT preserve precedence over a compound operand", () => {
   // PUSH2 ; PUSH3 ; ADD ; NEGATE ; RET — the negation applies to the whole
   // sum. A bare `-2 + 3` would parse as `(-2) + 3` (= 1), not `-(2 + 3)`
