@@ -2332,6 +2332,35 @@ test("infers PACKMAP and CONVERT target types", () => {
   assert.equal(convert.types.methods[0].locals[0], "bytestring");
 });
 
+test("infers integer and boolean local types via stack simulation", () => {
+  // The type inferencer is a full stack simulation (mirroring the Rust core),
+  // so integer/boolean locals are recovered, not just collection kinds.
+
+  // PUSH5; STLOC0 — an integer literal stored.
+  const intLiteral = analyzeBytes(
+    buildNefFromScript(new Uint8Array([0x57, 0x01, 0x00, 0x15, 0x70, 0x40])),
+  );
+  assert.equal(intLiteral.types.methods[0].locals[0], "integer");
+
+  // PUSH1; PUSH1; ADD; STLOC0 — an arithmetic result is integer.
+  const arithmetic = analyzeBytes(
+    buildNefFromScript(new Uint8Array([0x57, 0x01, 0x00, 0x11, 0x11, 0x9e, 0x70, 0x40])),
+  );
+  assert.equal(arithmetic.types.methods[0].locals[0], "integer");
+
+  // PUSH1; PUSH3; LT; STLOC0 — a comparison result is boolean.
+  const comparison = analyzeBytes(
+    buildNefFromScript(new Uint8Array([0x57, 0x01, 0x00, 0x11, 0x13, 0xb5, 0x70, 0x40])),
+  );
+  assert.equal(comparison.types.methods[0].locals[0], "bool");
+
+  // NEWARRAY0; SIZE; STLOC0 — SIZE yields an integer.
+  const size = analyzeBytes(
+    buildNefFromScript(new Uint8Array([0x57, 0x01, 0x00, 0xc2, 0xca, 0x70, 0x40])),
+  );
+  assert.equal(size.types.methods[0].locals[0], "integer");
+});
+
 test("inlineSingleUseTemps option inlines single-use temp variables", () => {
   // Script: PUSH1 PUSH2 ADD RET — produces a temp for the addition
   const script = new Uint8Array([0x11, 0x12, 0x9e, 0x40]);
