@@ -45,9 +45,11 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `inline_condition_temps` only folded the temp back when the header used the
   bare temp (`while t`), not the negated form (`while !t`). The comparison was
   left computed once *before* the loop and the loop tested the invariant `!t`
-  forever — misrepresenting a loop the VM re-evaluates every iteration. The
-  negated form now inlines as `!(i > 3)`, matching the JS port (the Rust core was
-  the lone divergence here; the bug affected `while`/`for`/`if` headers).
+  forever — misrepresenting a loop the VM re-evaluates every iteration. Both
+  ports now inline the negated form as `!(i > 3)` for `while`/`for`/`if` headers.
+  (The Rust core emitted the hoisted temp; the JS port already produced the
+  correct inline output via its stack model, but its condition-inline pass
+  likewise lacked the negated branch and is now aligned.)
 - **A crossing unary branch emitted a malformed double-else.** When a `JMPIF`
   branch's implicit-`else` body spanned past an enclosing `if`'s closer, it
   swallowed the outer continuation and produced a structurally invalid

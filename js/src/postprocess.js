@@ -800,6 +800,20 @@ function findIncrementAssignment(statements, start, end, varName) {
 
 // ─── Pass 7: inline_condition_temps ────────────────────────────────────────
 
+// Resolve the inlined condition text for a single-use temp whose value feeds a
+// loop/if header. A bare `t` inlines to its rhs; a negated `!t` inlines to
+// `!(rhs)` so the `!` binds the whole expression. Mirrors the Rust port's
+// condition_inline_candidate. Returns null when the condition is neither form.
+function inlinedCondition(condition, assign) {
+  if (assign.lhs === condition) {
+    return assign.rhs;
+  }
+  if (condition.startsWith("!") && condition.slice(1).trim() === assign.lhs) {
+    return `!(${assign.rhs})`;
+  }
+  return null;
+}
+
 function inlineConditionTemps(statements) {
   let index = 0;
   while (index < statements.length) {
@@ -836,15 +850,24 @@ function inlineConditionTemps(statements) {
       if (idx >= 0) {
         const assign = parseAssignment(statements[idx]);
         if (assign && shouldInlineCondition(assign.rhs)) {
-          if (kind === "while" && assign.lhs === cond) {
-            statements[index] = `while ${assign.rhs} {`;
-            statements[idx] = "";
-          } else if (kind === "for" && assign.lhs === forParts.condition) {
-            statements[index] = `for (${forParts.init}; ${assign.rhs}; ${forParts.increment}) {`;
-            statements[idx] = "";
-          } else if (kind === "if" && assign.lhs === cond) {
-            statements[index] = `if ${assign.rhs} {`;
-            statements[idx] = "";
+          if (kind === "while") {
+            const inlined = inlinedCondition(cond, assign);
+            if (inlined !== null) {
+              statements[index] = `while ${inlined} {`;
+              statements[idx] = "";
+            }
+          } else if (kind === "for") {
+            const inlined = inlinedCondition(forParts.condition, assign);
+            if (inlined !== null) {
+              statements[index] = `for (${forParts.init}; ${inlined}; ${forParts.increment}) {`;
+              statements[idx] = "";
+            }
+          } else if (kind === "if") {
+            const inlined = inlinedCondition(cond, assign);
+            if (inlined !== null) {
+              statements[index] = `if ${inlined} {`;
+              statements[idx] = "";
+            }
           }
         }
       }

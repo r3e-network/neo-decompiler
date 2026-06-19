@@ -107,6 +107,20 @@ test("stack-semantics: a dropped side-effecting call stays visible", () => {
   assert.doesNotMatch(highLevel([0x11, 0x12, 0x9e, 0x45, 0x40]), /1 \+ 2/);
 });
 
+test("postprocess: a negated single-temp loop/if condition inlines as !(expr)", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  // `let t = i > 3; while !t {` must fold to `while !(i > 3) {` so the
+  // comparison is re-evaluated each iteration, not hoisted to an invariant
+  // temp — mirroring the Rust port's condition_inline_candidate.
+  const whileNeg = ["let t2 = loc0 > 3;", "while !t2 {", "}"];
+  postprocess(whileNeg);
+  assert.deepEqual(whileNeg.filter((s) => s !== ""), ["while !(loc0 > 3) {", "}"]);
+  // The bare (non-negated) form still inlines unchanged.
+  const whileBare = ["let t2 = loc0 > 3;", "while t2 {", "}"];
+  postprocess(whileBare);
+  assert.deepEqual(whileBare.filter((s) => s !== ""), ["while loc0 > 3 {", "}"]);
+});
+
 test("stack-semantics: unary NEGATE/INVERT/NOT preserve precedence over a compound operand", () => {
   // PUSH2 ; PUSH3 ; ADD ; NEGATE ; RET — the negation applies to the whole
   // sum. A bare `-2 + 3` would parse as `(-2) + 3` (= 1), not `-(2 + 3)`
