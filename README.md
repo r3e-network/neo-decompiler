@@ -351,10 +351,12 @@ npm test
 
 By default, manifest parsing is permissive to maximize compatibility with
 real-world manifests. If you want stricter checks, use `--strict-manifest`
-(global flag) to reject non-canonical wildcard-like values.
+(global flag) to reject non-canonical or legacy manifest shapes.
 
 Current strict checks include:
 
+- `features` must be an empty object in Neo N3 (legacy `storage`/`payable`
+  flags are rejected)
 - `permissions[*].contract` wildcard strings must be exactly `"*"`
 - `permissions[*].methods` wildcard strings must be exactly `"*"`
 - `trusts` wildcard string must be exactly `"*"`

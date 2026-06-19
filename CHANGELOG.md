@@ -15,12 +15,31 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **JS: unary `NEGATE`/`INVERT`/`NOT` dropped operator precedence on a compound
+  operand.** The high-level port emitted `-a + b` / `~a + b` / `!a + b` for a
+  single negation/inversion applied to a whole `a + b`, which parses as
+  `(-a) + b` — a different value than the Rust core's `-(a + b)`. The operand
+  is now wrapped (matching `INC`/`DEC`/`NZ` and the Rust collapse output), so
+  the two ports agree. Simple operands (`-2`, `-arg0`) stay unparenthesised.
+- **`eliminate_identity_temps` was O(n²) on the decompile path.** The Rust pass
+  ran a fresh backward scan per identity-temp candidate to detect a
+  use-before-definition; on attacker-chosen instruction counts (within the
+  512 KiB script cap) that is quadratic. It now uses a single first-occurrence
+  prepass with O(1) lookups, matching the sibling `collapse_temp_into_store`
+  and the already-linearised JS port.
 - **CI: the web package build was broken by a stale `wasm-bindgen-cli` pin.**
   The publish and CI workflows installed `wasm-bindgen-cli` 0.2.108 while the
   `wasm-bindgen` crate in `Cargo.lock` is 0.2.125, so `wasm-pack --mode
   no-install` failed with "Not able to find or install a local wasm-bindgen"
   and silently broke the web npm publish for several releases. The CLI version
   is now derived from `Cargo.lock` so it cannot drift.
+
+### Documentation
+
+- The README "Strict manifest validation" list now documents that
+  `--strict-manifest` also rejects a non-empty `features` object (legacy
+  `storage`/`payable` flags), which `validate_manifest_strict` enforces but the
+  list previously omitted.
 
 ## [0.8.1] - 2026-06-19 (Rust) / [1.5.1] - 2026-06-19 (JS)
 
