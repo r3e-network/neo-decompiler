@@ -307,6 +307,69 @@ test("renders manifest entry signatures with sanitized parameter names and pseud
   );
 });
 
+test("manifest summary: a permission with no methods field renders methods=* (Rust parity)", () => {
+  // Neo N3 defaults an absent `methods` to the `*` wildcard; JS previously
+  // rendered the literal `methods=undefined`.
+  const manifest = JSON.stringify({
+    name: "PermDefault",
+    abi: { methods: [], events: [] },
+    permissions: [{ contract: "*" }],
+    trusts: "*",
+  });
+  const result = decompileHighLevelBytesWithManifest(buildSampleNef(), manifest);
+  assert.match(result.highLevel, /contract=\* methods=\*/);
+  assert.doesNotMatch(result.highLevel, /methods=undefined/);
+});
+
+test("manifest summary: features keys render sorted (Rust BTreeMap parity)", () => {
+  const manifest = JSON.stringify({
+    name: "FeatureOrder",
+    abi: { methods: [], events: [] },
+    features: { storage: false, payable: false },
+    permissions: [],
+    trusts: "*",
+  });
+  const result = decompileHighLevelBytesWithManifest(buildSampleNef(), manifest);
+  assert.match(result.highLevel, /features \{/);
+  assert.ok(
+    result.highLevel.indexOf("payable = false;") < result.highLevel.indexOf("storage = false;"),
+    "features keys must be sorted (payable before storage)",
+  );
+});
+
+test("manifest summary: extra keys render sorted (Rust BTreeMap parity)", () => {
+  const manifest = JSON.stringify({
+    name: "ExtraOrder",
+    abi: { methods: [], events: [] },
+    permissions: [],
+    trusts: "*",
+    extra: { Version: "1.0", Author: "alice", Description: "demo" },
+  });
+  const out = decompileHighLevelBytesWithManifest(buildSampleNef(), manifest).highLevel;
+  assert.ok(out.indexOf("// Author:") < out.indexOf("// Description:"));
+  assert.ok(out.indexOf("// Description:") < out.indexOf("// Version:"));
+});
+
+test("manifest summary: a method offset past the script gets an offset-bearing placeholder", () => {
+  const manifest = JSON.stringify({
+    name: "GhostOffset",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Integer", offset: 0 },
+        { name: "ghost", parameters: [], returntype: "Integer", offset: 9999 },
+      ],
+      events: [],
+    },
+    permissions: [],
+    trusts: "*",
+  });
+  const result = decompileHighLevelBytesWithManifest(buildSampleNef(), manifest);
+  assert.match(
+    result.highLevel,
+    /\/\/ no instructions decoded for manifest method at offset 0x270F/,
+  );
+});
+
 test("keeps manifest helper methods separate from the entry range", () => {
   const script = new Uint8Array([0x11, 0x40, 0x12, 0x40]);
   const manifest = JSON.stringify({

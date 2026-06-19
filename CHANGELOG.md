@@ -27,6 +27,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
   512 KiB script cap) that is quadratic. It now uses a single first-occurrence
   prepass with O(1) lookups, matching the sibling `collapse_temp_into_store`
   and the already-linearised JS port.
+- **JS: manifest-summary rendering diverged from the Rust core in four ways.**
+  A `permissions` entry with no `methods` field rendered the literal
+  `methods=undefined` instead of the Neo N3 wildcard default `methods=*`; the
+  `features` and `extra` blocks iterated keys in JSON insertion order while
+  Rust (a sorted `serde_json::Map`/BTreeMap) emits them sorted — so the same
+  manifest produced different output (the `extra` block, carrying common
+  Author/Email/Version metadata, triggered this on ordinary manifests); and a
+  manifest method whose offset points past the decoded script got a generic
+  `// no instructions decoded` placeholder instead of the offset-bearing form.
+  All four now match the Rust port byte-for-byte.
 - **CI: the web package build was broken by a stale `wasm-bindgen-cli` pin.**
   The publish and CI workflows installed `wasm-bindgen-cli` 0.2.108 while the
   `wasm-bindgen` crate in `Cargo.lock` is 0.2.125, so `wasm-pack --mode

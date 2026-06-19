@@ -29,7 +29,7 @@ import {
 } from "./manifest.js";
 import { describeCallFlags } from "./nef.js";
 import { describeMethodToken } from "./native-contracts.js";
-import { upperHex } from "./util.js";
+import { hexOffset, upperHex } from "./util.js";
 import { postprocess } from "./postprocess.js";
 
 let CONTROL_FLOW;
@@ -102,8 +102,11 @@ export function renderHighLevelMethodGroups(groups, manifest, context = null) {
     // the Rust manifest summary renderer).
     if (manifest.features && Object.keys(manifest.features).length > 0) {
       lines.push(`    features {`);
-      for (const [key, value] of Object.entries(manifest.features)) {
-        lines.push(`        ${key} = ${JSON.stringify(value)};`);
+      // Rust's `serde_json::Map` is a BTreeMap (no `preserve_order`), so it
+      // iterates keys in sorted order. Sort here to match — otherwise the two
+      // ports emit the same keys in different order for the same manifest.
+      for (const key of Object.keys(manifest.features).sort()) {
+        lines.push(`        ${key} = ${JSON.stringify(manifest.features[key])};`);
       }
       lines.push(`    }`);
     }
@@ -135,12 +138,18 @@ export function renderHighLevelMethodGroups(groups, manifest, context = null) {
               : classified.kind === "group"
                 ? `contract=group:${classified.group}`
                 : `contract=${JSON.stringify(classified.value)}`;
+        // An absent `methods` defaults to the `*` wildcard in Neo N3 (Rust's
+        // `ManifestPermissionMethods` derives `Default = Wildcard("*")` via
+        // `#[serde(default)]`). Without this guard the final branch would
+        // render the literal string `methods=undefined`.
         const methodsPart =
-          typeof perm.methods === "string"
-            ? `methods=${perm.methods}`
-            : Array.isArray(perm.methods)
-              ? `methods=[${perm.methods.map((m) => `"${m}"`).join(", ")}]`
-              : `methods=${JSON.stringify(perm.methods)}`;
+          perm.methods === undefined || perm.methods === null
+            ? "methods=*"
+            : typeof perm.methods === "string"
+              ? `methods=${perm.methods}`
+              : Array.isArray(perm.methods)
+                ? `methods=[${perm.methods.map((m) => `"${m}"`).join(", ")}]`
+                : `methods=${JSON.stringify(perm.methods)}`;
         lines.push(`        ${contractPart} ${methodsPart}`);
       }
       lines.push(`    }`);
@@ -152,8 +161,12 @@ export function renderHighLevelMethodGroups(groups, manifest, context = null) {
       }
     }
     if (manifest.extra && typeof manifest.extra === "object" && !Array.isArray(manifest.extra)) {
-      for (const [key, value] of Object.entries(manifest.extra)) {
-        const rendered = renderExtraScalar(value);
+      // Rust iterates `extra` (a sorted `serde_json::Map`/BTreeMap) in key
+      // order; sort here so the metadata comment lines match. `extra`
+      // (Author/Email/Version/…) is common in valid manifests and tooling does
+      // not guarantee alphabetical key order, so this diverges on real input.
+      for (const key of Object.keys(manifest.extra).sort()) {
+        const rendered = renderExtraScalar(manifest.extra[key]);
         if (rendered !== null) {
           lines.push(`    // ${key}: ${rendered}`);
         }
@@ -261,7 +274,18 @@ export function renderHighLevelMethodGroups(groups, manifest, context = null) {
     lines.push(`    ${signature} {`);
 
     if (body.statements.length === 0) {
-      lines.push("        // no instructions decoded");
+      // A manifest-declared method whose offset resolves but whose body slice
+      // is empty (e.g. an offset pointing past the decoded script) gets the
+      // offset-bearing placeholder, matching Rust's `write_manifest_methods`.
+      // Inferred empty groups were already skipped above, so a source-bearing
+      // group here is a manifest method.
+      if (group.source && Number.isInteger(group.start)) {
+        lines.push(
+          `        // no instructions decoded for manifest method at offset 0x${hexOffset(group.start)}`,
+        );
+      } else {
+        lines.push("        // no instructions decoded");
+      }
     } else {
       let indentLevel = 0;
       for (const statement of body.statements) {
