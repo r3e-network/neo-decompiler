@@ -22,6 +22,14 @@ impl Cli {
         let result =
             decompiler.decompile_bytes_with_manifest(&data, manifest, OutputFormat::Pseudocode)?;
 
-        self.write_stdout(|out| out.write_all(result.cfg_to_dot().as_bytes()))
+        self.write_stdout(|out| out.write_all(result.cfg_to_dot().as_bytes()))?;
+
+        // Surface disassembly warnings (e.g. an unknown opcode that may have
+        // desynchronized the instruction stream the CFG is built on). stdout
+        // carries the DOT graph and must stay valid graphviz, so the
+        // `Warnings:` block goes to stderr; the other disassembling commands
+        // (`disasm`, `decompile`) surface these warnings too.
+        Self::write_warnings(&mut std::io::stderr(), &result.warnings)?;
+        Ok(())
     }
 }

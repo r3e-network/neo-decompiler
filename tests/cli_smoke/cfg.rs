@@ -24,12 +24,15 @@ fn cfg_can_fail_on_unknown_opcodes() {
     let nef_path = dir.path().join("unknown.nef");
     std::fs::write(&nef_path, build_nef_with_unknown_opcode()).unwrap();
 
+    // The default (non-failing) path still emits the graph but now surfaces
+    // the disassembly warning on stderr, like `disasm` and `decompile`.
     neo_decompiler_cmd()
         .arg("cfg")
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(contains("digraph CFG"));
+        .stdout(contains("digraph CFG"))
+        .stderr(contains("unknown opcode 0xFF"));
 
     neo_decompiler_cmd()
         .arg("cfg")
