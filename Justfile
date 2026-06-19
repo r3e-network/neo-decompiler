@@ -31,8 +31,8 @@ doc-check:
 	RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
 
 msrv:
-	cargo +1.83.0 test
-	cargo +1.83.0 test --no-default-features
+	cargo +1.86.0 test
+	cargo +1.86.0 test --no-default-features
 
 js-test:
 	cd js && npm test
