@@ -5,6 +5,7 @@ import { join, relative } from "node:path";
 import test from "node:test";
 
 import {
+  analyzeBytes,
   decompileBytes,
   decompileHighLevelBytes,
   decompileHighLevelBytesWithManifest,
@@ -327,5 +328,74 @@ for (const nefPath of nefFiles) {
       const pct = ((diffCount / maxLines) * 100).toFixed(1);
       console.log(`  INFO: ${diffCount}/${maxLines} lines differ (${pct}%) for ${label}`);
     }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Analysis comparison (call graph / xrefs / types)
+//
+// The `--format json` analysis block was never differentially checked, which let
+// the JS `types` inference silently diverge from the Rust stack simulation.
+// These tests assert call_graph / xrefs / types match the Rust JSON output.
+// Like the other tests here, they need the release binary; when it is absent
+// (e.g. the CI JS job) the comparison is skipped.
+// ---------------------------------------------------------------------------
+
+function runRustJson(nefPath) {
+  try {
+    const out = execFileSync(RUST_BIN, ["decompile", "--format", "json", nefPath], {
+      encoding: "utf-8",
+      timeout: 15_000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return JSON.parse(out);
+  } catch {
+    return null;
+  }
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalize(value[key])]),
+    );
+  }
+  return value;
+}
+
+const stableJson = (value) => JSON.stringify(canonicalize(value));
+
+for (const nefPath of nefFiles) {
+  const label = relative(ROOT, nefPath);
+
+  test(`differential analysis: ${label}`, () => {
+    const rust = runRustJson(nefPath);
+    if (!rust || !rust.analysis) {
+      return; // Rust binary unavailable, or it could not decompile this NEF.
+    }
+
+    const bytes = readFileSync(nefPath);
+    const manifestPath = findManifestForNef(nefPath);
+    const manifestJson = manifestPath ? readFileSync(manifestPath, "utf-8") : null;
+    const js = analyzeBytes(bytes, manifestJson);
+
+    assert.equal(
+      stableJson(js.callGraph),
+      stableJson(rust.analysis.call_graph),
+      `call_graph differs for ${label}`,
+    );
+    assert.equal(
+      stableJson(js.xrefs),
+      stableJson(rust.analysis.xrefs),
+      `xrefs differs for ${label}`,
+    );
+    assert.equal(
+      stableJson(js.types),
+      stableJson(rust.analysis.types),
+      `types differs for ${label}`,
+    );
   });
 }
