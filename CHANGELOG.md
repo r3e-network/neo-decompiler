@@ -3,7 +3,16 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.8.2] - 2026-06-19 (Rust) / [1.5.2] - 2026-06-19 (JS)
+
+A correctness and semantic-faithfulness pass over both the Rust core and the JS
+port, plus a web/wasm serialization fix and an MSRV correction. Nothing here
+changes the public API or breaks output contracts; every change is a bug fix, a
+complexity bound, a Rust↔JS parity restoration, or a documentation correction.
+The headline fixes come from verifying the lifted output against actual Neo VM
+semantics (catching several silent miscompilations that parity testing alone
+could not), and from closing an out-of-range call-target fabrication in the
+analysis JSON.
 
 ### Changed
 
