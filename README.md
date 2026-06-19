@@ -189,7 +189,9 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   actual script entry.
 - Control Flow Graph (CFG) construction with DOT export (`Decompilation::cfg_to_dot`) and
   reachability helpers for dead-code detection (`Cfg::unreachable_blocks`)
-- SSA (Static Single Assignment) skeleton via `cfg.to_ssa()` or `Decompilation::compute_ssa()`:
+- SSA (Static Single Assignment) skeleton via `cfg.to_ssa()` (requires `use
+  neo_decompiler::SsaConversion;` for the trait method) or the inherent
+  `Decompilation::compute_ssa()`:
   - Dominance analysis (immediate dominators, dominator tree, dominance frontiers)
   - Versioned assignments for `PUSH0`–`PUSH16`; other opcodes are carried as comment statements
   - SSA form rendering with variable versions and statistics

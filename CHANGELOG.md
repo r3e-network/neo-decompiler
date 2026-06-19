@@ -37,6 +37,26 @@ project adheres to [Semantic Versioning](https://semver.org/).
   manifest method whose offset points past the decoded script got a generic
   `// no instructions decoded` placeholder instead of the offset-bearing form.
   All four now match the Rust port byte-for-byte.
+- **Web/wasm: reports threw on `i64` values outside the JS safe-integer
+  range.** The three wasm entry points (`infoReport`/`disasmReport`/
+  `decompileReport`) serialized with the default serde-wasm-bindgen serializer,
+  which errors on any `i64`/`u64` whose magnitude exceeds 2⁵³−1 instead of
+  producing a value. A routine `PUSHINT64` operand near `i64::MAX` (or a large
+  integer in a manifest `extra`/`features` passthrough) therefore aborted the
+  entire report on the web even though the CLI — which serializes via
+  `serde_json` — handled the identical input. The wasm serializer now enables
+  BigInt for 64/128-bit integers, so such values round-trip as `bigint` (the
+  `OperandValueReport.value` TypeScript union is widened accordingly).
+- **CLI: the `cfg` command silently dropped disassembly warnings.** Unlike
+  `disasm` and `decompile`, `cfg` computed `result.warnings` but never surfaced
+  them, so a control-flow graph built from an unknown-opcode (possibly
+  desynchronized) stream gave no signal. Warnings now go to stderr, keeping
+  stdout valid graphviz.
+- **JS: the manifest parser accepted non-string `supportedstandards`
+  elements.** Rust deserializes the field as `Vec<String>` and rejects a
+  non-string element; the JS port copied the array verbatim, so the same
+  malformed manifest parsed successfully in JS but errored in Rust. JS now
+  validates each element is a string, restoring the reject parity.
 - **CI: the web package build was broken by a stale `wasm-bindgen-cli` pin.**
   The publish and CI workflows installed `wasm-bindgen-cli` 0.2.108 while the
   `wasm-bindgen` crate in `Cargo.lock` is 0.2.125, so `wasm-pack --mode
@@ -50,6 +70,9 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `--strict-manifest` also rejects a non-empty `features` object (legacy
   `storage`/`payable` flags), which `validate_manifest_strict` enforces but the
   list previously omitted.
+- The README SSA bullet now notes that `cfg.to_ssa()` requires importing the
+  `SsaConversion` trait (`use neo_decompiler::SsaConversion;`); the documented
+  snippet did not compile as written without it.
 
 ## [0.8.1] - 2026-06-19 (Rust) / [1.5.1] - 2026-06-19 (JS)
 
