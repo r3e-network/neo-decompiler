@@ -59,7 +59,10 @@ export interface OperandValueReport {
     | "Jump32"
     | "Syscall"
     | "Null";
-  value?: number | string | boolean;
+  // `I64` operand values outside the JS safe-integer range are serialized as
+  // BigInt (the wasm boundary enables `serialize_large_number_types_as_bigints`)
+  // so they round-trip without precision loss instead of throwing.
+  value?: number | string | bigint | boolean;
 }
 
 export interface InstructionReport {

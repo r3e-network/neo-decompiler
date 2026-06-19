@@ -183,6 +183,22 @@ pub fn init_panic_hook() {
 }
 
 #[cfg(target_arch = "wasm32")]
+/// Serialize a report to a `JsValue` with BigInt enabled for 64/128-bit
+/// integers. The default serde-wasm-bindgen serializer throws on any i64/u64
+/// outside the JS safe-integer range — e.g. a `PUSHINT64` operand near
+/// `i64::MAX` (routine bytecode) or a large integer in a manifest
+/// `extra`/`features` passthrough — which aborts the whole report for
+/// otherwise-valid input. The CLI serializes via serde_json and already handles
+/// the full range; this keeps the web boundary at parity. (`usize`/`i32`
+/// offsets are u32/i32 on wasm32 and continue to serialize as plain numbers.)
+fn report_to_js<T: serde::Serialize>(value: &T) -> std::result::Result<JsValue, JsValue> {
+    let serializer =
+        serde_wasm_bindgen::Serializer::new().serialize_large_number_types_as_bigints(true);
+    serde::Serialize::serialize(value, &serializer)
+        .map_err(|err| JsValue::from_str(&err.to_string()))
+}
+
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(js_name = infoReport)]
 /// Build an info report from NEF bytes and a JS options object.
 pub fn info_report_wasm(
@@ -193,8 +209,7 @@ pub fn info_report_wasm(
     let manifest = parse_manifest(options.manifest_json.as_deref(), options.strict_manifest)
         .map_err(to_js_error)?;
     let nef = NefParser::new().parse(nef_bytes).map_err(to_js_error)?;
-    serde_wasm_bindgen::to_value(&report::build_info_report(&nef, manifest.as_ref()))
-        .map_err(|err| JsValue::from_str(&err.to_string()))
+    report_to_js(&report::build_info_report(&nef, manifest.as_ref()))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -212,7 +227,7 @@ pub fn disasm_report_wasm(
         },
     )
     .map_err(to_js_error)?;
-    serde_wasm_bindgen::to_value(&report).map_err(|err| JsValue::from_str(&err.to_string()))
+    report_to_js(&report)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -237,7 +252,7 @@ pub fn decompile_report_wasm(
         },
     )
     .map_err(to_js_error)?;
-    serde_wasm_bindgen::to_value(&report).map_err(|err| JsValue::from_str(&err.to_string()))
+    report_to_js(&report)
 }
 
 #[cfg(target_arch = "wasm32")]
