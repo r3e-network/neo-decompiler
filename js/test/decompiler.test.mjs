@@ -2105,6 +2105,19 @@ test("builds call graph edges for syscalls, internal calls, CALLT, and CALLA", (
   assert.equal(resolvedCalla.callGraph.edges[0].target.method.offset, 9);
 });
 
+test("call graph: an out-of-range CALL target is unresolved, not a fabricated method", () => {
+  // CALL +127 (target 0x7F) in a 3-byte script — the target is far past the
+  // script end, so it must be UnresolvedInternal, not a fabricated sub_0x007F
+  // Internal edge/method. Mirrors the Rust port (and the negative-target case).
+  const a = analyzeBytes(buildNefFromScript(new Uint8Array([0x34, 0x7f, 0x40])));
+  assert.equal(a.callGraph.edges[0].target.kind, "UnresolvedInternal");
+  assert.equal(a.callGraph.edges[0].target.target, 127);
+  assert.ok(
+    a.callGraph.methods.every((m) => m.offset !== 127),
+    "out-of-range CALL must not fabricate a method",
+  );
+});
+
 test("resolves duplicated and static pointer flow into CALLA edges", () => {
   const dup = analyzeBytes(
     buildNefFromScript(

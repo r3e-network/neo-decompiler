@@ -8,7 +8,7 @@
     clippy::cast_sign_loss
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use serde::Serialize;
 
@@ -104,6 +104,12 @@ pub fn build_call_graph(
         .map(|span| (span.method.offset, span.method.clone()))
         .collect();
 
+    // Valid instruction start offsets. A CALL/CALL_L target must land on one of
+    // these to resolve to an internal method; a target past the script end (or
+    // mid-instruction) is unresolvable and must be reported as
+    // `UnresolvedInternal` rather than fabricating a synthetic `sub_0xNNNN`.
+    let instruction_offsets: HashSet<usize> = instructions.iter().map(|i| i.offset).collect();
+
     let mut edges = Vec::new();
     for (index, instr) in instructions.iter().enumerate() {
         match instr.opcode {
@@ -126,7 +132,9 @@ pub fn build_call_graph(
             OpCode::Call | OpCode::Call_L => {
                 let caller = table.method_for_offset(instr.offset);
                 match relative_target_isize(instr) {
-                    Some(target) if target >= 0 => {
+                    Some(target)
+                        if target >= 0 && instruction_offsets.contains(&(target as usize)) =>
+                    {
                         let target = target as usize;
                         let callee = table.resolve_internal_target(target);
                         methods.insert(callee.offset, callee.clone());

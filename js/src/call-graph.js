@@ -8,6 +8,10 @@ export function buildCallGraph(nef, instructions, methodGroups) {
   }));
   const methodByOffset = new Map(methods.map((method) => [method.offset, method]));
   const methodStartOffsets = new Set(methods.map((method) => method.offset));
+  // Valid instruction start offsets. A CALL/CALL_L target must land on one to
+  // resolve to an internal method; a target past the script end (or
+  // mid-instruction) is unresolvable, mirroring the Rust port.
+  const instructionOffsets = new Set(instructions.map((ins) => ins.offset));
   const methodArgCountsByOffset = new Map(
     methodGroups.map((group) => [group.start, inferMethodArgCount(group)]),
   );
@@ -185,11 +189,12 @@ export function buildCallGraph(nef, instructions, methodGroups) {
 
     if ((mnemonic === "CALL" || mnemonic === "CALL_L") && isJumpOperand(instruction.operand)) {
       const targetOffset = instruction.offset + instruction.operand.value;
-      if (targetOffset < 0) {
-        // A CALL_L whose absolute target is negative (malformed backward delta)
-        // cannot be a real method. Mirror the Rust port, which emits an
-        // UnresolvedInternal edge with the raw signed target instead of
-        // fabricating an Internal edge at a negative offset.
+      if (targetOffset < 0 || !instructionOffsets.has(targetOffset)) {
+        // A CALL/CALL_L whose absolute target is negative (malformed backward
+        // delta) or lands past the script end / mid-instruction cannot be a
+        // real method. Mirror the Rust port, which emits an UnresolvedInternal
+        // edge with the raw signed target instead of fabricating an Internal
+        // edge at an invalid offset.
         edges.push({
           caller,
           callOffset: instruction.offset,

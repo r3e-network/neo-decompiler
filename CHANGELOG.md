@@ -27,6 +27,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
   512 KiB script cap) that is quadratic. It now uses a single first-occurrence
   prepass with O(1) lookups, matching the sibling `collapse_temp_into_store`
   and the already-linearised JS port.
+- **Analysis: an out-of-range `CALL`/`CALL_L` target fabricated a spurious
+  call edge.** A positive relative target past the script end (or off an
+  instruction boundary) was treated as a resolvable internal call, so the
+  `--format json` `call_graph` showed a real-looking `Internal` edge to a
+  non-existent `sub_0xNNNN` method — asymmetric with the negative-target path,
+  which already reported `UnresolvedInternal`. Both ports now require the target
+  to land on a valid instruction offset and otherwise report `UnresolvedInternal`
+  without fabricating a method. (Only malformed/adversarial bytecode triggers
+  this; a conforming compiler never emits an out-of-range `CALL`.)
 - **JS: `ROLL`/`PICK`/`XDROP`/`REVERSEN`/`PACK`/`PACKMAP`/`PACKSTRUCT`
   mis-resolved a computed count/index.** These opcodes take their index/count
   off the operand stack, which holds expression *strings*; the port resolved it

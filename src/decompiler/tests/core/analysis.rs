@@ -127,6 +127,35 @@ fn call_graph_resolves_relative_call_from_opcode_offset() {
 }
 
 #[test]
+fn call_graph_out_of_range_call_target_is_unresolved() {
+    // Regression (adversarial): a positive CALL target past the script end is
+    // unresolvable and must report UnresolvedInternal — not fabricate a synthetic
+    // method and a real-looking Internal edge. Mirrors the negative-target path.
+    // 0x0000: CALL +127 (target=0x007F, far past the 3-byte script); 0x0002: RET
+    let script = [0x34, 0x7F, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    assert_eq!(decompilation.call_graph.edges.len(), 1);
+    match &decompilation.call_graph.edges[0].target {
+        CallTarget::UnresolvedInternal { target } => assert_eq!(*target, 127),
+        other => panic!("out-of-range CALL target should be unresolved, got {other:?}"),
+    }
+    // No synthetic method fabricated for the bogus target.
+    assert!(
+        decompilation
+            .call_graph
+            .methods
+            .iter()
+            .all(|method| method.offset != 127),
+        "out-of-range CALL must not fabricate a method: {:?}",
+        decompilation.call_graph.methods
+    );
+}
+
+#[test]
 fn decompilation_includes_call_graph_method_tokens() {
     // Script: CALLT 0, RET.
     let script = [0x37, 0x00, 0x00, 0x40];
