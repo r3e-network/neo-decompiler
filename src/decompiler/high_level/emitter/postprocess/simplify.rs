@@ -107,6 +107,24 @@ impl HighLevelEmitter {
     /// in all subsequent code. These arise from branch reconciliation (phi nodes)
     /// and DUP/OVER patterns where the copy is trivially aliased.
     pub(crate) fn eliminate_identity_temps(statements: &mut [String]) {
+        // Pre-scan: record the first line on which each temp identifier `tN`
+        // appears. The guard below skips an identity temp whose lhs is already
+        // referenced *before* its definition; computing that with a fresh
+        // `.take(index).any(...)` backward scan per candidate is O(n^2) on
+        // attacker-chosen instruction counts (within the 512 KiB script cap).
+        // The forward substitution loop only rewrites positions > index and
+        // never introduces an lhs earlier than a line that already aliased it,
+        // so a one-pass first-occurrence map gives the same answer in O(1) per
+        // lookup. Mirrors the JS port (eliminateIdentityTemps) and the sibling
+        // collapse_temp_into_store prepass.
+        let mut first_seen: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        for (line_index, stmt) in statements.iter().enumerate() {
+            for tok in Self::temp_tokens(stmt) {
+                first_seen.entry(tok).or_insert(line_index);
+            }
+        }
+
         let mut index = 0;
         while index < statements.len() {
             let trimmed = statements[index].trim();
@@ -131,10 +149,7 @@ impl HighLevelEmitter {
             }
             let lhs = assign.lhs.clone();
             let rhs = assign.rhs.clone();
-            let lhs_seen_earlier = statements
-                .iter()
-                .take(index)
-                .any(|stmt| Self::contains_identifier(stmt, &lhs));
+            let lhs_seen_earlier = first_seen.get(&lhs).is_some_and(|&first| first < index);
             if lhs_seen_earlier {
                 index += 1;
                 continue;
@@ -609,6 +624,40 @@ mod tests {
         assert!(
             joined.contains("if !(cond) {\nloc0 = 5;\n}"),
             "inverted if must retain the else body and its closer: {joined}"
+        );
+    }
+
+    #[test]
+    fn eliminate_identity_temps_substitutes_forward() {
+        // `let t0 = t1;` is a trivial alias: t0 must be substituted with t1 in
+        // all following lines and its definition removed.
+        let mut statements = vec![
+            "let t1 = arg0;".to_string(),
+            "let t0 = t1;".to_string(),
+            "return t0;".to_string(),
+        ];
+        HighLevelEmitter::eliminate_identity_temps(&mut statements);
+        assert_eq!(statements[0], "let t1 = arg0;");
+        assert_eq!(statements[1], "", "identity definition must be cleared");
+        assert_eq!(statements[2], "return t1;");
+    }
+
+    #[test]
+    fn eliminate_identity_temps_skips_lhs_used_before_definition() {
+        // When the lhs is referenced *before* its identity definition, forward
+        // substitution would not rewrite the earlier use, so the pass must
+        // leave the identity in place. The first-seen prepass must reproduce
+        // exactly the previous per-candidate backward scan here.
+        let mut statements = vec![
+            "bar(t0);".to_string(),
+            "let t0 = t1;".to_string(),
+            "return t0;".to_string(),
+        ];
+        let before = statements.clone();
+        HighLevelEmitter::eliminate_identity_temps(&mut statements);
+        assert_eq!(
+            statements, before,
+            "identity with a prior use of lhs must be preserved unchanged"
         );
     }
 
