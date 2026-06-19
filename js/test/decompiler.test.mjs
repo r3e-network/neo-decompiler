@@ -2118,6 +2118,21 @@ test("call graph: an out-of-range CALL target is unresolved, not a fabricated me
   );
 });
 
+test("call graph: an out-of-range PUSHA+CALLA target is Indirect, not a fabricated method", () => {
+  // PUSHA +127 (target 0x7F) ; CALLA ; RET — the pointer lands past the script
+  // end, so the CALLA must be Indirect, not a fabricated sub_0x007F Internal
+  // edge/method. Mirrors the Rust port.
+  const a = analyzeBytes(
+    buildNefFromScript(new Uint8Array([0x0a, 0x7f, 0x00, 0x00, 0x00, 0x36, 0x40])),
+  );
+  const edge = a.callGraph.edges.find((e) => e.opcode === "CALLA");
+  assert.equal(edge.target.kind, "Indirect");
+  assert.ok(
+    a.callGraph.methods.every((m) => m.offset !== 127),
+    "out-of-range CALLA must not fabricate a method",
+  );
+});
+
 test("resolves duplicated and static pointer flow into CALLA edges", () => {
   const dup = analyzeBytes(
     buildNefFromScript(
@@ -2320,7 +2335,7 @@ test("resolves delegate-array PICKITEM targets into CALLA edges", () => {
         0x68, // LDLOC0
         0x4a, // DUP
         0x71, // STLOC1
-        0x0a, 0x11, 0x00, 0x00, 0x00, // PUSHA +17
+        0x0a, 0x0d, 0x00, 0x00, 0x00, // PUSHA +13 (target 0x0012, a valid in-range helper)
         0xcf, // APPEND
         0x69, // LDLOC1
         0x10, // PUSH0
@@ -2338,7 +2353,7 @@ test("resolves delegate-array PICKITEM targets into CALLA edges", () => {
     (candidate) => candidate.opcode === "CALLA",
   );
   assert.equal(aliasedEdge.target.kind, "Internal");
-  assert.equal(aliasedEdge.target.method.offset, 0x0016);
+  assert.equal(aliasedEdge.target.method.offset, 0x0012);
 });
 
 test("includes slot xrefs for locals, arguments, and statics", () => {

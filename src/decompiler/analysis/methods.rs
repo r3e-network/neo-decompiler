@@ -76,6 +76,12 @@ impl MethodTable {
             .map(|ins| ins.offset.saturating_add(1))
             .unwrap_or(script_start);
 
+        // Valid instruction start offsets. A CALLA pointer target (from PUSHA)
+        // must land on one to be a real method start; an out-of-range target
+        // would otherwise fabricate a phantom span/method. `collect_call_targets`
+        // already applies the same filter to CALL/CALL_L targets.
+        let known_offsets: BTreeSet<usize> = instructions.iter().map(|ins| ins.offset).collect();
+
         let mut manifest_index_by_start = BTreeMap::new();
         let entry_manifest = manifest.and_then(|manifest| {
             let entry_method = find_manifest_entry_method(manifest, script_start)?;
@@ -98,7 +104,9 @@ impl MethodTable {
         let mut callers_by_target: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
         for (index, instruction) in instructions.iter().enumerate() {
             if instruction.opcode == OpCode::CallA {
-                if let Some(start) = calla_target_from_pusha(instructions, index) {
+                if let Some(start) = calla_target_from_pusha(instructions, index)
+                    .filter(|start| known_offsets.contains(start))
+                {
                     starts.insert(start, ());
                     callers_by_target.entry(start).or_default().insert(index);
                 }

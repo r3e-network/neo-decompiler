@@ -254,10 +254,15 @@ export function buildCallGraph(nef, instructions, methodGroups) {
 
     if (mnemonic === "CALLA") {
       const stackTarget = valueToPointer(popValue(valueStack));
-      const resolved =
+      const rawTarget =
         stackTarget ??
         pointerTargetBeforeIndex(instructions, index, localValues, staticValues) ??
         pointerTargetFromSlotFlow(instructions[index - 1], instruction, localValues, staticValues);
+      // Only a pointer that lands on a valid instruction offset is a resolved
+      // internal target; an out-of-range pointer is Indirect, not a fabricated
+      // sub_0xNNNN method (mirrors the Rust port).
+      const resolved =
+        rawTarget !== null && instructionOffsets.has(rawTarget) ? rawTarget : null;
       if (resolved !== null) {
         propagateCallArguments(
           methodArgValues,

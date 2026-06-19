@@ -156,6 +156,40 @@ fn call_graph_out_of_range_call_target_is_unresolved() {
 }
 
 #[test]
+fn call_graph_out_of_range_calla_target_is_indirect() {
+    // Regression (adversarial): a PUSHA+CALLA whose pointer lands past the
+    // script end must report an Indirect edge and must NOT fabricate a phantom
+    // method at the out-of-range offset (the MethodTable filters it too).
+    // PUSHA +127 (target 0x7F, far past the 7-byte script); CALLA; RET
+    let script = [0x0A, 0x7F, 0x00, 0x00, 0x00, 0x36, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA")
+        .expect("CALLA edge present");
+    assert!(
+        matches!(edge.target, CallTarget::Indirect { .. }),
+        "out-of-range CALLA target should be Indirect, got {:?}",
+        edge.target
+    );
+    assert!(
+        decompilation
+            .call_graph
+            .methods
+            .iter()
+            .all(|method| method.offset != 127),
+        "out-of-range CALLA must not fabricate a method: {:?}",
+        decompilation.call_graph.methods
+    );
+}
+
+#[test]
 fn decompilation_includes_call_graph_method_tokens() {
     // Script: CALLT 0, RET.
     let script = [0x37, 0x00, 0x00, 0x40];
@@ -893,7 +927,7 @@ fn decompilation_resolves_pickitem_delegate_array_through_local_alias() {
     // Script layout:
     // NEWARRAY0; STLOC0
     // LDLOC0; DUP; STLOC1
-    // PUSHA +14 (target=0x0016); APPEND
+    // PUSHA +13 (target=0x0012, the INITSLOT helper); APPEND
     // LDLOC1; PUSH0; PICKITEM; STLOC2
     // LDLOC2; CALLA; RET
     // target: INITSLOT 0,0; RET
@@ -903,7 +937,7 @@ fn decompilation_resolves_pickitem_delegate_array_through_local_alias() {
         0x68, // LDLOC0
         0x4A, // DUP
         0x71, // STLOC1
-        0x0A, 0x11, 0x00, 0x00, 0x00, // PUSHA +17
+        0x0A, 0x0D, 0x00, 0x00, 0x00, // PUSHA +13 (target=0x0012, a valid in-range helper)
         0xCF, // APPEND
         0x69, // LDLOC1
         0x10, // PUSH0
@@ -930,8 +964,8 @@ fn decompilation_resolves_pickitem_delegate_array_through_local_alias() {
 
     match &edge.target {
         CallTarget::Internal { method } => {
-            assert_eq!(method.offset, 0x0016);
-            assert_eq!(method.name, "sub_0x0016");
+            assert_eq!(method.offset, 0x0012);
+            assert_eq!(method.name, "sub_0x0012");
         }
         other => {
             panic!("expected aliased delegate-array CALLA to resolve helper target, got: {other:?}")

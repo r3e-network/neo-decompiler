@@ -195,7 +195,9 @@ pub fn build_call_graph(
                 // CALLA takes no operand — it pops a Pointer from the stack.
                 // Resolve direct PUSHA + CALLA sequences to internal call edges.
                 let caller = table.method_for_offset(instr.offset);
-                if let Some(target) = calla_target_from_pusha(instructions, index) {
+                if let Some(target) = calla_target_from_pusha(instructions, index)
+                    .filter(|target| instruction_offsets.contains(target))
+                {
                     let callee = table.resolve_internal_target(target);
                     methods.insert(callee.offset, callee.clone());
                     edges.push(CallEdge {
@@ -764,7 +766,7 @@ fn resolve_ldarg_calla_targets(
                 &mut visited,
             );
 
-            if let Some(target) = resolved {
+            if let Some(target) = resolved.filter(|target| offset_to_index.contains_key(target)) {
                 let callee = table.resolve_internal_target(target);
                 methods.insert(callee.offset, callee.clone());
                 edges[*edge_idx].target = CallTarget::Internal { method: callee };
