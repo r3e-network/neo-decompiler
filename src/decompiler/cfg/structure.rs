@@ -18,7 +18,7 @@ use crate::decompiler::cfg::{BlockId, Cfg, Terminator};
 use crate::decompiler::ir::{Block as IrBlock, ControlFlow, Expr, Stmt};
 
 use super::ssa::ssa_expr_to_ir;
-use super::ssa::{DominanceInfo, SsaForm, SsaStmt, SsaVariable};
+use super::ssa::{DominanceInfo, SsaExpr, SsaForm, SsaStmt, SsaVariable};
 
 /// Structure a whole [`SsaForm`] into a single [`IrBlock`] starting from its
 /// entry block.
@@ -202,6 +202,21 @@ impl<'a> StructCtx<'a> {
             return Some(then_target);
         }
 
+        // An equality cascade `if (x == c0) {...} else if (x == c1) {...} else {...}`
+        // (same scrutinee x) is rendered as a switch. Falls back to if/else when
+        // fewer than two cases match or the scrutinee changes.
+        if let Some(switch) = self.try_switch(bid, then_target, else_target, visited) {
+            out.push(Stmt::ControlFlow(Box::new(ControlFlow::Switch {
+                expr: switch.scrutinee,
+                cases: switch.cases,
+                default: switch.default,
+            })));
+            return match switch.merge {
+                Some(m) if Some(m) != outer_boundary => Some(m),
+                _ => None,
+            };
+        }
+
         let merge = self.find_merge(then_target, else_target);
 
         // The then/else sub-regions must stop at the merge so neither side
@@ -239,6 +254,101 @@ impl<'a> StructCtx<'a> {
             }
         }
         Expr::Variable(format!("cond_{}", bid.0))
+    }
+
+    /// The last assignment's value expression in `bid`, if any (the raw SSA
+    /// expression driving the branch, e.g. `(loc0 == 3)`).
+    fn condition_expression(&self, bid: BlockId) -> Option<SsaExpr> {
+        let block = self.ssa.block(bid)?;
+        for stmt in block.stmts.iter().rev() {
+            if let SsaStmt::Assign { value, .. } = stmt {
+                return Some(value.clone());
+            }
+        }
+        None
+    }
+
+    /// Try to recognise a `switch` equality-cascade starting at `bid`.
+    ///
+    /// A Neo C# `switch` lowers to a cascade of `if (scrut == const)` branches
+    /// sharing one scrutinee, terminated by a default tail. Each case body is
+    /// the branch's then-target; the else-chain either continues the cascade or
+    /// reaches the default. Requires at least two equality cases on the same
+    /// scrutinee; otherwise returns `None` (caller falls back to if/else).
+    fn try_switch(
+        &self,
+        bid: BlockId,
+        then_target: BlockId,
+        else_target: BlockId,
+        visited: &mut HashSet<BlockId>,
+    ) -> Option<SwitchResult> {
+        // The first comparison must be `scrut == const` (or `const == scrut`).
+        let first = self.condition_expression(bid)?;
+        let (scrut_base, first_val) = extract_eq_cond(&first)?;
+
+        // Collect the cascade along the else-chain.
+        let mut cases: Vec<(Expr, BlockId)> = vec![(ssa_expr_to_ir(&first_val), then_target)];
+        let mut cur = else_target;
+        let default_entry;
+        loop {
+            // Stop if `cur` has multiple predecessors (a join / merge): the
+            // cascade has reconverged, so what follows is shared code, not a
+            // case comparison.
+            if self.cfg.predecessors(cur).len() >= 2 {
+                default_entry = cur;
+                break;
+            }
+            match self.terminator(cur) {
+                Terminator::Branch {
+                    then_target,
+                    else_target,
+                } => {
+                    let cond = self.condition_expression(cur);
+                    match cond.and_then(|c| extract_eq_cond(&c)) {
+                        Some((base, val)) if base == scrut_base => {
+                            cases.push((ssa_expr_to_ir(&val), then_target));
+                            cur = else_target;
+                        }
+                        _ => {
+                            default_entry = cur;
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    default_entry = cur;
+                    break;
+                }
+            }
+        }
+
+        // Need at least two real equality cases to be worth a switch.
+        if cases.len() < 2 {
+            return None;
+        }
+
+        // The merge: where the case bodies and default reconverge. Use the join
+        // of the first case body and the default tail.
+        let merge = self.find_merge(cases[0].1, default_entry);
+
+        let mut case_blocks: Vec<(Expr, IrBlock)> = Vec::with_capacity(cases.len());
+        for (val, body_entry) in &cases {
+            let body = self.structure_region(*body_entry, merge, visited, true);
+            case_blocks.push((val.clone(), body));
+        }
+        let default_body = self.structure_region(default_entry, merge, visited, true);
+        let default = if default_body.is_empty() {
+            None
+        } else {
+            Some(default_body)
+        };
+
+        Some(SwitchResult {
+            scrutinee: Expr::Variable(scrut_base),
+            cases: case_blocks,
+            default,
+            merge,
+        })
     }
 
     /// Find the merge of two branch arms: the closest block reachable from both
@@ -432,6 +542,54 @@ impl<'a> StructCtx<'a> {
             .block(bid)
             .map(|b| b.terminator.clone())
             .unwrap_or(Terminator::Unknown)
+    }
+}
+
+/// Result of recognising a switch cascade: scrutinee, cases, optional default,
+/// and the merge block to continue from.
+struct SwitchResult {
+    scrutinee: Expr,
+    cases: Vec<(Expr, IrBlock)>,
+    default: Option<IrBlock>,
+    merge: Option<BlockId>,
+}
+
+/// If `expr` is an equality comparison `scrut == literal` (either order), return
+/// the scrutinee's base variable name and the literal operand. Used to recognise
+/// switch-case comparisons; the base name lets cases match across SSA versions.
+fn extract_eq_cond(expr: &SsaExpr) -> Option<(String, SsaExpr)> {
+    use crate::decompiler::ir::BinOp;
+    let SsaExpr::Binary { op, left, right } = expr else {
+        return None;
+    };
+    if !matches!(*op, BinOp::Eq) {
+        return None;
+    }
+    match (left.as_ref(), right.as_ref()) {
+        (SsaExpr::Variable(v), lit) if is_literal(lit) => {
+            Some((strip_version(&var_name(v)), lit.clone()))
+        }
+        (lit, SsaExpr::Variable(v)) if is_literal(lit) => {
+            Some((strip_version(&var_name(v)), lit.clone()))
+        }
+        _ => None,
+    }
+}
+
+fn is_literal(e: &SsaExpr) -> bool {
+    matches!(e, SsaExpr::Literal(_))
+}
+
+/// Strip an SSA variable's version suffix (`loc0_3` → `loc0`) so switch cases
+/// match on the slot identity regardless of which version each comparison reads.
+fn strip_version(name: &str) -> String {
+    match name.rsplit_once('_') {
+        Some((base, digits))
+            if !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit()) =>
+        {
+            base.to_string()
+        }
+        _ => name.to_string(),
     }
 }
 
@@ -831,6 +989,136 @@ mod tests {
         assert!(
             has_dowhile,
             "a bottom-tested loop should structure as DoWhile; got {:?}",
+            structured.stmts
+        );
+    }
+
+    /// A switch: an equality cascade on one scrutinee. B0 compares `loc0 == 0`
+    /// → case0 body, else B1; B1 compares `loc0 == 1` → case1 body, else B2
+    /// (default); all bodies join at the merge B5.
+    #[test]
+    fn structures_an_equality_cascade_into_a_switch() {
+        let mut cfg = Cfg::new();
+        // B0: loc0 == 0 ? case0 : B1
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::Branch {
+                then_target: BlockId(3),
+                else_target: BlockId(1),
+            },
+        ));
+        // B1: loc0 == 1 ? case1 : default(B2)
+        cfg.add_block(BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Branch {
+                then_target: BlockId(4),
+                else_target: BlockId(2),
+            },
+        ));
+        // B2 (default) -> merge
+        cfg.add_block(BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            2..3,
+            Terminator::Jump { target: BlockId(5) },
+        ));
+        // B3 (case0 body) -> merge
+        cfg.add_block(BasicBlock::new(
+            BlockId(3),
+            3,
+            4,
+            3..4,
+            Terminator::Jump { target: BlockId(5) },
+        ));
+        // B4 (case1 body) -> merge
+        cfg.add_block(BasicBlock::new(
+            BlockId(4),
+            4,
+            5,
+            4..5,
+            Terminator::Jump { target: BlockId(5) },
+        ));
+        // B5 (merge)
+        cfg.add_block(BasicBlock::new(BlockId(5), 5, 6, 5..6, Terminator::Return));
+        cfg.add_edge(BlockId(0), BlockId(3), EdgeKind::ConditionalTrue);
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::ConditionalFalse);
+        cfg.add_edge(BlockId(1), BlockId(4), EdgeKind::ConditionalTrue);
+        cfg.add_edge(BlockId(1), BlockId(2), EdgeKind::ConditionalFalse);
+        cfg.add_edge(BlockId(2), BlockId(5), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(3), BlockId(5), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(4), BlockId(5), EdgeKind::Unconditional);
+        let dominance = crate::decompiler::cfg::ssa::compute(&cfg);
+
+        let mut blocks = std::collections::BTreeMap::new();
+        // B0: t0 = (loc0 == 0)
+        blocks.insert(
+            BlockId(0),
+            block_with(vec![SsaStmt::assign(
+                v("t", 0),
+                SsaExpr::binary(
+                    BinOp::Eq,
+                    SsaExpr::var(v("loc0", 0)),
+                    SsaExpr::lit(Literal::Int(0)),
+                ),
+            )]),
+        );
+        // B1: t1 = (loc0 == 1)
+        blocks.insert(
+            BlockId(1),
+            block_with(vec![SsaStmt::assign(
+                v("t", 1),
+                SsaExpr::binary(
+                    BinOp::Eq,
+                    SsaExpr::var(v("loc0", 1)),
+                    SsaExpr::lit(Literal::Int(1)),
+                ),
+            )]),
+        );
+        blocks.insert(
+            BlockId(2),
+            block_with(vec![SsaStmt::assign(
+                v("loc0", 4),
+                SsaExpr::lit(Literal::Int(12)),
+            )]),
+        );
+        blocks.insert(
+            BlockId(3),
+            block_with(vec![SsaStmt::assign(
+                v("loc0", 2),
+                SsaExpr::lit(Literal::Int(10)),
+            )]),
+        );
+        blocks.insert(
+            BlockId(4),
+            block_with(vec![SsaStmt::assign(
+                v("loc0", 3),
+                SsaExpr::lit(Literal::Int(11)),
+            )]),
+        );
+        blocks.insert(BlockId(5), SsaBlock::new());
+
+        let ssa = SsaForm {
+            cfg,
+            dominance,
+            blocks,
+            definitions: std::collections::BTreeMap::new(),
+            uses: std::collections::BTreeMap::new(),
+        };
+
+        let structured = structure(&ssa);
+        let has_switch = structured.stmts.iter().any(
+            |s| matches!(s, Stmt::ControlFlow(cf) if matches!(**cf, ControlFlow::Switch { .. })),
+        );
+        assert!(
+            has_switch,
+            "an equality cascade on one scrutinee should structure as a Switch; got {:?}",
             structured.stmts
         );
     }
