@@ -1,8 +1,35 @@
 # Neo N3 Decompiler — Advanced Decompiler Evolution
 
 **Date:** 2026-06-24
-**Status:** Proposed
+**Status:** Phases 0–4(infra) shipped; full default-path switch + Phase 5 remain.
 **Risk posture:** Major rewrite permitted; 481-test suite is the regression fence throughout.
+
+## Progress (2026-06-24)
+
+All of the foundation landed, tested (513 passing), and committed:
+
+- **Phase 0** ✅ — `tests/corpus_replay.rs` replays the full fuzz + artifact corpus
+  under `catch_unwind` (6,400+ inputs, panic-free). Jump-target resolution audited
+  against the authoritative neo-vm source (`ExecuteJumpOffset` → opcode base) and
+  confirmed correct.
+- **Phase 1** ✅ — type inference wired into the C# renderer via
+  `Decompiler::with_typed_declarations` / `--typed-declarations`
+  (`var loc0` → `BigInteger loc0`); shared `RenderOptions`.
+- **Phase 2** ✅ — real stack-effect SSA (`cfg::ssa::effects` + rewritten
+  `SsaBuilder`): comprehensive `(pop,push)` model, symbolic stack, precise
+  reorders, def/use chains, **φ placement at joins**. Origin-based naming
+  (`loc0`/`arg0`/`static0`/`t0`).
+- **Phase 3** ✅ — SSA optimizations (`cfg::ssa::optimize`): constant fold/prop,
+  copy prop, trivial-φ elimination, DCE to a fixed point. `Decompilation::optimize_ssa()`.
+- **Phase 4 (infrastructure)** ✅ — `cfg::ssa::to_ir` lowers SSA → typed IR and
+  renders it; `cfg::structure` recovers `if`/`if-else`/`while`/`try-catch` from
+  the CFG into `ir::ControlFlow`. Exposed via `render_optimized_ssa()` /
+  `render_structured_ir()` and the CLI (`decompile --format ssa | ir`).
+
+Remaining: switch + for/do-while recovery in the IR structurer, the default-path
+switch (`--ir` rollout at parity), and Phase 5 (de-dup orchestrators / retire the
+string postprocess once the IR path is default). Perf: the key O(n²) postprocess
+passes were already linearized by earlier commits.
 
 ## 1. Problem
 
