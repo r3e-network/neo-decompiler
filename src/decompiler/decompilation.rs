@@ -121,6 +121,20 @@ impl Decompilation {
         }
     }
 
+    /// Compute (if needed) and optimize the SSA form in place.
+    ///
+    /// Runs constant folding/propagation, copy propagation, trivial-φ
+    /// elimination, and dead-code elimination to a fixed point. Returns the
+    /// number of optimization rounds applied (`0` if the form was already
+    /// optimal). Computes the SSA first if it has not been built yet.
+    pub fn optimize_ssa(&mut self) -> usize {
+        self.compute_ssa();
+        match &mut self.ssa {
+            Some(ssa) => crate::decompiler::cfg::ssa::optimize_ssa(ssa),
+            None => 0,
+        }
+    }
+
     /// Get SSA statistics if SSA form is available.
     ///
     /// # Returns

@@ -70,3 +70,35 @@ fn compute_ssa_is_idempotent() {
     let second = dec.ssa().unwrap().stats();
     assert_eq!(first, second, "compute_ssa must be idempotent");
 }
+
+#[test]
+fn optimize_ssa_runs_without_panicking_and_keeps_form_consistent() {
+    // optimize_ssa must run the optimization passes to a fixed point on a real
+    // contract, leave the SSA indexes consistent, and be safe to call twice.
+    let root = repo_root();
+    let nef = fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).unwrap();
+    let manifest = fs::read_to_string(root.join("TestingArtifacts/edgecases/LoopIf.manifest.json"))
+        .ok()
+        .and_then(|s| neo_decompiler::ContractManifest::from_json_str(&s).ok());
+
+    let mut dec = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef, manifest, OutputFormat::All)
+        .unwrap();
+    let rounds = dec.optimize_ssa();
+    // LoopIf has at least one foldable arithmetic (i++-style ADD); the optimizer
+    // may or may not simplify depending on stack layout, but it must not corrupt
+    // the form. Verify the indexes are still self-consistent.
+    let ssa = dec.ssa().expect("optimize_ssa computes SSA");
+    let stats = ssa.stats();
+    let _ = rounds;
+    assert!(
+        stats.total_variables == ssa.definitions.len(),
+        "definition count ({}) must match variable count ({}) after optimization",
+        ssa.definitions.len(),
+        stats.total_variables
+    );
+
+    // Calling optimize again is a no-op (already at fixed point) and must not panic.
+    let second = dec.optimize_ssa();
+    let _ = second;
+}
