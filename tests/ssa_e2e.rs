@@ -102,3 +102,32 @@ fn optimize_ssa_runs_without_panicking_and_keeps_form_consistent() {
     let second = dec.optimize_ssa();
     let _ = second;
 }
+
+#[test]
+fn render_optimized_ssa_produces_readable_block_text() {
+    // The optimized-SSA view should render block headers and at least one
+    // assignment, demonstrating that Phases 2+3 (SSA + optimizations) are
+    // surfaced as analysis-facing text via the IR lowering.
+    let root = repo_root();
+    let nef = fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).unwrap();
+    let manifest = fs::read_to_string(root.join("TestingArtifacts/edgecases/LoopIf.manifest.json"))
+        .ok()
+        .and_then(|s| neo_decompiler::ContractManifest::from_json_str(&s).ok());
+
+    let mut dec = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef, manifest, OutputFormat::All)
+        .unwrap();
+    let text = dec.render_optimized_ssa();
+    assert!(
+        !text.trim().is_empty(),
+        "optimized SSA view must be non-empty"
+    );
+    assert!(
+        text.contains("// block"),
+        "should contain a block header: {text}"
+    );
+    assert!(
+        text.contains("Optimized SSA"),
+        "should contain the form header: {text}"
+    );
+}

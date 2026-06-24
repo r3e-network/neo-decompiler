@@ -135,6 +135,21 @@ impl Decompilation {
         }
     }
 
+    /// Render the optimized SSA form as readable pseudo-code.
+    ///
+    /// Computes and optimizes the SSA (if not already done), then lowers it to
+    /// the typed IR and renders it. This surfaces the Phase 2/3 data-flow work
+    /// (φ resolution, constant folding, copy propagation, DCE) as analysis-facing
+    /// text — the scaffolding for the full IR-spine renderer.
+    #[must_use]
+    pub fn render_optimized_ssa(&mut self) -> String {
+        self.optimize_ssa();
+        match &self.ssa {
+            Some(ssa) => crate::decompiler::cfg::ssa::render_ssa_form(ssa),
+            None => String::new(),
+        }
+    }
+
     /// Get SSA statistics if SSA form is available.
     ///
     /// # Returns
