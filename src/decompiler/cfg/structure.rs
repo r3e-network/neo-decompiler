@@ -119,10 +119,21 @@ impl<'a> StructCtx<'a> {
                         )
                     }
                 }
-                Terminator::TryEntry { .. } | Terminator::EndTry { .. } => {
-                    // Try/catch/finally recovery is a follow-up: emit a marker
-                    // and stop this region to keep the output well-formed.
-                    out.push(Stmt::Comment(format!("try/catch region at {:?}", bid)));
+                Terminator::TryEntry {
+                    body_target,
+                    catch_target,
+                    finally_target,
+                } => self.handle_try(
+                    &mut out,
+                    bid,
+                    body_target,
+                    catch_target,
+                    finally_target,
+                    visited,
+                ),
+                Terminator::EndTry { .. } => {
+                    // An EndTry is the join of a try construct; it is consumed
+                    // by handle_try's continuation logic. Stop if reached bare.
                     None
                 }
             };
@@ -233,6 +244,134 @@ impl<'a> StructCtx<'a> {
             }
         }
         seen
+    }
+
+    /// Recover a `try` / `catch` / `finally` from a `TryEntry` terminator. The
+    /// body, catch, and finally regions are structured independently; the
+    /// construct resumes at the `EndTry` continuation (the post-try merge).
+    fn handle_try(
+        &self,
+        out: &mut IrBlock,
+        bid: BlockId,
+        body_target: BlockId,
+        catch_target: Option<BlockId>,
+        finally_target: Option<BlockId>,
+        visited: &mut HashSet<BlockId>,
+    ) -> Option<BlockId> {
+        // The post-try continuation is the EndTry reachable from the try region.
+        let continuation = self.find_endtry_continuation(body_target);
+
+        // Handlers are boundaries for the body (and vice-versa) so each region
+        // is structured in isolation.
+        let mut body_stop: HashSet<BlockId> = HashSet::new();
+        if let Some(c) = catch_target {
+            body_stop.insert(c);
+        }
+        if let Some(f) = finally_target {
+            body_stop.insert(f);
+        }
+        if let Some(c) = continuation {
+            body_stop.insert(c);
+        }
+        let try_body = self.structure_set(body_target, &body_stop, visited);
+
+        let catch_body = catch_target.map(|c| {
+            let mut stop = HashSet::new();
+            if let Some(f) = finally_target {
+                stop.insert(f);
+            }
+            if let Some(cont) = continuation {
+                stop.insert(cont);
+            }
+            self.structure_set(c, &stop, visited)
+        });
+        let finally_body = finally_target.map(|f| {
+            let mut stop = HashSet::new();
+            if let Some(cont) = continuation {
+                stop.insert(cont);
+            }
+            self.structure_set(f, &stop, visited)
+        });
+
+        out.push(Stmt::ControlFlow(Box::new(ControlFlow::try_catch(
+            try_body,
+            None,
+            catch_body,
+            finally_body,
+        ))));
+        let _ = bid;
+        continuation
+    }
+
+    /// Find the `EndTry` continuation reachable from `start`: the post-try merge
+    /// block. Returns `None` when no `EndTry` is reachable.
+    fn find_endtry_continuation(&self, start: BlockId) -> Option<BlockId> {
+        let mut seen = BTreeSet::new();
+        let mut stack = vec![start];
+        while let Some(b) = stack.pop() {
+            if !seen.insert(b) {
+                continue;
+            }
+            if let Some(block) = self.cfg.block(b) {
+                if let Terminator::EndTry { continuation } = &block.terminator {
+                    return Some(*continuation);
+                }
+                for s in block.terminator.successors() {
+                    stack.push(s);
+                }
+            }
+        }
+        None
+    }
+
+    /// Structure a region that halts at any block in `stop` (a set boundary,
+    /// used for the mutually-exclusive try/catch/finally sub-regions).
+    fn structure_set(
+        &self,
+        entry: BlockId,
+        stop: &HashSet<BlockId>,
+        visited: &mut HashSet<BlockId>,
+    ) -> IrBlock {
+        let mut out = IrBlock::new();
+        let mut cur = Some(entry);
+        while let Some(bid) = cur {
+            if stop.contains(&bid) {
+                break;
+            }
+            if !visited.insert(bid) {
+                break;
+            }
+            self.emit_body(&mut out, bid);
+            cur = match self.terminator(bid) {
+                Terminator::Return
+                | Terminator::Throw
+                | Terminator::Abort
+                | Terminator::Unknown
+                | Terminator::EndTry { .. }
+                | Terminator::TryEntry { .. } => None,
+                Terminator::Fallthrough { target } | Terminator::Jump { target } => Some(target),
+                Terminator::Branch {
+                    then_target,
+                    else_target,
+                } => {
+                    if self.loop_headers.contains(&bid) {
+                        let cond = self.condition_for_block(bid);
+                        let body = self.structure_region(then_target, Some(bid), visited);
+                        out.push(Stmt::ControlFlow(Box::new(ControlFlow::while_loop(
+                            cond, body,
+                        ))));
+                        Some(else_target)
+                    } else {
+                        self.handle_branch(&mut out, bid, then_target, else_target, None, visited)
+                    }
+                }
+            };
+            // Honour the stop set between steps.
+            if matches!(cur, Some(c) if stop.contains(&c)) {
+                break;
+            }
+        }
+        out
     }
 
     fn terminator(&self, bid: BlockId) -> Terminator {
@@ -483,6 +622,90 @@ mod tests {
         assert!(
             has_while,
             "a back-edge branch should structure as a While; got {:?}",
+            structured.stmts
+        );
+    }
+
+    /// A try/catch: TryEntry{body, catch, finally=None}; body and catch both
+    /// reach an EndTry whose continuation is the post-try block.
+    #[test]
+    fn structures_a_try_entry_into_try_catch() {
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::TryEntry {
+                body_target: BlockId(1),
+                catch_target: Some(BlockId(2)),
+                finally_target: None,
+            },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Jump { target: BlockId(3) },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            2..3,
+            Terminator::Jump { target: BlockId(3) },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(3),
+            3,
+            4,
+            3..4,
+            Terminator::EndTry {
+                continuation: BlockId(4),
+            },
+        ));
+        cfg.add_block(BasicBlock::new(BlockId(4), 4, 5, 4..5, Terminator::Return));
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(0), BlockId(2), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(1), BlockId(3), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(2), BlockId(3), EdgeKind::Unconditional);
+        let dominance = crate::decompiler::cfg::ssa::compute(&cfg);
+
+        let mut blocks = std::collections::BTreeMap::new();
+        blocks.insert(
+            BlockId(1),
+            block_with(vec![SsaStmt::assign(
+                v("t", 0),
+                SsaExpr::lit(Literal::Int(1)),
+            )]),
+        );
+        blocks.insert(
+            BlockId(2),
+            block_with(vec![SsaStmt::assign(
+                v("t", 1),
+                SsaExpr::lit(Literal::Int(2)),
+            )]),
+        );
+        blocks.insert(BlockId(0), SsaBlock::new());
+        blocks.insert(BlockId(3), SsaBlock::new());
+        blocks.insert(BlockId(4), SsaBlock::new());
+
+        let ssa = SsaForm {
+            cfg,
+            dominance,
+            blocks,
+            definitions: std::collections::BTreeMap::new(),
+            uses: std::collections::BTreeMap::new(),
+        };
+
+        let structured = structure(&ssa);
+        let has_try = structured.stmts.iter().any(
+            |s| matches!(s, Stmt::ControlFlow(cf) if matches!(**cf, ControlFlow::TryCatch { .. })),
+        );
+        assert!(
+            has_try,
+            "a TryEntry should structure as TryCatch; got {:?}",
             structured.stmts
         );
     }
