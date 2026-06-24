@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashSet};
 
+use crate::decompiler::analysis::call_graph::{CallGraph, CallTarget};
 use crate::instruction::{Instruction, OpCode};
 use crate::manifest::ContractManifest;
 
@@ -260,4 +261,40 @@ fn stack_effect_for_arg_inference(
         },
         _ => None,
     }
+}
+
+/// Build `CALLA`-call-offset → target-method-start-offset, shared by the
+/// high-level and C# renderers (the two copies were byte-identical).
+#[must_use]
+pub(in super::super) fn build_calla_targets_by_offset(
+    call_graph: &CallGraph,
+) -> BTreeMap<usize, usize> {
+    let mut targets = BTreeMap::new();
+    for edge in &call_graph.edges {
+        if edge.opcode != "CALLA" {
+            continue;
+        }
+        if let CallTarget::Internal { method } = &edge.target {
+            targets.insert(edge.call_offset, method.offset);
+        }
+    }
+    targets
+}
+
+/// Build `CALL`/`CALL_L`-call-offset → target-method-start-offset, shared by
+/// the high-level and C# renderers (the two copies were byte-identical).
+#[must_use]
+pub(in super::super) fn build_call_targets_by_offset(
+    call_graph: &CallGraph,
+) -> BTreeMap<usize, usize> {
+    let mut targets = BTreeMap::new();
+    for edge in &call_graph.edges {
+        if edge.opcode != "CALL" && edge.opcode != "CALL_L" {
+            continue;
+        }
+        if let CallTarget::Internal { method } = &edge.target {
+            targets.insert(edge.call_offset, method.offset);
+        }
+    }
+    targets
 }

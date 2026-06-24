@@ -8,7 +8,9 @@ mod parameters;
 mod types;
 
 pub(super) use identifiers::{make_unique_identifier, sanitize_identifier};
-pub(super) use lifted::build_method_arg_counts_by_offset;
+pub(super) use lifted::{
+    build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
+};
 pub(super) use manifest::{extract_contract_name, format_permission_entry, render_extra_scalar};
 pub(super) use methods::{
     collect_call_targets, collect_initslot_offsets, find_manifest_entry_method,

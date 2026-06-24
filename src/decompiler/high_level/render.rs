@@ -1,7 +1,8 @@
-use super::super::analysis::call_graph::{CallGraph, CallTarget};
+use super::super::analysis::call_graph::CallGraph;
 use super::super::helpers::{
-    build_method_arg_counts_by_offset, find_manifest_entry_method, inferred_method_starts,
-    make_unique_identifier, offset_as_usize, sanitize_identifier,
+    build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
+    find_manifest_entry_method, inferred_method_starts, make_unique_identifier, offset_as_usize,
+    sanitize_identifier,
 };
 use crate::decompiler::output_format::RenderOptions;
 use crate::instruction::Instruction;
@@ -249,30 +250,4 @@ fn build_noreturn_method_offsets(
     }
 
     noreturn
-}
-
-fn build_calla_targets_by_offset(call_graph: &CallGraph) -> BTreeMap<usize, usize> {
-    let mut targets = BTreeMap::new();
-    for edge in &call_graph.edges {
-        if edge.opcode != "CALLA" {
-            continue;
-        }
-        if let CallTarget::Internal { method } = &edge.target {
-            targets.insert(edge.call_offset, method.offset);
-        }
-    }
-    targets
-}
-
-fn build_call_targets_by_offset(call_graph: &CallGraph) -> BTreeMap<usize, usize> {
-    let mut targets = BTreeMap::new();
-    for edge in &call_graph.edges {
-        if edge.opcode != "CALL" && edge.opcode != "CALL_L" {
-            continue;
-        }
-        if let CallTarget::Internal { method } = &edge.target {
-            targets.insert(edge.call_offset, method.offset);
-        }
-    }
-    targets
 }

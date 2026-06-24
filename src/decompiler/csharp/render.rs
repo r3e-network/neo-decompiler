@@ -4,7 +4,7 @@
 //! (methods, events, and manifest metadata) and optionally includes lifted
 //! pseudo-bodies when method offsets are available.
 
-use super::super::analysis::call_graph::{CallGraph, CallTarget};
+use super::super::analysis::call_graph::CallGraph;
 use super::super::analysis::types::TypeInfo;
 use crate::decompiler::output_format::RenderOptions;
 use crate::instruction::Instruction;
@@ -14,8 +14,9 @@ use crate::nef::NefFile;
 use std::collections::{BTreeMap, HashSet};
 
 use super::super::helpers::{
-    build_method_arg_counts_by_offset, extract_contract_name, find_manifest_entry_method,
-    inferred_method_starts, inferred_type_to_csharp, make_unique_identifier, offset_as_usize,
+    build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
+    extract_contract_name, find_manifest_entry_method, inferred_method_starts,
+    inferred_type_to_csharp, make_unique_identifier, offset_as_usize,
 };
 use super::helpers::sanitize_csharp_identifier;
 use super::helpers::SlotTypes;
@@ -193,32 +194,6 @@ fn build_method_labels_by_offset(
     }
 
     labels
-}
-
-fn build_calla_targets_by_offset(call_graph: &CallGraph) -> BTreeMap<usize, usize> {
-    let mut targets = BTreeMap::new();
-    for edge in &call_graph.edges {
-        if edge.opcode != "CALLA" {
-            continue;
-        }
-        if let CallTarget::Internal { method } = &edge.target {
-            targets.insert(edge.call_offset, method.offset);
-        }
-    }
-    targets
-}
-
-fn build_call_targets_by_offset(call_graph: &CallGraph) -> BTreeMap<usize, usize> {
-    let mut targets = BTreeMap::new();
-    for edge in &call_graph.edges {
-        if edge.opcode != "CALL" && edge.opcode != "CALL_L" {
-            continue;
-        }
-        if let CallTarget::Internal { method } = &edge.target {
-            targets.insert(edge.call_offset, method.offset);
-        }
-    }
-    targets
 }
 
 /// Build per-method [`SlotTypes`] from the inferred [`TypeInfo`].
