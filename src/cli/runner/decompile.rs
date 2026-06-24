@@ -36,6 +36,9 @@ impl Cli {
                 matches!(output_format, OutputFormat::CSharp | OutputFormat::All)
             }
             DecompileFormat::Both | DecompileFormat::Json => output_format == OutputFormat::All,
+            // The IR / SSA views are derived from the CFG + SSA, which are
+            // always computed, so they don't require a particular output format.
+            DecompileFormat::Ir | DecompileFormat::Ssa => true,
         };
         let effective_output_format = if output_format_covers_view {
             output_format
@@ -45,7 +48,7 @@ impl Cli {
 
         let data = Self::read_nef_bytes(path)?;
         let manifest = self.load_manifest(path)?;
-        let result =
+        let mut result =
             decompiler.decompile_bytes_with_manifest(&data, manifest, effective_output_format)?;
 
         match format {
@@ -73,6 +76,20 @@ impl Cli {
             DecompileFormat::Csharp => {
                 self.write_stdout(|out| {
                     write!(out, "{}", result.csharp.as_deref().unwrap_or_default())?;
+                    Self::write_warnings(out, &result.warnings)
+                })?;
+            }
+            DecompileFormat::Ir => {
+                let text = result.render_structured_ir();
+                self.write_stdout(|out| {
+                    write!(out, "{text}")?;
+                    Self::write_warnings(out, &result.warnings)
+                })?;
+            }
+            DecompileFormat::Ssa => {
+                let text = result.render_optimized_ssa();
+                self.write_stdout(|out| {
+                    write!(out, "{text}")?;
                     Self::write_warnings(out, &result.warnings)
                 })?;
             }

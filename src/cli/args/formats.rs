@@ -8,6 +8,10 @@ pub(in crate::cli) enum DecompileFormat {
     Both,
     Csharp,
     Json,
+    /// Structured IR view (CFG → ir::ControlFlow), the Phase-4 spine path.
+    Ir,
+    /// Optimized SSA view (def/use, phi, constant folding/DCE).
+    Ssa,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
