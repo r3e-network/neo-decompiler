@@ -33,7 +33,7 @@ pub fn structure(ssa: &SsaForm) -> IrBlock {
     let entry = ssa.cfg.blocks().next().map(|b| b.id);
     let mut visited = HashSet::new();
     match entry {
-        Some(e) => ctx.structure_region(e, None, &mut visited),
+        Some(e) => ctx.structure_region(e, None, &mut visited, true),
         None => IrBlock::new(),
     }
 }
@@ -69,6 +69,7 @@ impl<'a> StructCtx<'a> {
         entry: BlockId,
         boundary: Option<BlockId>,
         visited: &mut HashSet<BlockId>,
+        detect_dowhile: bool,
     ) -> IrBlock {
         let mut out = IrBlock::new();
         let mut cur = Some(entry);
@@ -77,6 +78,31 @@ impl<'a> StructCtx<'a> {
             if Some(bid) == boundary {
                 break;
             }
+
+            // do-while: a loop header whose own terminator is NOT a Branch (the
+            // test sits at the bottom, on the latch). Detect it at the header so
+            // the whole body is collected before the test, then resume at the
+            // latch's exit. `detect_dowhile` is cleared for the body sub-walk so
+            // the header isn't re-detected on re-entry.
+            if detect_dowhile
+                && self.loop_headers.contains(&bid)
+                && !matches!(self.terminator(bid), Terminator::Branch { .. })
+            {
+                if let Some((latch, exit)) = self.find_dowhile_latch(bid) {
+                    let body = self.structure_region(bid, Some(latch), visited, false);
+                    let cond = self.condition_for_block(latch);
+                    out.push(Stmt::ControlFlow(Box::new(ControlFlow::do_while(
+                        body, cond,
+                    ))));
+                    // The latch's test is consumed by the do-while; mark it
+                    // visited so the outer walk does not re-emit it, and resume
+                    // at its exit.
+                    visited.insert(latch);
+                    cur = Some(exit);
+                    continue;
+                }
+            }
+
             if !visited.insert(bid) {
                 break;
             }
@@ -103,7 +129,7 @@ impl<'a> StructCtx<'a> {
                     // the header (already visited).
                     if self.loop_headers.contains(&bid) {
                         let cond = self.condition_for_block(bid);
-                        let body = self.structure_region(then_target, Some(bid), visited);
+                        let body = self.structure_region(then_target, Some(bid), visited, true);
                         out.push(Stmt::ControlFlow(Box::new(ControlFlow::while_loop(
                             cond, body,
                         ))));
@@ -180,8 +206,8 @@ impl<'a> StructCtx<'a> {
 
         // The then/else sub-regions must stop at the merge so neither side
         // duplicates the post-merge code.
-        let then_block = self.structure_region(then_target, merge, visited);
-        let else_block = self.structure_region(else_target, merge, visited);
+        let then_block = self.structure_region(then_target, merge, visited, true);
+        let else_block = self.structure_region(else_target, merge, visited, true);
 
         let cf = if else_block.is_empty() && then_block.is_empty() {
             // Both sides empty: keep the condition as a bare statement.
@@ -356,7 +382,7 @@ impl<'a> StructCtx<'a> {
                 } => {
                     if self.loop_headers.contains(&bid) {
                         let cond = self.condition_for_block(bid);
-                        let body = self.structure_region(then_target, Some(bid), visited);
+                        let body = self.structure_region(then_target, Some(bid), visited, true);
                         out.push(Stmt::ControlFlow(Box::new(ControlFlow::while_loop(
                             cond, body,
                         ))));
@@ -372,6 +398,33 @@ impl<'a> StructCtx<'a> {
             }
         }
         out
+    }
+
+    /// For a do-while loop header `header`, find its latch: the back-edge
+    /// predecessor that is a `Branch` re-entering `header`. Returns `(latch,
+    /// exit)` where `exit` is the latch's other (non-back-edge) target.
+    fn find_dowhile_latch(&self, header: BlockId) -> Option<(BlockId, BlockId)> {
+        for pred in self.cfg.predecessors(header) {
+            // The latch is inside the loop (header dominates it).
+            if !self.ssa.dominance.strictly_dominates(header, *pred) {
+                continue;
+            }
+            if let Terminator::Branch {
+                then_target,
+                else_target,
+            } = self.terminator(*pred)
+            {
+                // One target must be the back-edge to the header; the other is
+                // the loop exit.
+                if then_target == header {
+                    return Some((*pred, else_target));
+                }
+                if else_target == header {
+                    return Some((*pred, then_target));
+                }
+            }
+        }
+        None
     }
 
     fn terminator(&self, bid: BlockId) -> Terminator {
@@ -706,6 +759,78 @@ mod tests {
         assert!(
             has_try,
             "a TryEntry should structure as TryCatch; got {:?}",
+            structured.stmts
+        );
+    }
+
+    /// A do-while: BB0 (body entry, falls through to the latch) is the loop
+    /// header; BB1 (latch) tests the condition and branches back to BB0 or out
+    /// to BB2. BB0 dominates BB1, so BB0 is a loop header whose terminator is
+    /// not a Branch → do-while.
+    #[test]
+    fn structures_a_bottom_tested_loop_into_do_while() {
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::Fallthrough { target: BlockId(1) },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Branch {
+                then_target: BlockId(0),
+                else_target: BlockId(2),
+            },
+        ));
+        cfg.add_block(BasicBlock::new(BlockId(2), 2, 3, 2..3, Terminator::Return));
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(1), BlockId(0), EdgeKind::ConditionalTrue);
+        cfg.add_edge(BlockId(1), BlockId(2), EdgeKind::ConditionalFalse);
+        let dominance = crate::decompiler::cfg::ssa::compute(&cfg);
+
+        let mut blocks = std::collections::BTreeMap::new();
+        // body: b0_0 = step()
+        blocks.insert(
+            BlockId(0),
+            block_with(vec![SsaStmt::assign(
+                v("t", 0),
+                SsaExpr::call("step".to_string(), vec![]),
+            )]),
+        );
+        // latch condition: b1_0 = (loc0 < 3)
+        blocks.insert(
+            BlockId(1),
+            block_with(vec![SsaStmt::assign(
+                v("t", 1),
+                SsaExpr::binary(
+                    BinOp::Lt,
+                    SsaExpr::var(v("loc0", 0)),
+                    SsaExpr::lit(Literal::Int(3)),
+                ),
+            )]),
+        );
+        blocks.insert(BlockId(2), SsaBlock::new());
+
+        let ssa = SsaForm {
+            cfg,
+            dominance,
+            blocks,
+            definitions: std::collections::BTreeMap::new(),
+            uses: std::collections::BTreeMap::new(),
+        };
+
+        let structured = structure(&ssa);
+        let has_dowhile = structured.stmts.iter().any(
+            |s| matches!(s, Stmt::ControlFlow(cf) if matches!(**cf, ControlFlow::DoWhile { .. })),
+        );
+        assert!(
+            has_dowhile,
+            "a bottom-tested loop should structure as DoWhile; got {:?}",
             structured.stmts
         );
     }
