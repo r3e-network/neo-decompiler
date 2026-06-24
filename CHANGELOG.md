@@ -3,6 +3,82 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.9.0] - 2026-06-24 (Rust)
+
+The data-flow and structural-control-flow spine: a real stack-effect SSA layer,
+its optimizer, a typed IR renderer, and CFG-based recovery of structured control
+flow (if/else, while, do-while, try/catch/finally, switch). All additive — the
+legacy high-level/C# paths remain the default; the new SSA/IR views are surfaced
+behind `--format ir` / `--format ssa`. No public API breaks and no output-
+contract changes for existing formats. The JS port (`neo-decompiler-js`) is
+unchanged in this cycle and is not re-released.
+
+### Added
+
+- **Stack-effect SSA with def/use chains and φ placement.** The CFG now lifts to
+  a real SSA form: per-block symbolic-stack simulation, def/use tracking, and
+  φ-node insertion at dominance frontiers over precomputed dominance / immediate
+  dominators. This is the foundation the optimizer and the IR structurer build
+  on.
+- **SSA optimizations to a fixed point.** Constant folding/propagation, copy
+  propagation, trivial-φ elimination, and dead-code elimination iterate until no
+  further change, so the IR/SSA views show clean single-static-assignment data
+  flow rather than the raw lifted form.
+- **Origin-based SSA variable naming.** SSA temps are named by their origin slot
+  (`loc0`, `arg0`, `static0`) or as a pure temp (`t0`), keeping cross-block and
+  cross-iteration reads readable instead of anonymous `v0`.
+- **Optimized-SSA rendering.** `render_optimized_ssa` lowers the optimized SSA
+  to readable per-block pseudo-code (one statement per def), surfacing the data-
+  flow work as analysis-facing text.
+- **Structured-IR recovery (Phase 4 IR spine).** Instead of recovering control
+  flow by pattern-matching rendered text, a CFG structurer walks dominance and
+  back-edges to emit typed `ir::ControlFlow` nodes: if / if-else from branch
+  diamonds, while loops from CFG back-edges, do-while loops from bottom-tested
+  back-edges, try/catch/finally from `TryEntry` terminators, and switch
+  statements from equality cascades sharing one scrutinee. Unrecognised shapes
+  fall back to a well-formed block list, so output braces are always balanced.
+- **`--format ir` / `--format ssa` CLI views.** The structured-IR and optimized-
+  SSA renderers are exposed through the CLI's `--format` selector, alongside the
+  existing text / high-level / json / c# outputs.
+- **Type inference wired into the C# renderer (opt-in).** Inferred primitive /
+  collection types annotate the C# output when requested, matching the typed-
+  declarations analysis.
+
+### Changed
+
+- **Call-target rendering de-duplicated (Phase 5).** The render path's repeated
+  call-target builders were unified behind shared helpers, removing per-format
+  duplication ahead of the IR-spine render.
+- **Loop emission unified behind `build_loop`.** Both while-emission sites in the
+  structurer route through a single helper, which documents why for-loop
+  promotion isn't attempted: SSA versions differ across the init / condition /
+  update, so the `while` form is the semantically-exact one and the `for` form
+  is pure cosmetics.
+
+### Fixed
+
+- **CFG: `Jmpifnot` inverted the `Branch` then/else contract.** The CFG builder
+  set `then_target` to the jump target for every conditional jump, but
+  `Terminator::Branch` (and the `ConditionalTrue` / `ConditionalFalse` edge
+  labels) define `then_target` as the condition-true branch. `Jmpifnot` (the
+  opcode C# lowers `if` / `switch` to) jumps on false, so its jump target is the
+  condition-false branch — inverting then/else for every `Jmpifnot`. This broke
+  the new IR structurer on real bytecode: switch recovery followed the wrong arm
+  and bailed to a malformed nested `if`, and plain `if` / `while` recovery
+  rendered inverted arms. `Jmpifnot` / `Jmpifnot_L` now honour the documented
+  contract (`then_target` = fallthrough = condition-true); all other conditional
+  jumps jump-on-true and are unchanged.
+
+### Tests / Docs
+
+- Added a full-corpus replay / panic regression fence, plus an end-to-end
+  `ir_pipeline` test that validates switch recovery from real bytecode, if
+  recovery from a real artifact, and balanced-brace well-formedness across the
+  whole artifact corpus.
+- The README and the advanced-decompiler design spec now reflect the shipped
+  SSA / optimization / IR-structuring capabilities and the Phase 0–4(infra)
+  status.
+
 ## [0.8.2] - 2026-06-19 (Rust) / [1.5.2] - 2026-06-19 (JS)
 
 A correctness and semantic-faithfulness pass over both the Rust core and the JS
