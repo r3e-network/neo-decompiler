@@ -111,12 +111,11 @@ impl Decompilation {
 
     /// Compute SSA form if not already computed.
     ///
-    /// This is a convenience method for computing SSA form lazily.
-    /// After calling this, `ssa()` will return `Some(...)`.
+    /// Builds a real stack-effect SSA (def/use chains + φ nodes at control-flow
+    /// joins) from the instructions and CFG, with precomputed dominance
+    /// information. See [`SsaBuilder`](crate::decompiler::cfg::ssa::SsaBuilder).
     pub fn compute_ssa(&mut self) {
         if self.ssa.is_none() && self.cfg.block_count() > 0 {
-            // Build the structural SSA skeleton (dominance info + versioned PUSH
-            // assignments) from the instructions and CFG. See `SsaBuilder`.
             let builder = SsaBuilder::new(&self.cfg, &self.instructions);
             self.ssa = Some(builder.build());
         }

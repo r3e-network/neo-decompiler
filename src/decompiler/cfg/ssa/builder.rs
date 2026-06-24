@@ -1,52 +1,58 @@
-//! SSA construction from a CFG and instruction stream.
+//! Stack-effect SSA construction from a CFG and instruction stream.
 //!
-//! This produces a **structural SSA skeleton**, not a full data-flow SSA:
+//! This replaces the earlier PUSH-only skeleton with a genuine stack-machine
+//! SSA: every opcode's `(pop, push)` effect is modelled (see [`effects`]), the
+//! eval stack is tracked symbolically as `Vec<SsaVariable>`, and φ nodes are
+//! placed at control-flow joins where predecessors disagree on a stack slot.
 //!
-//! - Each [`SsaForm`] carries precomputed dominance information (immediate
-//!   dominators, dominator tree, and dominance frontiers) for structural
-//!   queries.
-//! - Only `Push0`–`Push16` opcodes generate true versioned SSA assignments;
-//!   every other opcode (arithmetic, comparisons, control flow, etc.) is
-//!   lowered to a comment-only statement.
-//! - The φ-node data model exists (`PhiNode`, `SsaBlock::add_phi`), but the
-//!   skeleton does not track the cross-block variable definitions required to
-//!   place φ nodes, so none are inserted in practice.
+//! ### Algorithm
 //!
-//! Producing a full SSA form (real def/use chains plus φ placement and renaming)
-//! requires mapping each opcode's stack effects to explicit SSA definitions and
-//! uses — tracked as future work.
+//! 1. Compute dominance (Cooper-Harvey-Kennedy) — gives idom / dominator tree
+//!    / dominance frontiers (used by downstream analyses and exposed on
+//!    [`SsaForm`]).
+//! 2. Fixpoint over blocks in program order:
+//!    - Compute each block's **entry symbolic stack** from its predecessors'
+//!      exit stacks. Where predecessors agree on a slot, the value flows
+//!      through unchanged; where they disagree, a φ node is placed (canonical
+//!      target per `(block, depth)`).
+//!    - **Execute** the block straight-line: each compute opcode pops N uses
+//!      and pushes a fresh SSA definition carrying a real [`SsaExpr`] (binary,
+//!      unary, literal, or a `Call` placeholder); reorder opcodes transform the
+//!      symbolic stack directly.
+//!    - Repeat until exit stacks and φ sets stop changing.
+//!
+//! Convergence is guaranteed because each block's exit-slot *identity* is
+//! canonical (`b{block}_v{ordinal}`) and thus deterministic, so the join
+//! structure reaches a fixed point within a small number of passes.
+//!
+//! The result carries real def/use chains and φ nodes suitable for the
+//! constant-propagation / DCE passes (Phase 3).
 
 #![allow(clippy::needless_return)]
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::cfg::{BlockId, Cfg};
-use crate::instruction::Instruction;
+use crate::decompiler::ir::{BinOp, Literal, UnaryOp};
+use crate::instruction::{Instruction, OpCode, Operand};
 
 use super::dominance::{self, DominanceInfo};
+use super::effects;
 use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
 use super::variable::SsaVariable;
 
-/// Intermediate result from SSA block construction: (blocks, definitions, uses).
+/// `(blocks, definitions, uses)` — the assembled SSA pieces.
 type SsaBuildResult = (
     BTreeMap<BlockId, SsaBlock>,
     BTreeMap<SsaVariable, BlockId>,
     BTreeMap<SsaVariable, BTreeSet<UseSite>>,
 );
 
-/// Builder for constructing SSA form from a CFG and instructions.
+/// Builder for stack-effect SSA form from a CFG and instructions.
 pub struct SsaBuilder<'a> {
-    /// The CFG being converted to SSA.
     cfg: &'a Cfg,
-
-    /// Instructions referenced by the CFG (indexed by offset).
     instructions: &'a [Instruction],
-
-    /// Pre-computed dominance information.
     dominance: DominanceInfo,
-
-    /// Current version number for each base variable name.
-    versions: BTreeMap<String, usize>,
 }
 
 impl<'a> SsaBuilder<'a> {
@@ -54,294 +60,636 @@ impl<'a> SsaBuilder<'a> {
     #[must_use]
     pub fn new(cfg: &'a Cfg, instructions: &'a [Instruction]) -> Self {
         let dominance = dominance::compute(cfg);
-
         Self {
             cfg,
             instructions,
             dominance,
-            versions: BTreeMap::new(),
         }
     }
 
-    /// Build the structural SSA skeleton from the CFG and instructions.
-    ///
-    /// Emits one SSA block per CFG block, carrying the precomputed dominance
-    /// information. Only `Push0`–`Push16` opcodes become versioned assignments;
-    /// no φ nodes are placed (see the module docs for the skeleton's scope).
+    /// Build the stack-effect SSA form from the CFG and instructions.
     #[must_use]
-    pub fn build(mut self) -> SsaForm {
-        let (ssa_blocks, definitions, uses) = self.build_ssa_blocks();
+    pub fn build(self) -> SsaForm {
+        let (blocks, definitions, uses) = self.build_ssa_blocks();
         SsaForm {
             cfg: self.cfg.clone(),
             dominance: self.dominance,
-            blocks: ssa_blocks,
+            blocks,
             definitions,
             uses,
         }
     }
 
-    /// Build the per-block SSA skeleton (versioned `Push` assignments plus
-    /// comment statements for every other opcode).
-    ///
-    /// Returns the built blocks, definitions, and uses separately so the
-    /// caller can assemble `SsaForm` without cloning `dominance`.
-    fn build_ssa_blocks(&mut self) -> SsaBuildResult {
+    /// Run the fixpoint that produces per-block φ nodes, exit stacks, and the
+    /// assembled [`SsaForm`] pieces.
+    fn build_ssa_blocks(&self) -> SsaBuildResult {
+        let block_ids: Vec<BlockId> = self.cfg.blocks().map(|b| b.id).collect();
+
+        // Work space: per-block entry/exit symbolic stacks and recorded uses.
+        // Exit-stack *identity* is canonical per (block, push-ordinal), so the
+        // loop converges once the join structure stops changing.
+        let mut entry_stacks: BTreeMap<BlockId, Vec<SsaVariable>> = BTreeMap::new();
+        let mut exit_stacks: BTreeMap<BlockId, Vec<SsaVariable>> = BTreeMap::new();
+        let mut block_uses: BTreeMap<BlockId, Vec<(SsaVariable, usize)>> = BTreeMap::new();
+
+        // Upper bound on iterations: a couple of passes beyond the block count
+        // is plenty for reducible + irreducible graphs given canonical naming.
+        let max_iterations = block_ids.len() + 4;
+        let mut changed = true;
+        let mut iterations = 0usize;
+        while changed && iterations <= max_iterations {
+            changed = false;
+            iterations += 1;
+            for &bid in &block_ids {
+                let (new_entry, _new_phis) = self.compute_join_entry(bid, &exit_stacks);
+                let exec = self.execute_block(bid, &new_entry);
+
+                let exit_changed = exit_stacks.get(&bid) != Some(&exec.exit_stack);
+                let entry_changed = entry_stacks.get(&bid) != Some(&new_entry);
+                if exit_changed || entry_changed {
+                    changed = true;
+                }
+                entry_stacks.insert(bid, new_entry);
+                exit_stacks.insert(bid, exec.exit_stack);
+                block_uses.insert(bid, exec.uses);
+            }
+        }
+
+        // Final pass: recompute phis from the stabilised exit stacks and assemble.
         let mut ssa_blocks = BTreeMap::new();
         let mut definitions = BTreeMap::new();
-        let mut uses = BTreeMap::new();
+        let mut uses: BTreeMap<SsaVariable, BTreeSet<UseSite>> = BTreeMap::new();
 
-        for block in self.cfg.blocks() {
-            let mut ssa_block = SsaBlock::new();
+        for &bid in &block_ids {
+            let entry = entry_stacks.get(&bid).cloned().unwrap_or_default();
+            let (_, phis) = self.compute_join_entry(bid, &exit_stacks);
+            let exec = self.execute_block(bid, &entry);
 
-            // Add terminator information as comment
-            match &block.terminator {
-                crate::decompiler::cfg::Terminator::Return => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        format!("return from block {:?}", block.id),
-                    )));
+            let mut sb = SsaBlock::new();
+            for phi in &phis {
+                definitions.insert(phi.target.clone(), bid);
+                // φ operands are uses at the block head (stmt_index 0).
+                for var in phi.operands.values() {
+                    uses.entry(var.clone())
+                        .or_default()
+                        .insert(UseSite::new(bid, 0));
                 }
-                crate::decompiler::cfg::Terminator::Jump { target } => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        format!("jump to {:?}", target),
-                    )));
-                }
-                crate::decompiler::cfg::Terminator::Branch {
-                    then_target,
-                    else_target,
-                } => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        format!("branch: then={:?}, else={:?}", then_target, else_target),
-                    )));
-                }
-                crate::decompiler::cfg::Terminator::Fallthrough { target } => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        format!("fallthrough to {:?}", target),
-                    )));
-                }
-                crate::decompiler::cfg::Terminator::TryEntry { .. } => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "try entry".to_string(),
-                    )));
-                }
-                crate::decompiler::cfg::Terminator::EndTry { .. } => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "end try".to_string(),
-                    )));
-                }
-                crate::decompiler::cfg::Terminator::Throw => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "throw exception".to_string(),
-                    )));
-                }
-                crate::decompiler::cfg::Terminator::Abort => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "abort execution".to_string(),
-                    )));
-                }
-                crate::decompiler::cfg::Terminator::Unknown => {
-                    ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                        "unknown terminator".to_string(),
-                    )));
-                }
+                sb.add_phi(phi.clone());
             }
-
-            // Process instructions to populate SSA statements
-            let mut statement_count = 0;
-            for idx in block.instruction_range.clone() {
-                if let Some(instr) = self.instructions.get(idx) {
-                    if self.process_instruction_for_ssa(
-                        block.id,
-                        idx,
-                        instr,
-                        &mut ssa_block,
-                        &mut definitions,
-                        &mut uses,
-                    ) {
-                        statement_count += 1;
+            for (i, stmt) in exec.stmts.iter().enumerate() {
+                if let SsaStmt::Assign { target, value } = stmt {
+                    definitions.insert(target.clone(), bid);
+                    for used in collect_expr_uses(value) {
+                        uses.entry(used).or_default().insert(UseSite::new(bid, i));
                     }
                 }
+                sb.add_stmt(stmt.clone());
             }
-
-            // If no statements were added, add a placeholder comment
-            if statement_count == 0 && ssa_block.phi_count() == 0 {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    format!(
-                        "empty block {:?} (offsets {}..{})",
-                        block.id, block.start_offset, block.end_offset
-                    ),
-                )));
+            // Fold in uses recorded for non-Assign consumers (stores, jumps, …).
+            for (var, idx) in block_uses.get(&bid).cloned().unwrap_or_default() {
+                uses.entry(var).or_default().insert(UseSite::new(bid, idx));
             }
-
-            ssa_blocks.insert(block.id, ssa_block);
+            ssa_blocks.insert(bid, sb);
         }
 
         (ssa_blocks, definitions, uses)
     }
 
-    /// Process a single instruction to extract SSA-relevant information.
-    ///
-    /// Returns true if an SSA statement was created.
-    fn process_instruction_for_ssa(
-        &mut self,
-        block_id: BlockId,
-        offset: usize,
+    /// Compute a block's entry symbolic stack and the φ nodes it needs, from its
+    /// predecessors' current exit stacks. Where all predecessors agree on a
+    /// slot the value flows through; where they disagree a φ node is placed.
+    fn compute_join_entry(
+        &self,
+        bid: BlockId,
+        exit_stacks: &BTreeMap<BlockId, Vec<SsaVariable>>,
+    ) -> (Vec<SsaVariable>, Vec<super::variable::PhiNode>) {
+        use super::variable::PhiNode;
+        let preds = self.cfg.predecessors(bid);
+        if preds.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+
+        let mut entry = Vec::new();
+        let mut phis = Vec::new();
+        let mut depth = 0usize;
+        loop {
+            // Gather the var each predecessor holds at this depth, if any.
+            let mut operands: Vec<(BlockId, SsaVariable)> = Vec::new();
+            for pred in preds {
+                if let Some(stack) = exit_stacks.get(pred) {
+                    if let Some(var) = stack.get(depth) {
+                        operands.push((*pred, var.clone()));
+                    }
+                }
+            }
+            if operands.is_empty() {
+                break;
+            }
+            let first = operands[0].1.clone();
+            let all_agree = operands.iter().all(|(_, v)| *v == first);
+            if all_agree {
+                entry.push(first);
+            } else {
+                let target = phi_var(bid, depth);
+                let mut phi = PhiNode::new(target.clone());
+                for (pred, var) in &operands {
+                    phi.add_operand(*pred, var.clone());
+                }
+                // φ operands are uses of the incoming values.
+                entry.push(target);
+                phis.push(phi);
+            }
+            depth += 1;
+        }
+
+        (entry, phis)
+    }
+
+    /// Symbolically execute one block straight-line from `entry`, producing the
+    /// exit stack, the SSA statements (assignments only), and the use list
+    /// (vars consumed by non-assignment opcodes such as stores / conditions).
+    fn execute_block(&self, bid: BlockId, entry: &[SsaVariable]) -> BlockExec {
+        let Some(block) = self.cfg.block(bid) else {
+            return BlockExec::default();
+        };
+        let mut stack: Vec<SsaVariable> = entry.to_vec();
+        let mut stmts: Vec<SsaStmt> = Vec::new();
+        let mut uses: Vec<(SsaVariable, usize)> = Vec::new();
+        let mut push_ordinal = 0usize;
+
+        for idx in block.instruction_range.clone() {
+            let Some(instr) = self.instructions.get(idx) else {
+                continue;
+            };
+            self.apply_instruction(
+                instr,
+                bid,
+                &mut stack,
+                &mut stmts,
+                &mut uses,
+                &mut push_ordinal,
+            );
+        }
+
+        BlockExec {
+            exit_stack: stack,
+            stmts,
+            uses,
+        }
+    }
+
+    /// Apply a single instruction's stack effect / transformation.
+    fn apply_instruction(
+        &self,
         instr: &Instruction,
-        ssa_block: &mut SsaBlock,
-        definitions: &mut BTreeMap<SsaVariable, BlockId>,
-        _uses: &mut BTreeMap<SsaVariable, BTreeSet<UseSite>>,
-    ) -> bool {
-        use crate::instruction::OpCode;
+        bid: BlockId,
+        stack: &mut Vec<SsaVariable>,
+        stmts: &mut Vec<SsaStmt>,
+        uses: &mut Vec<(SsaVariable, usize)>,
+        push_ordinal: &mut usize,
+    ) {
+        let op = instr.opcode;
 
-        // Create a comment showing the instruction
-        ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-            format!("// {}: {:?}", offset, instr.opcode),
-        )));
+        if effects::is_stack_reorder(op) {
+            self.apply_reorder(op, bid, stack, stmts, push_ordinal);
+            return;
+        }
+        if effects::is_stack_special(op) {
+            self.apply_special(instr, bid, stack, stmts, uses, push_ordinal);
+            return;
+        }
 
-        // Track variable operations
-        match instr.opcode {
-            // Handle Push0-Push16 opcodes using a unified pattern
-            OpCode::Push0
-            | OpCode::Push1
-            | OpCode::Push2
-            | OpCode::Push3
-            | OpCode::Push4
-            | OpCode::Push5
-            | OpCode::Push6
-            | OpCode::Push7
-            | OpCode::Push8
-            | OpCode::Push9
-            | OpCode::Push10
-            | OpCode::Push11
-            | OpCode::Push12
-            | OpCode::Push13
-            | OpCode::Push14
-            | OpCode::Push15
-            | OpCode::Push16 => {
-                let value = self.extract_push_value(instr.opcode);
-                let var = self.new_version(format!("stack_{}", value));
-                ssa_block.add_stmt(SsaStmt::assign(
-                    var.clone(),
-                    SsaExpr::lit(crate::decompiler::ir::Literal::Int(value)),
+        let (pop, push) = effects::stack_effect(op);
+
+        // Pop consumers (top-first). Reversed afterwards so `popped` is
+        // ordered deep-to-top, matching source-language operand order.
+        let mut popped: Vec<SsaVariable> = Vec::with_capacity(pop);
+        for _ in 0..pop {
+            let v = stack.pop().unwrap_or_else(unknown_var);
+            popped.push(v);
+        }
+        popped.reverse();
+
+        // Record uses for the consumed values at the current statement index.
+        let use_index = stmts.len();
+        for v in &popped {
+            if !is_unknown(v) {
+                uses.push((v.clone(), use_index));
+            }
+        }
+
+        if push == 1 {
+            let expr = self.build_expr(op, instr, &popped);
+            let target = block_var(bid, *push_ordinal);
+            stmts.push(SsaStmt::assign(target.clone(), expr));
+            stack.push(target);
+            *push_ordinal += 1;
+        }
+        // push == 0: the opcode only consumed values (store / assert / jump
+        // condition). No statement is emitted — the data-flow uses are recorded
+        // above, which is what downstream analyses need.
+    }
+
+    /// Handle fixed-shape stack reorders (DUP/OVER/TUCK/SWAP/ROT/REVERSE3/4/
+    /// DEPTH/DROP/NIP). New copies get a fresh SSA definition so the single-
+    /// assignment property is preserved.
+    fn apply_reorder(
+        &self,
+        op: OpCode,
+        bid: BlockId,
+        stack: &mut Vec<SsaVariable>,
+        stmts: &mut Vec<SsaStmt>,
+        push_ordinal: &mut usize,
+    ) {
+        let mut fresh_copy =
+            |src: SsaVariable, stack: &mut Vec<SsaVariable>, stmts: &mut Vec<SsaStmt>| {
+                let target = block_var(bid, *push_ordinal);
+                stmts.push(SsaStmt::assign(target.clone(), SsaExpr::var(src)));
+                stack.push(target);
+                *push_ordinal += 1;
+            };
+
+        match op {
+            OpCode::Dup => {
+                if let Some(top) = stack.last().cloned() {
+                    fresh_copy(top, stack, stmts);
+                }
+            }
+            OpCode::Over => {
+                // [.. a, b] -> push copy of a (second from top)
+                if stack.len() >= 2 {
+                    let second = stack[stack.len() - 2].clone();
+                    fresh_copy(second, stack, stmts);
+                }
+            }
+            OpCode::Tuck => {
+                // [.. a, b] -> [.. b_copy, a, b]
+                if stack.len() >= 2 {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    fresh_copy(b.clone(), stack, stmts);
+                    stack.push(a);
+                    stack.push(b);
+                }
+            }
+            OpCode::Swap => {
+                let n = stack.len();
+                if n >= 2 {
+                    stack.swap(n - 1, n - 2);
+                }
+            }
+            OpCode::Rot => {
+                // [.. a, b, c] -> [.. b, c, a]
+                if stack.len() >= 3 {
+                    let n = stack.len();
+                    let a = stack.remove(n - 3);
+                    stack.push(a);
+                }
+            }
+            OpCode::Reverse3 => reverse_top(stack, 3),
+            OpCode::Reverse4 => reverse_top(stack, 4),
+            OpCode::Depth => {
+                let depth = stack.len() as i64;
+                let target = block_var(bid, *push_ordinal);
+                stmts.push(SsaStmt::assign(
+                    target.clone(),
+                    SsaExpr::lit(Literal::Int(depth)),
                 ));
-                definitions.insert(var, block_id);
-                return true;
+                stack.push(target);
+                *push_ordinal += 1;
             }
-            OpCode::Add => {
-                // Binary operation - create a dummy addition
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "ADD operation (binary addition)".to_string(),
-                )));
-                return true;
+            OpCode::Drop => {
+                stack.pop();
             }
-            OpCode::Sub => {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "SUB operation (binary subtraction)".to_string(),
-                )));
-                return true;
+            OpCode::Nip => {
+                // [.. a, b] -> [.. b]
+                let n = stack.len();
+                if n >= 2 {
+                    stack.remove(n - 2);
+                }
             }
-            OpCode::Mul => {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "MUL operation (binary multiplication)".to_string(),
-                )));
-                return true;
-            }
-            OpCode::Div => {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "DIV operation (binary division)".to_string(),
-                )));
-                return true;
-            }
-            OpCode::Ret => {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "RET (return from function)".to_string(),
-                )));
-                return true;
-            }
-            OpCode::Nop => {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "NOP (no operation)".to_string(),
-                )));
-                return true;
-            }
-            OpCode::Isnull => {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "ISNULL (null check)".to_string(),
-                )));
-                return true;
-            }
-            OpCode::Equal => {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "EQUAL (equality comparison)".to_string(),
-                )));
-                return true;
-            }
-            OpCode::Notequal => {
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    "NOTEQUAL (inequality comparison)".to_string(),
-                )));
-                return true;
-            }
-            _ => {
-                // For other opcodes, just add a comment
-                ssa_block.add_stmt(SsaStmt::other(crate::decompiler::ir::Stmt::comment(
-                    format!("{:?}", instr.opcode),
-                )));
-                return true;
-            }
+            _ => {}
         }
     }
 
-    /// Create a new version of a variable.
-    fn new_version(&mut self, base: String) -> SsaVariable {
-        let version = self.versions.entry(base.clone()).or_insert(0);
-        let var = SsaVariable::new(base, *version);
-        *version += 1;
-        var
+    /// Handle operand-dependent specials: PICK/ROLL/XDROP/REVERSEN (index from
+    /// the stack), PACK/PACKMAP/PACKSTRUCT/UNPACK (count from the stack),
+    /// CLEAR (empties), and SYSCALL (arity from the syscall table).
+    fn apply_special(
+        &self,
+        instr: &Instruction,
+        _bid: BlockId,
+        stack: &mut Vec<SsaVariable>,
+        _stmts: &mut Vec<SsaStmt>,
+        uses: &mut Vec<(SsaVariable, usize)>,
+        _push_ordinal: &mut usize,
+    ) {
+        match instr.opcode {
+            OpCode::Pick | OpCode::Roll | OpCode::Xdrop | OpCode::Reversen => {
+                // Index comes from the top of the stack as an integer value.
+                let n_var = stack.pop();
+                if let Some(ref v) = n_var {
+                    if !is_unknown(v) {
+                        uses.push((v.clone(), 0));
+                    }
+                }
+                // Structural transforms require a proven concrete index, which
+                // the SSA layer does not track (the emitter does this at lift
+                // time). Leave the reorder conservatively unapplied here.
+            }
+            OpCode::Clear => {
+                stack.clear();
+            }
+            OpCode::Syscall => {
+                let (pop, push) = syscall_effect(instr);
+                let mut popped = Vec::with_capacity(pop);
+                for _ in 0..pop {
+                    let v = stack.pop().unwrap_or_else(unknown_var);
+                    popped.push(v);
+                }
+                popped.reverse();
+                for v in &popped {
+                    if !is_unknown(v) {
+                        uses.push((v.clone(), 0));
+                    }
+                }
+                if push {
+                    stack.push(unknown_var());
+                }
+            }
+            // PACK family: count is on the stack and operand-dependent. Model
+            // conservatively (drop the count, push one result) so the stack
+            // stays consistent without a precise count analysis. Phase 3 can
+            // refine this with the literal-count tracking the emitter already
+            // performs.
+            OpCode::Pack | OpCode::Packmap | OpCode::Packstruct => {
+                let count = stack.pop().unwrap_or_else(unknown_var);
+                if !is_unknown(&count) {
+                    uses.push((count, 0));
+                }
+                stack.push(unknown_var());
+            }
+            OpCode::Unpack => {
+                let _item = stack.pop();
+                stack.push(unknown_var());
+            }
+            _ => {}
+        }
     }
 
-    /// Extract the integer value from a Push0-Push16 opcode.
-    fn extract_push_value(&self, opcode: crate::instruction::OpCode) -> i64 {
-        use crate::instruction::OpCode;
-        match opcode {
-            OpCode::Push0 => 0,
-            OpCode::Push1 => 1,
-            OpCode::Push2 => 2,
-            OpCode::Push3 => 3,
-            OpCode::Push4 => 4,
-            OpCode::Push5 => 5,
-            OpCode::Push6 => 6,
-            OpCode::Push7 => 7,
-            OpCode::Push8 => 8,
-            OpCode::Push9 => 9,
-            OpCode::Push10 => 10,
-            OpCode::Push11 => 11,
-            OpCode::Push12 => 12,
-            OpCode::Push13 => 13,
-            OpCode::Push14 => 14,
-            OpCode::Push15 => 15,
-            OpCode::Push16 => 16,
-            _ => 0, // Should not happen for valid push opcodes
+    /// Build the [`SsaExpr`] for a compute opcode given its already-popped
+    /// operands (`popped`, ordered deep-to-top). Compute opcodes get a real
+    /// binary/unary/literal tree; everything else surfaces as a `Call` placeholder
+    /// that still preserves data-flow (the popped vars appear as arguments).
+    fn build_expr(&self, op: OpCode, instr: &Instruction, popped: &[SsaVariable]) -> SsaExpr {
+        // Push immediates → literals.
+        if let Some(lit) = literal_for_push(op, instr) {
+            return SsaExpr::lit(lit);
         }
+
+        // Binary compute.
+        if let Some(bin) = binary_op_for(op) {
+            let mut it = popped.iter();
+            let left = it.next().cloned().unwrap_or_else(unknown_var);
+            let right = it.next().cloned().unwrap_or_else(unknown_var);
+            return SsaExpr::binary(bin, SsaExpr::var(left), SsaExpr::var(right));
+        }
+        // Ternary compute (Within/Substr/Modmul/Modpow/Convert): render as a call.
+        if matches!(
+            op,
+            OpCode::Within | OpCode::Substr | OpCode::Modmul | OpCode::Modpow | OpCode::Convert
+        ) {
+            return SsaExpr::call(
+                mnemonic(op),
+                popped.iter().cloned().map(SsaExpr::var).collect(),
+            );
+        }
+        // Unary compute.
+        if let Some(un) = unary_op_for(op) {
+            let operand = popped.first().cloned().unwrap_or_else(unknown_var);
+            return SsaExpr::unary(un, SsaExpr::var(operand));
+        }
+        // Unary compute with no dedicated UnaryOp → render as a call.
+        if matches!(
+            op,
+            OpCode::Sqrt
+                | OpCode::Nz
+                | OpCode::Size
+                | OpCode::Keys
+                | OpCode::Values
+                | OpCode::Isnull
+                | OpCode::Istype
+        ) {
+            return SsaExpr::call(
+                mnemonic(op),
+                popped.iter().cloned().map(SsaExpr::var).collect(),
+            );
+        }
+        // Collection constructors / byte ops without a dedicated expr.
+        SsaExpr::call(
+            mnemonic(op),
+            popped.iter().cloned().map(SsaExpr::var).collect(),
+        )
+    }
+}
+
+// ─────────────────────────── helpers ───────────────────────────
+
+/// Straight-line execution result for one block.
+#[derive(Default)]
+struct BlockExec {
+    exit_stack: Vec<SsaVariable>,
+    stmts: Vec<SsaStmt>,
+    uses: Vec<(SsaVariable, usize)>,
+}
+
+/// Canonical SSA variable for the `ordinal`-th push in `block`.
+fn block_var(block: BlockId, ordinal: usize) -> SsaVariable {
+    SsaVariable::new(format!("b{}", block.0), ordinal)
+}
+
+/// Canonical SSA variable for the φ placed at `depth` in `block`.
+fn phi_var(block: BlockId, depth: usize) -> SsaVariable {
+    SsaVariable::new(format!("p{}", block.0), depth)
+}
+
+/// Placeholder used when the symbolic stack underflows (malformed input).
+fn unknown_var() -> SsaVariable {
+    SsaVariable::new("?".to_string(), 0)
+}
+
+fn is_unknown(v: &SsaVariable) -> bool {
+    v.base == "?"
+}
+
+/// Reverse the top `n` slots of the symbolic stack in place.
+fn reverse_top(stack: &mut [SsaVariable], n: usize) {
+    let len = stack.len();
+    if n <= 1 || n > len {
+        return;
+    }
+    stack[len - n..].reverse();
+}
+
+/// Resolve the syscall stack effect `(params popped, returns value?)` from the
+/// embedded syscall hash. Unknown hashes are conservatively modelled as
+/// `(0, true)` so a result slot is reserved.
+fn syscall_effect(instr: &Instruction) -> (usize, bool) {
+    if let Some(Operand::Syscall(hash)) = &instr.operand {
+        if let Some(info) = crate::syscalls::lookup(*hash) {
+            return (info.param_count as usize, info.returns_value);
+        }
+    }
+    (0, true)
+}
+
+/// Lower a push opcode (with its operand) to a literal, if it is one.
+fn literal_for_push(op: OpCode, instr: &Instruction) -> Option<Literal> {
+    use OpCode::*;
+    match op {
+        Push0 => Some(Literal::Int(0)),
+        Push1 => Some(Literal::Int(1)),
+        Push2 => Some(Literal::Int(2)),
+        Push3 => Some(Literal::Int(3)),
+        Push4 => Some(Literal::Int(4)),
+        Push5 => Some(Literal::Int(5)),
+        Push6 => Some(Literal::Int(6)),
+        Push7 => Some(Literal::Int(7)),
+        Push8 => Some(Literal::Int(8)),
+        Push9 => Some(Literal::Int(9)),
+        Push10 => Some(Literal::Int(10)),
+        Push11 => Some(Literal::Int(11)),
+        Push12 => Some(Literal::Int(12)),
+        Push13 => Some(Literal::Int(13)),
+        Push14 => Some(Literal::Int(14)),
+        Push15 => Some(Literal::Int(15)),
+        Push16 => Some(Literal::Int(16)),
+        PushM1 => Some(Literal::Int(-1)),
+        PushT => Some(Literal::Bool(true)),
+        PushF => Some(Literal::Bool(false)),
+        PushNull => Some(Literal::Null),
+        Pushint8 | Pushint16 | Pushint32 | Pushint64 => match &instr.operand {
+            Some(Operand::I8(v)) => Some(Literal::Int(i64::from(*v))),
+            Some(Operand::I16(v)) => Some(Literal::Int(i64::from(*v))),
+            Some(Operand::I32(v)) => Some(Literal::Int(i64::from(*v))),
+            Some(Operand::I64(v)) => Some(Literal::Int(*v)),
+            _ => None,
+        },
+        Pushint128 | Pushint256 => match &instr.operand {
+            Some(Operand::Bytes(b)) => Some(Literal::BigInt(hex::encode(b))),
+            _ => None,
+        },
+        Pushdata1 | Pushdata2 | Pushdata4 => match &instr.operand {
+            Some(Operand::Bytes(b)) => Some(Literal::Bytes(b.clone())),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Map a binary compute opcode to its IR operator, if applicable.
+fn binary_op_for(op: OpCode) -> Option<BinOp> {
+    use OpCode::*;
+    Some(match op {
+        Add => BinOp::Add,
+        Sub => BinOp::Sub,
+        Mul => BinOp::Mul,
+        Div => BinOp::Div,
+        Mod => BinOp::Mod,
+        Pow => BinOp::Pow,
+        Shl => BinOp::Shl,
+        Shr => BinOp::Shr,
+        And => BinOp::And,
+        Or => BinOp::Or,
+        Xor => BinOp::Xor,
+        Equal | Numequal => BinOp::Eq,
+        Notequal | Numnotequal => BinOp::Ne,
+        Lt => BinOp::Lt,
+        Le => BinOp::Le,
+        Gt => BinOp::Gt,
+        Ge => BinOp::Ge,
+        Booland => BinOp::LogicalAnd,
+        Boolor => BinOp::LogicalOr,
+        _ => return None,
+    })
+}
+
+/// Map a unary compute opcode to its IR operator, if applicable.
+fn unary_op_for(op: OpCode) -> Option<UnaryOp> {
+    use OpCode::*;
+    Some(match op {
+        Inc => UnaryOp::Inc,
+        Dec => UnaryOp::Dec,
+        Negate => UnaryOp::Neg,
+        Abs => UnaryOp::Abs,
+        Sign => UnaryOp::Sign,
+        Not => UnaryOp::LogicalNot,
+        Invert => UnaryOp::Not,
+        _ => return None,
+    })
+}
+
+/// A short mnemonic for call-placeholder expressions.
+fn mnemonic(op: OpCode) -> String {
+    format!("{op:?}").to_lowercase()
+}
+
+/// Collect every [`SsaVariable`] referenced by an [`SsaExpr`].
+fn collect_expr_uses(expr: &SsaExpr) -> Vec<SsaVariable> {
+    let mut out = Vec::new();
+    collect_expr_uses_into(expr, &mut out);
+    out
+}
+
+fn collect_expr_uses_into(expr: &SsaExpr, out: &mut Vec<SsaVariable>) {
+    match expr {
+        SsaExpr::Variable(v) => out.push(v.clone()),
+        SsaExpr::Binary { left, right, .. } => {
+            collect_expr_uses_into(left, out);
+            collect_expr_uses_into(right, out);
+        }
+        SsaExpr::Unary { operand, .. } => collect_expr_uses_into(operand, out),
+        SsaExpr::Call { args, .. } => {
+            for a in args {
+                collect_expr_uses_into(a, out);
+            }
+        }
+        SsaExpr::Index { base, index } => {
+            collect_expr_uses_into(base, out);
+            collect_expr_uses_into(index, out);
+        }
+        SsaExpr::Member { base, .. } => collect_expr_uses_into(base, out),
+        SsaExpr::Cast { expr, .. } => collect_expr_uses_into(expr, out),
+        SsaExpr::Array(els) => els.iter().for_each(|e| collect_expr_uses_into(e, out)),
+        SsaExpr::Map(pairs) => pairs.iter().for_each(|(k, v)| {
+            collect_expr_uses_into(k, out);
+            collect_expr_uses_into(v, out);
+        }),
+        SsaExpr::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_expr_uses_into(condition, out);
+            collect_expr_uses_into(then_expr, out);
+            collect_expr_uses_into(else_expr, out);
+        }
+        SsaExpr::Literal(_) => {}
     }
 }
 
 /// Create SSA form from a CFG without an instruction stream.
 ///
-/// Produces an SSA skeleton with empty blocks (no φ nodes or statements).
-/// The resulting form is suitable for dominance queries and structural
-/// analysis but contains no data-flow information.
-///
-/// Use [`SsaBuilder`] when instruction-level analysis is needed.
+/// Produces dominance information plus empty blocks (no φ nodes or
+/// statements). Suitable for structural/dominance queries; use [`SsaBuilder`]
+/// when instruction-level data-flow is needed.
 #[must_use]
 pub fn build_ssa_from_cfg(cfg: &Cfg) -> SsaForm {
     let dominance = dominance::compute(cfg);
     let mut ssa_blocks = BTreeMap::new();
-
     for block in cfg.blocks() {
-        let ssa_block = SsaBlock::new();
-        ssa_blocks.insert(block.id, ssa_block);
+        ssa_blocks.insert(block.id, SsaBlock::new());
     }
-
     SsaForm {
         cfg: cfg.clone(),
         dominance,
@@ -354,48 +702,153 @@ pub fn build_ssa_from_cfg(cfg: &Cfg) -> SsaForm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decompiler::cfg::{BasicBlock, BlockId, Cfg, Terminator};
+    use crate::decompiler::cfg::{BasicBlock, BlockId, CfgBuilder, EdgeKind, Terminator};
+    use crate::instruction::{Instruction, OpCode, Operand};
 
-    #[test]
-    fn test_builder_creation() {
-        let cfg = Cfg::new();
-        let instructions = &[];
-        let builder = SsaBuilder::new(&cfg, instructions);
+    /// Build instructions + a matching CFG for a straight-line program.
+    fn linear(instrs: Vec<Instruction>) -> (Vec<Instruction>, Cfg) {
+        let cfg = CfgBuilder::new(&instrs).build();
+        (instrs, cfg)
+    }
 
-        assert_eq!(builder.versions.len(), 0);
+    fn instr(off: usize, op: OpCode) -> Instruction {
+        Instruction::new(off, op, None)
     }
 
     #[test]
-    fn test_new_version_increments() {
-        let cfg = Cfg::new();
-        let instructions = &[];
-        let mut builder = SsaBuilder::new(&cfg, instructions);
+    fn linear_compute_produces_real_binary_expr() {
+        // PUSH1, PUSH2, ADD, RET
+        let ins = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Push2),
+            instr(2, OpCode::Add),
+            Instruction::new(3, OpCode::Ret, None),
+        ];
+        let (ins, cfg) = linear(ins);
+        let ssa = SsaBuilder::new(&cfg, &ins).build();
 
-        let v1 = builder.new_version("x".to_string());
-        let v2 = builder.new_version("x".to_string());
-        let v3 = builder.new_version("y".to_string());
+        // At least one block exists; find a block with assignments.
+        let (_id, block) = ssa
+            .blocks_iter()
+            .find(|(_, b)| b.stmt_count() >= 3)
+            .expect("a block with >= 3 assignments should exist");
 
-        assert_eq!(v1.version, 0);
-        assert_eq!(v2.version, 1);
-        assert_eq!(v3.version, 0);
+        // v0 = 1, v1 = 2, v2 = (v0 + v2)
+        assert_eq!(block.stmt_count(), 3, "expected 3 push/compute assignments");
+        let add = &block.stmts[2];
+        let SsaStmt::Assign { value, .. } = add else {
+            panic!("third stmt should be the ADD assignment: {add:?}");
+        };
+        let SsaExpr::Binary { op, left, right } = value else {
+            panic!("ADD should lower to a binary expr, got {value:?}");
+        };
+        assert_eq!(*op, BinOp::Add);
+        // Operands reference the two push defs (deep on the left, top right).
+        assert!(
+            matches!(left.as_ref(), SsaExpr::Variable(_)),
+            "left operand"
+        );
+        assert!(
+            matches!(right.as_ref(), SsaExpr::Variable(_)),
+            "right operand"
+        );
     }
 
     #[test]
-    fn test_build_ssa_from_cfg() {
-        let cfg = Cfg::new();
-        let ssa = build_ssa_from_cfg(&cfg);
+    fn dup_creates_a_copy_definition() {
+        // PUSH1, DUP, RET
+        let ins = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Dup),
+            Instruction::new(2, OpCode::Ret, None),
+        ];
+        let (ins, cfg) = linear(ins);
+        let ssa = SsaBuilder::new(&cfg, &ins).build();
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
 
-        assert_eq!(ssa.block_count(), 0);
+        // Two assignments: v0 = 1, v1 = v0 (the DUP copy).
+        assert_eq!(block.stmt_count(), 2);
+        let copy = &block.stmts[1];
+        let SsaStmt::Assign { value, .. } = copy else {
+            panic!("DUP should produce an assignment: {copy:?}");
+        };
+        assert!(
+            matches!(value, SsaExpr::Variable(_)),
+            "DUP copy should reference its source var, got {value:?}"
+        );
     }
 
     #[test]
-    fn test_build_ssa_with_blocks() {
+    fn diamond_places_a_phi_at_the_merge() {
+        // Build a diamond by hand so we control predecessor exit stacks:
+        //   BB0 (entry) pushes 1, branches to BB1 / BB2
+        //   BB1 pushes 10  -> jmp BB3
+        //   BB2 pushes 20  -> jmp BB3
+        //   BB3 (merge): the incoming slot should be a φ(BB1: 10, BB2: 20).
+        let ins = vec![
+            Instruction::new(0, OpCode::Push1, None), // BB0: push 1 (condition-ish)
+            Instruction::new(0, OpCode::Pushint8, Some(Operand::I8(10))), // BB1
+            Instruction::new(0, OpCode::Pushint8, Some(Operand::I8(20))), // BB2
+            Instruction::new(0, OpCode::Ret, None),   // BB3
+        ];
+
         let mut cfg = Cfg::new();
-        let block = BasicBlock::new(BlockId::ENTRY, 0, 0, 0..0, Terminator::Return);
-        cfg.add_block(block);
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::Branch {
+                then_target: BlockId(1),
+                else_target: BlockId(2),
+            },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Jump { target: BlockId(3) },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            2..3,
+            Terminator::Jump { target: BlockId(3) },
+        ));
+        cfg.add_block(BasicBlock::new(BlockId(3), 3, 4, 3..4, Terminator::Return));
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::ConditionalTrue);
+        cfg.add_edge(BlockId(0), BlockId(2), EdgeKind::ConditionalFalse);
+        cfg.add_edge(BlockId(1), BlockId(3), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(2), BlockId(3), EdgeKind::Unconditional);
 
+        let ssa = SsaBuilder::new(&cfg, &ins).build();
+        let merge = ssa.block(BlockId(3)).expect("merge block exists");
+        assert!(
+            merge.phi_count() >= 1,
+            "merge block should have a phi node for the incoming value slot"
+        );
+        let phi = &merge.phi_nodes[0];
+        assert_eq!(
+            phi.operands.len(),
+            2,
+            "phi should have one operand per predecessor"
+        );
+    }
+
+    #[test]
+    fn build_ssa_from_cfg_has_no_definitions_without_instructions() {
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId::ENTRY,
+            0,
+            0,
+            0..0,
+            Terminator::Return,
+        ));
         let ssa = build_ssa_from_cfg(&cfg);
-
         assert_eq!(ssa.block_count(), 1);
+        assert!(ssa.definitions.is_empty());
     }
 }
