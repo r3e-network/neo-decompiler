@@ -129,10 +129,8 @@ impl<'a> StructCtx<'a> {
                     // the header (already visited).
                     if self.loop_headers.contains(&bid) {
                         let cond = self.condition_for_block(bid);
-                        let body = self.structure_region(then_target, Some(bid), visited, true);
-                        out.push(Stmt::ControlFlow(Box::new(ControlFlow::while_loop(
-                            cond, body,
-                        ))));
+                        let mut body = self.structure_region(then_target, Some(bid), visited, true);
+                        self.build_loop(&mut out, bid, cond, &mut body);
                         Some(else_target)
                     } else {
                         self.handle_branch(
@@ -266,6 +264,18 @@ impl<'a> StructCtx<'a> {
             }
         }
         None
+    }
+
+    /// Emit a `while` loop for a loop-header branch. (A `for`-form promotion is
+    /// intentionally not attempted: SSA versions differ across the init /
+    /// condition / update, so a clean `for(i=0; i<n; i++)` would require
+    /// de-versioning the loop variable — a cosmetic refinement that isn't worth
+    /// the complexity, since the `while` form is semantically exact.)
+    fn build_loop(&self, out: &mut IrBlock, _bid: BlockId, cond: Expr, body: &mut IrBlock) {
+        out.push(Stmt::ControlFlow(Box::new(ControlFlow::while_loop(
+            cond,
+            std::mem::take(body),
+        ))));
     }
 
     /// Try to recognise a `switch` equality-cascade starting at `bid`.
@@ -492,10 +502,8 @@ impl<'a> StructCtx<'a> {
                 } => {
                     if self.loop_headers.contains(&bid) {
                         let cond = self.condition_for_block(bid);
-                        let body = self.structure_region(then_target, Some(bid), visited, true);
-                        out.push(Stmt::ControlFlow(Box::new(ControlFlow::while_loop(
-                            cond, body,
-                        ))));
+                        let mut body = self.structure_region(then_target, Some(bid), visited, true);
+                        self.build_loop(&mut out, bid, cond, &mut body);
                         Some(else_target)
                     } else {
                         self.handle_branch(&mut out, bid, then_target, else_target, None, visited)
