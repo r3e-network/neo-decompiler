@@ -34,3 +34,19 @@ impl OutputFormat {
         matches!(self, OutputFormat::CSharp | OutputFormat::All)
     }
 }
+
+/// Knobs shared by the high-level and C# renderers.
+///
+/// Bundling these keeps the renderer entry-point signatures under clippy's
+/// `too_many_arguments` threshold and ensures both front-ends stay in sync as
+/// new rendering options are added.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct RenderOptions {
+    /// Inline single-use temps (`let tN = rhs;` used once) at their use site.
+    pub inline_single_use_temps: bool,
+    /// Emit per-instruction `// XXXX: OPCODE` trace comments in the output.
+    pub emit_trace_comments: bool,
+    /// Annotate body-local declarations with inferred types (C# view:
+    /// `BigInteger loc0 = ...;` instead of `var loc0 = ...;`).
+    pub typed_declarations: bool,
+}

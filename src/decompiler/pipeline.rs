@@ -7,7 +7,7 @@ use crate::nef::NefParser;
 
 use super::cfg::CfgBuilder;
 use super::decompilation::Decompilation;
-use super::output_format::OutputFormat;
+use super::output_format::{OutputFormat, RenderOptions};
 use super::{analysis, csharp, high_level, pseudocode};
 
 mod io;
@@ -19,6 +19,7 @@ pub struct Decompiler {
     disassembler: Disassembler,
     inline_single_use_temps: bool,
     emit_trace_comments: bool,
+    typed_declarations: bool,
 }
 
 impl Decompiler {
@@ -55,6 +56,11 @@ impl Decompiler {
             // (golden tests assert their presence). Disable via
             // `with_trace_comments(false)` for clean human-readable output.
             emit_trace_comments: true,
+            // Annotate lifted body-local declarations with inferred types in
+            // the C# view (e.g. `BigInteger loc0 = ...;` instead of
+            // `var loc0 = ...;`). Defaults to false to preserve historical
+            // output; enable for richer, more strongly-typed skeletons.
+            typed_declarations: false,
         }
     }
 
@@ -77,6 +83,19 @@ impl Decompiler {
     #[must_use]
     pub fn with_trace_comments(mut self, enabled: bool) -> Self {
         self.emit_trace_comments = enabled;
+        self
+    }
+
+    /// Toggle inferred-type annotations on body-local declarations.
+    ///
+    /// When enabled, the C# view emits concrete inferred types for locals and
+    /// static fields (`BigInteger loc0 = ...;` rather than `var loc0 = ...;`).
+    /// Locals with no inferable type still fall back to `var`. Defaults to
+    /// `false` (historical output); off has no effect, so existing tests stay
+    /// byte-identical.
+    #[must_use]
+    pub fn with_typed_declarations(mut self, enabled: bool) -> Self {
+        self.typed_declarations = enabled;
         self
     }
 
@@ -134,6 +153,12 @@ impl Decompiler {
         let xrefs = analysis::xrefs::build_xrefs(&instructions, manifest.as_ref());
         let types = analysis::types::infer_types(&instructions, manifest.as_ref());
 
+        let render_opts = RenderOptions {
+            inline_single_use_temps: self.inline_single_use_temps,
+            emit_trace_comments: self.emit_trace_comments,
+            typed_declarations: self.typed_declarations,
+        };
+
         let pseudocode = output_format
             .wants_pseudocode()
             .then(|| pseudocode::render(&instructions));
@@ -143,8 +168,7 @@ impl Decompiler {
                 &instructions,
                 manifest.as_ref(),
                 &call_graph,
-                self.inline_single_use_temps,
-                self.emit_trace_comments,
+                &render_opts,
             );
             for warning in render.warnings {
                 push_warning(warning);
@@ -157,8 +181,8 @@ impl Decompiler {
                 &instructions,
                 manifest.as_ref(),
                 &call_graph,
-                self.inline_single_use_temps,
-                self.emit_trace_comments,
+                &types,
+                &render_opts,
             );
             for warning in render.warnings {
                 push_warning(warning);

@@ -80,6 +80,13 @@ pub(in crate::cli) enum Command {
         #[arg(long)]
         no_inline_temps: bool,
 
+        /// Annotate body-local declarations in the C# view with their
+        /// inferred type (e.g. `BigInteger loc0 = ...;` instead of
+        /// `var loc0 = ...;`). Locals with no inferable type still fall
+        /// back to `var`. Off by default.
+        #[arg(long)]
+        typed_declarations: bool,
+
         // The flags below pre-date the default flip described above
         // and are kept as hidden no-op aliases so existing scripts
         // and CI configurations continue to work. They were the

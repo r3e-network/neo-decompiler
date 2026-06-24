@@ -3,6 +3,7 @@ use super::super::helpers::{
     build_method_arg_counts_by_offset, find_manifest_entry_method, inferred_method_starts,
     make_unique_identifier, offset_as_usize, sanitize_identifier,
 };
+use crate::decompiler::output_format::RenderOptions;
 use crate::instruction::Instruction;
 use crate::manifest::ContractManifest;
 use crate::native_contracts;
@@ -28,10 +29,12 @@ pub(crate) fn render_high_level(
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
     call_graph: &CallGraph,
-    inline_single_use_temps: bool,
-    emit_trace_comments: bool,
+    opts: &RenderOptions,
 ) -> HighLevelRender {
     use std::fmt::Write;
+
+    let inline_single_use_temps = opts.inline_single_use_temps;
+    let emit_trace_comments = opts.emit_trace_comments;
 
     let mut output = String::new();
     let mut warnings = Vec::new();

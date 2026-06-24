@@ -61,6 +61,55 @@ pub(super) fn format_method_signature(name: &str, parameters: &str, return_type:
 }
 
 pub(in crate::decompiler) fn csharpize_statement(line: &str) -> String {
+    csharpize_statement_typed(line, &SlotTypes::default())
+}
+
+/// Inferred C# type strings for body-local slots of a single method.
+///
+/// Built from [`crate::decompiler::analysis::types::TypeInfo`] for the method
+/// being rendered. Entries are empty (`""`) when no type was inferred, in which
+/// case the declaration falls back to `var`.
+#[derive(Debug, Clone, Default)]
+pub(in crate::decompiler) struct SlotTypes {
+    /// C# type name per local-slot index, or `""` when unknown.
+    pub locals: Vec<&'static str>,
+    /// C# type name per static-field-slot index, or `""` when unknown.
+    pub statics: Vec<&'static str>,
+}
+
+impl SlotTypes {
+    /// Resolve the C# declaration type for a slot name emitted by the lifter
+    /// (`loc3`, `static1`). Returns `Some("int")`-style only when a non-empty
+    /// type was inferred; returns `None` for temps (`t0`), arguments, and
+    /// unknown slots so the caller emits `var`.
+    fn declaration_type(&self, name: &str) -> Option<&'static str> {
+        let (slots, idx) = if let Some(rest) = name.strip_prefix("loc") {
+            (&self.locals, parse_slot_index(rest)?)
+        } else if let Some(rest) = name.strip_prefix("static") {
+            (&self.statics, parse_slot_index(rest)?)
+        } else {
+            return None;
+        };
+        slots.get(idx).copied().filter(|ty| !ty.is_empty())
+    }
+}
+
+/// Parse the trailing digit run of a slot name (`"3"` from `"loc3"`) as a slot
+/// index. Returns `None` unless the remainder is all-ASCII-digits so that
+/// unrelated identifiers never accidentally match.
+fn parse_slot_index(rest: &str) -> Option<usize> {
+    if rest.is_empty() || !rest.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    rest.parse::<usize>().ok()
+}
+
+/// Typed-declaration variant of [`csharpize_statement`].
+///
+/// When `types` knows a C# type for the declared local/static, the `let` line
+/// is rendered as `<type> name = ...;` instead of `var name = ...;`. Passing an
+/// empty [`SlotTypes`] reproduces the historical `var` behaviour exactly.
+pub(in crate::decompiler) fn csharpize_statement_typed(line: &str, types: &SlotTypes) -> String {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return String::new();
@@ -69,15 +118,24 @@ pub(in crate::decompiler) fn csharpize_statement(line: &str) -> String {
         return trimmed.to_string();
     }
     if let Some(stripped) = trimmed.strip_prefix("let ") {
-        // Run the body through `csharpize_expression` so helper
-        // calls inside the initialiser also get rewritten — e.g.
-        // `let t0 = min(x, y);` must become
-        // `var t0 = BigInteger.Min(x, y);`. Without this, the
-        // `let` branch was early-returning before the expression
-        // rewrites ran (same bug class as the if/while/etc.
-        // control-flow branches earlier).
-        return format!("var {}", csharpize_expression(stripped));
+        // The declared name is the first token of the initialiser (up to the
+        // first whitespace or `=`); consult the inferred-type map and prefer a
+        // concrete C# type over `var` when one is known.
+        let name = stripped
+            .split(|c: char| c.is_whitespace() || c == '=')
+            .next()
+            .unwrap_or("");
+        let body = csharpize_expression(stripped);
+        match types.declaration_type(name) {
+            Some(ty) => return format!("{ty} {body}"),
+            None => return format!("var {body}"),
+        }
     }
+    csharpize_statement_untyped(trimmed)
+}
+
+/// Historical line-level rewrite that does not depend on slot types.
+fn csharpize_statement_untyped(trimmed: &str) -> String {
     if trimmed == "loop {" {
         return "while (true) {".to_string();
     }

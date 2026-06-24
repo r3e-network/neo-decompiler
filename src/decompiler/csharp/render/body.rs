@@ -4,7 +4,9 @@ use std::fmt::Write;
 use crate::instruction::Instruction;
 
 use super::super::super::high_level::HighLevelEmitter;
-use super::super::helpers::{csharpize_statement, line_is_csharp_terminator};
+use super::super::helpers::{
+    csharpize_statement, csharpize_statement_typed, line_is_csharp_terminator, SlotTypes,
+};
 
 pub(super) struct LiftedBodyContext<'a> {
     pub(super) method_labels_by_offset: &'a BTreeMap<usize, String>,
@@ -16,6 +18,13 @@ pub(super) struct LiftedBodyContext<'a> {
     pub(super) callt_returns_value: &'a [bool],
     pub(super) inline_single_use_temps: bool,
     pub(super) emit_trace_comments: bool,
+    /// When true, body-local declarations use inferred C# types (`BigInteger
+    /// loc0 = ...;`) instead of `var`. Off by default to preserve historical
+    /// output.
+    pub(super) typed_declarations: bool,
+    /// Inferred C# slot types keyed by method start offset. Only consulted when
+    /// `typed_declarations` is true.
+    pub(super) slot_types_by_offset: &'a BTreeMap<usize, SlotTypes>,
 }
 
 pub(super) fn write_lifted_body(
@@ -89,6 +98,17 @@ pub(super) fn write_lifted_body(
         }
     }
 
+    let method_start = instructions.first().map(|i| i.offset).unwrap_or(0);
+    let slot_types = if context.typed_declarations {
+        context
+            .slot_types_by_offset
+            .get(&method_start)
+            .cloned()
+            .unwrap_or_default()
+    } else {
+        SlotTypes::default()
+    };
+
     // Track which open braces correspond to a `case`/`default` body so we
     // can synthesise a trailing `break;` before the matching close. C#
     // forbids implicit fall-through, so a case body that does not already
@@ -98,7 +118,11 @@ pub(super) fn write_lifted_body(
     let mut block_kinds: Vec<BlockKind> = Vec::new();
     let mut last_emitted: Option<String> = None;
     for line in statements {
-        let converted = csharpize_statement(&line);
+        let converted = if context.typed_declarations {
+            csharpize_statement_typed(&line, &slot_types)
+        } else {
+            csharpize_statement(&line)
+        };
         let trimmed = converted.trim();
         if trimmed.is_empty() {
             continue;

@@ -11,12 +11,11 @@
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
-use std::path::{Path, PathBuf};
 use std::panic::catch_unwind;
+use std::path::{Path, PathBuf};
 
 use neo_decompiler::{
-    CfgBuilder, ContractManifest, Decompiler, Disassembler, NefParser, OutputFormat,
-    SsaConversion,
+    CfgBuilder, ContractManifest, Decompiler, Disassembler, NefParser, OutputFormat, SsaConversion,
 };
 
 /// Locate the repo root from CARGO_MANIFEST_DIR (set by cargo at build time).
@@ -154,11 +153,7 @@ fn decompile_all_artifacts_across_formats_without_panics() {
             .and_then(|text| ContractManifest::from_json_str(&text).ok());
 
         let result = catch_unwind(|| {
-            decompiler.decompile_bytes_with_manifest(
-                &data,
-                manifest,
-                OutputFormat::All,
-            )
+            decompiler.decompile_bytes_with_manifest(&data, manifest, OutputFormat::All)
         });
         if result.is_err() {
             panic!("artifact decompile panic on {}", nef_path.display());

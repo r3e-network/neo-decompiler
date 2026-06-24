@@ -5,6 +5,8 @@
 //! pseudo-bodies when method offsets are available.
 
 use super::super::analysis::call_graph::{CallGraph, CallTarget};
+use super::super::analysis::types::TypeInfo;
+use crate::decompiler::output_format::RenderOptions;
 use crate::instruction::Instruction;
 use crate::manifest::ContractManifest;
 use crate::native_contracts;
@@ -13,9 +15,10 @@ use std::collections::{BTreeMap, HashSet};
 
 use super::super::helpers::{
     build_method_arg_counts_by_offset, extract_contract_name, find_manifest_entry_method,
-    inferred_method_starts, make_unique_identifier, offset_as_usize,
+    inferred_method_starts, inferred_type_to_csharp, make_unique_identifier, offset_as_usize,
 };
 use super::helpers::sanitize_csharp_identifier;
+use super::helpers::SlotTypes;
 
 mod body;
 mod events;
@@ -33,8 +36,8 @@ pub(crate) fn render_csharp(
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
     call_graph: &CallGraph,
-    inline_single_use_temps: bool,
-    emit_trace_comments: bool,
+    types: &TypeInfo,
+    opts: &RenderOptions,
 ) -> CSharpRender {
     let mut output = String::new();
     let mut warnings = Vec::new();
@@ -72,6 +75,12 @@ pub(crate) fn render_csharp(
         build_method_arg_counts_by_offset(instructions, &inferred_starts, manifest);
     let call_targets_by_offset = build_call_targets_by_offset(call_graph);
     let calla_targets_by_offset = build_calla_targets_by_offset(call_graph);
+
+    // Pre-resolve inferred C# slot types per method so that body-local
+    // declarations can be rendered with concrete types (`BigInteger loc0`)
+    // instead of `var` when `typed_declarations` is enabled. Built from the
+    // already-computed `TypeInfo`; cheap (one entry per method).
+    let slot_types_by_offset = build_slot_types_by_offset(types);
     let body_context = body::LiftedBodyContext {
         method_labels_by_offset: &method_labels_by_offset,
         method_arg_counts_by_offset: &method_arg_counts_by_offset,
@@ -80,8 +89,10 @@ pub(crate) fn render_csharp(
         callt_labels: &callt_labels,
         callt_param_counts: &callt_param_counts,
         callt_returns_value: &callt_returns_value,
-        inline_single_use_temps,
-        emit_trace_comments,
+        inline_single_use_temps: opts.inline_single_use_temps,
+        emit_trace_comments: opts.emit_trace_comments,
+        typed_declarations: opts.typed_declarations,
+        slot_types_by_offset: &slot_types_by_offset,
     };
     let methods_context = methods::MethodsContext {
         instructions,
@@ -208,4 +219,36 @@ fn build_call_targets_by_offset(call_graph: &CallGraph) -> BTreeMap<usize, usize
         }
     }
     targets
+}
+
+/// Build per-method [`SlotTypes`] from the inferred [`TypeInfo`].
+///
+/// Static-field types are global (shared across methods), so they are resolved
+/// once and cloned into each method's `SlotTypes`. Local types come from each
+/// `MethodTypes.locals`. Unknowns map to `""` which the renderer treats as
+/// "fall back to `var`".
+fn build_slot_types_by_offset(types: &TypeInfo) -> BTreeMap<usize, SlotTypes> {
+    let statics: Vec<&'static str> = types
+        .statics
+        .iter()
+        .map(|t| inferred_type_to_csharp(*t))
+        .collect();
+    types
+        .methods
+        .iter()
+        .map(|m| {
+            let locals = m
+                .locals
+                .iter()
+                .map(|t| inferred_type_to_csharp(*t))
+                .collect();
+            (
+                m.method.offset,
+                SlotTypes {
+                    locals,
+                    statics: statics.clone(),
+                },
+            )
+        })
+        .collect()
 }

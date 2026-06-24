@@ -16,14 +16,8 @@ impl Cli {
         path: &Path,
         format: DecompileFormat,
         output_format: OutputFormat,
-        fail_on_unknown_opcodes: bool,
-        inline_single_use_temps: bool,
-        no_trace_comments: bool,
+        decompiler: Decompiler,
     ) -> Result<()> {
-        let handling = Self::unknown_handling(fail_on_unknown_opcodes);
-        let decompiler = Decompiler::with_unknown_handling(handling)
-            .with_inline_single_use_temps(inline_single_use_temps)
-            .with_trace_comments(!no_trace_comments);
         let manifest_path = self.resolve_manifest_path(path);
         // `--format` selects which view is printed; `--output-format` selects
         // which views are computed. When the requested view is not among the
