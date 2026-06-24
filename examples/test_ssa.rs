@@ -42,5 +42,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== Optimized SSA (rendered) ===\n");
     println!("{}", result.render_optimized_ssa());
 
+    // Structured IR view: control flow recovered from the CFG into typed
+    // ir::ControlFlow (if / if-else) — the Phase-4 IR-spine path.
+    println!("\n=== Structured IR (CFG → ir::ControlFlow) ===\n");
+    println!("{}", result.render_structured_ir());
+
     Ok(())
 }

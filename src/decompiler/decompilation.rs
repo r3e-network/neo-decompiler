@@ -150,6 +150,26 @@ impl Decompilation {
         }
     }
 
+    /// Render a structured IR view by recovering control flow from the CFG.
+    ///
+    /// Computes + optimizes the SSA, then runs the CFG structurer
+    /// (`cfg::structure`) to recover `if` / `if-else` constructs as typed
+    /// `ir::ControlFlow` nodes — the structural alternative to the legacy
+    /// string-pattern postprocess. Straight-line bodies carry the optimized
+    /// SSA data-flow. This is the Phase-4 IR-spine path (additive; the legacy
+    /// high-level view remains the default).
+    #[must_use]
+    pub fn render_structured_ir(&mut self) -> String {
+        self.optimize_ssa();
+        match &self.ssa {
+            Some(ssa) => {
+                let block = crate::decompiler::cfg::structure_cfg(ssa);
+                crate::decompiler::ir::render_block(&block, 0)
+            }
+            None => String::new(),
+        }
+    }
+
     /// Get SSA statistics if SSA form is available.
     ///
     /// # Returns

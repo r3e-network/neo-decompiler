@@ -18,7 +18,7 @@ pub use convert::{expr_to_ssa, stmt_to_ssa};
 pub use dominance::{compute, DominanceInfo};
 pub use form::{SsaBlock, SsaExpr, SsaForm, SsaStats, SsaStmt, UseSite};
 pub use optimize::optimize as optimize_ssa;
-pub use to_ir::render_ssa_form;
+pub use to_ir::{render_ssa_form, ssa_expr_to_ir};
 pub use variable::{PhiNode, SsaVariable};
 
 use crate::decompiler::cfg::Cfg;

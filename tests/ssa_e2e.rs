@@ -131,3 +131,29 @@ fn render_optimized_ssa_produces_readable_block_text() {
         "should contain the form header: {text}"
     );
 }
+
+#[test]
+fn render_structured_ir_emits_well_formed_output() {
+    // The structured-IR path recovers control flow from the CFG (Phase 4 spine)
+    // and must always produce well-formed, non-empty output on a real contract.
+    let root = repo_root();
+    let nef = fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).unwrap();
+    let manifest = fs::read_to_string(root.join("TestingArtifacts/edgecases/LoopIf.manifest.json"))
+        .ok()
+        .and_then(|s| neo_decompiler::ContractManifest::from_json_str(&s).ok());
+
+    let mut dec = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef, manifest, OutputFormat::All)
+        .unwrap();
+    let text = dec.render_structured_ir();
+    assert!(
+        !text.trim().is_empty(),
+        "structured IR view must be non-empty"
+    );
+    let open = text.chars().filter(|&c| c == '{').count();
+    let close = text.chars().filter(|&c| c == '}').count();
+    assert_eq!(
+        open, close,
+        "structured IR must have balanced braces:\n{text}"
+    );
+}
