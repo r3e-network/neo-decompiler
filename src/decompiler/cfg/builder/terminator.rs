@@ -42,10 +42,31 @@ impl<'a> CfgBuilder<'a> {
                 }
             }
 
+            // `Jmpifnot` jumps when its boolean operand is FALSE. The
+            // `Branch` terminator's contract is `then_target` = condition-TRUE
+            // branch (see `Terminator::Branch`), so for `Jmpifnot` the
+            // fallthrough (next instruction) is `then_target` and the jump
+            // target is `else_target`. All other conditional jumps below jump
+            // when their condition is true, so for them the jump target *is*
+            // the condition-true (`then`) branch.
+            OpCode::Jmpifnot | OpCode::Jmpifnot_L => {
+                if let Some(target) = self.jump_target(end_index - 1, last_instr) {
+                    let else_block = self.offset_to_block_id(target, leaders);
+                    let then_block = self
+                        .instructions
+                        .get(end_index)
+                        .map(|ins| self.offset_to_block_id(ins.offset, leaders))
+                        .unwrap_or_else(|| self.offset_to_block_id(self.end_offset(), leaders));
+                    Terminator::Branch {
+                        then_target: then_block,
+                        else_target: else_block,
+                    }
+                } else {
+                    Terminator::Unknown
+                }
+            }
             OpCode::Jmpif
             | OpCode::Jmpif_L
-            | OpCode::Jmpifnot
-            | OpCode::Jmpifnot_L
             | OpCode::JmpEq
             | OpCode::JmpEq_L
             | OpCode::JmpNe
