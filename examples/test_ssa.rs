@@ -37,5 +37,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("No SSA form available (empty CFG)");
     }
 
+    // Optimized + rendered SSA view (constant folding, copy propagation,
+    // trivial-phi elimination, DCE — see Decompilation::optimize_ssa).
+    println!("\n=== Optimized SSA (rendered) ===\n");
+    println!("{}", result.render_optimized_ssa());
+
     Ok(())
 }
