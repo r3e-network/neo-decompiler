@@ -86,11 +86,15 @@ impl<'a> SsaBuilder<'a> {
         let block_ids: Vec<BlockId> = self.cfg.blocks().map(|b| b.id).collect();
 
         // Work space: per-block entry/exit symbolic stacks and recorded uses.
-        // Exit-stack *identity* is canonical per (block, push-ordinal), so the
-        // loop converges once the join structure stops changing.
+        // Exit-stack *identity* is canonical per def-site, so the loop converges
+        // once the join structure stops changing.
         let mut entry_stacks: BTreeMap<BlockId, Vec<SsaVariable>> = BTreeMap::new();
         let mut exit_stacks: BTreeMap<BlockId, Vec<SsaVariable>> = BTreeMap::new();
         let mut block_uses: BTreeMap<BlockId, Vec<(SsaVariable, usize)>> = BTreeMap::new();
+        // Per-pass variable-version counter. Reset at the start of every pass so
+        // the deterministic (block-id, instruction) def order yields identical
+        // names across iterations → stable exit stacks → fixpoint convergence.
+        let mut versions: BTreeMap<String, usize> = BTreeMap::new();
 
         // Upper bound on iterations: a couple of passes beyond the block count
         // is plenty for reducible + irreducible graphs given canonical naming.
@@ -100,9 +104,10 @@ impl<'a> SsaBuilder<'a> {
         while changed && iterations <= max_iterations {
             changed = false;
             iterations += 1;
+            versions.clear();
             for &bid in &block_ids {
                 let (new_entry, _new_phis) = self.compute_join_entry(bid, &exit_stacks);
-                let exec = self.execute_block(bid, &new_entry);
+                let exec = self.execute_block(bid, &new_entry, &mut versions);
 
                 let exit_changed = exit_stacks.get(&bid) != Some(&exec.exit_stack);
                 let entry_changed = entry_stacks.get(&bid) != Some(&new_entry);
@@ -120,10 +125,11 @@ impl<'a> SsaBuilder<'a> {
         let mut definitions = BTreeMap::new();
         let mut uses: BTreeMap<SsaVariable, BTreeSet<UseSite>> = BTreeMap::new();
 
+        versions.clear();
         for &bid in &block_ids {
             let entry = entry_stacks.get(&bid).cloned().unwrap_or_default();
             let (_, phis) = self.compute_join_entry(bid, &exit_stacks);
-            let exec = self.execute_block(bid, &entry);
+            let exec = self.execute_block(bid, &entry, &mut versions);
 
             let mut sb = SsaBlock::new();
             for phi in &phis {
@@ -208,27 +214,24 @@ impl<'a> SsaBuilder<'a> {
     /// Symbolically execute one block straight-line from `entry`, producing the
     /// exit stack, the SSA statements (assignments only), and the use list
     /// (vars consumed by non-assignment opcodes such as stores / conditions).
-    fn execute_block(&self, bid: BlockId, entry: &[SsaVariable]) -> BlockExec {
+    fn execute_block(
+        &self,
+        bid: BlockId,
+        entry: &[SsaVariable],
+        versions: &mut BTreeMap<String, usize>,
+    ) -> BlockExec {
         let Some(block) = self.cfg.block(bid) else {
             return BlockExec::default();
         };
         let mut stack: Vec<SsaVariable> = entry.to_vec();
         let mut stmts: Vec<SsaStmt> = Vec::new();
         let mut uses: Vec<(SsaVariable, usize)> = Vec::new();
-        let mut push_ordinal = 0usize;
 
         for idx in block.instruction_range.clone() {
             let Some(instr) = self.instructions.get(idx) else {
                 continue;
             };
-            self.apply_instruction(
-                instr,
-                bid,
-                &mut stack,
-                &mut stmts,
-                &mut uses,
-                &mut push_ordinal,
-            );
+            self.apply_instruction(instr, bid, &mut stack, &mut stmts, &mut uses, versions);
         }
 
         BlockExec {
@@ -242,20 +245,20 @@ impl<'a> SsaBuilder<'a> {
     fn apply_instruction(
         &self,
         instr: &Instruction,
-        bid: BlockId,
+        _bid: BlockId,
         stack: &mut Vec<SsaVariable>,
         stmts: &mut Vec<SsaStmt>,
         uses: &mut Vec<(SsaVariable, usize)>,
-        push_ordinal: &mut usize,
+        versions: &mut BTreeMap<String, usize>,
     ) {
         let op = instr.opcode;
 
         if effects::is_stack_reorder(op) {
-            self.apply_reorder(op, bid, stack, stmts, push_ordinal);
+            self.apply_reorder(op, stack, stmts, versions);
             return;
         }
         if effects::is_stack_special(op) {
-            self.apply_special(instr, bid, stack, stmts, uses, push_ordinal);
+            self.apply_special(instr, stack, stmts, uses);
             return;
         }
 
@@ -280,10 +283,13 @@ impl<'a> SsaBuilder<'a> {
 
         if push == 1 {
             let expr = self.build_expr(op, instr, &popped);
-            let target = block_var(bid, *push_ordinal);
+            // Slot loads inherit their slot name (loc0/arg1/static2); everything
+            // else gets a temp name. The version counter is per-pass-global and
+            // deterministic, so names stay stable across fixpoint iterations.
+            let base = slot_name_for(op, &instr.operand).unwrap_or_else(|| "t".to_string());
+            let target = fresh_var(versions, &base);
             stmts.push(SsaStmt::assign(target.clone(), expr));
             stack.push(target);
-            *push_ordinal += 1;
         }
         // push == 0: the opcode only consumed values (store / assert / jump
         // condition). No statement is emitted — the data-flow uses are recorded
@@ -296,17 +302,15 @@ impl<'a> SsaBuilder<'a> {
     fn apply_reorder(
         &self,
         op: OpCode,
-        bid: BlockId,
         stack: &mut Vec<SsaVariable>,
         stmts: &mut Vec<SsaStmt>,
-        push_ordinal: &mut usize,
+        versions: &mut BTreeMap<String, usize>,
     ) {
         let mut fresh_copy =
             |src: SsaVariable, stack: &mut Vec<SsaVariable>, stmts: &mut Vec<SsaStmt>| {
-                let target = block_var(bid, *push_ordinal);
+                let target = fresh_var(versions, "t");
                 stmts.push(SsaStmt::assign(target.clone(), SsaExpr::var(src)));
                 stack.push(target);
-                *push_ordinal += 1;
             };
 
         match op {
@@ -350,13 +354,12 @@ impl<'a> SsaBuilder<'a> {
             OpCode::Reverse4 => reverse_top(stack, 4),
             OpCode::Depth => {
                 let depth = stack.len() as i64;
-                let target = block_var(bid, *push_ordinal);
+                let target = fresh_var(versions, "t");
                 stmts.push(SsaStmt::assign(
                     target.clone(),
                     SsaExpr::lit(Literal::Int(depth)),
                 ));
                 stack.push(target);
-                *push_ordinal += 1;
             }
             OpCode::Drop => {
                 stack.pop();
@@ -378,11 +381,9 @@ impl<'a> SsaBuilder<'a> {
     fn apply_special(
         &self,
         instr: &Instruction,
-        _bid: BlockId,
         stack: &mut Vec<SsaVariable>,
         _stmts: &mut Vec<SsaStmt>,
         uses: &mut Vec<(SsaVariable, usize)>,
-        _push_ordinal: &mut usize,
     ) {
         match instr.opcode {
             OpCode::Pick | OpCode::Roll | OpCode::Xdrop | OpCode::Reversen => {
@@ -503,14 +504,65 @@ struct BlockExec {
     uses: Vec<(SsaVariable, usize)>,
 }
 
-/// Canonical SSA variable for the `ordinal`-th push in `block`.
-fn block_var(block: BlockId, ordinal: usize) -> SsaVariable {
-    SsaVariable::new(format!("b{}", block.0), ordinal)
-}
-
 /// Canonical SSA variable for the φ placed at `depth` in `block`.
 fn phi_var(block: BlockId, depth: usize) -> SsaVariable {
     SsaVariable::new(format!("p{}", block.0), depth)
+}
+
+/// Mint a fresh SSA variable for a new definition with the given `base` name,
+/// drawing the next version from the per-pass counter `versions`. The counter
+/// is reset at the start of each fixpoint pass and increments in deterministic
+/// (block-id, instruction) order, so the same def-site always receives the same
+/// version — this keeps exit-stack identity stable and the fixpoint convergent.
+fn fresh_var(versions: &mut BTreeMap<String, usize>, base: &str) -> SsaVariable {
+    let slot = versions.entry(base.to_string()).or_insert(0);
+    let var = SsaVariable::new(base.to_string(), *slot);
+    *slot += 1;
+    var
+}
+
+/// Derive a readable base name for a slot-load definition (e.g. `loc0`, `arg1`,
+/// `static2`), so SSA values that originate from a local/argument/static carry
+/// their slot name instead of an opaque temp. Returns `None` for non-slot ops.
+fn slot_name_for(op: OpCode, operand: &Option<Operand>) -> Option<String> {
+    use OpCode::*;
+    let (kind, idx): (&str, usize) = match op {
+        Ldloc0 => ("loc", 0),
+        Ldloc1 => ("loc", 1),
+        Ldloc2 => ("loc", 2),
+        Ldloc3 => ("loc", 3),
+        Ldloc4 => ("loc", 4),
+        Ldloc5 => ("loc", 5),
+        Ldloc6 => ("loc", 6),
+        Ldarg0 => ("arg", 0),
+        Ldarg1 => ("arg", 1),
+        Ldarg2 => ("arg", 2),
+        Ldarg3 => ("arg", 3),
+        Ldarg4 => ("arg", 4),
+        Ldarg5 => ("arg", 5),
+        Ldarg6 => ("arg", 6),
+        Ldsfld0 => ("static", 0),
+        Ldsfld1 => ("static", 1),
+        Ldsfld2 => ("static", 2),
+        Ldsfld3 => ("static", 3),
+        Ldsfld4 => ("static", 4),
+        Ldsfld5 => ("static", 5),
+        Ldsfld6 => ("static", 6),
+        Ldloc | Ldarg | Ldsfld => {
+            let kind = match op {
+                Ldloc => "loc",
+                Ldarg => "arg",
+                Ldsfld => "static",
+                _ => return None,
+            };
+            match operand {
+                Some(Operand::U8(n)) => (kind, *n as usize),
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    Some(format!("{kind}{idx}"))
 }
 
 /// Placeholder used when the symbolic stack underflows (malformed input).
