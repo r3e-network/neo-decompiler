@@ -18,13 +18,18 @@ use crate::decompiler::cfg::{BlockId, Cfg, Terminator};
 use crate::decompiler::ir::{Block as IrBlock, ControlFlow, Expr, Stmt};
 
 use super::ssa::ssa_expr_to_ir;
-use super::ssa::{SsaForm, SsaStmt, SsaVariable};
+use super::ssa::{DominanceInfo, SsaForm, SsaStmt, SsaVariable};
 
 /// Structure a whole [`SsaForm`] into a single [`IrBlock`] starting from its
 /// entry block.
 #[must_use]
 pub fn structure(ssa: &SsaForm) -> IrBlock {
-    let ctx = StructCtx { cfg: &ssa.cfg, ssa };
+    let loop_headers = compute_loop_headers(&ssa.cfg, &ssa.dominance);
+    let ctx = StructCtx {
+        cfg: &ssa.cfg,
+        ssa,
+        loop_headers,
+    };
     let entry = ssa.cfg.blocks().next().map(|b| b.id);
     let mut visited = HashSet::new();
     match entry {
@@ -33,9 +38,26 @@ pub fn structure(ssa: &SsaForm) -> IrBlock {
     }
 }
 
+/// Identify loop-header blocks: a block `H` is a loop header if some predecessor
+/// `P` is dominated by `H` (edge `P → H` is a back-edge). Uses the SSA form's
+/// precomputed dominance information.
+fn compute_loop_headers(cfg: &Cfg, dominance: &DominanceInfo) -> HashSet<BlockId> {
+    let mut headers = HashSet::new();
+    for block in cfg.blocks() {
+        for pred in cfg.predecessors(block.id) {
+            if *pred == block.id || dominance.strictly_dominates(block.id, *pred) {
+                headers.insert(block.id);
+                break;
+            }
+        }
+    }
+    headers
+}
+
 struct StructCtx<'a> {
     cfg: &'a Cfg,
     ssa: &'a SsaForm,
+    loop_headers: HashSet<BlockId>,
 }
 
 impl<'a> StructCtx<'a> {
@@ -73,7 +95,30 @@ impl<'a> StructCtx<'a> {
                 Terminator::Branch {
                     then_target,
                     else_target,
-                } => self.handle_branch(&mut out, bid, then_target, else_target, boundary, visited),
+                } => {
+                    // A loop header branch (has a back-edge predecessor) is a
+                    // `while`: the condition is the branch's last def, the body
+                    // is the then-target, and control resumes at the else-target
+                    // (the loop exit). The body's back-edge naturally stops at
+                    // the header (already visited).
+                    if self.loop_headers.contains(&bid) {
+                        let cond = self.condition_for_block(bid);
+                        let body = self.structure_region(then_target, Some(bid), visited);
+                        out.push(Stmt::ControlFlow(Box::new(ControlFlow::while_loop(
+                            cond, body,
+                        ))));
+                        Some(else_target)
+                    } else {
+                        self.handle_branch(
+                            &mut out,
+                            bid,
+                            then_target,
+                            else_target,
+                            boundary,
+                            visited,
+                        )
+                    }
+                }
                 Terminator::TryEntry { .. } | Terminator::EndTry { .. } => {
                     // Try/catch/finally recovery is a follow-up: emit a marker
                     // and stop this region to keep the output well-formed.
@@ -370,5 +415,75 @@ mod tests {
             .count();
         assert_eq!(assigns, 2, "two assignments should be emitted as-is");
         assert!(matches!(structured.stmts[0], Stmt::Assign { .. }));
+    }
+
+    /// A while loop: BB0 (header) branches to BB1 (body) / BB2 (exit); BB1
+    /// jumps back to BB0. dominance(BB0 ≥ BB1) makes BB0 a loop header.
+    #[test]
+    fn structures_a_back_edge_into_a_while_loop() {
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::Branch {
+                then_target: BlockId(1),
+                else_target: BlockId(2),
+            },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Jump { target: BlockId(0) },
+        ));
+        cfg.add_block(BasicBlock::new(BlockId(2), 2, 3, 2..3, Terminator::Return));
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::ConditionalTrue);
+        cfg.add_edge(BlockId(0), BlockId(2), EdgeKind::ConditionalFalse);
+        cfg.add_edge(BlockId(1), BlockId(0), EdgeKind::Unconditional);
+        let dominance = crate::decompiler::cfg::ssa::compute(&cfg);
+
+        let mut blocks = std::collections::BTreeMap::new();
+        // header condition def: b0_0 = (loc0 < 3)
+        blocks.insert(
+            BlockId(0),
+            block_with(vec![SsaStmt::assign(
+                v("t", 0),
+                SsaExpr::binary(
+                    BinOp::Lt,
+                    SsaExpr::var(v("loc0", 0)),
+                    SsaExpr::lit(Literal::Int(3)),
+                ),
+            )]),
+        );
+        // body: b1_0 = 1
+        blocks.insert(
+            BlockId(1),
+            block_with(vec![SsaStmt::assign(
+                v("t", 1),
+                SsaExpr::lit(Literal::Int(1)),
+            )]),
+        );
+        blocks.insert(BlockId(2), SsaBlock::new());
+
+        let ssa = SsaForm {
+            cfg,
+            dominance,
+            blocks,
+            definitions: std::collections::BTreeMap::new(),
+            uses: std::collections::BTreeMap::new(),
+        };
+
+        let structured = structure(&ssa);
+        let has_while = structured.stmts.iter().any(
+            |s| matches!(s, Stmt::ControlFlow(cf) if matches!(**cf, ControlFlow::While { .. })),
+        );
+        assert!(
+            has_while,
+            "a back-edge branch should structure as a While; got {:?}",
+            structured.stmts
+        );
     }
 }
