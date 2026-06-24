@@ -138,12 +138,23 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | Try/Catch Nesting Fix         | ✅     | Correct catch/finally sibling ordering in control flow reconstruction        |
 | 101-Contract Audit Validation | ✅     | Comprehensive parity testing against full Neo N3 devpack                     |
 
+### Shipped Features (v0.7.x — advanced-decompiler evolution)
+
+| Feature                       | Status | Description                                                                 |
+| ----------------------------- | ------ | --------------------------------------------------------------------------- |
+| Real Stack-Effect SSA          | ✅     | Full `(pop,push)` model, symbolic stack, def/use chains, φ placement at joins, origin-based naming (`loc0`/`arg0`/`t0`) |
+| SSA Optimizations             | ✅     | Constant folding/propagation, copy propagation, trivial-φ elimination, dead-code elimination to a fixed point |
+| SSA Rendering                  | ✅     | `Decompilation::compute_ssa` / `optimize_ssa` / `render_optimized_ssa` and `decompile --format ssa` |
+| IR Spine: CFG Structural Recovery | ✅  | `cfg::structure` recovers `if`/`if-else`/`while`/`do-while`/`try-catch` from the CFG into `ir::ControlFlow` (`decompile --format ir`) |
+| Type-Inferred C# Declarations | ✅     | The (previously unused) type inference now annotates C# body locals: `--typed-declarations` |
+| Full-Corpus Panic Regression  | ✅     | `tests/corpus_replay.rs` replays every fuzz corpus + artifact through the pipeline |
+
 ### Planned Features (Future Work)
 
 | Feature               | Priority | Description                                           |
 | --------------------- | -------- | ----------------------------------------------------- |
-| Data Flow Analysis    | Medium   | Reaching definitions, live variable analysis          |
-| SSA Optimizations     | Medium   | Constant propagation, dead code elimination using SSA |
+| IR-Spine Default Path | Medium   | Promote the `--format ir` path to the default behind `--ir` at parity, then retire the string-pattern postprocess |
+| Switch / For Recovery (IR) | Low | Cosmetic `switch`/`for` forms on the IR path (currently `if-else`/`while`; the legacy path already emits these) |
 | Struct/Class Recovery | Low      | Infer composite types from field access patterns      |
 | Deobfuscation Passes  | Low      | Detect and simplify common obfuscation patterns       |
 | Interactive Mode      | Low      | REPL for exploratory analysis                         |
@@ -189,14 +200,20 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
   actual script entry.
 - Control Flow Graph (CFG) construction with DOT export (`Decompilation::cfg_to_dot`) and
   reachability helpers for dead-code detection (`Cfg::unreachable_blocks`)
-- SSA (Static Single Assignment) skeleton via `cfg.to_ssa()` (requires `use
+- SSA (Static Single Assignment) via `cfg.to_ssa()` (requires `use
   neo_decompiler::SsaConversion;` for the trait method) or the inherent
   `Decompilation::compute_ssa()`:
   - Dominance analysis (immediate dominators, dominator tree, dominance frontiers)
-  - Versioned assignments for `PUSH0`–`PUSH16`; other opcodes are carried as comment statements
-  - SSA form rendering with variable versions and statistics
-  - Note: φ-node placement across the full instruction set is not yet implemented (the
-    `PhiNode` data model and dominance frontiers exist, but no φ nodes are inserted yet)
+  - Real stack-effect SSA: a comprehensive `(pop, push)` model of every opcode,
+    symbolic-stack execution with origin-based naming (`loc0`/`arg0`/`static0`/`t0`),
+    def/use chains, and φ-node placement at control-flow joins
+  - SSA optimizations via `Decompilation::optimize_ssa()`: constant folding /
+    propagation, copy propagation, trivial-φ elimination, dead-code elimination
+  - SSA form rendering (`render_optimized_ssa`, `decompile --format ssa`)
+- CFG structural recovery into a typed IR (`Decompilation::render_structured_ir`,
+  `decompile --format ir`): recovers `if`/`if-else`/`while`/`do-while`/`try-catch`
+  from the CFG into `ir::ControlFlow` — an additive view alongside the legacy
+  high-level/C# renderers
 - Best-effort analysis output in both the library and JSON decompile report:
   call graph (`CALL*`, `CALLT`, `SYSCALL`), slot cross-references, and inferred primitive/collection types
 - Syscall lifting that resolves human-readable names and suppresses phantom
