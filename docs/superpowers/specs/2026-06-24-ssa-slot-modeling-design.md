@@ -1,10 +1,18 @@
 # Neo N3 Decompiler — SSA over Named Slots
 
-**Status:** Design approved 2026-06-24; implementation pending.
-**Risk posture:** Contained, additive change inside `cfg::ssa`. The 519-test suite
-(including the full-corpus replay panic fence) is the regression fence throughout.
-Output of `--format ssa|ir` changes deliberately; the legacy high-level path and
-`parity.rs` are untouched.
+**Status:** Shipped 2026-06-24 (commits `1c0f2c3` → `9a77cfd`). Locals, args, and
+statics are now versioned SSA variables with cross-block φ; structured-IR/SSA
+bodies render their real data flow.
+**Risk posture:** Contained, additive change inside `cfg::ssa`. The full suite
+(including the full-corpus replay panic fence) is green throughout. Output of
+`--format ssa|ir` changes deliberately; the legacy high-level path and `parity.rs`
+are untouched.
+**Follow-up identified:** the optimizer now constant-folds branch conditions that
+depend on a known-constant slot (e.g. `loc0 = 1; switch (loc0)` dissolves, since
+`1 == 0`/`1 == 1` are dead). This is correct but can dissolve recoverable
+switch/if structure for degenerate inputs. A structure-aware branch-fold pass
+(not yet implemented) would preserve readability; real bytecode (switches on
+non-constant args/computed values) is unaffected.
 
 ## 1. Problem
 
