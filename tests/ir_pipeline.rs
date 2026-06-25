@@ -56,19 +56,25 @@ fn ir_for(nef: &[u8]) -> String {
 
 #[test]
 fn ir_pipeline_recovers_a_switch_from_real_bytecode() {
-    // The Neo C# `switch` lowering (equality cascade) used by the legacy
-    // high-level switch tests:
-    //   loc0 = 1;
-    //   if (loc0 == 0) loc0 = 10; else if (loc0 == 1) loc0 = 11; else loc0 = 12;
+    // Neo C# `switch` lowering (an equality cascade on one scrutinee):
+    //   switch (arg0) { case 0: loc0 = 10; case 1: loc0 = 11; default: loc0 = 12; }
     //   return loc0;
+    //
+    // The scrutinee MUST be a non-constant (arg0, a function input). An earlier
+    // form used `loc0 = 1; switch (loc0)`, but once locals became versioned SSA
+    // variables the optimizer correctly constant-folded `1 == 0` / `1 == 1` and
+    // dissolved the cascade — the honest output for that dead code is *not* a
+    // switch. Switching on arg0 keeps the comparisons non-foldable so the
+    // structurer's switch recovery is genuinely exercised, and the case bodies
+    // carry their stored constants once locals flow as SSA values.
     let script = [
         0x57, 0x01, 0x00, // INITSLOT 1 local, 0 args
-        0x11, 0x70, // PUSH1; STLOC0
-        0x68, 0x10, 0x97, // LDLOC0; PUSH0; EQUAL
+        0x11, 0x70, // PUSH1; STLOC0 (dead init — the switch is on arg0, not loc0)
+        0x78, 0x10, 0x97, // LDARG0; PUSH0; EQUAL
         0x26, 0x06, // JMPIFNOT +6 -> else branch
         0x1A, 0x70, // PUSH10; STLOC0
         0x22, 0x0D, // JMP +13 -> end
-        0x68, 0x11, 0x97, // LDLOC0; PUSH1; EQUAL
+        0x78, 0x11, 0x97, // LDARG0; PUSH1; EQUAL
         0x26, 0x06, // JMPIFNOT +6 -> else branch
         0x1B, 0x70, // PUSH11; STLOC0
         0x22, 0x04, // JMP +4 -> end
@@ -84,6 +90,10 @@ fn ir_pipeline_recovers_a_switch_from_real_bytecode() {
     assert!(
         ir.contains("case "),
         "the switch should render its cases; got:\n{ir}"
+    );
+    assert!(
+        ir.contains("10") && ir.contains("11") && ir.contains("12"),
+        "switch case bodies should carry the stored constants (10/11/12); got:\n{ir}"
     );
 }
 
