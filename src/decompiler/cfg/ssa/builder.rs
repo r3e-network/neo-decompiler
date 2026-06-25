@@ -85,11 +85,13 @@ impl<'a> SsaBuilder<'a> {
     fn build_ssa_blocks(&self) -> SsaBuildResult {
         let block_ids: Vec<BlockId> = self.cfg.blocks().map(|b| b.id).collect();
 
-        // Work space: per-block entry/exit symbolic stacks and recorded uses.
-        // Exit-stack *identity* is canonical per def-site, so the loop converges
-        // once the join structure stops changing.
+        // Work space: per-block entry/exit symbolic stacks and slot states.
+        // Exit-stack / exit-slot *identity* is canonical per def-site, so the
+        // loop converges once the join structure stops changing.
         let mut entry_stacks: BTreeMap<BlockId, Vec<SsaVariable>> = BTreeMap::new();
         let mut exit_stacks: BTreeMap<BlockId, Vec<SsaVariable>> = BTreeMap::new();
+        let mut entry_slots: BTreeMap<BlockId, SlotState> = BTreeMap::new();
+        let mut exit_slots: BTreeMap<BlockId, SlotState> = BTreeMap::new();
         let mut block_uses: BTreeMap<BlockId, Vec<(SsaVariable, usize)>> = BTreeMap::new();
         // Per-pass variable-version counter. Reset at the start of every pass so
         // the deterministic (block-id, instruction) def order yields identical
@@ -107,16 +109,21 @@ impl<'a> SsaBuilder<'a> {
             versions.clear();
             for &bid in &block_ids {
                 let (new_entry, _new_phis) = self.compute_join_entry(bid, &exit_stacks);
-                let exec =
-                    self.execute_block(bid, &new_entry, &SlotState::default(), &mut versions);
+                let (new_slot_entry, _new_slot_phis) =
+                    self.compute_join_slots(bid, &exit_slots, &mut versions);
+                let exec = self.execute_block(bid, &new_entry, &new_slot_entry, &mut versions);
 
                 let exit_changed = exit_stacks.get(&bid) != Some(&exec.exit_stack);
                 let entry_changed = entry_stacks.get(&bid) != Some(&new_entry);
-                if exit_changed || entry_changed {
+                let slot_exit_changed = exit_slots.get(&bid) != Some(&exec.exit_slots);
+                let slot_entry_changed = entry_slots.get(&bid) != Some(&new_slot_entry);
+                if exit_changed || entry_changed || slot_exit_changed || slot_entry_changed {
                     changed = true;
                 }
                 entry_stacks.insert(bid, new_entry);
                 exit_stacks.insert(bid, exec.exit_stack);
+                entry_slots.insert(bid, new_slot_entry);
+                exit_slots.insert(bid, exec.exit_slots);
                 block_uses.insert(bid, exec.uses);
             }
         }
@@ -129,11 +136,13 @@ impl<'a> SsaBuilder<'a> {
         versions.clear();
         for &bid in &block_ids {
             let entry = entry_stacks.get(&bid).cloned().unwrap_or_default();
-            let (_, phis) = self.compute_join_entry(bid, &exit_stacks);
-            let exec = self.execute_block(bid, &entry, &SlotState::default(), &mut versions);
+            let slot_entry = entry_slots.get(&bid).cloned().unwrap_or_default();
+            let (_, stack_phis) = self.compute_join_entry(bid, &exit_stacks);
+            let (_, slot_phis) = self.compute_join_slots(bid, &exit_slots, &mut versions);
+            let exec = self.execute_block(bid, &entry, &slot_entry, &mut versions);
 
             let mut sb = SsaBlock::new();
-            for phi in &phis {
+            for phi in stack_phis.iter().chain(slot_phis.iter()) {
                 definitions.insert(phi.target.clone(), bid);
                 // φ operands are uses at the block head (stmt_index 0).
                 for var in phi.operands.values() {
@@ -212,6 +221,64 @@ impl<'a> SsaBuilder<'a> {
         (entry, phis)
     }
 
+    /// Compute a block's entry slot state and the φ nodes it needs, from its
+    /// predecessors' current exit slot states. For each slot name present across
+    /// the predecessors: if they all agree, the reaching version flows through;
+    /// if they disagree, a φ is placed. The φ target is named after the slot
+    /// (`loc0_N`) so downstream `strip_version` keeps it associated with the
+    /// slot. `versions` is the per-pass counter, shared with `execute_block` so
+    /// φ targets and defs draw from one deterministic namespace.
+    fn compute_join_slots(
+        &self,
+        bid: BlockId,
+        exit_slots: &BTreeMap<BlockId, SlotState>,
+        versions: &mut BTreeMap<String, usize>,
+    ) -> (SlotState, Vec<super::variable::PhiNode>) {
+        use super::variable::PhiNode;
+        let preds = self.cfg.predecessors(bid);
+        if preds.is_empty() {
+            return (SlotState::new(), Vec::new());
+        }
+
+        // Union of slot names any predecessor holds.
+        let mut names: BTreeSet<String> = BTreeSet::new();
+        for pred in preds {
+            if let Some(state) = exit_slots.get(pred) {
+                for name in state.keys() {
+                    names.insert(name.clone());
+                }
+            }
+        }
+
+        let mut entry = SlotState::new();
+        let mut phis = Vec::new();
+        for name in names {
+            let mut operands: Vec<(BlockId, SsaVariable)> = Vec::new();
+            for pred in preds {
+                if let Some(var) = exit_slots.get(pred).and_then(|s| s.get(&name)) {
+                    operands.push((*pred, var.clone()));
+                }
+            }
+            if operands.is_empty() {
+                continue;
+            }
+            let first = operands[0].1.clone();
+            let all_agree = operands.iter().all(|(_, v)| *v == first);
+            if all_agree {
+                entry.insert(name, first);
+            } else {
+                let target = fresh_var(versions, &name);
+                let mut phi = PhiNode::new(target.clone());
+                for (pred, var) in &operands {
+                    phi.add_operand(*pred, var.clone());
+                }
+                entry.insert(name, target);
+                phis.push(phi);
+            }
+        }
+        (entry, phis)
+    }
+
     /// Symbolically execute one block straight-line from `entry`, producing the
     /// exit stack, the SSA statements (assignments only), and the use list
     /// (vars consumed by non-assignment opcodes such as stores / conditions).
@@ -239,9 +306,9 @@ impl<'a> SsaBuilder<'a> {
             );
         }
 
-        let _ = slots; // exit slot state is consumed by the cross-block φ change.
         BlockExec {
             exit_stack: stack,
+            exit_slots: slots,
             stmts,
             uses,
         }
@@ -522,6 +589,7 @@ impl<'a> SsaBuilder<'a> {
 #[derive(Default)]
 struct BlockExec {
     exit_stack: Vec<SsaVariable>,
+    exit_slots: SlotState,
     stmts: Vec<SsaStmt>,
     uses: Vec<(SsaVariable, usize)>,
 }
@@ -1003,6 +1071,67 @@ mod tests {
             phi.operands.len(),
             2,
             "phi should have one operand per predecessor"
+        );
+    }
+
+    #[test]
+    fn diamond_places_a_phi_for_a_slot() {
+        // Two arms store different values to the same local; the merge loads it
+        // and so needs a slot φ(loc0) over BB1 / BB2.
+        //   BB0: Push1, STLOC0, Branch -> BB1 / BB2
+        //   BB1: PUSH11, STLOC0 -> jmp BB3
+        //   BB2: PUSH12, STLOC0 -> jmp BB3
+        //   BB3: LDLOC0, RET
+        let ins = vec![
+            Instruction::new(0, OpCode::Push1, None),
+            Instruction::new(1, OpCode::Stloc0, None),
+            Instruction::new(0, OpCode::Push11, None),
+            Instruction::new(1, OpCode::Stloc0, None),
+            Instruction::new(0, OpCode::Push12, None),
+            Instruction::new(1, OpCode::Stloc0, None),
+            Instruction::new(0, OpCode::Ldloc0, None),
+            Instruction::new(0, OpCode::Ret, None),
+        ];
+
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..2,
+            Terminator::Branch {
+                then_target: BlockId(1),
+                else_target: BlockId(2),
+            },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            2..4,
+            Terminator::Jump { target: BlockId(3) },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            4..6,
+            Terminator::Jump { target: BlockId(3) },
+        ));
+        cfg.add_block(BasicBlock::new(BlockId(3), 3, 4, 6..8, Terminator::Return));
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::ConditionalTrue);
+        cfg.add_edge(BlockId(0), BlockId(2), EdgeKind::ConditionalFalse);
+        cfg.add_edge(BlockId(1), BlockId(3), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(2), BlockId(3), EdgeKind::Unconditional);
+
+        let ssa = SsaBuilder::new(&cfg, &ins).build();
+        let merge = ssa.block(BlockId(3)).expect("merge block exists");
+
+        let has_slot_phi = merge.phi_nodes.iter().any(|phi| phi.target.base == "loc0");
+        assert!(
+            has_slot_phi,
+            "merge of two STLOC0 arms should place a loc0 φ; got {:?}",
+            merge.phi_nodes
         );
     }
 
