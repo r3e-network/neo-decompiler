@@ -21,12 +21,3 @@ fn test_comment_rendering() {
     let comment = Stmt::comment("this is a comment");
     assert_eq!(render_stmt(&comment, 0), "// this is a comment");
 }
-
-#[test]
-fn test_unlifted_rendering() {
-    let unlifted = Stmt::unlifted(0x0042, "PUSH1", "not yet translated");
-    assert_eq!(
-        render_stmt(&unlifted, 0),
-        "// 0x0042: PUSH1 (not yet translated)"
-    );
-}

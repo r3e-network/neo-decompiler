@@ -40,11 +40,6 @@ pub fn render_stmt(stmt: &Stmt, indent: usize) -> String {
         Stmt::Throw(None) => format!("{}throw;", prefix),
         Stmt::Break => format!("{}break;", prefix),
         Stmt::Continue => format!("{}continue;", prefix),
-        Stmt::Unlifted {
-            offset,
-            opcode,
-            comment,
-        } => format!("{}// {:#06X}: {} ({})", prefix, offset, opcode, comment),
     }
 }
 

@@ -28,12 +28,6 @@ pub enum Stmt {
     Break,
     /// Continue statement (for loops).
     Continue,
-    /// Unreachable placeholder for unlifted opcodes.
-    Unlifted {
-        offset: usize,
-        opcode: String,
-        comment: String,
-    },
 }
 
 impl Stmt {
@@ -66,15 +60,6 @@ impl Stmt {
     /// Create a comment statement.
     pub fn comment(text: impl Into<String>) -> Self {
         Stmt::Comment(text.into())
-    }
-
-    /// Create an unlifted opcode placeholder.
-    pub fn unlifted(offset: usize, opcode: impl Into<String>, comment: impl Into<String>) -> Self {
-        Stmt::Unlifted {
-            offset,
-            opcode: opcode.into(),
-            comment: comment.into(),
-        }
     }
 }
 
