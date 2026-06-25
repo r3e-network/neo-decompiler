@@ -107,7 +107,8 @@ impl<'a> SsaBuilder<'a> {
             versions.clear();
             for &bid in &block_ids {
                 let (new_entry, _new_phis) = self.compute_join_entry(bid, &exit_stacks);
-                let exec = self.execute_block(bid, &new_entry, &mut versions);
+                let exec =
+                    self.execute_block(bid, &new_entry, &SlotState::default(), &mut versions);
 
                 let exit_changed = exit_stacks.get(&bid) != Some(&exec.exit_stack);
                 let entry_changed = entry_stacks.get(&bid) != Some(&new_entry);
@@ -129,7 +130,7 @@ impl<'a> SsaBuilder<'a> {
         for &bid in &block_ids {
             let entry = entry_stacks.get(&bid).cloned().unwrap_or_default();
             let (_, phis) = self.compute_join_entry(bid, &exit_stacks);
-            let exec = self.execute_block(bid, &entry, &mut versions);
+            let exec = self.execute_block(bid, &entry, &SlotState::default(), &mut versions);
 
             let mut sb = SsaBlock::new();
             for phi in &phis {
@@ -218,12 +219,14 @@ impl<'a> SsaBuilder<'a> {
         &self,
         bid: BlockId,
         entry: &[SsaVariable],
+        entry_slots: &SlotState,
         versions: &mut BTreeMap<String, usize>,
     ) -> BlockExec {
         let Some(block) = self.cfg.block(bid) else {
             return BlockExec::default();
         };
         let mut stack: Vec<SsaVariable> = entry.to_vec();
+        let mut slots: SlotState = entry_slots.clone();
         let mut stmts: Vec<SsaStmt> = Vec::new();
         let mut uses: Vec<(SsaVariable, usize)> = Vec::new();
 
@@ -231,9 +234,12 @@ impl<'a> SsaBuilder<'a> {
             let Some(instr) = self.instructions.get(idx) else {
                 continue;
             };
-            self.apply_instruction(instr, bid, &mut stack, &mut stmts, &mut uses, versions);
+            self.apply_instruction(
+                instr, &mut stack, &mut slots, &mut stmts, &mut uses, versions,
+            );
         }
 
+        let _ = slots; // exit slot state is consumed by the cross-block φ change.
         BlockExec {
             exit_stack: stack,
             stmts,
@@ -245,8 +251,8 @@ impl<'a> SsaBuilder<'a> {
     fn apply_instruction(
         &self,
         instr: &Instruction,
-        _bid: BlockId,
         stack: &mut Vec<SsaVariable>,
+        slots: &mut SlotState,
         stmts: &mut Vec<SsaStmt>,
         uses: &mut Vec<(SsaVariable, usize)>,
         versions: &mut BTreeMap<String, usize>,
@@ -282,7 +288,15 @@ impl<'a> SsaBuilder<'a> {
         }
 
         if push == 1 {
-            let expr = self.build_expr(op, instr, &popped);
+            // A load whose slot has a reaching version reads that version instead
+            // of an opaque ldloc0(); otherwise fall through to the call
+            // placeholder (build_expr) so uninitialised reads stay opaque.
+            let reaching =
+                slot_name_for(op, &instr.operand).and_then(|name| slots.get(&name).cloned());
+            let expr = match reaching {
+                Some(var) => SsaExpr::var(var),
+                None => self.build_expr(op, instr, &popped),
+            };
             // Slot loads inherit their slot name (loc0/arg1/static2); everything
             // else gets a temp name. The version counter is per-pass-global and
             // deterministic, so names stay stable across fixpoint iterations.
@@ -290,10 +304,18 @@ impl<'a> SsaBuilder<'a> {
             let target = fresh_var(versions, &base);
             stmts.push(SsaStmt::assign(target.clone(), expr));
             stack.push(target);
+        } else if push == 0 {
+            // A store defines a new version of its target slot: `loc0_N = <v>`.
+            // Other push==0 opcodes (assert/throw/jump condition) only consumed;
+            // their uses were already recorded above.
+            if let Some(name) = slot_name_for(op, &instr.operand) {
+                if let Some(value) = popped.first().cloned() {
+                    let target = fresh_var(versions, &name);
+                    stmts.push(SsaStmt::assign(target.clone(), SsaExpr::var(value)));
+                    slots.insert(name, target);
+                }
+            }
         }
-        // push == 0: the opcode only consumed values (store / assert / jump
-        // condition). No statement is emitted — the data-flow uses are recorded
-        // above, which is what downstream analyses need.
     }
 
     /// Handle fixed-shape stack reorders (DUP/OVER/TUCK/SWAP/ROT/REVERSE3/4/
@@ -521,12 +543,21 @@ fn fresh_var(versions: &mut BTreeMap<String, usize>, base: &str) -> SsaVariable 
     var
 }
 
-/// Derive a readable base name for a slot-load definition (e.g. `loc0`, `arg1`,
-/// `static2`), so SSA values that originate from a local/argument/static carry
-/// their slot name instead of an opaque temp. Returns `None` for non-slot ops.
+/// Per-block reaching definition for each named slot (`"loc0"` → latest SSA
+/// version). Threaded through `execute_block`; stores define a new version,
+/// loads read the reaching version, and at joins `compute_join_slots` places φ
+/// where predecessors disagree.
+type SlotState = BTreeMap<String, SsaVariable>;
+
+/// Derive the slot name (e.g. `loc0`, `arg1`, `static2`) for a slot load OR
+/// store opcode, so SSA values that originate from / are written to a
+/// local/argument/static carry their slot name instead of an opaque temp.
+/// Returns `None` for non-slot ops. Used both to name load defs and to identify
+/// the target slot of a store.
 fn slot_name_for(op: OpCode, operand: &Option<Operand>) -> Option<String> {
     use OpCode::*;
     let (kind, idx): (&str, usize) = match op {
+        // Loads.
         Ldloc0 => ("loc", 0),
         Ldloc1 => ("loc", 1),
         Ldloc2 => ("loc", 2),
@@ -548,11 +579,33 @@ fn slot_name_for(op: OpCode, operand: &Option<Operand>) -> Option<String> {
         Ldsfld4 => ("static", 4),
         Ldsfld5 => ("static", 5),
         Ldsfld6 => ("static", 6),
-        Ldloc | Ldarg | Ldsfld => {
+        // Stores (symmetric to the loads above).
+        Stloc0 => ("loc", 0),
+        Stloc1 => ("loc", 1),
+        Stloc2 => ("loc", 2),
+        Stloc3 => ("loc", 3),
+        Stloc4 => ("loc", 4),
+        Stloc5 => ("loc", 5),
+        Stloc6 => ("loc", 6),
+        Starg0 => ("arg", 0),
+        Starg1 => ("arg", 1),
+        Starg2 => ("arg", 2),
+        Starg3 => ("arg", 3),
+        Starg4 => ("arg", 4),
+        Starg5 => ("arg", 5),
+        Starg6 => ("arg", 6),
+        Stsfld0 => ("static", 0),
+        Stsfld1 => ("static", 1),
+        Stsfld2 => ("static", 2),
+        Stsfld3 => ("static", 3),
+        Stsfld4 => ("static", 4),
+        Stsfld5 => ("static", 5),
+        Stsfld6 => ("static", 6),
+        Ldloc | Ldarg | Ldsfld | Stloc | Starg | Stsfld => {
             let kind = match op {
-                Ldloc => "loc",
-                Ldarg => "arg",
-                Ldsfld => "static",
+                Ldloc | Stloc => "loc",
+                Ldarg | Starg => "arg",
+                Ldsfld | Stsfld => "static",
                 _ => return None,
             };
             match operand {
@@ -827,6 +880,29 @@ mod tests {
         assert!(
             matches!(value, SsaExpr::Variable(_)),
             "DUP copy should reference its source var, got {value:?}"
+        );
+    }
+
+    #[test]
+    fn store_local_emits_a_slot_assignment() {
+        // PUSH10 ; STLOC0 ; RET  →  the store must define a loc0 SSA var.
+        let ins = vec![
+            Instruction::new(0, OpCode::Push10, None),
+            Instruction::new(1, OpCode::Stloc0, None),
+            Instruction::new(2, OpCode::Ret, None),
+        ];
+        let (ins, cfg) = linear(ins);
+        let ssa = SsaBuilder::new(&cfg, &ins).build();
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        let has_loc0_assign = block.stmts.iter().any(|s| match s {
+            SsaStmt::Assign { target, .. } => target.base == "loc0",
+            _ => false,
+        });
+        assert!(
+            has_loc0_assign,
+            "STLOC0 should define a loc0 SSA variable; got {:?}",
+            block.stmts
         );
     }
 
