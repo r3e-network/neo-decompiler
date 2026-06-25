@@ -907,6 +907,47 @@ mod tests {
     }
 
     #[test]
+    fn store_then_load_connects_within_a_block() {
+        // PUSH10 ; STLOC0 ; LDLOC0 ; RET
+        //   store defines a loc0 var; the load must read that var, not stay opaque.
+        let ins = vec![
+            Instruction::new(0, OpCode::Push10, None),
+            Instruction::new(1, OpCode::Stloc0, None),
+            Instruction::new(2, OpCode::Ldloc0, None),
+            Instruction::new(3, OpCode::Ret, None),
+        ];
+        let (ins, cfg) = linear(ins);
+        let ssa = SsaBuilder::new(&cfg, &ins).build();
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        // loc0 defs in order: [store, load].
+        let loc0_defs: Vec<&SsaStmt> = block
+            .stmts
+            .iter()
+            .filter(|s| matches!(s, SsaStmt::Assign { target, .. } if target.base == "loc0"))
+            .collect();
+        assert!(
+            loc0_defs.len() >= 2,
+            "expected a store def and a load def for loc0; got {:?}",
+            block.stmts
+        );
+        // The last loc0 def is the load: it must reference the stored var, NOT
+        // be an opaque ldloc0() Call.
+        let load_def = loc0_defs.last().copied().unwrap();
+        let SsaStmt::Assign { value, .. } = load_def else {
+            panic!("load def should be an Assign: {load_def:?}");
+        };
+        assert!(
+            matches!(value, SsaExpr::Variable(_)),
+            "LDLOC0 after STLOC0 should read the stored var; got {value:?}"
+        );
+        assert!(
+            !matches!(value, SsaExpr::Call { .. }),
+            "LDLOC0 should not stay an opaque ldloc0() call once a store exists; got {value:?}"
+        );
+    }
+
+    #[test]
     fn diamond_places_a_phi_at_the_merge() {
         // Build a diamond by hand so we control predecessor exit stacks:
         //   BB0 (entry) pushes 1, branches to BB1 / BB2
