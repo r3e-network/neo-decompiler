@@ -13,7 +13,7 @@ mod optimize;
 mod to_ir;
 mod variable;
 
-pub use builder::{build_ssa_from_cfg, SsaBuilder};
+pub use builder::SsaBuilder;
 pub use convert::{expr_to_ssa, stmt_to_ssa};
 pub use dominance::{compute, DominanceInfo};
 pub use form::{SsaBlock, SsaExpr, SsaForm, SsaStats, SsaStmt, UseSite};
@@ -21,47 +21,15 @@ pub use optimize::optimize as optimize_ssa;
 pub use to_ir::{render_ssa_form, ssa_expr_to_ir};
 pub use variable::{PhiNode, SsaVariable};
 
-use crate::decompiler::cfg::Cfg;
-
-/// SSA conversion trait for extending CFG with SSA capabilities.
-pub trait SsaConversion {
-    /// Convert this CFG to SSA form.
-    fn to_ssa(&self) -> SsaForm;
-
-    /// Compute dominance information for this CFG.
-    ///
-    /// Dominance information includes immediate dominators, dominator tree,
-    /// and dominance frontiers needed for SSA construction.
-    fn compute_dominance(&self) -> DominanceInfo;
-}
-
-impl SsaConversion for Cfg {
-    fn to_ssa(&self) -> SsaForm {
-        build_ssa_from_cfg(self)
-    }
-
-    fn compute_dominance(&self) -> DominanceInfo {
-        compute(self)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decompiler::cfg::Cfg;
 
     #[test]
-    fn test_ssa_conversion_trait() {
+    fn test_dominance_via_cfg() {
         let cfg = Cfg::new();
-        let ssa = cfg.to_ssa();
-
-        // Should produce valid SSA form even for empty CFG
-        assert_eq!(ssa.block_count(), 0);
-    }
-
-    #[test]
-    fn test_compute_dominance_via_trait() {
-        let cfg = Cfg::new();
-        let dominance = cfg.compute_dominance();
+        let dominance = compute(&cfg);
 
         // Empty CFG has no dominance info
         assert!(dominance.idom.is_empty());

@@ -15,7 +15,7 @@ use std::panic::catch_unwind;
 use std::path::{Path, PathBuf};
 
 use neo_decompiler::{
-    CfgBuilder, ContractManifest, Decompiler, Disassembler, NefParser, OutputFormat, SsaConversion,
+    CfgBuilder, ContractManifest, Decompiler, Disassembler, NefParser, OutputFormat,
 };
 
 /// Locate the repo root from CARGO_MANIFEST_DIR (set by cargo at build time).
@@ -73,8 +73,11 @@ fn run_target(data: &[u8], target: Target) {
             let dis = Disassembler::new();
             if let Ok(instrs) = dis.disassemble(data) {
                 if !instrs.is_empty() {
-                    let cfg = CfgBuilder::new(&instrs).build();
-                    let _ = cfg.to_ssa();
+                    // Disassemble + build the CFG as a panic fence across the
+                    // whole corpus. (Real SSA construction is exercised on
+                    // representative artifacts by ir_pipeline / ssa_e2e; running
+                    // it on every fuzz input is too slow for this fence.)
+                    let _ = CfgBuilder::new(&instrs).build();
                 }
             }
         }

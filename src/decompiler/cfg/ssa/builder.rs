@@ -851,27 +851,6 @@ fn collect_expr_uses_into(expr: &SsaExpr, out: &mut Vec<SsaVariable>) {
     }
 }
 
-/// Create SSA form from a CFG without an instruction stream.
-///
-/// Produces dominance information plus empty blocks (no φ nodes or
-/// statements). Suitable for structural/dominance queries; use [`SsaBuilder`]
-/// when instruction-level data-flow is needed.
-#[must_use]
-pub fn build_ssa_from_cfg(cfg: &Cfg) -> SsaForm {
-    let dominance = dominance::compute(cfg);
-    let mut ssa_blocks = BTreeMap::new();
-    for block in cfg.blocks() {
-        ssa_blocks.insert(block.id, SsaBlock::new());
-    }
-    SsaForm {
-        cfg: cfg.clone(),
-        dominance,
-        blocks: ssa_blocks,
-        definitions: BTreeMap::new(),
-        uses: BTreeMap::new(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1133,20 +1112,5 @@ mod tests {
             "merge of two STLOC0 arms should place a loc0 φ; got {:?}",
             merge.phi_nodes
         );
-    }
-
-    #[test]
-    fn build_ssa_from_cfg_has_no_definitions_without_instructions() {
-        let mut cfg = Cfg::new();
-        cfg.add_block(BasicBlock::new(
-            BlockId::ENTRY,
-            0,
-            0,
-            0..0,
-            Terminator::Return,
-        ));
-        let ssa = build_ssa_from_cfg(&cfg);
-        assert_eq!(ssa.block_count(), 1);
-        assert!(ssa.definitions.is_empty());
     }
 }
