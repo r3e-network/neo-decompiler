@@ -52,13 +52,25 @@ fn one_round(ssa: &mut SsaForm) -> usize {
         for stmt in &block.stmts {
             if let SsaStmt::Assign { target, value } = stmt {
                 match value {
-                    // Direct constant: propagate the literal.
+                    // Direct constant: propagate the literal — but NOT out of a
+                    // named slot variable (loc/arg/static). A slot is a
+                    // user-visible variable; substituting its constant into uses
+                    // would erase the variable and fold away branch conditions /
+                    // arithmetic the structurer needs (e.g. `loc0 = 0; if loc0<3`
+                    // must survive, not become `if true`). Anonymous temps fold.
                     SsaExpr::Literal(_) => {
-                        subst.insert(target.clone(), value.clone());
+                        if !is_slot_var(target) {
+                            subst.insert(target.clone(), value.clone());
+                        }
                     }
-                    // Copy of another var: `t = v` -> use v.
-                    SsaExpr::Variable(_) => {
-                        subst.insert(target.clone(), value.clone());
+                    // Copy of another var: `t = v` -> use v. For a slot target,
+                    // only collapse to ANOTHER slot (a redundant load-alias);
+                    // never to a temp/literal, so the slot reference stays
+                    // visible at use sites.
+                    SsaExpr::Variable(src) => {
+                        if !is_slot_var(target) || is_slot_var(src) {
+                            subst.insert(target.clone(), value.clone());
+                        }
                     }
                     // Foldable pure binary on two constants.
                     SsaExpr::Binary { op, left, right } => {
@@ -249,6 +261,15 @@ fn as_literal(expr: &SsaExpr) -> Option<Literal> {
     }
 }
 
+/// Whether `v` is a named slot variable (a local/argument/static field). Such
+/// variables are user-visible; the optimizer keeps them symbolic instead of
+/// substituting their constant value into uses (see `one_round`). Slot bases are
+/// `locN` / `argN` / `staticN` as produced by the SSA builder's `slot_name_for`.
+fn is_slot_var(v: &SsaVariable) -> bool {
+    let b = v.base.as_str();
+    b.starts_with("loc") || b.starts_with("arg") || b.starts_with("static")
+}
+
 /// Constant-fold a binary operation on two integer literals when it is safe
 /// (no division by zero). Boolean/comparison ops fold to `Bool`.
 fn fold_binary(op: BinOp, a: &Literal, b: &Literal) -> Option<Literal> {
@@ -430,6 +451,54 @@ mod tests {
 
     fn assign_str(target: SsaVariable, value: SsaExpr) -> SsaStmt {
         SsaStmt::assign(target, value)
+    }
+
+    /// A named slot's constant value must NOT be substituted into its uses: a
+    /// decompiler preserves the user-visible variable reference (`loc0 < 3`)
+    /// rather than erasing it (`0 < 3` → `true`), which would dissolve the
+    /// branch condition the structurer needs. Temps (`b0`) still fold.
+    #[test]
+    fn does_not_propagate_constant_through_a_slot_variable() {
+        let mut block = SsaBlock::new();
+        // loc0_0 = 0  (a named local slot, not an anonymous temp)
+        block.add_stmt(assign_str(v("loc0", 0), SsaExpr::lit(Literal::Int(0))));
+        // t_0 = (loc0_0 < 3)  — must stay referencing loc0_0, not fold to `true`.
+        block.add_stmt(assign_str(
+            v("t", 0),
+            SsaExpr::binary(
+                BinOp::Lt,
+                SsaExpr::var(v("loc0", 0)),
+                SsaExpr::lit(Literal::Int(3)),
+            ),
+        ));
+        // Keep t_0 live.
+        block.add_stmt(assign_str(
+            v("t", 1),
+            SsaExpr::call("use".to_string(), vec![SsaExpr::var(v("t", 0))]),
+        ));
+
+        let mut blocks = BTreeMap::new();
+        blocks.insert(BlockId(0), block);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+        optimize(&mut ssa);
+
+        let b0 = ssa.block(BlockId(0)).unwrap();
+        let cmp_stmt = b0
+            .stmts
+            .iter()
+            .find(|s| matches!(s, SsaStmt::Assign { target, .. } if target == &v("t", 0)))
+            .expect("t_0 def should survive");
+        let SsaStmt::Assign { value, .. } = cmp_stmt else {
+            panic!();
+        };
+        // The left operand must still be the slot VARIABLE, not Literal(0).
+        let SsaExpr::Binary { left, .. } = value else {
+            panic!("expected the comparison to survive, got {value:?}");
+        };
+        assert!(
+            matches!(left.as_ref(), SsaExpr::Variable(var) if var == &v("loc0", 0)),
+            "loc0_0 should stay symbolic in `loc0 < 3`, not be replaced by 0; got {value:?}"
+        );
     }
 
     /// `(1 + 2)` then use of the result must fold to `3`.
