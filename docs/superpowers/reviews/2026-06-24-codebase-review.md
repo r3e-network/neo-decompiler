@@ -108,14 +108,16 @@ shipped"; the parity work to make it default-ready is the bulk that remains.
 This is the work that unlocks all the big refactors. Approximate scope, ordered
 by leverage:
 
-1. **Tame the optimizer for decompilation.** Stop const-folding branch
-   conditions and loop-carried variables that erase recoverable structure (the
-   `LoopIf` regression). A structure-aware fold pass (fold data, preserve
-   control-flow conditions) is the crux.
+1. **Tame the optimizer for decompilation.** ✅ Shipped (`9e869d7`) — slot
+   variables (loc/arg/static) now stay symbolic in the optimizer instead of
+   being const-propagated into uses, so branch conditions and loop-carried
+   arithmetic survive (LoopIf's `loc0 < 3` and `loc0 + 1` no longer fold to
+   constants). Slot-to-slot load-aliases still collapse; temps still fold.
 2. **Condition extraction.** Emit the real comparison (`loc0 < 3`) as the
-   branch condition instead of a bare reaching def.
+   branch condition instead of a bare reaching temp (`if (t_2)`). The SSA now
+   carries the comparison; the structurer must inline it into the condition.
 3. **Loop recovery on real bytecode.** Diagnose why `LoopIf`'s back-edge isn't
-   structured after (1)/(2) land; likely falls out once conditions survive.
+   structured; likely falls out once conditions are inlined (#2).
 4. **Contract envelope + method splitting for the IR view** (wrap the spine in
    the `contract { }` / ABI structure the legacy path produces), or decide the IR
    view stays a body-only developer view and is never the default.
