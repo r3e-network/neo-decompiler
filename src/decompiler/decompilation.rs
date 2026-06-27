@@ -160,6 +160,30 @@ impl Decompilation {
     /// high-level view remains the default).
     #[must_use]
     pub fn render_structured_ir(&mut self) -> String {
+        // Per-method + envelope render. Fall back to the single-CFG render if
+        // extraction fails or yields no methods, so the view never regresses.
+        let table = crate::decompiler::analysis::MethodTable::new(
+            &self.instructions,
+            self.manifest.as_ref(),
+        );
+        let views = crate::decompiler::cfg::method_view::extract_method_cfgs(
+            &self.cfg,
+            &table,
+            &self.instructions,
+        );
+        if !views.is_empty() {
+            return crate::decompiler::cfg::method_view::render_envelope(
+                &self.nef,
+                self.manifest.as_ref(),
+                &views,
+            );
+        }
+        self.render_structured_ir_single_cfg()
+    }
+
+    /// Fallback: render the whole-script CFG as a single structured block.
+    /// Used when per-method extraction yields no methods.
+    fn render_structured_ir_single_cfg(&mut self) -> String {
         self.optimize_ssa();
         match &self.ssa {
             Some(ssa) => {
