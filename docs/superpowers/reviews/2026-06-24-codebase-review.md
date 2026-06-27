@@ -113,11 +113,14 @@ by leverage:
    being const-propagated into uses, so branch conditions and loop-carried
    arithmetic survive (LoopIf's `loc0 < 3` and `loc0 + 1` no longer fold to
    constants). Slot-to-slot load-aliases still collapse; temps still fold.
-2. **Condition extraction.** Emit the real comparison (`loc0 < 3`) as the
-   branch condition instead of a bare reaching temp (`if (t_2)`). The SSA now
-   carries the comparison; the structurer must inline it into the condition.
+2. **Condition extraction.** ✅ Shipped (`d58e284`) — plain `if`-branches now
+   inline the comparison into the condition head when the last def is a
+   relational/equality Binary (mirrors the switch path's `extract_eq_cond`).
+   The body suppresses the condition def to avoid duplication. LoopIf now
+   renders `if ((loc0_0 < 3))` instead of `if (t_2)`.
 3. **Loop recovery on real bytecode.** Diagnose why `LoopIf`'s back-edge isn't
-   structured; likely falls out once conditions are inlined (#2).
+   structured as a `while`/`loop`; likely falls out once the surviving
+   comparison is matched by the loop-header branch logic.
 4. **Contract envelope + method splitting for the IR view** (wrap the spine in
    the `contract { }` / ABI structure the legacy path produces), or decide the IR
    view stays a body-only developer view and is never the default.
