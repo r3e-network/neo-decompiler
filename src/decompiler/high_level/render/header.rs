@@ -7,7 +7,7 @@ use crate::util;
 use super::super::super::helpers::{extract_contract_name, sanitize_identifier};
 use super::{manifest_summary, method_tokens};
 
-pub(super) fn write_contract_header(
+pub(crate) fn write_contract_header(
     output: &mut String,
     nef: &NefFile,
     manifest: Option<&ContractManifest>,

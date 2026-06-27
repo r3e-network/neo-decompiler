@@ -53,7 +53,7 @@ pub(in super::super) fn inferred_type_to_csharp(ty: ValueType) -> &'static str {
 /// vocabulary), the original input string is returned verbatim so the
 /// user's chosen casing/spelling survives. Matches the JS port's
 /// `formatManifestType`.
-pub(in super::super) fn format_manifest_type(kind: &str) -> String {
+pub(crate) fn format_manifest_type(kind: &str) -> String {
     match kind.to_ascii_lowercase().as_str() {
         "void" => "void".into(),
         "boolean" => "bool".into(),
