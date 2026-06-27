@@ -35,7 +35,7 @@ pub struct Decompilation {
     /// Optional rendered C# output.
     pub csharp: Option<String>,
     /// SSA form of the control flow graph (computed lazily).
-    pub ssa: Option<SsaForm>,
+    pub(crate) ssa: Option<SsaForm>,
 }
 
 impl Decompilation {
