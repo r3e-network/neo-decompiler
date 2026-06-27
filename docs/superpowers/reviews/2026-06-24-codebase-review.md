@@ -118,9 +118,17 @@ by leverage:
    relational/equality Binary (mirrors the switch path's `extract_eq_cond`).
    The body suppresses the condition def to avoid duplication. LoopIf now
    renders `if ((loc0_0 < 3))` instead of `if (t_2)`.
-3. **Loop recovery on real bytecode.** Diagnose why `LoopIf`'s back-edge isn't
-   structured as a `while`/`loop`; likely falls out once the surviving
-   comparison is matched by the loop-header branch logic.
+3. **Loop recovery on real bytecode.** ✅ Shipped (`dca5b3e`) — the dominance
+   walks (depth_in_dominator_tree / find_common_dominator / compute_df) used
+   the raw idom map, where the entry's sentinel self-idom caused walks to
+   spin and clamp to equal depth, collapsing every LCA to the entry. A latch
+   reachable only via its header was mis-reported as dominated by the entry
+   itself, so `compute_loop_headers` produced an empty set and the structurer
+   never took the while path. An `idom_parent` helper treats the entry's
+   self-idom as no-parent in the walks (kept as `Some(entry)` in the raw map
+   so `intersect_dominators` still recognises the entry as a predecessor's
+   dominator). LoopIf now renders
+   `while ((loc0_0 < 3)) { ... }`.
 4. **Contract envelope + method splitting for the IR view** (wrap the spine in
    the `contract { }` / ABI structure the legacy path produces), or decide the IR
    view stays a body-only developer view and is never the default.
