@@ -694,7 +694,7 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 
 [[package]]
 name = "neo-decompiler"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "assert_cmd",
  "base64",

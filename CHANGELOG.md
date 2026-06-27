@@ -3,6 +3,43 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.0] - 2026-06-27 (Rust)
+
+Per-method structured IR + contract envelope: the `--format ir` view now wraps
+the SSA/IR spine in the legacy `contract { ... }` envelope (header, features,
+trusts, ABI methods) and renders each reachable method as its own
+`fn name() -> ret { ... }` body, instead of one anonymous script-level body. The
+slicing is dataflow-based — cross-method jumps are rewritten to `return`, and
+unreachable methods (dead code after a `RET`) are correctly omitted from the
+bodies while still listed in the envelope ABI. The legacy `high-level` /
+`csharp` / `pseudocode` / `json` / `web` outputs are untouched. Closes roadmap
+item #4 in the codebase review.
+
+### Added
+
+- **`Decompilation::render_structured_ir` per-method + envelope path.**
+  Composes the legacy `write_contract_header` with one `fn ... { ... }` body
+  per reachable method from `MethodTable`. Falls back to the prior single-CFG
+  render when no methods are detected, so the view never regresses.
+- **`cfg::method_view::extract_method_cfgs`** — slices the whole-script CFG
+  into per-method sub-CFGs, synthesises a fresh-id entry block, and rewrites
+  cross-range `Jump`/`Jmpif*`/`Jmpifnot*` to `Return` so cross-method edges
+  don't leak into a method's body.
+- **`cfg::method_view::render_method_body`** — runs the existing SSA →
+  `optimize_ssa` → `structure_cfg` → `render_block` pipeline per sub-CFG and
+  wraps the result as `fn name() -> ret { body }` using the manifest's return
+  type (`format_manifest_type`).
+- **`cfg::method_view::render_envelope`** — composes header (reused verbatim
+  from the legacy emitter) + per-method bodies + closing `}`.
+- **`MethodTable::methods()` public iterator** — exposes `(start, end, method)`
+  spans for the per-method renderer (and any future per-method tooling).
+- **Visibility widens** — `write_contract_header` and `format_manifest_type` are
+  now `pub(crate)` so the IR envelope can reuse them without duplicating the
+  header format.
+- **E2E coverage** — `tests/ir_pipeline.rs` guards `MultiMethod` (envelope lists
+  both ABI methods, body renders the reachable one) and `LoopIf` (envelope
+  preserves the structurer's `while` recovery).
+
 ## [0.9.0] - 2026-06-24 (Rust)
 
 The data-flow and structural-control-flow spine: a real stack-effect SSA layer,
