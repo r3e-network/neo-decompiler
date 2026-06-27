@@ -5,7 +5,6 @@
 //! data flow analyses and optimizations.
 
 pub mod builder;
-mod convert;
 mod dominance;
 mod effects;
 mod form;
@@ -14,7 +13,6 @@ mod to_ir;
 mod variable;
 
 pub use builder::SsaBuilder;
-pub use convert::{expr_to_ssa, stmt_to_ssa};
 pub use dominance::{compute, DominanceInfo};
 pub use form::{SsaBlock, SsaExpr, SsaForm, SsaStats, SsaStmt, UseSite};
 pub use optimize::optimize as optimize_ssa;
