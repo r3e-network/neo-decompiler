@@ -263,6 +263,13 @@ impl MethodTable {
         &self.spans
     }
 
+    /// Iterate known method spans as `(start, end, method_ref)` triples
+    /// ordered by `start`. Used by the structured-IR per-method view to
+    /// extract a sub-CFG per method.
+    pub fn methods(&self) -> impl Iterator<Item = (usize, usize, &MethodRef)> {
+        self.spans.iter().map(|s| (s.start, s.end, &s.method))
+    }
+
     /// Resolve the method that contains the given bytecode offset.
     #[must_use]
     pub fn method_for_offset(&self, offset: usize) -> MethodRef {
@@ -306,5 +313,34 @@ impl MethodTable {
     #[must_use]
     pub fn manifest_index_for_start(&self, offset: usize) -> Option<usize> {
         self.manifest_index_by_start.get(&offset).copied()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::instruction::{Instruction, OpCode};
+
+    #[test]
+    fn methods_iterates_spans_in_order() {
+        use crate::manifest::ContractManifest;
+        let ins = vec![
+            Instruction::new(0, OpCode::Push1, None),
+            Instruction::new(1, OpCode::Ret, None),
+            Instruction::new(10, OpCode::Push0, None),
+            Instruction::new(11, OpCode::Ret, None),
+        ];
+        let manifest_json = r#"{"name":"C","abi":{"methods":[
+            {"name":"main","parameters":[],"returntype":"Integer","offset":0},
+            {"name":"helper","parameters":[],"returntype":"Integer","offset":10}
+        ]}}"#;
+        let manifest: ContractManifest = serde_json::from_str(manifest_json).unwrap();
+        let table = MethodTable::new(&ins, Some(&manifest));
+        let spans: Vec<_> = table.methods().collect();
+        assert_eq!(spans.len(), 2, "expected two method spans, got {spans:?}");
+        assert_eq!(spans[0].0, 0);
+        assert_eq!(spans[0].2.name, "main");
+        assert_eq!(spans[1].0, 10);
+        assert_eq!(spans[1].2.name, "helper");
     }
 }
