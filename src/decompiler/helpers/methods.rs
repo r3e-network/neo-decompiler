@@ -1,7 +1,9 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::{ContractManifest, ManifestMethod};
+
+use super::identifiers::make_unique_identifier;
 
 /// Return the ABI method that matches the script entry offset, falling back to
 /// the first ABI method when all ABI offsets are missing.
@@ -304,4 +306,90 @@ fn relative_target_with_delta(
     }
     let target = target as usize;
     known_offsets.contains(&target).then_some(target)
+}
+
+/// Build a `BTreeMap` of method-start-offset → unique label for the whole
+/// script, shared between the high-level and C# renderers. The only
+/// differences between the two callers are the identifier sanitizer and the
+/// fallback name for the script entry, so both are passed in as closures.
+pub(in super::super) fn build_method_labels_by_offset(
+    instructions: &[Instruction],
+    inferred_starts: &[usize],
+    manifest: Option<&ContractManifest>,
+    sanitize: impl Fn(&str) -> String,
+    fallback_name: &str,
+) -> BTreeMap<usize, String> {
+    let mut labels = BTreeMap::new();
+    let mut used = HashSet::new();
+
+    let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
+    let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
+    let use_manifest_entry = entry_method.is_some();
+    let entry_name = if use_manifest_entry {
+        entry_method
+            .as_ref()
+            .map(|(method, _)| sanitize(&method.name))
+            .unwrap_or_else(|| fallback_name.to_string())
+    } else {
+        fallback_name.to_string()
+    };
+    labels.insert(entry_offset, make_unique_identifier(entry_name, &mut used));
+
+    let entry_manifest_marker = if use_manifest_entry {
+        entry_method
+            .as_ref()
+            .map(|(method, _)| (method.name.clone(), method.offset))
+    } else {
+        None
+    };
+
+    if let Some(manifest) = manifest {
+        let mut methods: Vec<_> = manifest.abi.methods.iter().collect();
+        methods.sort_by_key(|m| m.offset.unwrap_or(i32::MAX));
+        for method in methods {
+            if entry_manifest_marker
+                .as_ref()
+                .map(|(name, offset)| name == &method.name && offset == &method.offset)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let Some(start) = offset_as_usize(method.offset) else {
+                continue;
+            };
+            labels.entry(start).or_insert_with(|| {
+                make_unique_identifier(sanitize(&method.name), &mut used)
+            });
+        }
+    }
+
+    let entry_manifest_offset = entry_manifest_marker
+        .as_ref()
+        .and_then(|(_, offset)| offset.and_then(|value| usize::try_from(value).ok()));
+    let manifest_offsets: HashSet<usize> = manifest
+        .map(|m| {
+            m.abi
+                .methods
+                .iter()
+                .filter_map(|method| offset_as_usize(method.offset))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    for start in inferred_starts {
+        if Some(*start) == Some(entry_offset)
+            || Some(*start) == entry_manifest_offset
+            || manifest_offsets.contains(start)
+        {
+            continue;
+        }
+
+        labels.entry(*start).or_insert_with(|| {
+            let base_name = format!("sub_0x{start:04X}");
+            make_unique_identifier(base_name, &mut used)
+        });
+    }
+
+    labels
 }

@@ -1,8 +1,7 @@
 use super::super::analysis::call_graph::CallGraph;
 use super::super::helpers::{
     build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
-    find_manifest_entry_method, inferred_method_starts, make_unique_identifier, offset_as_usize,
-    sanitize_identifier,
+    build_method_labels_by_offset, inferred_method_starts, sanitize_identifier,
 };
 use crate::decompiler::output_format::RenderOptions;
 use crate::instruction::Instruction;
@@ -68,8 +67,13 @@ pub(crate) fn render_high_level(
     header::write_contract_header(&mut output, nef, manifest);
 
     let inferred_starts = inferred_method_starts(instructions, manifest);
-    let method_labels_by_offset =
-        build_method_labels_by_offset(instructions, &inferred_starts, manifest);
+    let method_labels_by_offset = build_method_labels_by_offset(
+        instructions,
+        &inferred_starts,
+        manifest,
+        sanitize_identifier,
+        "script_entry",
+    );
     let method_arg_counts_by_offset =
         build_method_arg_counts_by_offset(instructions, &inferred_starts, manifest);
     let call_targets_by_offset = if manifest.is_some() {
@@ -129,86 +133,6 @@ pub(crate) fn render_high_level(
         text: output,
         warnings,
     }
-}
-
-fn build_method_labels_by_offset(
-    instructions: &[Instruction],
-    inferred_starts: &[usize],
-    manifest: Option<&ContractManifest>,
-) -> BTreeMap<usize, String> {
-    let mut labels = BTreeMap::new();
-    let mut used = HashSet::new();
-
-    let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
-    let entry_method = manifest.and_then(|m| find_manifest_entry_method(m, entry_offset));
-    let use_manifest_entry = entry_method.is_some();
-    let entry_name = if use_manifest_entry {
-        entry_method
-            .as_ref()
-            .map(|(method, _)| sanitize_identifier(&method.name))
-            .unwrap_or_else(|| "script_entry".to_string())
-    } else {
-        "script_entry".to_string()
-    };
-    labels.insert(entry_offset, make_unique_identifier(entry_name, &mut used));
-
-    let entry_manifest_marker = if use_manifest_entry {
-        entry_method
-            .as_ref()
-            .map(|(method, _)| (method.name.clone(), method.offset))
-    } else {
-        None
-    };
-
-    if let Some(manifest) = manifest {
-        let mut methods: Vec<_> = manifest.abi.methods.iter().collect();
-        methods.sort_by_key(|m| m.offset.unwrap_or(i32::MAX));
-        for method in methods {
-            if entry_manifest_marker
-                .as_ref()
-                .map(|(name, offset)| name == &method.name && offset == &method.offset)
-                .unwrap_or(false)
-            {
-                continue;
-            }
-
-            let Some(start) = offset_as_usize(method.offset) else {
-                continue;
-            };
-            labels.entry(start).or_insert_with(|| {
-                make_unique_identifier(sanitize_identifier(&method.name), &mut used)
-            });
-        }
-    }
-
-    let entry_manifest_offset = entry_manifest_marker
-        .as_ref()
-        .and_then(|(_, offset)| offset.and_then(|value| usize::try_from(value).ok()));
-    let manifest_offsets: HashSet<usize> = manifest
-        .map(|m| {
-            m.abi
-                .methods
-                .iter()
-                .filter_map(|method| offset_as_usize(method.offset))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    for start in inferred_starts {
-        if Some(*start) == Some(entry_offset)
-            || Some(*start) == entry_manifest_offset
-            || manifest_offsets.contains(start)
-        {
-            continue;
-        }
-
-        labels.entry(*start).or_insert_with(|| {
-            let base_name = format!("sub_0x{start:04X}");
-            make_unique_identifier(base_name, &mut used)
-        });
-    }
-
-    labels
 }
 
 /// Compute the set of method start offsets whose bodies always terminate

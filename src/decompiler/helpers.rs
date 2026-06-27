@@ -13,9 +13,9 @@ pub(super) use lifted::{
 };
 pub(super) use manifest::{extract_contract_name, format_permission_entry, render_extra_scalar};
 pub(super) use methods::{
-    collect_call_targets, collect_initslot_offsets, find_manifest_entry_method,
-    inferred_method_starts, initslot_argument_count_at, next_inferred_method_offset,
-    offset_as_usize,
+    build_method_labels_by_offset, collect_call_targets, collect_initslot_offsets,
+    find_manifest_entry_method, inferred_method_starts, initslot_argument_count_at,
+    next_inferred_method_offset, offset_as_usize,
 };
 pub(super) use parameters::{format_manifest_parameters, sanitize_parameter_names};
 pub(super) use types::{format_manifest_type, inferred_type_to_csharp};
