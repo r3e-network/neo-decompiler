@@ -16,6 +16,7 @@ mod pipeline;
 mod pseudocode;
 
 pub use decompilation::Decompilation;
+pub(crate) use high_level::write_contract_header;
 pub use output_format::OutputFormat;
 pub use pipeline::Decompiler;
 

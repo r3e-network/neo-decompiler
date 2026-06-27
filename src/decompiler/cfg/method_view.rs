@@ -188,6 +188,25 @@ fn sanitize_name(raw: &str) -> String {
     }
 }
 
+/// Compose the full contract view: legacy envelope header + per-method
+/// bodies + closing `}`. Used by `Decompilation::render_structured_ir`.
+#[allow(dead_code)] // wired up by Decompilation::render_structured_ir (Task 6).
+pub(crate) fn render_envelope(
+    nef: &crate::nef::NefFile,
+    manifest: Option<&ContractManifest>,
+    methods: &[MethodView],
+) -> String {
+    use crate::decompiler::write_contract_header;
+    let mut out = String::new();
+    write_contract_header(&mut out, nef, manifest);
+    for view in methods {
+        out.push_str(&render_method_body(view, manifest));
+        out.push('\n');
+    }
+    out.push_str("}\n");
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

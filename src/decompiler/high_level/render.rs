@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 mod body;
 mod entry;
-mod header;
+pub(super) mod header;
 mod manifest_summary;
 mod method_tokens;
 mod methods;
