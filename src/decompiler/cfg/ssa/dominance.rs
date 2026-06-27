@@ -244,7 +244,7 @@ fn find_common_dominator(
     const MAX_ITERATIONS: usize = 1000;
 
     while depth1 > depth2 {
-        let Some(next) = idom.get(&finger1).copied().flatten() else {
+        let Some(next) = idom_parent(idom, finger1) else {
             return finger1; // Graceful fallback
         };
         finger1 = next;
@@ -255,7 +255,7 @@ fn find_common_dominator(
         }
     }
     while depth2 > depth1 {
-        let Some(next) = idom.get(&finger2).copied().flatten() else {
+        let Some(next) = idom_parent(idom, finger2) else {
             return finger1; // Graceful fallback
         };
         finger2 = next;
@@ -268,10 +268,8 @@ fn find_common_dominator(
 
     // Move both fingers up until they meet
     while finger1 != finger2 {
-        let (Some(next1), Some(next2)) = (
-            idom.get(&finger1).copied().flatten(),
-            idom.get(&finger2).copied().flatten(),
-        ) else {
+        let (Some(next1), Some(next2)) = (idom_parent(idom, finger1), idom_parent(idom, finger2))
+        else {
             return finger1; // Graceful fallback
         };
         finger1 = next1;
@@ -293,16 +291,29 @@ fn find_common_dominator(
 fn depth_in_dominator_tree(block: BlockId, idom: &BTreeMap<BlockId, Option<BlockId>>) -> usize {
     let max_depth = idom.len();
     let mut depth = 1; // Count the block itself
-    let mut current = idom.get(&block).copied().flatten();
+    let mut current = idom_parent(idom, block);
 
     while let Some(idom_block) = current {
-        if idom_block == block || depth >= max_depth {
+        if depth >= max_depth {
             break;
         }
         depth += 1;
-        current = idom.get(&idom_block).copied().flatten();
+        current = idom_parent(idom, idom_block);
     }
+
     depth
+}
+
+/// The parent of `b` in the idom map — i.e. `idom.get(b).flatten()` — except
+/// for the entry block, whose idom is initialised to `Some(b)` as a sentinel
+/// and is treated here as "no parent" so walks up the tree terminate cleanly
+/// instead of spinning on the entry's self-idom.
+fn idom_parent(idom: &BTreeMap<BlockId, Option<BlockId>>, b: BlockId) -> Option<BlockId> {
+    let parent = idom.get(&b).copied().flatten();
+    match parent {
+        Some(p) if p == b => None,
+        other => other,
+    }
 }
 
 /// Get blocks in reverse post-order.
@@ -420,7 +431,7 @@ fn compute_df(
             // Walk up until runner IS the immediate dominator of the join block
             while Some(runner) != block_idom {
                 df.entry(runner).or_default().insert(block.id);
-                match idom.get(&runner).copied().flatten() {
+                match idom_parent(idom, runner) {
                     Some(next) => runner = next,
                     None => break, // entry block — no further idom
                 }
@@ -585,6 +596,42 @@ mod tests {
 
         let df3 = dominance.dominance_frontier_vec(BlockId(3));
         assert!(df3.is_empty(), "DF(BB3) should be empty (exit block)");
+    }
+
+    /// Regression: a back-edge latch must be dominated by the loop header, so
+    /// `compute_loop_headers` recognises the header and the structurer
+    /// recovers a `while`. A previous bug caused `depth_in_dominator_tree` /
+    /// `find_common_dominator` to spin on the entry's self-idom and return
+    /// the entry as the LCA for the latch, hiding every natural loop
+    /// (empty `loop_headers`).
+    #[test]
+    fn loop_latch_is_dominated_by_header_and_header_is_a_loop_header() {
+        let cfg = create_loop_cfg();
+        let dominance = compute(&cfg);
+
+        // Latch BB2 is reachable from BB1 (header) on every path, so BB1
+        // dominates BB2 and idom(BB2) = BB1.
+        assert_eq!(
+            dominance.idom(BlockId(2)),
+            Some(BlockId(1)),
+            "loop latch (BB2) must be immediately dominated by the header (BB1)"
+        );
+
+        // Strict-domination via the back-edge (BB2 -> BB1) makes BB1 a loop
+        // header. Compute it the same way `cfg::structure` does.
+        let mut headers = std::collections::HashSet::new();
+        for block in cfg.blocks() {
+            for pred in cfg.predecessors(block.id) {
+                if *pred == block.id || dominance.strictly_dominates(block.id, *pred) {
+                    headers.insert(block.id);
+                    break;
+                }
+            }
+        }
+        assert!(
+            headers.contains(&BlockId(1)),
+            "BB1 should be detected as a loop header; got {headers:?}"
+        );
     }
 
     fn create_loop_cfg() -> Cfg {
