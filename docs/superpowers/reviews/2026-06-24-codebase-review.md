@@ -129,11 +129,22 @@ by leverage:
    so `intersect_dominators` still recognises the entry as a predecessor's
    dominator). LoopIf now renders
    `while ((loc0_0 < 3)) { ... }`.
-4. **Contract envelope + method splitting for the IR view** (wrap the spine in
-   the `contract { }` / ABI structure the legacy path produces), or decide the IR
-   view stays a body-only developer view and is never the default.
+4. ~~**Contract envelope + method splitting for the IR view**~~ **SHIPPED** (2026-06-27,
+    commits `97e38ed`→`f4d4154`). `Decompilation::render_structured_ir` now
+    composes the legacy `contract { ... }` header (reused verbatim) with a
+    per-method body (`fn name() -> ret { ... }`) for every reachable method in
+    `MethodTable`, closing the envelope with `}`. `extract_method_cfgs` slices
+    the whole-script CFG into per-method sub-CFGs, synthesises a fresh-id entry,
+    and rewrites cross-range jumps to `Return` so cross-method edges don't leak.
+    Fallback to the single-CFG render preserves the previous view when no
+    methods are detected. E2E `tests/ir_pipeline.rs` guards `MultiMethod` and
+    `LoopIf` envelopes. Reachability note: dead-code methods (helper unreachable
+    after a `RET`) are correctly omitted from the body — the IR view is
+    dataflow-based, so the envelope ABI list and the rendered bodies can
+    legitimately differ. Gate: `cargo test`, `cargo test --no-default-features`,
+    clippy `-D warnings`, fmt, corpus replay — all green.
 5. **Corpus-wide parity diff** as the gate: `--format ir` output structurally
-   matches `--format high-level` across `TestingArtifacts`.
+    matches `--format high-level` across `TestingArtifacts`.
 
 ### Later (gated on IR-default)
 

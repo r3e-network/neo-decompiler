@@ -54,6 +54,21 @@ fn ir_for(nef: &[u8]) -> String {
     dec.render_structured_ir()
 }
 
+/// Like `ir_for`, but loads the sidecar `.manifest.json` so the per-method +
+/// envelope path can pick up class name and ABI methods.
+fn ir_with_manifest_for(nef_path: &std::path::Path) -> String {
+    let data = fs::read(nef_path).unwrap();
+    let manifest_path = nef_path.with_extension("manifest.json");
+    let manifest = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|e| panic!("missing sidecar manifest {}: {e}", manifest_path.display()));
+    let manifest = neo_decompiler::manifest::ContractManifest::from_json_str(&manifest)
+        .unwrap_or_else(|e| panic!("invalid manifest {}: {e}", manifest_path.display()));
+    let mut dec = Decompiler::new()
+        .decompile_bytes_with_manifest(&data, Some(manifest), OutputFormat::All)
+        .unwrap();
+    dec.render_structured_ir()
+}
+
 #[test]
 fn ir_pipeline_recovers_a_switch_from_real_bytecode() {
     // Neo C# `switch` lowering (an equality cascade on one scrutinee):
@@ -140,4 +155,53 @@ fn ir_pipeline_is_well_formed_across_artifacts() {
             nef_path.display()
         );
     }
+}
+
+#[test]
+fn ir_pipeline_renders_per_method_envelope_for_multimethod() {
+    // MultiMethod.nef's manifest declares two methods (main@0, helper@6), but
+    // the bytecode's helper is unreachable from main's RET (dead code after the
+    // return). The IR path is dataflow-based, so the envelope header lists
+    // both ABI methods but only the reachable method gets a body. This guards
+    // the per-method + envelope contract without conflating reachability.
+    let root = repo_root();
+    let nef_path = root.join("TestingArtifacts/edgecases/multi/MultiMethod.nef");
+    let ir = ir_with_manifest_for(&nef_path);
+    assert!(
+        ir.contains("contract MultiMethod {"),
+        "envelope must wrap the IR in the legacy contract header; got:\n{ir}"
+    );
+    assert!(
+        ir.contains("fn main() -> int;") && ir.contains("fn helper() -> int;"),
+        "envelope ABI must list both declared methods; got:\n{ir}"
+    );
+    assert!(
+        ir.contains("fn main() -> int {"),
+        "envelope must render the reachable method's body as `fn main() -> int {{`; got:\n{ir}"
+    );
+    assert!(
+        ir.trim_end().ends_with('}'),
+        "envelope must close the contract block with `}}`; got:\n{ir}"
+    );
+}
+
+#[test]
+fn ir_pipeline_loopif_envelope_preserves_while_loop() {
+    // LoopIf.nef is a single-method artifact; the per-method envelope must keep
+    // the structurer's `while` recovery intact inside the contract wrapper.
+    let root = repo_root();
+    let nef_path = root.join("TestingArtifacts/edgecases/LoopIf.nef");
+    let ir = ir_with_manifest_for(&nef_path);
+    assert!(
+        ir.contains("contract LoopIf {"),
+        "envelope must wrap LoopIf in its contract header; got:\n{ir}"
+    );
+    assert!(
+        ir.contains("while (") || ir.contains("do {"),
+        "envelope must preserve the structurer's loop recovery; got:\n{ir}"
+    );
+    assert!(
+        ir.trim_end().ends_with('}'),
+        "envelope must close the contract block with `}}`; got:\n{ir}"
+    );
 }
