@@ -18,5 +18,4 @@ pub(super) use methods::{
     offset_as_usize,
 };
 pub(super) use parameters::{format_manifest_parameters, sanitize_parameter_names};
-#[allow(unused_imports)]
-pub(super) use types::{format_manifest_type, inferred_type_to_csharp, inferred_type_to_pseudo};
+pub(super) use types::{format_manifest_type, inferred_type_to_csharp};
