@@ -16,18 +16,6 @@ pub enum Stmt {
     Comment(String),
     /// Control flow construct.
     ControlFlow(Box<ControlFlow>),
-    /// Variable declaration with optional initialization.
-    VarDecl {
-        name: String,
-        var_type: Option<String>,
-        init: Option<Expr>,
-    },
-    /// Throw/abort statement.
-    Throw(Option<Expr>),
-    /// Break statement (for loops).
-    Break,
-    /// Continue statement (for loops).
-    Continue,
 }
 
 impl Stmt {
