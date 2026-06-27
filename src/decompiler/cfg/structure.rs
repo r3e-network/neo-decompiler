@@ -15,7 +15,7 @@
 use std::collections::{BTreeSet, HashSet};
 
 use crate::decompiler::cfg::{BlockId, Cfg, Terminator};
-use crate::decompiler::ir::{Block as IrBlock, ControlFlow, Expr, Stmt};
+use crate::decompiler::ir::{BinOp, Block as IrBlock, ControlFlow, Expr, Stmt};
 
 use super::ssa::ssa_expr_to_ir;
 use super::ssa::{DominanceInfo, SsaExpr, SsaForm, SsaStmt, SsaVariable};
@@ -107,7 +107,17 @@ impl<'a> StructCtx<'a> {
                 break;
             }
 
-            self.emit_body(&mut out, bid);
+            // For a Branch, the last def IS the branch condition and is
+            // consumed (inlined) into the `if (…)` head by handle_branch /
+            // the loop-header path — emit all-but-last to avoid duplicating it.
+            // For other terminators (Return / Jump / Fallthrough / TryEntry /
+            // EndTry / Unknown) the last def is regular body code and is
+            // emitted in full.
+            if matches!(self.terminator(bid), Terminator::Branch { .. }) {
+                self.emit_body_except_last(&mut out, bid);
+            } else {
+                self.emit_body(&mut out, bid);
+            }
 
             cur = match self.terminator(bid) {
                 Terminator::Return
@@ -128,7 +138,8 @@ impl<'a> StructCtx<'a> {
                     // (the loop exit). The body's back-edge naturally stops at
                     // the header (already visited).
                     if self.loop_headers.contains(&bid) {
-                        let cond = self.condition_for_block(bid);
+                        let cond = Self::comparison_condition_for_block(self.ssa, bid)
+                            .unwrap_or_else(|| self.condition_for_block(bid));
                         let mut body = self.structure_region(then_target, Some(bid), visited, true);
                         self.build_loop(&mut out, bid, cond, &mut body);
                         Some(else_target)
@@ -181,6 +192,28 @@ impl<'a> StructCtx<'a> {
         }
     }
 
+    /// Like [`emit_body`](Self::emit_body) but suppresses the LAST assignment.
+    /// Used immediately before a Branch terminator, where the last def is the
+    /// branch condition and is consumed (inlined) into the `if (…)` head —
+    /// emitting it in the body too would duplicate it.
+    fn emit_body_except_last(&self, out: &mut IrBlock, bid: BlockId) {
+        let Some(block) = self.ssa.block(bid) else {
+            return;
+        };
+        let n = block.stmts.len();
+        if n <= 1 {
+            return;
+        }
+        for stmt in &block.stmts[..n - 1] {
+            if let SsaStmt::Assign { target, value } = stmt {
+                out.push(Stmt::Assign {
+                    target: var_name(target),
+                    value: ssa_expr_to_ir(value),
+                });
+            }
+        }
+    }
+
     /// Recover an `if` / `if-else` from a `Branch` terminator: find the merge
     /// (closest common post-dominator by reachability intersection + predecessor
     /// count), structure each side up to it, and continue at the merge.
@@ -193,7 +226,10 @@ impl<'a> StructCtx<'a> {
         outer_boundary: Option<BlockId>,
         visited: &mut HashSet<BlockId>,
     ) -> Option<BlockId> {
-        let cond = self.condition_for_block(bid);
+        // Inline the comparison driving the branch when available (e.g.
+        // `(loc0 < 3)` instead of the bare reaching-definition variable).
+        let cond = Self::comparison_condition_for_block(self.ssa, bid)
+            .unwrap_or_else(|| self.condition_for_block(bid));
 
         if then_target == else_target {
             // Degenerate branch (condition has no effect): drop it and continue.
@@ -238,6 +274,26 @@ impl<'a> StructCtx<'a> {
             Some(m) if Some(m) != outer_boundary => Some(m),
             _ => None,
         }
+    }
+
+    /// If the last def in `bid` is a comparison expression (Binary with a
+    /// relational/equality op), return its lowered IR expression so the caller can
+    /// inline it into the `if (…)` head. Otherwise return `None` — the caller then
+    /// falls back to the bare reaching-definition variable via
+    /// [`StructCtx::condition_for_block`].
+    fn comparison_condition_for_block(ssa: &SsaForm, bid: BlockId) -> Option<Expr> {
+        let value = ssa.block(bid)?.stmts.last().and_then(|s| match s {
+            SsaStmt::Assign { value, .. } => Some(value),
+            _ => None,
+        })?;
+        let SsaExpr::Binary { op, .. } = value else {
+            return None;
+        };
+        let is_comparison = matches!(
+            op,
+            BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
+        );
+        is_comparison.then(|| ssa_expr_to_ir(value))
     }
 
     /// The branch condition: the last assignment in the block is the value the
@@ -501,7 +557,8 @@ impl<'a> StructCtx<'a> {
                     else_target,
                 } => {
                     if self.loop_headers.contains(&bid) {
-                        let cond = self.condition_for_block(bid);
+                        let cond = Self::comparison_condition_for_block(self.ssa, bid)
+                            .unwrap_or_else(|| self.condition_for_block(bid));
                         let mut body = self.structure_region(then_target, Some(bid), visited, true);
                         self.build_loop(&mut out, bid, cond, &mut body);
                         Some(else_target)
@@ -743,6 +800,102 @@ mod tests {
         assert!(
             else_branch.is_some(),
             "an if-else diamond should yield an else branch"
+        );
+    }
+
+    /// The if-condition must inline the comparison that drives the branch, not
+    /// render the bare reaching-definition variable. When BB0's last def is
+    /// `t = (loc0 < 1)`, the condition must be `(loc0 < 1)` and the def must
+    /// NOT be duplicated as a body statement.
+    #[test]
+    fn inlines_branch_comparison_condition_and_does_not_duplicate_it() {
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::Branch {
+                then_target: BlockId(1),
+                else_target: BlockId(2),
+            },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(1),
+            1,
+            2,
+            1..2,
+            Terminator::Jump { target: BlockId(3) },
+        ));
+        cfg.add_block(BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            2..3,
+            Terminator::Jump { target: BlockId(3) },
+        ));
+        cfg.add_block(BasicBlock::new(BlockId(3), 3, 4, 3..4, Terminator::Return));
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::ConditionalTrue);
+        cfg.add_edge(BlockId(0), BlockId(2), EdgeKind::ConditionalFalse);
+        cfg.add_edge(BlockId(1), BlockId(3), EdgeKind::Unconditional);
+        cfg.add_edge(BlockId(2), BlockId(3), EdgeKind::Unconditional);
+
+        let mut blocks = std::collections::BTreeMap::new();
+        // BB0: only the comparison def — it IS the branch condition.
+        blocks.insert(
+            BlockId(0),
+            block_with(vec![SsaStmt::assign(
+                v("t", 0),
+                SsaExpr::binary(
+                    BinOp::Lt,
+                    SsaExpr::var(v("loc0", 0)),
+                    SsaExpr::lit(Literal::Int(1)),
+                ),
+            )]),
+        );
+        blocks.insert(
+            BlockId(1),
+            block_with(vec![SsaStmt::assign(
+                v("b1", 0),
+                SsaExpr::lit(Literal::Int(10)),
+            )]),
+        );
+        blocks.insert(
+            BlockId(2),
+            block_with(vec![SsaStmt::assign(
+                v("b2", 0),
+                SsaExpr::lit(Literal::Int(20)),
+            )]),
+        );
+        blocks.insert(BlockId(3), SsaBlock::new());
+
+        let ssa = SsaForm {
+            cfg,
+            dominance: DominanceInfo::new(),
+            blocks,
+            definitions: std::collections::BTreeMap::new(),
+            uses: std::collections::BTreeMap::new(),
+        };
+
+        let structured = structure(&ssa);
+        let rendered = crate::decompiler::ir::render_block(&structured, 0);
+
+        // The condition must be the inlined comparison (versioned SSA name `loc0_0`,
+        // double parens are a renderer quirk around a parenthesised Binary).
+        assert!(
+            rendered.contains("loc0_0 < 1"),
+            "branch condition should inline the comparison; got:\n{rendered}"
+        );
+        // And it must NOT render the bare reaching-definition variable as the
+        // condition.
+        assert!(
+            !rendered.contains("if (t_0)") && !rendered.contains("if (t)"),
+            "branch condition should not be the bare t_0; got:\n{rendered}"
+        );
+        // The comparison def must not be duplicated as a body assignment.
+        assert!(
+            !rendered.contains("t_0 ="),
+            "the comparison def must be consumed by the condition, not emitted in the body; got:\n{rendered}"
         );
     }
 
