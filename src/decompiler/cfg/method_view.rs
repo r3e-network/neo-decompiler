@@ -11,7 +11,6 @@ use crate::manifest::ContractManifest;
 /// A per-method view: the method's instruction slice and a self-contained
 /// sub-CFG whose terminators do not leave the method (cross-range jumps are
 /// rewritten to `Return`; the sub-CFG has a synthesised entry block).
-#[allow(dead_code)] // `method` and `instructions` are used by render_method_body / render_envelope.
 #[derive(Debug, Clone)]
 pub(crate) struct MethodView {
     pub method: MethodRef,
@@ -26,7 +25,6 @@ pub(crate) struct MethodView {
 /// instruction stream; each `MethodView` receives the slice whose offsets
 /// fall within the method's range so `SsaBuilder` only sees the method's
 /// instructions.
-#[allow(dead_code)] // wired up by Decompilation::render_structured_ir (Task 6).
 pub(crate) fn extract_method_cfgs(
     whole: &Cfg,
     table: &MethodTable,
@@ -46,7 +44,6 @@ pub(crate) fn extract_method_cfgs(
     out
 }
 
-#[allow(dead_code)] // used by extract_method_cfgs.
 fn extract_one(
     whole: &Cfg,
     start: usize,
@@ -114,7 +111,6 @@ fn extract_one(
     })
 }
 
-#[allow(dead_code)] // used by extract_one.
 fn rewrite_terminator(term: &Terminator, selected: &[&BasicBlock]) -> Terminator {
     let in_range = |bid: BlockId| selected.iter().any(|b| b.id == bid);
     match term {
@@ -130,7 +126,6 @@ fn rewrite_terminator(term: &Terminator, selected: &[&BasicBlock]) -> Terminator
 /// Render a method body as `fn name() -> ret { body }`. The `manifest`
 /// provides the return type (looked up by method name); falls back to `void`
 /// if the manifest is missing or the method is unknown.
-#[allow(dead_code)] // wired up by render_envelope (Task 5).
 pub(crate) fn render_method_body(view: &MethodView, manifest: Option<&ContractManifest>) -> String {
     let mut ssa =
         crate::decompiler::cfg::ssa::SsaBuilder::new(&view.cfg, &view.instructions).build();
@@ -190,7 +185,6 @@ fn sanitize_name(raw: &str) -> String {
 
 /// Compose the full contract view: legacy envelope header + per-method
 /// bodies + closing `}`. Used by `Decompilation::render_structured_ir`.
-#[allow(dead_code)] // wired up by Decompilation::render_structured_ir (Task 6).
 pub(crate) fn render_envelope(
     nef: &crate::nef::NefFile,
     manifest: Option<&ContractManifest>,
