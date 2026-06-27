@@ -1,8 +1,12 @@
 //! Per-method view of a contract for the structured-IR renderer.
 
 use crate::decompiler::analysis::{MethodRef, MethodTable};
-use crate::decompiler::cfg::{BasicBlock, BlockId, Cfg, EdgeKind, Terminator};
+use crate::decompiler::cfg::ssa::optimize_ssa;
+use crate::decompiler::cfg::{structure_cfg, BasicBlock, BlockId, Cfg, EdgeKind, Terminator};
+use crate::decompiler::helpers::format_manifest_type;
+use crate::decompiler::ir::render_block;
 use crate::instruction::Instruction;
+use crate::manifest::ContractManifest;
 
 /// A per-method view: the method's instruction slice and a self-contained
 /// sub-CFG whose terminators do not leave the method (cross-range jumps are
@@ -123,6 +127,67 @@ fn rewrite_terminator(term: &Terminator, selected: &[&BasicBlock]) -> Terminator
     }
 }
 
+/// Render a method body as `fn name() -> ret { body }`. The `manifest`
+/// provides the return type (looked up by method name); falls back to `void`
+/// if the manifest is missing or the method is unknown.
+#[allow(dead_code)] // wired up by render_envelope (Task 5).
+pub(crate) fn render_method_body(view: &MethodView, manifest: Option<&ContractManifest>) -> String {
+    let mut ssa =
+        crate::decompiler::cfg::ssa::SsaBuilder::new(&view.cfg, &view.instructions).build();
+    optimize_ssa(&mut ssa);
+    let block = structure_cfg(&ssa);
+    let body = render_block(&block, 0);
+    let ret = method_return_type(view, manifest);
+    let name = sanitize_name(&view.method.name);
+    if body.trim().is_empty() {
+        format!("    fn {name}() -> {ret} {{\n        // empty body\n    }}\n")
+    } else {
+        let indented = body
+            .lines()
+            .map(|l| {
+                if l.is_empty() {
+                    String::new()
+                } else {
+                    format!("        {l}")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("    fn {name}() -> {ret} {{\n{indented}\n    }}\n")
+    }
+}
+
+fn method_return_type(view: &MethodView, manifest: Option<&ContractManifest>) -> String {
+    let Some(manifest) = manifest else {
+        return "void".to_string();
+    };
+    manifest
+        .abi
+        .methods
+        .iter()
+        .find(|m| m.name == view.method.name)
+        .map(|m| format_manifest_type(&m.return_type))
+        .unwrap_or_else(|| "void".to_string())
+}
+
+fn sanitize_name(raw: &str) -> String {
+    let s: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if s.is_empty() {
+        "sub".to_string()
+    } else {
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,5 +254,31 @@ mod tests {
         let b10 = b.cfg.block(BlockId(10)).expect("block 10 in B");
         assert!(matches!(b10.terminator, Terminator::Return));
         assert!(a.cfg.block(BlockId(0)).is_some());
+    }
+
+    #[test]
+    fn render_method_body_emits_fn_with_return_type() {
+        // A trivial method: PUSH1 ; RET → `fn main() -> Integer { ... return ... }`.
+        let instructions = vec![
+            Instruction::new(0, OpCode::Push1, None),
+            Instruction::new(1, OpCode::Ret, None),
+        ];
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(BlockId(0), 0, 2, 0..2, Terminator::Return));
+        let view = MethodView {
+            method: MethodRef {
+                offset: 0,
+                name: "main".to_string(),
+            },
+            cfg,
+            instructions,
+        };
+        let manifest_json = r#"{"name":"C","abi":{"methods":[
+            {"name":"main","parameters":[],"returntype":"Integer"}
+        ]}}"#;
+        let manifest: ContractManifest = serde_json::from_str(manifest_json).unwrap();
+        let out = render_method_body(&view, Some(&manifest));
+        assert!(out.contains("fn main() -> int"), "got:\n{out}");
+        assert!(out.contains("return"), "got:\n{out}");
     }
 }
