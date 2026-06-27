@@ -6,6 +6,7 @@
 mod basic_block;
 mod builder;
 mod graph;
+pub mod method_view;
 pub mod ssa;
 mod structure;
 
