@@ -3,6 +3,47 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.1] - 2026-06-27 (Rust) / [1.5.3] - 2026-06-27 (JS)
+
+Architecture & code simplification — quick wins: pure deletions and one
+dedup, no behavior change. The five commits shipped in `5725276` → `2e7764b`
+trimmed dead code, stale annotations, and speculative exports left over from
+prior phases; the post-shipment `8dd54ef` then extracted the previously
+duplicated `build_method_labels_by_offset` helper into
+`helpers/methods/labels.rs`. Public API unchanged. See
+`docs/superpowers/specs/2026-06-27-simplification-quick-wins-design.md` for
+the spec and `docs/superpowers/plans/2026-06-27-simplification-quick-wins.md`
+for the implementation log.
+
+### Removed
+
+- **`#[allow(dead_code)]` annotations** in `cfg/method_view.rs` (W1). Every
+  annotated item is wired up; the allow had been defensive scaffolding during
+  the per-method IR staging.
+- **`ssa::convert` module** (W2). `expr_to_ssa`/`stmt_to_ssa` had zero callers
+  (`SsaBuilder` builds from CFG+instructions, not from IR). The reverse
+  direction (`SsaExpr → Expr`) is in `ssa::to_ir`.
+- **`inferred_type_to_pseudo` helper + its tests + re-export** (W3). The
+  speculative helper targeted a "Phase-4 AST-based high-level renderer" that
+  never landed; the typed-declarations feature uses
+  `csharp::helpers::inferred_type_to_csharp` instead.
+- **`ir::Stmt::VarDecl`, `Stmt::Throw`, `Stmt::Break`, `Stmt::Continue`** (W4).
+  Untested speculative variants — only `Assign`/`Return`/`ExprStmt`/
+  `Comment`/`ControlFlow` are constructed anywhere in the tree, and the
+  structurer does not emit any of the four. Render arms removed alongside.
+- **Blanket `#[allow(unused_imports)]`** on `helpers::re_export` (W5). No
+  longer needed after the `inferred_type_to_pseudo` re-export went away.
+
+### Changed
+
+- **`Decompilation.ssa` visibility tightened** to `pub(crate)` (W5). Every
+  consumer in the tree already reads through `Decompilation::ssa()`, so the
+  wider field surface was a footgun, not a feature.
+- **Shared `build_method_labels_by_offset` helper** extracted into
+  `helpers/methods/labels.rs` (`8dd54ef`). Both the high-level and C#
+  renderers now route through it, with per-renderer sanitization and
+  fallback-name closures to keep behaviour identical.
+
 ## [0.10.0] - 2026-06-27 (Rust)
 
 Per-method structured IR + contract envelope: the `--format ir` view now wraps

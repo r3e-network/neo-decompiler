@@ -83,6 +83,9 @@ Full decompilation to structured pseudocode (if/else, loops, etc.).
   the high-level output as source code.
 - `inlineSingleUseTemps: true` — replace every single-use `tN` with its
   RHS at the use site. Implied by `clean: true`.
+- `typedDeclarations: true` — annotate inferred argument signatures and
+  local/static declarations with Neo VM types, such as `arg0: int`,
+  `int loc0`, or `map static0`.
 - `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
   for opcodes the disassembler does not recognise.
 
@@ -127,6 +130,7 @@ npm test
 
 | neo-decompiler-js | neo-decompiler (Rust) |
 |-------------------|-----------------------|
+| 1.5.3             | 0.10.1                |
 | 1.5.2             | 0.8.2                 |
 | 1.5.1             | 0.8.1                 |
 | 1.5.0             | 0.8.0                 |
