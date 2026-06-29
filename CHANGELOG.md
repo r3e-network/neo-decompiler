@@ -3,6 +3,56 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.2] - 2026-06-29 (Rust) / [1.5.4] - 2026-06-29 (JS)
+
+Decompilation readability improvements: contract-call expansion and syscall
+naming. No public API changes.
+
+### Added
+
+- **Contract-call expansion for `System.Contract.Call`** (Rust + JS). When the
+  devpack's cross-contract-call syscall is detected, the decompiler now lifts
+  it into `ContractName.method(args)` form instead of burying it behind
+  `syscall("System.Contract.Call", hash, "method", flags, args)`. Native
+  contracts (GasToken, NeoToken, StdLib, …) resolve through the bundled
+  native-contract table; custom contracts show the `0xHASH.method(args)` hex
+  form so the reader can still grep the manifest. When the contract hash
+  can't be tracked (synthetic bytecode, runtime-computed hash), the call
+  falls back through the standard syscall path with a structured
+  `// warning: contract-call hash was not a tracked 20-byte literal` annotation.
+- **`LiteralValue::ContractHash([u8; 20])`** in the high-level emitter so
+  20-byte PUSHDATA payloads are tagged as contract script hashes rather than
+  opaque hex strings. The new variant drives both the native-contract lookup
+  and the structured-warning path.
+- **`CONTRACT_CALL_HASH` / `CONTRACT_CALL_NATIVE_HASH`** public constants on
+  `crate::syscalls` so callers can recognise the devpack's cross-contract-call
+  syscalls without hardcoding magic numbers.
+- **JS literalValues map** (`high-level-state.js`) — mirrors the Rust port's
+  `literal_values` map so the JS emitter can recognise 20-byte contract
+  hashes and printable-string method names, enabling the JS port's
+  `tryContractCall` expansion.
+
+### Changed
+
+- **Syscall naming: `syscall("System.X.Y", args)` → `System.X.Y(args)`.**
+  Every known syscall in both the Rust and JS high-level renderers now uses
+  the syscall's fully-qualified name directly as a function call, dropping
+  the `syscall("` wrapper that added noise without semantic value. Unknown
+  syscalls (0xDEADBEEF and friends) keep `syscall(0xHASH)` since there is
+  no name to substitute. `System.Contract.CallNative` follows the same
+  pattern. The C# renderer inherits this automatically since it shares the
+  high-level emitter.
+- **Documentation updates** — README, spec, plan, and review docs updated to
+  reflect the shipped status of the per-method IR, SSA slot modelling, and
+  simplification-quick-wins work. Doc-link warnings resolved in
+  `cfg/ssa/builder.rs`.
+
+### Internal
+
+- **OpCode enum refactoring** — test files now construct bytecode using
+  `OpCode::Variant.byte()` instead of hardcoded `[0xNN, …]` arrays, ensuring
+  only one place defines the byte mapping (`src/opcodes_generated.rs`).
+
 ## [0.10.1] - 2026-06-27 (Rust) / [1.5.3] - 2026-06-27 (JS)
 
 Architecture & code simplification — quick wins: pure deletions and one
