@@ -3,6 +3,67 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-06-29 (Rust) / [1.6.0] - 2026-06-29 (JS)
+
+Structured-IR becomes the default decompilation format, eliminating goto
+statements and producing clean for/while/if/try-catch/switch output. No
+public API breakage — the legacy high-level view remains available via
+`--format high-level`.
+
+### Changed (breaking output change, additive — no API break)
+
+- **IR structurer is now the default decompilation format.** The
+  `decompile` command (and `render_structured_ir`) now uses the CFG-based
+  structured-IR path instead of the legacy string-based high-level
+  emitter. The output is entirely goto-free: control flow is recovered
+  as `if`/`else`, `for`, `while`, `do-while`, `try`/`catch`/`finally`,
+  and `switch`/`case`/`default`. The legacy path is still available via
+  `--format high-level`. Validated across 103 devpack contracts: **zero
+  goto statements**, zero unbalanced braces, zero crashes.
+
+### Added
+
+- **For-loop detection** — `while`-format counting loops (`var = init;
+  while (cond) { … var = var + 1; }`) are rewritten to `for (var = init;
+  cond; var++)` in both the IR structurer and the JS port's
+  `postprocess-loops`.
+- **Clean variable naming** — SSA version suffixes (`loc0_0`, `t_4`)
+  stripped from the structured-IR output so variables read as `loc0`,
+  `t`, etc. rather than internal SSA notation.
+- **Proper return/throw/abort rendering** — the structurer now emits
+  `return <expr>`, `throw()`, and `abort()` statements instead of
+  opaque `// return/throw/abort at BlockId(N)` comments.
+- **Slot-load suppression** — internal SSA scaffolding like
+  `arg0 = ldarg0()` is no longer emitted; the structurer uses the
+  clean variable name directly.
+- **Return-value tracking** — the SSA builder records the top-of-stack
+  as a "use" for `Return` terminators so the DCE pass keeps the
+  producing assignment alive (prevents `return;` for non-void methods
+  when the SSA captures the return expression).
+- **Double-parenthesis fix** — `if ((x > 0))` → `if (x > 0)` in the
+  structured-IR view.
+- **Contract-call expansion for `System.Contract.Call`** (Rust + JS).
+  When the devpack's cross-contract-call syscall is detected, the
+  decompiler lifts it into `ContractName.method(args)` form instead of
+  burying it behind the syscall wrapper. Native contracts resolve
+  through the bundled table; custom contracts show `0xHASH.method(args)`.
+- **Syscall naming: `syscall("System.X.Y", args)` → `System.X.Y(args)`.**
+  Every known syscall uses its fully-qualified name directly as a
+  function call, dropping the noisy `syscall("…")` wrapper.
+- **JS `literalValues` map** — mirrors the Rust port so the JS emitter
+  can recognise 20-byte contract hashes and printable-string method
+  names, enabling contract-call expansion in the JS port.
+- **`CONTRACT_CALL_HASH` / `CONTRACT_CALL_NATIVE_HASH`** public
+  constants on `crate::syscalls`.
+
+### Internal
+
+- **OpCode enum refactoring** — test files now construct bytecode using
+  `OpCode::Variant.byte()` instead of hardcoded `[0xNN, …]` arrays.
+- **Documentation updates** — README, specs, plans, and reviews
+  updated to reflect shipped status of per-method IR, SSA slot
+  modelling, and simplification-quick-wins work.
+
 ## [0.10.2] - 2026-06-29 (Rust) / [1.5.4] - 2026-06-29 (JS)
 
 Decompilation readability improvements: contract-call expansion and syscall
