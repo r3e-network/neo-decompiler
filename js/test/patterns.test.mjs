@@ -73,6 +73,16 @@ test("pattern analysis identifies wildcard call permissions", () => {
   assert.equal(info.confidence, "medium");
 });
 
+test("pattern analysis identifies external-call bytecode signals", () => {
+  const info = identifyPatterns(
+    { ...nef(), methodTokens: [{ method: "transfer" }] },
+    [{ opcode: { mnemonic: "CALLT" }, operand: { value: 0 } }],
+    null,
+  );
+  assert.deepEqual(info.patterns, ["external_calls", "method_tokens"]);
+  assert.ok(info.evidence.some((entry) => entry.source === "bytecode.calls"));
+});
+
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const source = [
     "contract Token {",

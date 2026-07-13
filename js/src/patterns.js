@@ -58,6 +58,18 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     const name = SYSCALLS.get(instruction.operand?.value)?.name;
     if (name) syscallNames.add(name);
   }
+  if ((nef?.methodTokens ?? []).length > 0) {
+    patterns.add("method_tokens");
+    evidence.push({ source: "nef.method_tokens", value: String(nef.methodTokens.length) });
+  }
+  if ((instructions ?? []).some((instruction) =>
+    instruction.opcode?.mnemonic === "CALLA" ||
+    instruction.opcode?.mnemonic === "CALLT" ||
+    SYSCALLS.get(instruction.operand?.value)?.name === "System.Contract.Call"
+  )) {
+    patterns.add("external_calls");
+    evidence.push({ source: "bytecode.calls", value: "CALLA/CALLT/Contract.Call" });
+  }
   for (const name of syscallNames) {
     if (name.startsWith("System.Storage.")) {
       patterns.add("storage");

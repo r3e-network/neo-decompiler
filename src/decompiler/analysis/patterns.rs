@@ -137,6 +137,28 @@ pub fn identify_patterns(
             _ => None,
         })
         .collect();
+    if !nef.method_tokens.is_empty() {
+        patterns.insert("method_tokens".to_string());
+        evidence.push(PatternEvidence {
+            source: "nef.method_tokens".to_string(),
+            value: nef.method_tokens.len().to_string(),
+        });
+    }
+    if instructions.iter().any(|instruction| {
+        matches!(instruction.opcode, OpCode::CallA | OpCode::CallT)
+            || matches!(
+                instruction.operand,
+                Some(Operand::Syscall(hash))
+                    if crate::syscalls::lookup(hash)
+                        .is_some_and(|info| info.name == "System.Contract.Call")
+            )
+    }) {
+        patterns.insert("external_calls".to_string());
+        evidence.push(PatternEvidence {
+            source: "bytecode.calls".to_string(),
+            value: "CALLA/CALLT/Contract.Call".to_string(),
+        });
+    }
     for name in syscall_names {
         if name.starts_with("System.Storage.") {
             patterns.insert("storage".to_string());
@@ -306,5 +328,26 @@ mod tests {
             info.patterns,
             vec!["call_permissions", "wildcard_permissions"]
         );
+    }
+
+    #[test]
+    fn method_tokens_and_calls_are_reported_without_standard_guesses() {
+        let nef = NefFile {
+            method_tokens: vec![crate::nef::MethodToken {
+                hash: [0; 20],
+                method: "transfer".to_string(),
+                parameters_count: 0,
+                has_return_value: false,
+                call_flags: 0,
+            }],
+            ..nef("", "")
+        };
+        let info = identify_patterns(
+            &nef,
+            &[Instruction::new(0, OpCode::CallT, Some(Operand::U16(0)))],
+            None,
+        );
+        assert_eq!(info.patterns, vec!["external_calls", "method_tokens"]);
+        assert!(info.standards.is_empty());
     }
 }
