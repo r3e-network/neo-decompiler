@@ -141,3 +141,18 @@ test("C# rendering preserves raw names for sanitized ABI methods", () => {
   );
   assert.match(csharp, /\[DisplayName\("balance-of"\)\]/);
 });
+
+test("C# rendering lowers unambiguous collection helpers", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn build() -> any {",
+    "    let items = new_array(2);",
+    "    append(items, value);",
+    "    return has_key(map, key);",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /new object\[\(int\)\(2\)\]/);
+  assert.match(csharp, /items\.Add\(value\)/);
+  assert.match(csharp, /map\.ContainsKey\(key\)/);
+});

@@ -117,7 +117,9 @@ function renderBodyLine(line) {
   const declaration = trimmed.match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*.*)?;$/);
   if (declaration) {
     return rewriteKnownSyscalls(
-      `${indentation}var ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
+      rewriteKnownHelpers(
+        `${indentation}var ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
+      ),
     );
   }
   const throwExpression = trimmed.match(/^throw\((.*)\);$/);
@@ -127,7 +129,42 @@ function renderBodyLine(line) {
   if (trimmed === "abort();" || trimmed === "abort") {
     return `${indentation}throw new Exception("ABORT");`;
   }
-  return rewriteKnownSyscalls(line).replace(/\bunknown\b/g, "default");
+  return rewriteKnownSyscalls(rewriteKnownHelpers(line)).replace(/\bunknown\b/g, "default");
+}
+
+const CSHARP_COLLECTION_HELPERS = new Map([
+  ["new_array", (args) => `new object[(int)(${args[0] ?? "???"})]`],
+  ["new_array_t", (args) => `new object[(int)(${args[0] ?? "???"})]`],
+  ["Map", (args) => args.length === 0 ? "new Map<object, object>()" : null],
+  ["Struct", (args) => args.length === 0 ? "new Struct()" : null],
+  ["is_null", (args) => args.length === 1 ? `(${args[0]} is null)` : null],
+  ["clear_items", (args) => args.length === 1 ? `${args[0]}.Clear()` : null],
+  ["keys", (args) => args.length === 1 ? `${args[0]}.Keys` : null],
+  ["values", (args) => args.length === 1 ? `${args[0]}.Values` : null],
+  ["remove_item", (args) => args.length === 2 ? `${args[0]}.Remove(${args[1]})` : null],
+  ["append", (args) => args.length === 2 ? `${args[0]}.Add(${args[1]})` : null],
+  ["has_key", (args) => args.length === 2 ? `${args[0]}.ContainsKey(${args[1]})` : null],
+  ["convert_to_integer", (args) => args.length === 1 ? `(BigInteger)(${args[0]})` : null],
+  ["convert_to_bool", (args) => args.length === 1 ? `(bool)(${args[0]})` : null],
+  ["convert_to_bytestring", (args) => args.length === 1 ? `(ByteString)(${args[0]})` : null],
+  ["pack", (args) => `new object[] { ${args.join(", ")} }`],
+]);
+
+function rewriteKnownHelpers(line) {
+  let output = line;
+  for (let pass = 0; pass < 32; pass += 1) {
+    const match = output.match(/\b(new_array_t|new_array|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct)\s*\(/);
+    if (!match) break;
+    const open = output.indexOf("(", match.index);
+    const close = findCallClose(output, open);
+    if (close < 0) break;
+    const args = splitCallArguments(output.slice(open + 1, close));
+    const renderer = CSHARP_COLLECTION_HELPERS.get(match[1]);
+    const replacement = renderer?.(args);
+    if (!replacement) break;
+    output = `${output.slice(0, match.index)}${replacement}${output.slice(close + 1)}`;
+  }
+  return output;
 }
 
 const CSHARP_SYSCALLS = new Map([
