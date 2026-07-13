@@ -1,10 +1,27 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
-import { identifyPatterns, renderCSharpContract } from "../src/index.js";
+import {
+  decompileBytes,
+  decompileBytesWithManifest,
+  identifyPatterns,
+  renderCSharpContract,
+} from "../src/index.js";
 
 function nef(compiler = "", source = "") {
   return { header: { compiler, source } };
+}
+
+function buildNef(script = [0x40], compiler = "Neo.Compiler.CSharp") {
+  const data = [...Buffer.from("NEF3")];
+  const compilerBytes = new Uint8Array(64);
+  compilerBytes.set(Buffer.from(compiler));
+  data.push(...compilerBytes, 0, 0, 0, 0, 0, script.length, ...script);
+  const first = createHash("sha256").update(Buffer.from(data)).digest();
+  const second = createHash("sha256").update(first).digest();
+  data.push(...second.subarray(0, 4));
+  return Uint8Array.from(data);
 }
 
 test("pattern analysis treats declared NEP standards as authoritative", () => {
@@ -19,6 +36,18 @@ test("pattern analysis treats declared NEP standards as authoritative", () => {
   assert.deepEqual(info.standards, ["NEP-17"]);
   assert.equal(info.language, "C#");
   assert.equal(info.confidence, "high");
+});
+
+test("basic JS decompile APIs expose the same pattern summary", () => {
+  const bytes = buildNef();
+  const basic = decompileBytes(bytes);
+  const withManifest = decompileBytesWithManifest(bytes, {
+    name: "Token",
+    supportedstandards: ["NEP-17"],
+    abi: { methods: [], events: [] },
+  });
+  assert.equal(basic.patterns.language, "C#");
+  assert.deepEqual(withManifest.patterns.standards, ["NEP-17"]);
 });
 
 test("pattern analysis keeps weak source metadata explainable", () => {

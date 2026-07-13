@@ -58,6 +58,7 @@ export function decompileBytes(bytes, options = {}) {
     instructions: disassembly.instructions,
     warnings: disassembly.warnings,
     pseudocode: renderPseudocode(disassembly.instructions),
+    patterns: identifyPatterns(nef, disassembly.instructions, null),
   };
 }
 
@@ -116,6 +117,7 @@ export function decompileBytesWithManifest(bytes, manifestInput, options = {}) {
   return {
     ...result,
     manifest,
+    patterns: identifyPatterns(result.nef, result.instructions, manifest),
     methodGroups,
     groupedPseudocode: renderGroupedPseudocode(methodGroups, manifest),
   };

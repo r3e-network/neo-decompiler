@@ -349,6 +349,8 @@ export interface DecompileResult {
   instructions: Instruction[];
   warnings: string[];
   pseudocode: string;
+  /** Conservative standard, behavior-pattern, and language identification. */
+  patterns: PatternInfo;
 }
 
 export interface DecompileWithManifestResult extends DecompileResult {
