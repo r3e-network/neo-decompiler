@@ -57,3 +57,16 @@ test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   assert.match(csharp, /Storage\.Get\(context, key\)/);
   assert.match(csharp, /syscall\("System\.Custom\.Unknown", key\)/);
 });
+
+test("C# rendering preserves ABI events as framework events", () => {
+  const source = [
+    "contract Token {",
+    "    event Transfer(from: hash160, amount: int);",
+    '    event class(); // manifest "class"',
+    "}",
+  ].join("\n");
+  const csharp = renderCSharpContract(source);
+  assert.match(csharp, /public static event Action<UInt160, BigInteger> Transfer;/);
+  assert.match(csharp, /\[DisplayName\("class"\)\]/);
+  assert.match(csharp, /public static event Action @class;/);
+});

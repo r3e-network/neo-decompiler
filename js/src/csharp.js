@@ -214,6 +214,19 @@ function renderMetadataLine(line) {
   return null;
 }
 
+function renderEventDeclaration(line) {
+  const match = line.match(/^(\s*)event\s+([A-Za-z_][A-Za-z0-9_]*)\((.*?)\);(?:\s*\/\/\s*manifest\s+(.+))?$/);
+  if (!match) return null;
+  const [, indentation, name, parameters, originalName] = match;
+  const types = splitCallArguments(parameters).map((parameter) => {
+    const separator = parameter.indexOf(":");
+    return csharpType(separator < 0 ? "any" : parameter.slice(separator + 1).trim());
+  });
+  const actionType = types.length === 0 ? "Action" : `Action<${types.join(", ")}>`;
+  const displayName = originalName ? `${indentation}[DisplayName(${originalName})]\n` : "";
+  return `${displayName}${indentation}public static event ${actionType} ${csharpIdentifier(name)};`;
+}
+
 /**
  * Render the JS high-level surface as readable C#-style source.
  *
@@ -231,6 +244,7 @@ export function renderCSharpContract(highLevel, _manifest = null) {
     "using System;",
     "using System.Numerics;",
     "using Neo.SmartContract.Framework;",
+    "using Neo.SmartContract.Framework.Attributes;",
     "using Neo.SmartContract.Framework.Services;",
     "",
   ];
@@ -247,7 +261,8 @@ export function renderCSharpContract(highLevel, _manifest = null) {
       continue;
     }
     if (/^\s*event\s+/.test(line)) {
-      output.push(`${line.match(/^\s*/)?.[0] ?? ""}// ${line.trim()}`);
+      const event = renderEventDeclaration(line);
+      output.push(event ?? `${line.match(/^\s*/)?.[0] ?? ""}// ${line.trim()}`);
       continue;
     }
     const signature = renderSignature(line);
