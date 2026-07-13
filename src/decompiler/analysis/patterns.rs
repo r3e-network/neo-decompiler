@@ -341,7 +341,7 @@ fn infer_language_from_source(source: &str) -> Option<&'static str> {
     let source = source.to_ascii_lowercase();
     let source = source.split(['?', '#']).next().unwrap_or_default();
     let filename = source.rsplit(['/', '\\']).next().unwrap_or(source);
-    if filename.ends_with(".cs") {
+    if filename.ends_with(".cs") || filename.ends_with(".csproj") {
         Some("C#")
     } else if filename.ends_with(".py") {
         Some("Python")
@@ -404,6 +404,7 @@ mod tests {
     fn source_paths_and_uri_suffixes_still_infer_language() {
         for (source, expected) in [
             (r"C:\contracts\Token.cs", "C#"),
+            ("/contracts/Token.csproj", "C#"),
             ("/contracts/Token.py?build=42", "Python"),
             ("src/token.go#source", "Go"),
         ] {

@@ -71,9 +71,14 @@ test("pattern analysis keeps weak source metadata explainable", () => {
 });
 
 test("pattern analysis normalizes source paths and URI suffixes", () => {
-  for (const source of ["C:\\contracts\\Token.cs", "/contracts/Token.py?build=42", "src/token.go#source"]) {
+  for (const [source, expected] of [
+    ["C:\\contracts\\Token.cs", "C#"],
+    ["/contracts/Token.csproj", "C#"],
+    ["/contracts/Token.py?build=42", "Python"],
+    ["src/token.go#source", "Go"],
+  ]) {
     const info = identifyPatterns(nef("", source), [], null);
-    assert.equal(info.language, source.endsWith(".cs") ? "C#" : source.includes(".py") ? "Python" : "Go");
+    assert.equal(info.language, expected);
   }
 });
 

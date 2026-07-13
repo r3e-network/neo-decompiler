@@ -182,7 +182,7 @@ function inferLanguageFromSource(source) {
   const value = String(source ?? "").toLowerCase();
   const withoutSuffix = value.split(/[?#]/, 1)[0];
   const filename = withoutSuffix.split(/[\\/]/).at(-1) ?? withoutSuffix;
-  if (filename.endsWith(".cs")) return "C#";
+  if (filename.endsWith(".cs") || filename.endsWith(".csproj")) return "C#";
   if (filename.endsWith(".py")) return "Python";
   if (filename.endsWith(".go")) return "Go";
   if (filename.endsWith(".ts") || filename.endsWith(".js")) return "TypeScript/JavaScript";
