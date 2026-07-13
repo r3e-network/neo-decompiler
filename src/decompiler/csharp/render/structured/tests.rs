@@ -234,6 +234,52 @@ fn plans_overloads_and_calls_together() {
 }
 
 #[test]
+fn plans_cross_range_tail_jump_with_detached_helper_arity() {
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "TailThunk",
+            "abi": { "methods": [{
+                "name": "setValue",
+                "parameters": [{ "name": "value", "type": "Integer" }],
+                "returntype": "Void",
+                "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+    let instructions = vec![
+        Instruction::new(0, OpCode::Push5, None),
+        Instruction::new(1, OpCode::Jmp, Some(Operand::Jump(19))),
+        Instruction::new(20, OpCode::Push1, None),
+        Instruction::new(21, OpCode::Rot, None),
+        Instruction::new(22, OpCode::Setitem, None),
+        Instruction::new(23, OpCode::Ret, None),
+    ];
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        Some(&manifest),
+        &CallGraph::default(),
+        &MethodContracts::default(),
+        &TypeInfo::default(),
+        &[0, 20],
+    );
+    let thunk = plans.manifest_method(0);
+    let helper = plans.inferred_method(20).expect("detached helper plan");
+
+    assert!(thunk.method_context.arguments_on_entry_stack);
+    assert_eq!(helper.parameters.len(), 2);
+    let tail = &thunk.method_context.calls_by_offset[&1];
+    assert_eq!(tail.argument_count, 2);
+    assert!(!tail.returns_value);
+    assert!(matches!(
+        &tail.target,
+        SemanticCallTarget::Internal { offset: 20, name }
+            if name == &helper.emitted_name
+    ));
+}
+
+#[test]
 fn null_checked_value_parameters_use_dynamic_csharp_signatures() {
     let manifest = ContractManifest::from_json_str(
         r#"{

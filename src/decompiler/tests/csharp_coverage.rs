@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -127,6 +127,7 @@ fn csharp_corpus_has_zero_structured_fallback() {
     let mut decompiled = 0usize;
     let mut status_counts = BTreeMap::new();
     let mut issue_classes = BTreeMap::new();
+    let mut issue_locations = BTreeMap::<_, BTreeSet<String>>::new();
     let expected_invalid = load_expected_invalid(&root);
     let mut invalid_seen = HashSet::new();
 
@@ -199,9 +200,12 @@ fn csharp_corpus_has_zero_structured_fallback() {
                     .entry(coverage.fidelity.status)
                     .or_insert(0usize) += 1;
                 for issue in &coverage.fidelity.issues {
-                    *issue_classes
-                        .entry((issue.fidelity, issue.kind, issue.opcode.mnemonic()))
-                        .or_insert(0usize) += 1;
+                    let issue_key = (issue.fidelity, issue.kind, issue.opcode.mnemonic());
+                    *issue_classes.entry(issue_key).or_insert(0usize) += 1;
+                    issue_locations
+                        .entry(issue_key)
+                        .or_default()
+                        .insert(format!("{id}@0x{start:04X}"));
                 }
                 if !matches!(
                     coverage.backend,
@@ -239,6 +243,12 @@ fn csharp_corpus_has_zero_structured_fallback() {
     eprintln!(
         "C# fidelity census: {decompiled} contracts, statuses={status_counts:?}, issues={issue_classes:?}"
     );
+    for (issue, locations) in issue_locations {
+        eprintln!(
+            "C# fidelity locations: {issue:?} => {}",
+            locations.into_iter().collect::<Vec<_>>().join(", ")
+        );
+    }
     assert!(
         failures.is_empty(),
         "structured C# fallback corpus:\n{}",

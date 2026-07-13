@@ -675,6 +675,16 @@ impl<'a> SsaBuilder<'a> {
             return None;
         }
 
+        if matches!(op, OpCode::Jmp | OpCode::Jmp_L) {
+            if let Some(contract) = self
+                .method_context
+                .and_then(|context| context.calls_by_offset.get(&instr.offset))
+            {
+                self.apply_known_tail_call(instr, contract, stack, stmts, uses, state);
+                return None;
+            }
+        }
+
         if effects::is_stack_reorder(op) {
             self.apply_reorder(instr, stack, stmts, state);
             return None;
@@ -962,6 +972,75 @@ impl<'a> SsaBuilder<'a> {
             stack.push(target);
         } else {
             stmts.push(SsaStmt::expr(call));
+        }
+    }
+
+    fn apply_known_tail_call(
+        &self,
+        instruction: &Instruction,
+        contract: &super::context::CallContract,
+        stack: &mut Vec<SsaVariable>,
+        stmts: &mut Vec<SsaStmt>,
+        uses: &mut Vec<(SsaVariable, usize)>,
+        state: &mut BuildPassState<'_>,
+    ) {
+        let available = stack.len();
+        let underflowed = available < contract.argument_count;
+        if underflowed {
+            record_stack_underflow(
+                instruction,
+                contract.argument_count,
+                available,
+                state.issues,
+            );
+        }
+
+        let mut consumed_unknown = false;
+        let mut args = Vec::with_capacity(contract.argument_count);
+        for _ in 0..contract.argument_count {
+            let argument = stack.pop().unwrap_or_else(unknown_var);
+            if is_unknown_or_tainted(&argument, state.tainted_variables) {
+                consumed_unknown = true;
+            }
+            if !is_unknown(&argument) {
+                uses.push((argument.clone(), stmts.len()));
+            }
+            invalidate_collection_aliases(
+                &argument,
+                state.definition_facts,
+                state.invalidated_collection_roots,
+            );
+            args.push(SsaExpr::var(argument));
+        }
+        if matches!(&contract.target, SemanticCallTarget::Internal { .. }) {
+            invalidate_all_collection_facts(
+                state.definition_facts,
+                state.invalidated_collection_roots,
+            );
+        }
+        if !underflowed && consumed_unknown {
+            record_incomplete_issue(
+                instruction,
+                LoweringIssueKind::LostStackValue,
+                "tail call consumes an unknown stack value",
+                state.issues,
+            );
+        }
+
+        let call = SsaExpr::call(contract.target.clone(), args);
+        if !contract.may_return {
+            stmts.push(SsaStmt::expr(call));
+            return;
+        }
+        let returns_value = self
+            .method_context
+            .and_then(|context| context.returns_value)
+            .unwrap_or(contract.returns_value);
+        if returns_value {
+            stmts.push(SsaStmt::ret(Some(call)));
+        } else {
+            stmts.push(SsaStmt::expr(call));
+            stmts.push(SsaStmt::ret(None));
         }
     }
 
@@ -4017,6 +4096,50 @@ mod tests {
             ),
             "dropping a known call result must reveal the preserved ambient value: {block:?}"
         );
+    }
+
+    #[test]
+    fn known_tail_jump_returns_resolved_call_with_source_argument_order() {
+        let instructions = vec![
+            instr(0, OpCode::Push2),
+            instr(1, OpCode::Push1),
+            Instruction::new(2, OpCode::Jmp, Some(Operand::Jump(18))),
+        ];
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(BlockId(0), 0, 3, 0..3, Terminator::Return));
+        let mut context = MethodContext {
+            returns_value: Some(true),
+            ..MethodContext::default()
+        };
+        context.calls_by_offset.insert(
+            2,
+            CallContract::new(
+                SemanticCallTarget::Internal {
+                    offset: 20,
+                    name: "helper".to_string(),
+                },
+                2,
+                true,
+            ),
+        );
+
+        let output = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build_with_report();
+        assert_eq!(output.fidelity.status, Fidelity::Exact);
+        let mut ssa = output.ssa;
+        super::super::optimize_ssa(&mut ssa);
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(matches!(
+            block.stmts.last(),
+            Some(SsaStmt::Return(Some(SsaExpr::Call { target, args })))
+                if target.display_name() == "helper"
+                    && args.as_slice() == [
+                        SsaExpr::lit(Literal::Int(1)),
+                        SsaExpr::lit(Literal::Int(2)),
+                    ]
+        ));
     }
 
     #[test]

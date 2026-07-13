@@ -2368,7 +2368,7 @@ fn csharp_manifest_value_tail_call_underflow_still_returns_call() {
 
     let csharp = decompilation.csharp.as_deref().expect("csharp output");
     assert!(
-        csharp.contains("return helper(???);"),
+        csharp.contains("return helper((dynamic)null);"),
         "argument underflow must preserve value-producing tail-call behavior: {csharp}"
     );
 }

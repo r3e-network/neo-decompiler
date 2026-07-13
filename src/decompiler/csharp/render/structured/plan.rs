@@ -10,8 +10,8 @@ use crate::decompiler::cfg::method_body::{
 };
 use crate::decompiler::cfg::ssa::{CallContract, MethodContext};
 use crate::decompiler::helpers::{
-    find_manifest_entry_method, initslot_argument_count_at, next_inferred_method_offset,
-    offset_as_usize,
+    build_method_arg_counts_by_offset, find_manifest_entry_method, initslot_argument_count_at,
+    next_inferred_method_offset, offset_as_usize,
 };
 use crate::decompiler::ir::{Block, ControlFlow, Expr, SemanticCallTarget, Stmt};
 use crate::instruction::{Instruction, OpCode, Operand};
@@ -723,6 +723,8 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
     let script_end = instructions
         .last()
         .map_or(entry_offset, |instruction| instruction.offset + 1);
+    let inferred_argument_counts =
+        build_method_arg_counts_by_offset(instructions, inferred_method_starts, manifest);
     let mut drafts = Vec::new();
     let mut synthetic_entry = None;
     let mut fallback_entry = None;
@@ -767,6 +769,7 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                 start,
                 end,
                 addressable_offset,
+                instructions,
             ));
             manifest_methods.push(index);
         }
@@ -809,7 +812,10 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
         }
 
         let method_contract = method_contracts.get(*start);
-        let argument_count = method_contract.map_or(0, |contract| contract.argument_count);
+        let argument_count = method_contract.map_or_else(
+            || inferred_argument_counts.get(start).copied().unwrap_or(0),
+            |contract| contract.argument_count,
+        );
         let return_behavior =
             method_contract.map_or(ReturnBehavior::Unknown, |contract| contract.return_behavior);
         let parameters = (0..argument_count)
@@ -985,6 +991,38 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
             };
             calls_by_offset.insert(edge.call_offset, contract);
         }
+        for instruction in instructions
+            .iter()
+            .filter(|instruction| instruction.offset >= plan.start && instruction.offset < plan.end)
+        {
+            let Some(target_offset) = cross_range_tail_target(instruction, plan.start, plan.end)
+            else {
+                continue;
+            };
+            let Some(candidates) = plans_by_offset.get(&target_offset) else {
+                continue;
+            };
+            if candidates.len() != 1 {
+                continue;
+            }
+            let target = &plans[candidates[0]];
+            let target_contract = method_contracts.get(target_offset);
+            if target_contract.is_some_and(|contract| !contract.may_return) {
+                continue;
+            }
+            calls_by_offset.insert(
+                instruction.offset,
+                CallContract::new(
+                    SemanticCallTarget::Internal {
+                        offset: target_offset,
+                        name: target.emitted_name.clone(),
+                    },
+                    target.parameters.len(),
+                    plan.return_behavior.returns_value(),
+                )
+                .with_may_return(true),
+            );
+        }
         planning_issues.sort_by(|left, right| {
             (
                 left.offset,
@@ -1033,6 +1071,22 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
     }
 }
 
+fn cross_range_tail_target(
+    instruction: &Instruction,
+    method_start: usize,
+    method_end: usize,
+) -> Option<usize> {
+    if !matches!(instruction.opcode, OpCode::Jmp | OpCode::Jmp_L) {
+        return None;
+    }
+    let target = match instruction.operand {
+        Some(Operand::Jump(delta)) => instruction.offset.checked_add_signed(delta as isize),
+        Some(Operand::Jump32(delta)) => instruction.offset.checked_add_signed(delta as isize),
+        _ => None,
+    }?;
+    (!(method_start..method_end).contains(&target)).then_some(target)
+}
+
 fn synthetic_entry_draft(
     instructions: &[Instruction],
     inferred_method_starts: &[usize],
@@ -1065,6 +1119,7 @@ fn manifest_method_draft(
     start: usize,
     end: usize,
     addressable_offset: Option<usize>,
+    instructions: &[Instruction],
 ) -> MethodPlanDraft {
     let return_type = format_manifest_type_csharp(&method.return_type, true);
     MethodPlanDraft {
@@ -1078,7 +1133,10 @@ fn manifest_method_draft(
             ReturnBehavior::Value
         },
         return_type,
-        arguments_on_entry_stack: false,
+        arguments_on_entry_stack: instructions
+            .iter()
+            .find(|instruction| instruction.offset == start)
+            .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
         addressable_offset,
     }
 }
