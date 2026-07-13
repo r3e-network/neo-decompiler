@@ -57,6 +57,18 @@ export function identifyPatterns(nef, instructions, manifest = null) {
       value: "owner,verify/transferOwnership",
     });
   }
+  if (methodNames.has("mint")) {
+    patterns.add("minting");
+    evidence.push({ source: "manifest.abi.methods", value: "mint" });
+  }
+  if (methodNames.has("burn")) {
+    patterns.add("burning");
+    evidence.push({ source: "manifest.abi.methods", value: "burn" });
+  }
+  if (methodNames.has("pause") && methodNames.has("unpause")) {
+    patterns.add("pausable");
+    evidence.push({ source: "manifest.abi.methods", value: "pause,unpause" });
+  }
   if (methodNames.has("royaltyinfo")) {
     standards.add("NEP-24");
     patterns.add("NEP-24");

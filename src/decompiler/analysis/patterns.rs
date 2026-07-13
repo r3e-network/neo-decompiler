@@ -311,6 +311,27 @@ fn infer_abi_patterns(
             value: "owner,verify/transferOwnership".to_string(),
         });
     }
+    if names.contains("mint") {
+        patterns.insert("minting".to_string());
+        evidence.push(PatternEvidence {
+            source: "manifest.abi.methods".to_string(),
+            value: "mint".to_string(),
+        });
+    }
+    if names.contains("burn") {
+        patterns.insert("burning".to_string());
+        evidence.push(PatternEvidence {
+            source: "manifest.abi.methods".to_string(),
+            value: "burn".to_string(),
+        });
+    }
+    if names.contains("pause") && names.contains("unpause") {
+        patterns.insert("pausable".to_string());
+        evidence.push(PatternEvidence {
+            source: "manifest.abi.methods".to_string(),
+            value: "pause,unpause".to_string(),
+        });
+    }
     if names.contains("royaltyinfo") {
         standards.insert("NEP-24".to_string());
         patterns.insert("NEP-24".to_string());
@@ -448,6 +469,19 @@ mod tests {
         .expect("manifest fixture");
         let info = identify_patterns(&nef("", ""), &[], Some(&manifest));
         assert_eq!(info.patterns, vec!["ownership"]);
+    }
+
+    #[test]
+    fn token_lifecycle_methods_report_conservative_behavior_patterns() {
+        let manifest: ContractManifest = serde_json::from_str(
+            r#"{"name":"Token","abi":{"methods":[{"name":"mint","returntype":"Any"},{"name":"burn","returntype":"Any"},{"name":"pause","returntype":"Any"},{"name":"unpause","returntype":"Any"}],"events":[]}}"#,
+        )
+        .expect("manifest fixture");
+        let info = identify_patterns(&nef("", ""), &[], Some(&manifest));
+        assert_eq!(info.patterns, vec!["burning", "minting", "pausable"]);
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "manifest.abi.methods" && entry.value == "pause,unpause"
+        }));
     }
 
     #[test]

@@ -127,6 +127,26 @@ test("pattern analysis identifies ownership behavior from paired ABI methods", (
   assert.deepEqual(info.patterns, ["ownership"]);
 });
 
+test("pattern analysis identifies explicit token lifecycle behaviors", () => {
+  const info = identifyPatterns(
+    nef(),
+    [],
+    {
+      supportedStandards: [],
+      abi: {
+        methods: [{ name: "mint" }, { name: "burn" }, { name: "pause" }, { name: "unpause" }],
+        events: [],
+      },
+    },
+  );
+  assert.deepEqual(info.patterns, ["burning", "minting", "pausable"]);
+  assert.ok(
+    info.evidence.some(
+      (entry) => entry.source === "manifest.abi.methods" && entry.value === "pause,unpause",
+    ),
+  );
+});
+
 test("pattern analysis identifies the NEP-24 royalty method", () => {
   const info = identifyPatterns(
     nef(),
