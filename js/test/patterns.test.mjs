@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { identifyPatterns } from "../src/index.js";
+import { identifyPatterns, renderCSharpContract } from "../src/index.js";
 
 function nef(compiler = "", source = "") {
   return { header: { compiler, source } };
@@ -40,4 +40,20 @@ test("pattern analysis identifies wildcard call permissions", () => {
   );
   assert.deepEqual(info.patterns, ["call_permissions", "wildcard_permissions"]);
   assert.equal(info.confidence, "medium");
+});
+
+test("C# rendering lowers known syscalls but preserves unknown ones", () => {
+  const source = [
+    "contract Token {",
+    "fn get() -> any {",
+    '    let context = syscall("System.Storage.GetContext");',
+    '    return syscall("System.Storage.Get", context, key);',
+    '    let raw = syscall("System.Custom.Unknown", key);',
+    "}",
+    "}",
+  ].join("\n");
+  const csharp = renderCSharpContract(source);
+  assert.match(csharp, /Storage\.CurrentContext/);
+  assert.match(csharp, /Storage\.Get\(context, key\)/);
+  assert.match(csharp, /syscall\("System\.Custom\.Unknown", key\)/);
 });

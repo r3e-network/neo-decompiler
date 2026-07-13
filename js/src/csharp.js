@@ -79,7 +79,9 @@ function renderBodyLine(line) {
   const trimmed = line.trim();
   const declaration = trimmed.match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*.*)?;$/);
   if (declaration) {
-    return `${indentation}var ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`;
+    return rewriteKnownSyscalls(
+      `${indentation}var ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
+    );
   }
   const throwExpression = trimmed.match(/^throw\((.*)\);$/);
   if (throwExpression) {
@@ -88,7 +90,116 @@ function renderBodyLine(line) {
   if (trimmed === "abort();" || trimmed === "abort") {
     return `${indentation}throw new Exception("ABORT");`;
   }
-  return line.replace(/\bunknown\b/g, "default");
+  return rewriteKnownSyscalls(line).replace(/\bunknown\b/g, "default");
+}
+
+const CSHARP_SYSCALLS = new Map([
+  ["System.Storage.GetContext", "Storage.CurrentContext"],
+  ["System.Storage.GetReadOnlyContext", "Storage.CurrentReadOnlyContext"],
+  ["System.Runtime.GetTime", "Runtime.Time"],
+  ["System.Runtime.GetCallingScriptHash", "Runtime.CallingScriptHash"],
+  ["System.Runtime.GetEntryScriptHash", "Runtime.EntryScriptHash"],
+  ["System.Runtime.GetExecutingScriptHash", "Runtime.ExecutingScriptHash"],
+  ["System.Runtime.GetInvocationCounter", "Runtime.InvocationCounter"],
+  ["System.Runtime.GetNetwork", "Runtime.GetNetwork"],
+  ["System.Runtime.GetTrigger", "Runtime.Trigger"],
+  ["System.Storage.Get", "Storage.Get"],
+  ["System.Storage.Put", "Storage.Put"],
+  ["System.Storage.Delete", "Storage.Delete"],
+  ["System.Storage.Find", "Storage.Find"],
+  ["System.Runtime.Notify", "Runtime.Notify"],
+  ["System.Runtime.Log", "Runtime.Log"],
+  ["System.Runtime.CheckWitness", "Runtime.CheckWitness"],
+  ["System.Runtime.GetNotifications", "Runtime.GetNotifications"],
+  ["System.Runtime.BurnGas", "Runtime.BurnGas"],
+  ["System.Contract.Call", "Contract.Call"],
+  ["System.Contract.CallNative", "Contract.CallNative"],
+  ["System.Contract.CallLegacy", "Contract.CallLegacy"],
+]);
+
+function rewriteKnownSyscalls(line) {
+  const marker = /syscall\("([^"]+)"/g;
+  let output = "";
+  let cursor = 0;
+  let match;
+  while ((match = marker.exec(line)) !== null) {
+    const open = line.indexOf("(", match.index);
+    const close = findCallClose(line, open);
+    if (open < 0 || close < 0) continue;
+    const api = CSHARP_SYSCALLS.get(match[1]);
+    if (!api) continue;
+    const argsText = line
+      .slice(open + 1, close)
+      .replace(/^\s*"[^"]*"\s*(?:,\s*)?/, "")
+      .trim();
+    const args = splitCallArguments(argsText);
+    const replacement = api.includes(".") && args.length === 0 && isStaticSyscall(match[1])
+      ? api
+      : `${api}(${args.join(", ")})`;
+    output += line.slice(cursor, match.index) + replacement;
+    cursor = close + 1;
+    marker.lastIndex = cursor;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function isStaticSyscall(name) {
+  return name === "System.Storage.GetContext" ||
+    name === "System.Storage.GetReadOnlyContext" ||
+    name === "System.Runtime.GetTime" ||
+    name === "System.Runtime.GetCallingScriptHash" ||
+    name === "System.Runtime.GetEntryScriptHash" ||
+    name === "System.Runtime.GetExecutingScriptHash" ||
+    name === "System.Runtime.GetInvocationCounter" ||
+    name === "System.Runtime.GetTrigger";
+}
+
+function findCallClose(text, open) {
+  if (open < 0) return -1;
+  let depth = 0;
+  let quote = null;
+  for (let index = open; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "(") {
+      depth += 1;
+    } else if (character === ")" && --depth === 0) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function splitCallArguments(text) {
+  if (!text) return [];
+  const result = [];
+  let start = 0;
+  let depth = 0;
+  let quote = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    else if ("([{<".includes(character)) depth += 1;
+    else if (")]} >".replace(" ", "").includes(character)) depth -= 1;
+    else if (character === "," && depth === 0) {
+      result.push(text.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  const tail = text.slice(start).trim();
+  if (tail) result.push(tail);
+  return result;
 }
 
 function renderMetadataLine(line) {
