@@ -64,9 +64,32 @@ pub(super) fn render_intrinsic(
                 }
             }
         }
-        OpCode::Keys => RenderedExpr::new(format!("{}.Keys", receiver(0, expanding)), PREC_PRIMARY),
-        OpCode::Values => {
-            RenderedExpr::new(format!("{}.Values", receiver(0, expanding)), PREC_PRIMARY)
+        OpCode::Keys | OpCode::Values => {
+            let receiver_type = args
+                .first()
+                .map_or(ValueType::Unknown, |value| context.value_type(value));
+            let known_non_map = matches!(
+                receiver_type,
+                ValueType::Boolean
+                    | ValueType::Integer
+                    | ValueType::ByteString
+                    | ValueType::Buffer
+                    | ValueType::Array
+                    | ValueType::Struct
+                    | ValueType::Null
+            );
+            if known_non_map {
+                return render_low_level_opcode(opcode, args, context, expanding);
+            }
+            let property = if opcode == OpCode::Keys {
+                "Keys"
+            } else {
+                "Values"
+            };
+            RenderedExpr::new(
+                format!("{}.{}", receiver(0, expanding), property),
+                PREC_PRIMARY,
+            )
         }
         OpCode::Isnull => {
             if args.first().is_some_and(|value| {
@@ -125,10 +148,27 @@ pub(super) fn render_intrinsic(
         ),
         OpCode::Newstruct0 => RenderedExpr::new("new object[] { }", PREC_PRIMARY),
         OpCode::Newmap => RenderedExpr::new("new Map<object, object>()", PREC_PRIMARY),
-        OpCode::Haskey => RenderedExpr::new(
-            format!("{}.HasKey({})", receiver(0, expanding), arg(1, expanding)),
-            PREC_PRIMARY,
-        ),
+        OpCode::Haskey => {
+            let receiver_type = args
+                .first()
+                .map_or(ValueType::Unknown, |value| context.value_type(value));
+            if matches!(
+                receiver_type,
+                ValueType::Boolean
+                    | ValueType::Integer
+                    | ValueType::ByteString
+                    | ValueType::Buffer
+                    | ValueType::Array
+                    | ValueType::Struct
+                    | ValueType::Null
+            ) {
+                return render_low_level_opcode(opcode, args, context, expanding);
+            }
+            RenderedExpr::new(
+                format!("{}.HasKey({})", receiver(0, expanding), arg(1, expanding)),
+                PREC_PRIMARY,
+            )
+        }
         OpCode::Pickitem => {
             let receiver_type = args
                 .first()

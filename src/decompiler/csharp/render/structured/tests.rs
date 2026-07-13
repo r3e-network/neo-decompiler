@@ -1698,6 +1698,39 @@ fn every_known_syscall_has_an_explicit_csharp_policy() {
 }
 
 #[test]
+fn map_intrinsics_guard_known_non_map_receivers() {
+    let context = expr_context_with_types(&[
+        ("flag", ValueType::Boolean),
+        ("items", ValueType::Array),
+        ("map", ValueType::Map),
+    ]);
+    let intrinsic = |opcode, args| {
+        Expr::call(
+            SemanticCallTarget::Intrinsic(Intrinsic::Opcode(opcode)),
+            args,
+        )
+    };
+
+    let keys = render_expr(&intrinsic(OpCode::Keys, vec![Expr::var("flag")]), &context);
+    assert!(keys.contains("Runtime.LoadScript"), "{keys}");
+    assert!(!keys.contains(".Keys"), "{keys}");
+
+    let values = render_expr(
+        &intrinsic(OpCode::Values, vec![Expr::var("items")]),
+        &context,
+    );
+    assert!(values.contains("Runtime.LoadScript"), "{values}");
+    assert!(!values.contains(".Values"), "{values}");
+
+    let has_key = render_expr(
+        &intrinsic(OpCode::Haskey, vec![Expr::var("flag"), Expr::var("map")]),
+        &context,
+    );
+    assert!(has_key.contains("Runtime.LoadScript"), "{has_key}");
+    assert!(!has_key.contains(".HasKey"), "{has_key}");
+}
+
+#[test]
 fn unmodeled_intrinsic_uses_a_low_level_wrapper() {
     let expression = Expr::call(
         SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Ldloc0)),
