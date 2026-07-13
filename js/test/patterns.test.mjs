@@ -186,3 +186,15 @@ test("C# rewrites do not alter pseudo-operation text inside literals", () => {
   assert.match(csharp, /has_key\(x, y\)/);
   assert.doesNotMatch(csharp, /new object\[\(int\)\(2\)\]/);
 });
+
+test("C# rendering keeps ABORT distinct from catchable THROW", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn fail() {",
+    "    abort(\"bad\");",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /throw new InvalidOperationException\(Convert\.ToString\("bad"\)\);/);
+  assert.doesNotMatch(csharp, /ABORT/);
+});

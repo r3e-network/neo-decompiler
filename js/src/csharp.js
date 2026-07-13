@@ -126,8 +126,15 @@ function renderBodyLine(line) {
   if (throwExpression) {
     return `${indentation}throw new Exception(Convert.ToString(${throwExpression[1]}));`;
   }
-  if (trimmed === "abort();" || trimmed === "abort") {
-    return `${indentation}throw new Exception("ABORT");`;
+  const abortExpression = trimmed.match(/^abort\((.*)\);$/);
+  if (abortExpression) {
+    const payload = abortExpression[1].trim();
+    return payload
+      ? `${indentation}throw new InvalidOperationException(Convert.ToString(${payload}));`
+      : `${indentation}throw new InvalidOperationException();`;
+  }
+  if (trimmed === "abort" || trimmed === "abort;") {
+    return `${indentation}throw new InvalidOperationException();`;
   }
   return rewriteKnownSyscalls(rewriteKnownHelpers(line)).replace(/\bunknown\b/g, "default");
 }
