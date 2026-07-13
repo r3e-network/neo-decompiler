@@ -125,6 +125,20 @@ test("pattern analysis identifies the NEP-24 royalty method", () => {
   assert.ok(info.evidence.some((entry) => entry.value === "royaltyInfo"));
 });
 
+test("pattern analysis ignores malformed manifest collections", () => {
+  const info = identifyPatterns(
+    nef(),
+    [],
+    {
+      supportedStandards: "NEP-17",
+      abi: { methods: [null, 42], events: [null, {}] },
+      permissions: [null, { contract: "*" }],
+    },
+  );
+  assert.deepEqual(info.standards, []);
+  assert.deepEqual(info.patterns, ["call_permissions", "events", "wildcard_permissions"]);
+});
+
 test("pattern analysis identifies external-call bytecode signals", () => {
   const info = identifyPatterns(
     { ...nef(), methodTokens: [{ method: "transfer" }] },

@@ -12,7 +12,10 @@ export function identifyPatterns(nef, instructions, manifest = null) {
   const evidence = [];
   let declaredStandard = false;
 
-  for (const standard of manifest?.supportedStandards ?? []) {
+  const declaredStandards = Array.isArray(manifest?.supportedStandards)
+    ? manifest.supportedStandards
+    : [];
+  for (const standard of declaredStandards) {
     const normalized = String(standard).trim().toUpperCase();
     if (!normalized) continue;
     standards.add(normalized);
@@ -21,8 +24,11 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     if (normalized.startsWith("NEP-")) patterns.add(normalized);
   }
 
+  const methods = Array.isArray(manifest?.abi?.methods) ? manifest.abi.methods : [];
   const methodNames = new Set(
-    (manifest?.abi?.methods ?? []).map((method) => String(method.name).toLowerCase()),
+    methods
+      .filter((method) => method && typeof method === "object")
+      .map((method) => String(method.name ?? "").toLowerCase()),
   );
   const has = (...names) => names.every((name) => methodNames.has(name.toLowerCase()));
   if (has("symbol", "decimals", "totalSupply", "balanceOf", "transfer")) {
@@ -55,21 +61,21 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     patterns.add("royalties");
     evidence.push({ source: "manifest.abi.methods", value: "royaltyInfo" });
   }
-  const events = manifest?.abi?.events ?? [];
+  const events = Array.isArray(manifest?.abi?.events) ? manifest.abi.events : [];
   if (events.length > 0) {
     patterns.add("events");
     evidence.push({ source: "manifest.abi.events", value: String(events.length) });
   }
-  if (events.some((event) => event.name?.toLowerCase() === "transfer")) {
+  if (events.some((event) => event?.name?.toLowerCase() === "transfer")) {
     evidence.push({ source: "manifest.abi.events", value: "Transfer" });
   }
-  const permissions = manifest?.permissions ?? [];
+  const permissions = Array.isArray(manifest?.permissions) ? manifest.permissions : [];
   if (permissions.length > 0) {
     patterns.add("call_permissions");
     evidence.push({ source: "manifest.permissions", value: String(permissions.length) });
   }
   if (permissions.some((permission) =>
-    permission.contract === "*" || permission.methods === "*"
+    permission && (permission.contract === "*" || permission.methods === "*")
   )) {
     patterns.add("wildcard_permissions");
     evidence.push({ source: "manifest.permissions", value: "wildcard" });
