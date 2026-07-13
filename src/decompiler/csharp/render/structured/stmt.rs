@@ -33,6 +33,7 @@ pub(in crate::decompiler::csharp::render) fn render_block(
         VM_ASSERT_MESSAGE_HELPER,
         VM_EXCEPTION_TYPE,
         None,
+        None,
         &BTreeMap::new(),
         &BTreeMap::new(),
         None,
@@ -50,6 +51,7 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
     inline_single_use_temps: bool,
     assert_message_helper: &str,
     vm_exception_type: &str,
+    bare_throw_helper_call: Option<&str>,
     unpack_packstruct_helper_call: Option<&str>,
     tagged_opcode_helper_calls: &BTreeMap<(u8, u8), String>,
     internal_call_return_types: &BTreeMap<usize, String>,
@@ -83,6 +85,7 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
         next_exception: 0,
         assert_message_helper,
         vm_exception_type,
+        bare_throw_helper_call,
         source_map,
         instructions,
         next_statement_id: 0,
@@ -148,6 +151,7 @@ struct StatementRenderer<'a> {
     next_exception: usize,
     assert_message_helper: &'a str,
     vm_exception_type: &'a str,
+    bare_throw_helper_call: Option<&'a str>,
     source_map: Option<&'a SourceMap>,
     instructions: &'a [crate::instruction::Instruction],
     next_statement_id: u32,
@@ -228,6 +232,13 @@ impl StatementRenderer<'_> {
                     "return default;".to_string()
                 },
             )),
+            Stmt::Throw(None) if self.bare_throw_helper_call.is_some() => {
+                lines.push(line(
+                    indent,
+                    format!("{}();", self.bare_throw_helper_call.unwrap()),
+                ));
+                lines.push(line(indent, self.render_vm_throw(None)));
+            }
             Stmt::Throw(value) => lines.push(line(indent, self.render_vm_throw(value.as_ref()))),
             Stmt::Abort(message) => lines.push(line(
                 indent,

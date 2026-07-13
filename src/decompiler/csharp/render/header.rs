@@ -179,6 +179,23 @@ pub(super) fn write_assert_message_helper(output: &mut String, helper_name: Opti
     writeln!(output).unwrap();
 }
 
+pub(super) fn write_bare_throw_helper(output: &mut String, helper_name: Option<&str>) {
+    let Some(helper_name) = helper_name else {
+        return;
+    };
+    writeln!(
+        output,
+        "        [global::Neo.SmartContract.Framework.Attributes.OpCode(global::Neo.SmartContract.Framework.OpCode.THROW)]"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        private static extern void {helper_name}();"
+    )
+    .unwrap();
+    writeln!(output).unwrap();
+}
+
 pub(super) fn write_unpack_packstruct_helper(output: &mut String, helper_name: Option<&str>) {
     let Some(helper_name) = helper_name else {
         return;

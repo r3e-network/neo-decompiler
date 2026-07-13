@@ -544,6 +544,24 @@ impl<'a> SsaBuilder<'a> {
                     idx += 1;
                     continue;
                 };
+                if instr.opcode == OpCode::Drop && stack.len() == 1 {
+                    let next_idx = idx + 1;
+                    if next_idx < block.instruction_range.end {
+                        if let Some(throw) = self
+                            .instructions
+                            .get(next_idx)
+                            .filter(|next| next.opcode == OpCode::Throw)
+                        {
+                            covered_offsets.insert(instr.offset);
+                            covered_offsets.insert(throw.offset);
+                            self.apply_drop_bare_throw(
+                                instr, throw, &mut stack, &mut stmts, &mut state,
+                            );
+                            idx += 2;
+                            continue;
+                        }
+                    }
+                }
                 if instr.opcode == OpCode::Unpack {
                     let next_idx = idx + 1;
                     if next_idx < block.instruction_range.end {
@@ -593,6 +611,34 @@ impl<'a> SsaBuilder<'a> {
             covered_offsets,
             issues,
         }
+    }
+
+    fn apply_drop_bare_throw(
+        &self,
+        drop: &Instruction,
+        throw: &Instruction,
+        stack: &mut Vec<SsaVariable>,
+        stmts: &mut Vec<SsaStmt>,
+        state: &mut BuildPassState<'_>,
+    ) {
+        record_instruction_ceiling(drop, state.issues);
+        record_missing_operand_metadata(drop, state.issues);
+        record_instruction_ceiling(throw, state.issues);
+        record_missing_operand_metadata(throw, state.issues);
+
+        if stack
+            .last()
+            .is_some_and(|value| state.tainted_variables.contains(value))
+        {
+            record_incomplete_issue(
+                drop,
+                LoweringIssueKind::LostStackValue,
+                "stack operation consumes an unknown merged value",
+                state.issues,
+            );
+        }
+        stack.pop();
+        stmts.push(SsaStmt::throw(None));
     }
 
     fn apply_unpack_packstruct(
@@ -2547,6 +2593,12 @@ mod tests {
             })
     }
 
+    fn has_payloadless_throw(form: &SsaForm) -> bool {
+        form.blocks_iter()
+            .flat_map(|(_, block)| &block.stmts)
+            .any(|statement| matches!(statement, SsaStmt::Throw(None)))
+    }
+
     #[test]
     fn convert_consumes_one_value() {
         let instructions = vec![
@@ -2756,6 +2808,75 @@ mod tests {
             optimized_return_expression(&instructions),
             SsaExpr::lit(Literal::Int(1))
         );
+    }
+
+    #[test]
+    fn adjacent_drop_bare_throw_preserves_the_empty_stack_fault_exactly() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Drop),
+            instr(2, OpCode::Throw),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert_eq!(
+            built.fidelity.status,
+            Fidelity::Exact,
+            "{:#?}",
+            built.fidelity
+        );
+        assert!(has_payloadless_throw(&built.ssa));
+    }
+
+    #[test]
+    fn drop_throw_with_an_ambient_value_keeps_the_throw_payload() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Push2),
+            instr(2, OpCode::Drop),
+            instr(3, OpCode::Throw),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert_eq!(built.fidelity.status, Fidelity::Exact);
+        assert!(!has_payloadless_throw(&built.ssa));
+        assert!(built
+            .ssa
+            .blocks_iter()
+            .flat_map(|(_, block)| &block.stmts)
+            .any(|statement| matches!(statement, SsaStmt::Throw(Some(_)))));
+    }
+
+    #[test]
+    fn drop_bare_throw_is_not_fused_across_a_basic_block_boundary() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Drop),
+            instr(2, OpCode::Throw),
+        ];
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            2,
+            0..2,
+            Terminator::Jump { target: BlockId(1) },
+        ));
+        cfg.add_block(BasicBlock::new(BlockId(1), 2, 3, 2..3, Terminator::Throw));
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::Unconditional);
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert!(!has_payloadless_throw(&built.ssa));
+        assert!(built.fidelity.issues.iter().any(|issue| {
+            issue.offset == 2
+                && issue.opcode == OpCode::Throw
+                && issue.kind == LoweringIssueKind::LostStackValue
+        }));
     }
 
     #[test]

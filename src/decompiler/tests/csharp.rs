@@ -974,6 +974,45 @@ fn csharp_unpack_packstruct_helper_preserves_opcode_order_and_avoids_collisions(
 }
 
 #[test]
+fn csharp_bare_throw_helper_preserves_the_opcode_and_avoids_collisions() {
+    let script = [
+        crate::instruction::OpCode::Push1.byte(),
+        crate::instruction::OpCode::Drop.byte(),
+        crate::instruction::OpCode::Throw.byte(),
+    ];
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "BareThrowCollision",
+            "abi": { "methods": [{
+                "name": "__NeoDecompilerBareThrow",
+                "parameters": [],
+                "returntype": "Void",
+                "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+
+    let rendered =
+        render_csharp_with_coverage(&build_nef(&script), Some(manifest), true, false, true);
+
+    assert!(
+        rendered.source.contains(
+            "[global::Neo.SmartContract.Framework.Attributes.OpCode(global::Neo.SmartContract.Framework.OpCode.THROW)]\n        private static extern void __NeoDecompilerBareThrow_1();"
+        ),
+        "bare-throw helper must preserve the opcode and avoid ABI member names:\n{}",
+        rendered.source
+    );
+    assert!(
+        rendered.source.contains(
+            "global::NeoDecompiler.Generated.BareThrowCollision.__NeoDecompilerBareThrow_1();"
+        ),
+        "bare-throw call must use the collision-safe declaration name:\n{}",
+        rendered.source
+    );
+}
+
+#[test]
 fn csharp_type_tags_preserve_bytestring_and_struct_identity() {
     let cases = [
         (
