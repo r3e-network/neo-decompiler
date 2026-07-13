@@ -369,6 +369,50 @@ fn known_call_invalidates_collection_argument_provenance() {
 }
 
 #[test]
+fn collection_returning_call_does_not_preserve_argument_shape_across_alias_mutation() {
+    let instructions = vec![
+        instr(0, OpCode::Push1),
+        instr(1, OpCode::Push1),
+        instr(2, OpCode::Pack),
+        instr(3, OpCode::Dup),
+        Instruction::new(4, OpCode::Call, Some(Operand::Jump(6))),
+        instr(7, OpCode::Push2),
+        instr(8, OpCode::Append),
+        instr(9, OpCode::Unpack),
+        instr(10, OpCode::Drop),
+        instr(11, OpCode::Ret),
+    ];
+    let cfg = CfgBuilder::new(&instructions).build();
+    let mut context = MethodContext {
+        returns_value: Some(false),
+        ..MethodContext::default()
+    };
+    context.calls_by_offset.insert(
+        4,
+        CallContract::new(
+            SemanticCallTarget::Internal {
+                offset: 10,
+                name: "identity_collection".to_string(),
+            },
+            1,
+            true,
+        )
+        .with_return_shape(Some(CollectionShape::Array(2)))
+        .with_argument_effects(vec![CollectionArgumentEffect::ReadOnly]),
+    );
+
+    let built = SsaBuilder::new(&cfg, &instructions)
+        .with_method_context(&context)
+        .build_with_report();
+
+    assert!(built.fidelity.issues.iter().any(|issue| {
+        issue.offset == 9
+            && issue.opcode == OpCode::Unpack
+            && issue.kind == LoweringIssueKind::MissingProvenance
+    }));
+}
+
+#[test]
 fn shape_preserving_internal_call_discards_contents_but_retains_arity() {
     let instructions = vec![
         instr(0, OpCode::Push1),

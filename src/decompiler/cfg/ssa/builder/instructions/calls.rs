@@ -145,6 +145,14 @@ impl<'a> SsaBuilder<'a> {
             .call_argument_facts
             .insert(instruction.offset, argument_collection_facts);
         if matches!(&contract.target, SemanticCallTarget::Internal { .. }) {
+            // A collection-shaped return may alias one of the arguments even
+            // when the callee's direct argument effect is read-only. Without
+            // an explicit no-alias contract, retaining argument shape here
+            // lets a later mutation of the returned value bypass the original
+            // root and produce an unsound UNPACK arity.
+            if contract.return_shape.is_some() {
+                shape_preserving_roots.clear();
+            }
             invalidate_all_collection_facts_except(
                 state.definition_facts,
                 state.invalidated_collection_content_roots,
@@ -250,6 +258,12 @@ impl<'a> SsaBuilder<'a> {
             .call_argument_facts
             .insert(instruction.offset, argument_collection_facts);
         if matches!(&contract.target, SemanticCallTarget::Internal { .. }) {
+            // Tail calls have the same potential return/argument aliasing as
+            // ordinary internal calls; do not preserve argument shape unless
+            // the contract grows an explicit no-alias guarantee.
+            if contract.return_shape.is_some() {
+                shape_preserving_roots.clear();
+            }
             invalidate_all_collection_facts_except(
                 state.definition_facts,
                 state.invalidated_collection_content_roots,
