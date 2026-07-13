@@ -351,6 +351,18 @@ fn infer_abi_patterns(
             value: "royaltyInfo".to_string(),
         });
     }
+    for (name, label) in [
+        ("onnep17payment", "onNEP17Payment"),
+        ("onnep11payment", "onNEP11Payment"),
+    ] {
+        if names.contains(name) {
+            patterns.insert("token_receiver".to_string());
+            evidence.push(PatternEvidence {
+                source: "manifest.abi.methods".to_string(),
+                value: label.to_string(),
+            });
+        }
+    }
 }
 
 fn infer_language(compiler: &str) -> Option<&'static str> {
@@ -552,6 +564,20 @@ mod tests {
         assert_eq!(info.patterns, vec!["NEP-24", "royalties"]);
         assert!(info.evidence.iter().any(|entry| {
             entry.source == "manifest.abi.methods" && entry.value == "royaltyInfo"
+        }));
+    }
+
+    #[test]
+    fn token_payment_callbacks_report_receiver_behavior_without_standard_guess() {
+        let manifest: ContractManifest = serde_json::from_str(
+            r#"{"name":"Receiver","abi":{"methods":[{"name":"onNEP17Payment","parameters":[],"returntype":"Void"}],"events":[]}}"#,
+        )
+        .expect("manifest fixture");
+        let info = identify_patterns(&nef("", ""), &[], Some(&manifest));
+        assert_eq!(info.standards, Vec::<String>::new());
+        assert_eq!(info.patterns, vec!["token_receiver"]);
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "manifest.abi.methods" && entry.value == "onNEP17Payment"
         }));
     }
 

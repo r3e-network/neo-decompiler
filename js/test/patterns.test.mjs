@@ -194,6 +194,21 @@ test("pattern analysis identifies the NEP-24 royalty method", () => {
   assert.ok(info.evidence.some((entry) => entry.value === "royaltyInfo"));
 });
 
+test("pattern analysis identifies token payment receiver callbacks without guessing a standard", () => {
+  const info = identifyPatterns(nef(), [], {
+    name: "Receiver",
+    abi: {
+      methods: [{ name: "onNEP17Payment", parameters: [], returntype: "Void" }],
+      events: [],
+    },
+  });
+  assert.deepEqual(info.standards, []);
+  assert.deepEqual(info.patterns, ["token_receiver"]);
+  assert.ok(info.evidence.some((entry) =>
+    entry.source === "manifest.abi.methods" && entry.value === "onNEP17Payment"
+  ));
+});
+
 test("pattern analysis ignores malformed manifest collections", () => {
   const info = identifyPatterns(
     nef(),

@@ -75,6 +75,15 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     patterns.add("royalties");
     evidence.push({ source: "manifest.abi.methods", value: "royaltyInfo" });
   }
+  for (const [name, label] of [
+    ["onnep17payment", "onNEP17Payment"],
+    ["onnep11payment", "onNEP11Payment"],
+  ]) {
+    if (methodNames.has(name)) {
+      patterns.add("token_receiver");
+      evidence.push({ source: "manifest.abi.methods", value: label });
+    }
+  }
   const events = Array.isArray(manifest?.abi?.events) ? manifest.abi.events : [];
   if (events.length > 0) {
     patterns.add("events");
