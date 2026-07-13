@@ -158,7 +158,10 @@ const CSHARP_COLLECTION_HELPERS = new Map([
 function rewriteKnownHelpers(line) {
   let output = line;
   for (let pass = 0; pass < 32; pass += 1) {
-    const match = output.match(/\b(new_array_t|new_array|new_buffer|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct)\s*\(/);
+    const match = nextOutsideMatch(
+      output,
+      /\b(new_array_t|new_array|new_buffer|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct)\s*\(/g,
+    );
     if (!match) break;
     const open = output.indexOf("(", match.index);
     const close = findCallClose(output, open);
@@ -201,7 +204,7 @@ function rewriteKnownSyscalls(line) {
   let output = "";
   let cursor = 0;
   let match;
-  while ((match = marker.exec(line)) !== null) {
+  while ((match = nextOutsideMatch(line, marker)) !== null) {
     const open = line.indexOf("(", match.index);
     const close = findCallClose(line, open);
     if (open < 0 || close < 0) continue;
@@ -220,6 +223,28 @@ function rewriteKnownSyscalls(line) {
     marker.lastIndex = cursor;
   }
   return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function nextOutsideMatch(text, pattern) {
+  let match;
+  while ((match = pattern.exec(text)) !== null) {
+    if (!isInsideQuotedString(text, match.index)) return match;
+  }
+  return null;
+}
+
+function isInsideQuotedString(text, end) {
+  let quote = null;
+  for (let index = 0; index < end; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+    } else if (character === '"' || character === "'") {
+      quote = character;
+    }
+  }
+  return quote !== null;
 }
 
 function isStaticSyscall(name) {

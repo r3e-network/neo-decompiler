@@ -172,3 +172,17 @@ test("C# rendering preserves typed buffer allocations", () => {
   assert.match(csharp, /new byte\[\(int\)\(size\)\]/);
   assert.equal((csharp.match(/new byte\[\(int\)\(size\)\]/g) ?? []).length, 2);
 });
+
+test("C# rewrites do not alter pseudo-operation text inside literals", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn text() -> string {",
+    '    return "new_array(2) syscall(\\"System.Storage.Get\\") has_key(x, y)";',
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /new_array\(2\)/);
+  assert.match(csharp, /syscall\(\\"System\.Storage\.Get\\"\)/);
+  assert.match(csharp, /has_key\(x, y\)/);
+  assert.doesNotMatch(csharp, /new object\[\(int\)\(2\)\]/);
+});
