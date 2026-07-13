@@ -17,7 +17,6 @@ import {
   extractWhileCondition,
   findBlockEnd,
   findMatchingBrace,
-  findMatchingClose,
   isBlank,
   isComment,
   isElseIfOpen,
@@ -38,46 +37,7 @@ import {
   rewriteSwitchStatements,
 } from "./postprocess/switches.js";
 import { inlineSingleUseTemps } from "./postprocess/inlining.js";
-
-// ─── Pass 1: rewrite_else_if_chains ────────────────────────────────────────
-
-function rewriteElseIfChains(statements) {
-  let i = 0;
-  while (i + 1 < statements.length) {
-    if (isElseOpen(statements[i]) && isIfOpen(statements[i + 1])) {
-      const condition = extractIfCondition(statements[i + 1]);
-      if (condition !== null) {
-        statements[i] = `} else if ${condition} {`;
-        statements.splice(i + 1, 1);
-        // Find and remove extra closing brace
-        const closeIdx = findMatchingClose(statements, i);
-        if (closeIdx >= 0) {
-          removeOneCloser(statements, closeIdx);
-        }
-        continue;
-      }
-    }
-    i++;
-  }
-}
-
-function removeOneCloser(statements, closeIdx) {
-  if (closeIdx + 1 < statements.length) {
-    if (statements[closeIdx].trim() === "}" && statements[closeIdx + 1].trim() === "}") {
-      statements.splice(closeIdx + 1, 1);
-      return;
-    }
-  }
-  if (statements[closeIdx].trim() === "}" && closeIdx > 0) {
-    for (let i = closeIdx - 1; i >= 0; i--) {
-      const prev = statements[i].trim();
-      if (prev !== "") {
-        if (prev === "}") statements.splice(closeIdx, 1);
-        break;
-      }
-    }
-  }
-}
+import { rewriteElseIfChains } from "./postprocess/conditionals.js";
 
 // ─── Pass 2: collapse_overflow_checks ──────────────────────────────────────
 
