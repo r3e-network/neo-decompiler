@@ -2,6 +2,7 @@ pub(super) mod expr;
 pub(super) mod expr_calls;
 pub(super) mod expr_inline;
 pub(super) mod expr_intrinsics;
+pub(super) mod expr_low_level;
 pub(super) mod expr_syscalls;
 pub(super) mod nullability;
 pub(super) mod plan;

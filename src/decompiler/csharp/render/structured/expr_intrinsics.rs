@@ -5,9 +5,10 @@ use crate::decompiler::ir::Expr;
 use crate::instruction::OpCode;
 
 use super::expr::{
-    int_cast, render_expr_list, render_expr_prec, render_low_level_opcode, ExprContext,
-    RenderedExpr, PREC_ASSIGNMENT, PREC_EQUALITY, PREC_PRIMARY, PREC_RELATIONAL, PREC_UNARY,
+    int_cast, render_expr_list, render_expr_prec, ExprContext, RenderedExpr, PREC_ASSIGNMENT,
+    PREC_EQUALITY, PREC_PRIMARY, PREC_RELATIONAL, PREC_UNARY,
 };
+use super::expr_low_level::render_low_level_opcode;
 
 pub(super) fn render_intrinsic(
     opcode: OpCode,
