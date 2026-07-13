@@ -93,3 +93,39 @@ fn high_level_trims_initslot_boundaries() {
         "inferred private helper should be rendered as a separate method"
     );
 }
+
+#[test]
+fn high_level_private_void_call_preserves_ambient_return_value() {
+    let nef_bytes = build_nef(&[
+        0x19, 0x11, 0x34, 0x05, 0x40, 0x21, 0x21, 0x57, 0x00, 0x01, 0x78, 0x45, 0x40,
+    ]);
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "InferredVoidHelper",
+            "abi": { "methods": [{
+                "name": "main", "parameters": [], "returntype": "Integer", "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+
+    assert!(
+        high_level.contains("sub_0x0007(1);") && high_level.contains("return 9;"),
+        "private void call must preserve the caller's ambient value: {high_level}"
+    );
+    assert!(
+        high_level.contains("fn sub_0x0007(arg0) {")
+            && !high_level.contains("return sub_0x0007(1)"),
+        "private helper must render as void rather than manufacture a result: {high_level}"
+    );
+}

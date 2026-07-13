@@ -1,3 +1,4 @@
+#[cfg(test)]
 use crate::decompiler::analysis::types::ValueType;
 
 /// Render an inferred [`ValueType`] as a C# type name.
@@ -5,6 +6,7 @@ use crate::decompiler::analysis::types::ValueType;
 /// Returns an empty string for `Unknown` so callers can fall back to the
 /// existing untyped `loc0`/`arg0` rendering when no type was inferred
 /// (keeps the annotation purely additive).
+#[cfg(test)]
 pub(in super::super) fn inferred_type_to_csharp(ty: ValueType) -> &'static str {
     match ty {
         ValueType::Unknown => "",

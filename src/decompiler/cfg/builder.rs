@@ -8,6 +8,7 @@ use super::graph::Cfg;
 
 mod blocks;
 mod edges;
+mod finally;
 mod leaders;
 mod offsets;
 mod targets;
@@ -20,6 +21,8 @@ pub struct CfgBuilder<'a> {
     offset_to_index: BTreeMap<usize, usize>,
     /// Offsets that are jump targets (start new blocks).
     leaders: BTreeSet<usize>,
+    /// Resolved call sites proven not to return normally.
+    non_returning_calls: BTreeSet<usize>,
 }
 
 impl<'a> CfgBuilder<'a> {
@@ -35,7 +38,15 @@ impl<'a> CfgBuilder<'a> {
             instructions,
             offset_to_index,
             leaders: BTreeSet::new(),
+            non_returning_calls: BTreeSet::new(),
         }
+    }
+
+    /// Mark resolved call sites that terminate their current control-flow path.
+    #[must_use]
+    pub fn with_non_returning_calls(mut self, offsets: impl IntoIterator<Item = usize>) -> Self {
+        self.non_returning_calls.extend(offsets);
+        self
     }
 
     /// Build the CFG.
@@ -49,7 +60,8 @@ impl<'a> CfgBuilder<'a> {
         self.find_leaders();
 
         // Phase 2: Create basic blocks
-        let blocks = self.create_blocks();
+        let mut blocks = self.create_blocks();
+        self.apply_finally_routing(&mut blocks);
 
         // Phase 3: Build CFG with edges
         self.build_cfg(blocks)

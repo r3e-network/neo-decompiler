@@ -8,6 +8,7 @@ cd "$ROOT_DIR"
 ARTIFACTS_DIR="TestingArtifacts"
 DECOMPILED_DIR="$ARTIFACTS_DIR/decompiled"
 KNOWN_UNSUPPORTED_FILE="$ARTIFACTS_DIR/known_unsupported.txt"
+EXPECTED_INVALID_FILE="$ARTIFACTS_DIR/expected_invalid.txt"
 BIN_PATH="${BIN_PATH:-$ROOT_DIR/target/debug/neo-decompiler}"
 
 TMP_DIR="$(mktemp -d)"
@@ -50,7 +51,7 @@ hash_decompiled_outputs() {
         while IFS= read -r -d '' file; do
             files+=("$file")
         done < <(find "$DECOMPILED_DIR" -type f \
-            \( -name '*.high-level.cs' -o -name '*.pseudocode.txt' -o -name '*.error.txt' -o -name '*.nef' -o -name '*.manifest.json' \) \
+            \( -name '*.high-level.cs' -o -name '*.csharp.cs' -o -name '*.pseudocode.txt' -o -name '*.error.txt' -o -name '*.nef' -o -name '*.manifest.json' \) \
             -print0 | sort -z)
     fi
 
@@ -64,8 +65,20 @@ hash_decompiled_outputs() {
 
 declare -A KNOWN_EXPECTED
 declare -A KNOWN_SEEN
+declare -A INVALID_EXPECTED
+declare -A INVALID_SEEN
 
-if [[ -f "$KNOWN_UNSUPPORTED_FILE" ]]; then
+load_registry() {
+    local registry_file="$1"
+    local expected_name="$2"
+    local -n expected_ref="$expected_name"
+    local raw_line=""
+    local local_id=""
+    local local_expected=""
+
+    if [[ ! -f "$registry_file" ]]; then
+        return
+    fi
     while IFS= read -r raw_line || [[ -n "$raw_line" ]]; do
         raw_line="${raw_line%%#*}"
         raw_line="$(trim "$raw_line")"
@@ -80,20 +93,25 @@ if [[ -f "$KNOWN_UNSUPPORTED_FILE" ]]; then
             local_expected="$(trim "${raw_line#*:}")"
         fi
 
-        KNOWN_EXPECTED["$local_id"]="$local_expected"
-    done < "$KNOWN_UNSUPPORTED_FILE"
-fi
+        expected_ref["$local_id"]="$local_expected"
+    done < "$registry_file"
+}
 
-known_key_for_id() {
+load_registry "$KNOWN_UNSUPPORTED_FILE" KNOWN_EXPECTED
+load_registry "$EXPECTED_INVALID_FILE" INVALID_EXPECTED
+
+registry_key_for_id() {
     local id="$1"
+    local expected_name="$2"
+    local -n expected_ref="$expected_name"
     local basename="${id##*/}"
 
-    if [[ -n "${KNOWN_EXPECTED[$id]+_}" ]]; then
+    if [[ -n "${expected_ref[$id]+_}" ]]; then
         printf '%s' "$id"
         return 0
     fi
 
-    if [[ -n "${KNOWN_EXPECTED[$basename]+_}" ]]; then
+    if [[ -n "${expected_ref[$basename]+_}" ]]; then
         printf '%s' "$basename"
         return 0
     fi
@@ -119,6 +137,16 @@ first_hash="$(hash_decompiled_outputs)"
 log "Regenerating artifact outputs (run 2)"
 cargo test --locked --test decompile_artifacts -- --nocapture >/dev/null
 second_hash="$(hash_decompiled_outputs)"
+
+log "Checking structured C# coverage and source placeholders"
+cargo test --locked --lib decompiler::tests::csharp_coverage -- --nocapture
+
+if [[ -n "${NEO_SMARTCONTRACT_FRAMEWORK_DLL:-}" ]]; then
+    log "Compiling representative generated C# with Roslyn"
+    tools/ci/csharp_compile.sh
+else
+    log "Skipping Roslyn C# compilation (NEO_SMARTCONTRACT_FRAMEWORK_DLL is unset)"
+fi
 
 if [[ "$first_hash" != "$second_hash" ]]; then
     printf '[DRIFT] decompiled output hash mismatch\n' >>"$FAILURES_FILE"
@@ -175,6 +203,7 @@ validate_schema() {
 pairs_total=0
 pairs_full_success=0
 pairs_known_fail=0
+pairs_expected_invalid=0
 pairs_unexpected_fail=0
 
 info_ok=0
@@ -192,30 +221,51 @@ for id in "${!ARTIFACT_PATHS[@]}"; do
     manifest_path="${ARTIFACT_MANIFESTS[$id]}"
 
     known_key=""
-    if known_key="$(known_key_for_id "$id")"; then
+    if known_key="$(registry_key_for_id "$id" KNOWN_EXPECTED)"; then
         KNOWN_SEEN["$known_key"]=1
     fi
-    expected_hint=""
+    known_hint=""
     if [[ -n "$known_key" ]]; then
-        expected_hint="${KNOWN_EXPECTED[$known_key]}"
+        known_hint="${KNOWN_EXPECTED[$known_key]}"
+    fi
+    invalid_key=""
+    if invalid_key="$(registry_key_for_id "$id" INVALID_EXPECTED)"; then
+        INVALID_SEEN["$invalid_key"]=1
+    fi
+    invalid_hint=""
+    if [[ -n "$invalid_key" ]]; then
+        invalid_hint="${INVALID_EXPECTED[$invalid_key]}"
     fi
 
     pair_failed=0
-    decompile_failed=0
+    if [[ -n "$known_key" ]] && [[ -n "$invalid_key" ]]; then
+        pair_failed=1
+        printf '[REGISTRY-CONFLICT] %s\n    listed as both known unsupported and expected invalid\n' "$id" >>"$FAILURES_FILE"
+    fi
 
     info_out="$(tmp_for "$id" info.json)"
     info_err="$(tmp_for "$id" info.err)"
     if "$BIN_PATH" --manifest "$manifest_path" info --format json "$nef_path" >"$info_out" 2>"$info_err"; then
-        info_ok=$((info_ok + 1))
-        schema_err="$(tmp_for "$id" schema_info.err)"
-        if validate_schema info "$info_out" "$schema_err"; then
-            schema_info_ok=$((schema_info_ok + 1))
-        else
+        if [[ -n "$invalid_key" ]]; then
             pair_failed=1
-            record_failure "SCHEMA-INFO" "$id" "$schema_err"
+            record_failure "EXPECTED-INVALID-INFO-SUCCEEDED" "$id" "$info_out"
+        else
+            info_ok=$((info_ok + 1))
+            schema_err="$(tmp_for "$id" schema_info.err)"
+            if validate_schema info "$info_out" "$schema_err"; then
+                schema_info_ok=$((schema_info_ok + 1))
+            else
+                pair_failed=1
+                record_failure "SCHEMA-INFO" "$id" "$schema_err"
+            fi
         fi
     else
-        if [[ -z "$known_key" ]]; then
+        if [[ -n "$invalid_key" ]]; then
+            if [[ -n "$invalid_hint" ]] && ! grep -Fq "$invalid_hint" "$info_err"; then
+                pair_failed=1
+                record_failure "EXPECTED-INVALID-INFO-MISMATCH" "$id" "$info_err"
+            fi
+        else
             pair_failed=1
             record_failure "INFO" "$id" "$info_err"
         fi
@@ -224,16 +274,26 @@ for id in "${!ARTIFACT_PATHS[@]}"; do
     disasm_out="$(tmp_for "$id" disasm.json)"
     disasm_err="$(tmp_for "$id" disasm.err)"
     if "$BIN_PATH" disasm --format json "$nef_path" >"$disasm_out" 2>"$disasm_err"; then
-        disasm_ok=$((disasm_ok + 1))
-        schema_err="$(tmp_for "$id" schema_disasm.err)"
-        if validate_schema disasm "$disasm_out" "$schema_err"; then
-            schema_disasm_ok=$((schema_disasm_ok + 1))
-        else
+        if [[ -n "$invalid_key" ]]; then
             pair_failed=1
-            record_failure "SCHEMA-DISASM" "$id" "$schema_err"
+            record_failure "EXPECTED-INVALID-DISASM-SUCCEEDED" "$id" "$disasm_out"
+        else
+            disasm_ok=$((disasm_ok + 1))
+            schema_err="$(tmp_for "$id" schema_disasm.err)"
+            if validate_schema disasm "$disasm_out" "$schema_err"; then
+                schema_disasm_ok=$((schema_disasm_ok + 1))
+            else
+                pair_failed=1
+                record_failure "SCHEMA-DISASM" "$id" "$schema_err"
+            fi
         fi
     else
-        if [[ -z "$known_key" ]]; then
+        if [[ -n "$invalid_key" ]]; then
+            if [[ -n "$invalid_hint" ]] && ! grep -Fq "$invalid_hint" "$disasm_err"; then
+                pair_failed=1
+                record_failure "EXPECTED-INVALID-DISASM-MISMATCH" "$id" "$disasm_err"
+            fi
+        else
             pair_failed=1
             record_failure "DISASM" "$id" "$disasm_err"
         fi
@@ -242,9 +302,12 @@ for id in "${!ARTIFACT_PATHS[@]}"; do
     decompile_out="$(tmp_for "$id" decompile.json)"
     decompile_err="$(tmp_for "$id" decompile.err)"
     if "$BIN_PATH" --manifest "$manifest_path" decompile --format json "$nef_path" >"$decompile_out" 2>"$decompile_err"; then
-        if [[ -n "$known_key" ]]; then
+        if [[ -n "$invalid_key" ]]; then
             pair_failed=1
-            record_failure "KNOWN-DECOMPILE-SUCCEEDED" "$id" "$decompile_err"
+            record_failure "EXPECTED-INVALID-DECOMPILE-SUCCEEDED" "$id" "$decompile_out"
+        elif [[ -n "$known_key" ]]; then
+            pair_failed=1
+            record_failure "KNOWN-DECOMPILE-SUCCEEDED" "$id" "$decompile_out"
         else
             decompile_ok=$((decompile_ok + 1))
             schema_err="$(tmp_for "$id" schema_decompile.err)"
@@ -256,9 +319,13 @@ for id in "${!ARTIFACT_PATHS[@]}"; do
             fi
         fi
     else
-        decompile_failed=1
-        if [[ -n "$known_key" ]]; then
-            if [[ -n "$expected_hint" ]] && ! grep -Fq "$expected_hint" "$decompile_err"; then
+        if [[ -n "$invalid_key" ]]; then
+            if [[ -n "$invalid_hint" ]] && ! grep -Fq "$invalid_hint" "$decompile_err"; then
+                pair_failed=1
+                record_failure "EXPECTED-INVALID-DECOMPILE-MISMATCH" "$id" "$decompile_err"
+            fi
+        elif [[ -n "$known_key" ]]; then
+            if [[ -n "$known_hint" ]] && ! grep -Fq "$known_hint" "$decompile_err"; then
                 pair_failed=1
                 record_failure "KNOWN-DECOMPILE-MISMATCH" "$id" "$decompile_err"
             fi
@@ -271,28 +338,35 @@ for id in "${!ARTIFACT_PATHS[@]}"; do
     tokens_out="$(tmp_for "$id" tokens.json)"
     tokens_err="$(tmp_for "$id" tokens.err)"
     if "$BIN_PATH" tokens --format json "$nef_path" >"$tokens_out" 2>"$tokens_err"; then
-        tokens_ok=$((tokens_ok + 1))
-        schema_err="$(tmp_for "$id" schema_tokens.err)"
-        if validate_schema tokens "$tokens_out" "$schema_err"; then
-            schema_tokens_ok=$((schema_tokens_ok + 1))
-        else
+        if [[ -n "$invalid_key" ]]; then
             pair_failed=1
-            record_failure "SCHEMA-TOKENS" "$id" "$schema_err"
+            record_failure "EXPECTED-INVALID-TOKENS-SUCCEEDED" "$id" "$tokens_out"
+        else
+            tokens_ok=$((tokens_ok + 1))
+            schema_err="$(tmp_for "$id" schema_tokens.err)"
+            if validate_schema tokens "$tokens_out" "$schema_err"; then
+                schema_tokens_ok=$((schema_tokens_ok + 1))
+            else
+                pair_failed=1
+                record_failure "SCHEMA-TOKENS" "$id" "$schema_err"
+            fi
         fi
     else
-        if [[ -z "$known_key" ]]; then
+        if [[ -n "$invalid_key" ]]; then
+            if [[ -n "$invalid_hint" ]] && ! grep -Fq "$invalid_hint" "$tokens_err"; then
+                pair_failed=1
+                record_failure "EXPECTED-INVALID-TOKENS-MISMATCH" "$id" "$tokens_err"
+            fi
+        else
             pair_failed=1
             record_failure "TOKENS" "$id" "$tokens_err"
         fi
     fi
 
-    if [[ -n "$known_key" ]] && [[ "$decompile_failed" -eq 0 ]]; then
-        pair_failed=1
-        printf '[KNOWN-DECOMPILE-SUCCEEDED] %s\n    expected decompile failure for known unsupported entry\n' "$id" >>"$FAILURES_FILE"
-    fi
-
     if [[ "$pair_failed" -eq 0 ]]; then
-        if [[ -n "$known_key" ]]; then
+        if [[ -n "$invalid_key" ]]; then
+            pairs_expected_invalid=$((pairs_expected_invalid + 1))
+        elif [[ -n "$known_key" ]]; then
             pairs_known_fail=$((pairs_known_fail + 1))
         else
             pairs_full_success=$((pairs_full_success + 1))
@@ -308,10 +382,17 @@ for key in "${!KNOWN_EXPECTED[@]}"; do
     fi
 done
 
+for key in "${!INVALID_EXPECTED[@]}"; do
+    if [[ -z "${INVALID_SEEN[$key]+_}" ]]; then
+        printf '[STALE-EXPECTED-INVALID] %s\n    listed in %s but no matching artifact id found\n' "$key" "$EXPECTED_INVALID_FILE" >>"$FAILURES_FILE"
+    fi
+done
+
 printf 'ARTIFACT_SWEEP\n'
 printf 'pairs=%d\n' "$pairs_total"
 printf 'pairs_full_success=%d\n' "$pairs_full_success"
 printf 'pairs_known_expected_failure=%d\n' "$pairs_known_fail"
+printf 'pairs_expected_invalid_rejected=%d\n' "$pairs_expected_invalid"
 printf 'pairs_unexpected_failure=%d\n' "$pairs_unexpected_fail"
 printf 'info_ok=%d\n' "$info_ok"
 printf 'disasm_ok=%d\n' "$disasm_ok"

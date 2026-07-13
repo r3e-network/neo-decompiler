@@ -9,6 +9,17 @@ impl<'a> CfgBuilder<'a> {
         }
 
         for (i, instr) in self.instructions.iter().enumerate() {
+            if self.non_returning_calls.contains(&instr.offset)
+                && matches!(
+                    instr.opcode,
+                    OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::CallT
+                )
+            {
+                if let Some(next) = self.instructions.get(i + 1) {
+                    self.leaders.insert(next.offset);
+                }
+                continue;
+            }
             match instr.opcode {
                 OpCode::Jmp | OpCode::Jmp_L | OpCode::Endtry | OpCode::EndtryL => {
                     if let Some(target) = self.jump_target(i, instr) {

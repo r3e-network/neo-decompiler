@@ -3,8 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::cfg::{BlockId, Cfg};
-use crate::decompiler::ir::{BinOp, Literal, Stmt, UnaryOp};
+use crate::decompiler::ir::{BinOp, Literal, SemanticCallTarget, Stmt, UnaryOp};
 
 use super::dominance::DominanceInfo;
 use super::variable::{PhiNode, SsaVariable};
@@ -220,6 +221,7 @@ impl fmt::Display for SsaBlock {
 
 /// A statement in SSA form.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum SsaStmt {
     /// Variable assignment with SSA target.
     Assign {
@@ -227,6 +229,26 @@ pub enum SsaStmt {
         target: SsaVariable,
         /// The value being assigned (in SSA expression form).
         value: SsaExpr,
+    },
+
+    /// Expression evaluated for side effects, such as a void call.
+    Expr(SsaExpr),
+
+    /// Method return with the evaluation stack's top value, if present.
+    Return(Option<SsaExpr>),
+
+    /// Catchable VM throw with an optional payload.
+    Throw(Option<SsaExpr>),
+
+    /// Uncatchable VM abort with an optional diagnostic payload.
+    Abort(Option<SsaExpr>),
+
+    /// Runtime assertion with an optional failure message.
+    Assert {
+        /// Value tested by the assertion.
+        condition: SsaExpr,
+        /// Optional diagnostic value produced when the assertion fails.
+        message: Option<SsaExpr>,
     },
 
     /// φ node (internal representation, typically transformed before output).
@@ -241,6 +263,36 @@ impl SsaStmt {
     #[must_use]
     pub fn assign(target: SsaVariable, value: SsaExpr) -> Self {
         Self::Assign { target, value }
+    }
+
+    /// Create an expression statement.
+    #[must_use]
+    pub fn expr(value: SsaExpr) -> Self {
+        Self::Expr(value)
+    }
+
+    /// Create a return statement.
+    #[must_use]
+    pub fn ret(value: Option<SsaExpr>) -> Self {
+        Self::Return(value)
+    }
+
+    /// Create a catchable throw statement.
+    #[must_use]
+    pub fn throw(value: Option<SsaExpr>) -> Self {
+        Self::Throw(value)
+    }
+
+    /// Create an uncatchable abort statement.
+    #[must_use]
+    pub fn abort(message: Option<SsaExpr>) -> Self {
+        Self::Abort(message)
+    }
+
+    /// Create an assertion statement.
+    #[must_use]
+    pub fn assert(condition: SsaExpr, message: Option<SsaExpr>) -> Self {
+        Self::Assert { condition, message }
     }
 
     /// Create a φ node statement.
@@ -288,8 +340,8 @@ pub enum SsaExpr {
 
     /// Function or syscall invocation.
     Call {
-        /// Function name.
-        name: String,
+        /// Semantic call identity and display metadata.
+        target: SemanticCallTarget,
         /// Call arguments.
         args: Vec<SsaExpr>,
     },
@@ -318,8 +370,35 @@ pub enum SsaExpr {
         target_type: String,
     },
 
+    /// Neo VM conversion retaining its StackItemType operand.
+    Convert {
+        /// Value to convert.
+        value: Box<SsaExpr>,
+        /// Requested VM target type.
+        target: ValueType,
+    },
+
+    /// Neo VM runtime type check retaining its StackItemType operand.
+    IsType {
+        /// Value to inspect.
+        value: Box<SsaExpr>,
+        /// Requested VM target type.
+        target: ValueType,
+    },
+
+    /// Sized array construction with an optional typed element tag.
+    NewArray {
+        /// Requested array length.
+        length: Box<SsaExpr>,
+        /// Element type carried by NEWARRAY_T, if present.
+        element_type: Option<ValueType>,
+    },
+
     /// Array literal.
     Array(Vec<SsaExpr>),
+
+    /// Struct literal.
+    Struct(Vec<SsaExpr>),
 
     /// Map literal (key-value pairs).
     Map(Vec<(SsaExpr, SsaExpr)>),
@@ -367,10 +446,21 @@ impl SsaExpr {
         }
     }
 
-    /// Create a function call expression.
+    /// Create a call whose semantic target is known.
     #[must_use]
-    pub fn call(name: String, args: Vec<SsaExpr>) -> Self {
-        Self::Call { name, args }
+    pub fn call(target: SemanticCallTarget, args: Vec<SsaExpr>) -> Self {
+        Self::Call { target, args }
+    }
+
+    /// Create an unresolved call for analysis-only or hand-built SSA.
+    #[must_use]
+    pub fn unresolved_call(display_name: impl Into<String>, args: Vec<SsaExpr>) -> Self {
+        Self::Call {
+            target: SemanticCallTarget::Unresolved {
+                display_name: display_name.into(),
+            },
+            args,
+        }
     }
 }
 
@@ -381,8 +471,8 @@ impl fmt::Display for SsaExpr {
             Self::Literal(lit) => write!(f, "{}", lit),
             Self::Binary { op, left, right } => write!(f, "({} {} {})", left, op, right),
             Self::Unary { op, operand } => write!(f, "{}({})", op, operand),
-            Self::Call { name, args } => {
-                write!(f, "{}(", name)?;
+            Self::Call { target, args } => {
+                write!(f, "{}(", target.display_name())?;
                 for (i, arg) in args.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -394,6 +484,15 @@ impl fmt::Display for SsaExpr {
             Self::Index { base, index } => write!(f, "{}[{}]", base, index),
             Self::Member { base, name } => write!(f, "{}.{}", base, name),
             Self::Cast { expr, target_type } => write!(f, "{} as {}", expr, target_type),
+            Self::Convert { value, target } => write!(f, "convert({value}, {target})"),
+            Self::IsType { value, target } => write!(f, "is_type({value}, {target})"),
+            Self::NewArray {
+                length,
+                element_type,
+            } => match element_type {
+                Some(element_type) => write!(f, "new_array({length}, {element_type})"),
+                None => write!(f, "new_array({length})"),
+            },
             Self::Array(elements) => {
                 write!(f, "[")?;
                 for (i, elem) in elements.iter().enumerate() {
@@ -401,6 +500,16 @@ impl fmt::Display for SsaExpr {
                         write!(f, ", ")?;
                     }
                     write!(f, "{}", elem)?;
+                }
+                write!(f, "]")
+            }
+            Self::Struct(elements) => {
+                write!(f, "struct[")?;
+                for (i, element) in elements.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{element}")?;
                 }
                 write!(f, "]")
             }
@@ -427,6 +536,21 @@ impl fmt::Display for SsaStmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Assign { target, value } => write!(f, "{} = {};", target, value),
+            Self::Expr(value) => write!(f, "{value};"),
+            Self::Return(Some(value)) => write!(f, "return {value};"),
+            Self::Return(None) => write!(f, "return;"),
+            Self::Throw(Some(value)) => write!(f, "throw({value});"),
+            Self::Throw(None) => write!(f, "throw();"),
+            Self::Abort(Some(message)) => write!(f, "abort({message});"),
+            Self::Abort(None) => write!(f, "abort();"),
+            Self::Assert {
+                condition,
+                message: Some(message),
+            } => write!(f, "assert({condition}, {message});"),
+            Self::Assert {
+                condition,
+                message: None,
+            } => write!(f, "assert({condition});"),
             Self::Phi(phi) => write!(f, "{}", phi), // φ nodes have their own Display
             Self::Other(stmt) => write!(f, "{:?}", stmt), // Use debug for other statements
         }
@@ -443,10 +567,24 @@ pub struct UseSite {
 }
 
 impl UseSite {
+    const TERMINATOR_INDEX: usize = usize::MAX;
+
     /// Create a new use site.
     #[must_use]
     pub const fn new(block: BlockId, stmt_index: usize) -> Self {
         Self { block, stmt_index }
+    }
+
+    /// Create the synthetic use site for a block terminator condition.
+    #[must_use]
+    pub(crate) const fn terminator(block: BlockId) -> Self {
+        Self::new(block, Self::TERMINATOR_INDEX)
+    }
+
+    /// Whether this use belongs to a block terminator rather than a statement.
+    #[must_use]
+    pub(crate) const fn is_terminator(&self) -> bool {
+        self.stmt_index == Self::TERMINATOR_INDEX
     }
 }
 
@@ -509,7 +647,7 @@ mod tests {
         );
         assert!(matches!(binary, SsaExpr::Binary { .. }));
 
-        let call = SsaExpr::call("foo".to_string(), vec![]);
+        let call = SsaExpr::unresolved_call("foo", vec![]);
         assert!(matches!(call, SsaExpr::Call { .. }));
     }
 
@@ -540,7 +678,7 @@ mod tests {
         assert_eq!(format!("{}", unary), "-(x)");
 
         let var2 = SsaVariable::initial("x".to_string());
-        let call = SsaExpr::call("foo".to_string(), vec![SsaExpr::var(var2)]);
+        let call = SsaExpr::unresolved_call("foo", vec![SsaExpr::var(var2)]);
         assert_eq!(format!("{}", call), "foo(x)");
     }
 

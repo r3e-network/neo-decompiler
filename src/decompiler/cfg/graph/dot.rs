@@ -35,6 +35,10 @@ impl Cfg {
                 EdgeKind::ConditionalFalse => " [color=red, label=\"F\"]",
                 EdgeKind::Exception => " [color=orange, style=dashed, label=\"exc\"]",
                 EdgeKind::Finally => " [color=blue, style=dashed, label=\"finally\"]",
+                EdgeKind::FinallyException => {
+                    " [color=purple, style=dashed, label=\"finally-exc\"]"
+                }
+                EdgeKind::FinallyContinuation => " [color=blue, style=dotted, label=\"resume\"]",
             };
             dot.push_str(&format!("  {} -> {}{};\n", edge.from, edge.to, style));
         }

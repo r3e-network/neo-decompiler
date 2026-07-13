@@ -46,7 +46,7 @@ impl HighLevelEmitter {
             .map(std::string::String::as_str)
     }
 
-    fn emit_internal_call(&mut self, instruction: &Instruction, target: usize) {
+    fn emit_internal_call(&mut self, instruction: &Instruction, target: usize) -> bool {
         let mut target = self.normalize_internal_call_target(target);
         if let Some(required_args) = self.method_arg_counts_by_offset.get(&target).copied() {
             if self.stack.len() < required_args {
@@ -71,11 +71,15 @@ impl HighLevelEmitter {
             .resolve_internal_call_name(target)
             .map(str::to_string)
             .unwrap_or_else(|| format!("call_0x{target:04X}"));
+        let returns_value = self
+            .method_returns_value_by_offset
+            .get(&target)
+            .copied()
+            .unwrap_or(true);
         if let Some(arg_count) = self.method_arg_counts_by_offset.get(&target).copied() {
             self.push_comment(instruction);
             if self.stack.len() < arg_count {
                 self.stack_underflow(instruction, arg_count);
-                return;
             }
             let mut args = Vec::with_capacity(arg_count);
             for _ in 0..arg_count {
@@ -83,20 +87,31 @@ impl HighLevelEmitter {
                     // Internal calls use right-to-left push order (C convention),
                     // so popping yields arguments in correct left-to-right display order.
                     args.push(value);
+                } else {
+                    args.push("???".to_string());
                 }
             }
             let args = args.join(", ");
-            let temp = self.next_temp();
-            self.statements
-                .push(format!("let {temp} = {callee}({args});"));
-            self.stack.push(temp);
-            return;
+            if returns_value {
+                let temp = self.next_temp();
+                self.statements
+                    .push(format!("let {temp} = {callee}({args});"));
+                self.stack.push(temp);
+            } else {
+                self.statements.push(format!("{callee}({args});"));
+            }
+            return returns_value;
         }
 
         self.push_comment(instruction);
-        let temp = self.next_temp();
-        self.statements.push(format!("let {temp} = {callee}();"));
-        self.stack.push(temp);
+        if returns_value {
+            let temp = self.next_temp();
+            self.statements.push(format!("let {temp} = {callee}();"));
+            self.stack.push(temp);
+        } else {
+            self.statements.push(format!("{callee}();"));
+        }
+        returns_value
     }
 
     pub(in super::super) fn emit_relative_call(&mut self, instruction: &Instruction) {
@@ -106,13 +121,13 @@ impl HighLevelEmitter {
                 .get(&instruction.offset)
                 .copied()
                 .unwrap_or(target);
-            self.emit_internal_call(instruction, resolved_target);
+            let _ = self.emit_internal_call(instruction, resolved_target);
         } else if let Some(target) = self
             .call_targets_by_offset
             .get(&instruction.offset)
             .copied()
         {
-            self.emit_internal_call(instruction, target);
+            let _ = self.emit_internal_call(instruction, target);
         } else {
             self.warn(instruction, "call with unsupported operand (skipping)");
         }
@@ -196,13 +211,13 @@ impl HighLevelEmitter {
                     .pop_stack_value_with_literal()
                     .unwrap_or_else(|| ("??".to_string(), None));
                 if let Some(LiteralValue::Pointer(offset)) = literal {
-                    self.emit_internal_call(instruction, offset);
+                    let _ = self.emit_internal_call(instruction, offset);
                 } else if let Some(offset) = self
                     .calla_targets_by_offset
                     .get(&instruction.offset)
                     .copied()
                 {
-                    self.emit_internal_call(instruction, offset);
+                    let _ = self.emit_internal_call(instruction, offset);
                 } else {
                     self.push_comment(instruction);
                     let temp = self.next_temp();
@@ -227,12 +242,12 @@ impl HighLevelEmitter {
                 }
                 // Tail-call: JMP to a known method entry point.
                 if self.method_labels_by_offset.contains_key(&target) {
-                    self.emit_internal_call(instruction, target);
-                    let result = self.stack.pop().unwrap_or_default();
-                    if result.is_empty() {
-                        self.statements.push("return;".into());
-                    } else {
+                    let produced_value = self.emit_internal_call(instruction, target);
+                    if produced_value {
+                        let result = self.stack.pop().unwrap_or_default();
                         self.statements.push(format!("return {result};"));
+                    } else {
+                        self.statements.push("return;".into());
                     }
                     return;
                 }

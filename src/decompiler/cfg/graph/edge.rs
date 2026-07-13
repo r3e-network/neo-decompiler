@@ -24,4 +24,8 @@ pub enum EdgeKind {
     Exception,
     /// Finally block edge.
     Finally,
+    /// Structural exceptional entry into a finally region.
+    FinallyException,
+    /// Hidden pending-continuation dispatch performed by ENDFINALLY.
+    FinallyContinuation,
 }

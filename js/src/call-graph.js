@@ -15,6 +15,11 @@ export function buildCallGraph(nef, instructions, methodGroups) {
   const methodArgCountsByOffset = new Map(
     methodGroups.map((group) => [group.start, inferMethodArgCount(group)]),
   );
+  const methodReturnsValueByOffset = new Map(
+    methodGroups
+      .filter((group) => typeof group.source?.returnType === "string")
+      .map((group) => [group.start, group.source.returnType.toLowerCase() !== "void"]),
+  );
   const methodArgValues = new Map();
 
   const edges = [];
@@ -201,6 +206,7 @@ export function buildCallGraph(nef, instructions, methodGroups) {
           opcode: mnemonic,
           target: { kind: "UnresolvedInternal", target: targetOffset },
         });
+        valueStack.push(null);
         continue;
       }
       propagateCallArguments(
@@ -219,13 +225,16 @@ export function buildCallGraph(nef, instructions, methodGroups) {
           method: resolveMethodTarget(methodByOffset, targetOffset),
         },
       });
+      if (methodReturnsValueByOffset.get(targetOffset) ?? true) {
+        valueStack.push(null);
+      }
       continue;
     }
 
     if (mnemonic === "CALLT" && instruction.operand?.kind === "U16") {
       const token = nef.methodTokens[instruction.operand.value] ?? null;
       popMany(valueStack, token?.parametersCount ?? 0);
-      if (token?.hasReturnValue ?? false) {
+      if (token?.hasReturnValue ?? true) {
         valueStack.push(null);
       }
       edges.push({
@@ -288,7 +297,17 @@ export function buildCallGraph(nef, instructions, methodGroups) {
                 operand: null,
               },
       });
+      if (resolved === null || (methodReturnsValueByOffset.get(resolved) ?? true)) {
+        valueStack.push(null);
+      }
+      continue;
     }
+
+    // Pointer resolution must prefer false negatives over fabricated internal
+    // calls. If an opcode has no transfer function above, its stack effect is
+    // unknown; retaining earlier values could expose a stale pointer to a later
+    // CALLA. Invalidate the simulated stack until a modeled producer rebuilds it.
+    valueStack = [];
   }
 
   return { methods, edges };

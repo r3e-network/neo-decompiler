@@ -5,30 +5,105 @@
 //! pseudo-bodies when method offsets are available.
 
 use super::super::analysis::call_graph::CallGraph;
-use super::super::analysis::types::TypeInfo;
-use super::super::helpers::build_method_labels_by_offset;
+use super::super::analysis::method_contracts::MethodContracts;
+use super::super::analysis::types::{TypeInfo, ValueType};
 use crate::decompiler::output_format::RenderOptions;
 use crate::instruction::Instruction;
+use crate::instruction::OpCode;
 use crate::manifest::ContractManifest;
-use crate::native_contracts;
 use crate::nef::NefFile;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use super::super::helpers::{
-    build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
-    extract_contract_name, inferred_method_starts, inferred_type_to_csharp,
+    extract_contract_name, inferred_method_starts, stack_item_type_tag, value_type_from_operand,
 };
-use super::helpers::sanitize_csharp_identifier;
-use super::helpers::SlotTypes;
+use super::helpers::{
+    make_unique_identifier, sanitize_csharp_identifier, VM_ASSERT_MESSAGE_HELPER, VM_EXCEPTION_TYPE,
+};
 
 mod body;
 mod events;
 mod header;
 mod methods;
+mod structured;
+
+pub(crate) use body::BodyBackend;
+
+#[derive(Debug, Clone)]
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) struct MethodBodyCoverage {
+    pub(crate) backend: BodyBackend,
+    pub(crate) fidelity: crate::decompiler::cfg::method_body::FidelityReport,
+    pub(crate) primary_issue: Option<crate::decompiler::cfg::method_body::LoweringIssue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct MethodCoverageKey {
+    emitted_name: String,
+    parameter_types: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct CSharpCoverage {
+    pub(crate) methods: BTreeMap<usize, BTreeMap<MethodCoverageKey, MethodBodyCoverage>>,
+    pub(crate) backend_counts: BTreeMap<&'static str, usize>,
+    pub(crate) issue_counts:
+        BTreeMap<crate::decompiler::cfg::method_body::LoweringIssueKind, usize>,
+}
+
+impl CSharpCoverage {
+    #[cfg(test)]
+    pub(crate) fn method(&self, start: usize, name: &str) -> Option<&MethodBodyCoverage> {
+        self.methods
+            .get(&start)?
+            .iter()
+            .find_map(|(key, coverage)| (key.emitted_name == name).then_some(coverage))
+    }
+
+    fn record(
+        &mut self,
+        method_plan: &structured::plan::CSharpMethodPlan,
+        result: &body::BodyRenderResult,
+    ) {
+        let key = MethodCoverageKey {
+            emitted_name: method_plan.emitted_name.clone(),
+            parameter_types: method_plan
+                .parameters
+                .iter()
+                .map(|parameter| parameter.ty.clone())
+                .collect(),
+        };
+        self.methods.entry(method_plan.start).or_default().insert(
+            key,
+            MethodBodyCoverage {
+                backend: result.backend,
+                fidelity: result.fidelity.clone(),
+                primary_issue: result.fidelity.primary_issue().cloned(),
+            },
+        );
+        let backend = match result.backend {
+            BodyBackend::Structured => "structured",
+            BodyBackend::ThrowingStub => "throwing_stub",
+        };
+        *self.backend_counts.entry(backend).or_default() += 1;
+        for issue in &result.fidelity.issues {
+            *self.issue_counts.entry(issue.kind).or_default() += 1;
+        }
+    }
+}
 
 pub(crate) struct CSharpRender {
     pub(crate) source: String,
     pub(crate) warnings: Vec<String>,
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) coverage: CSharpCoverage,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TaggedOpcodeHelper {
+    pub(super) opcode: OpCode,
+    pub(super) target: ValueType,
+    pub(super) name: String,
 }
 
 /// Render a C# skeleton with lifted bodies when possible.
@@ -37,126 +112,219 @@ pub(crate) fn render_csharp(
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
     call_graph: &CallGraph,
+    method_contracts: &MethodContracts,
     types: &TypeInfo,
     opts: &RenderOptions,
 ) -> CSharpRender {
     let mut output = String::new();
     let mut warnings = Vec::new();
+    let mut coverage = CSharpCoverage::default();
     header::write_preamble(&mut output);
 
     let contract_name = extract_contract_name(manifest, sanitize_csharp_identifier);
 
-    // Pre-resolve CALLT method-token labels.
-    let callt_labels: Vec<String> = nef
-        .method_tokens
+    let inferred_starts = inferred_method_starts(instructions, manifest);
+    let method_plans = structured::plan::build_csharp_method_plans(
+        instructions,
+        manifest,
+        call_graph,
+        method_contracts,
+        types,
+        &inferred_starts,
+    );
+    let method_symbols = method_plans.method_symbol_maps().iter().collect::<Vec<_>>();
+    let contract_symbols =
+        structured::plan::plan_contract_symbols(types, &method_symbols, opts.typed_declarations);
+    let mut used_member_names =
+        contract_member_names(&contract_name, manifest, &method_plans, &contract_symbols);
+    let vm_exception_type = vm_exception_type_name(instructions, &mut used_member_names);
+    let vm_exception_type_ref = vm_exception_type.as_deref().unwrap_or(VM_EXCEPTION_TYPE);
+    let assert_message_helper = assert_message_helper_name(instructions, &mut used_member_names);
+    let assert_message_helper_call = assert_message_helper
+        .as_ref()
+        .map(|helper| format!("global::NeoDecompiler.Generated.{contract_name}.{helper}"));
+    let tagged_opcode_helpers = tagged_opcode_helpers(instructions, &mut used_member_names);
+    let tagged_opcode_helper_calls = tagged_opcode_helpers
         .iter()
-        .map(|token| {
-            if let Some(hint) = native_contracts::describe_method_token(&token.hash, &token.method)
-            {
-                hint.formatted_label(&token.method)
-            } else {
-                token.method.clone()
-            }
+        .filter_map(|helper| {
+            structured::expr::tagged_opcode_helper_key(helper.opcode, helper.target).map(|key| {
+                (
+                    key,
+                    format!(
+                        "global::NeoDecompiler.Generated.{contract_name}.{}",
+                        helper.name
+                    ),
+                )
+            })
         })
         .collect();
-    let callt_param_counts: Vec<usize> = nef
-        .method_tokens
-        .iter()
-        .map(|token| token.parameters_count as usize)
-        .collect();
-    let callt_returns_value: Vec<bool> = nef
-        .method_tokens
-        .iter()
-        .map(|token| token.has_return_value)
-        .collect();
-    let inferred_starts = inferred_method_starts(instructions, manifest);
-    let method_labels_by_offset = build_method_labels_by_offset(
-        instructions,
-        &inferred_starts,
-        manifest,
-        sanitize_csharp_identifier,
-        "ScriptEntry",
-    );
-    let method_arg_counts_by_offset =
-        build_method_arg_counts_by_offset(instructions, &inferred_starts, manifest);
-    let call_targets_by_offset = build_call_targets_by_offset(call_graph);
-    let calla_targets_by_offset = build_calla_targets_by_offset(call_graph);
-
     // Pre-resolve inferred C# slot types per method so that body-local
     // declarations can be rendered with concrete types (`BigInteger loc0`)
     // instead of `var` when `typed_declarations` is enabled. Built from the
     // already-computed `TypeInfo`; cheap (one entry per method).
-    let slot_types_by_offset = build_slot_types_by_offset(types);
     let body_context = body::LiftedBodyContext {
-        method_labels_by_offset: &method_labels_by_offset,
-        method_arg_counts_by_offset: &method_arg_counts_by_offset,
-        call_targets_by_offset: &call_targets_by_offset,
-        calla_targets_by_offset: &calla_targets_by_offset,
-        callt_labels: &callt_labels,
-        callt_param_counts: &callt_param_counts,
-        callt_returns_value: &callt_returns_value,
+        method_labels_by_offset: method_plans.method_labels_by_offset(),
+        method_arg_counts_by_offset: method_plans.method_arg_counts_by_offset(),
+        method_return_types_by_offset: method_plans.method_return_types_by_offset(),
         inline_single_use_temps: opts.inline_single_use_temps,
         emit_trace_comments: opts.emit_trace_comments,
         typed_declarations: opts.typed_declarations,
-        slot_types_by_offset: &slot_types_by_offset,
+        vm_exception_type: vm_exception_type_ref,
+        assert_message_helper_call: assert_message_helper_call.as_deref(),
+        tagged_opcode_helper_calls: &tagged_opcode_helper_calls,
     };
     let methods_context = methods::MethodsContext {
         instructions,
         inferred_method_starts: &inferred_starts,
+        method_plans: &method_plans,
         body_context,
     };
 
     header::write_contract_open(&mut output, &contract_name, nef, manifest);
+    header::write_static_fields(&mut output, &contract_symbols);
+    header::write_vm_exception_type(&mut output, vm_exception_type.as_deref());
+    header::write_assert_message_helper(&mut output, assert_message_helper.as_deref());
+    header::write_tagged_opcode_helpers(&mut output, &tagged_opcode_helpers);
+    if call_graph.edges.iter().any(|edge| {
+        matches!(
+            edge.target,
+            super::super::analysis::call_graph::CallTarget::Indirect { .. }
+                | super::super::analysis::call_graph::CallTarget::UnresolvedInternal { .. }
+        )
+    }) {
+        header::write_unresolved_call_helper(&mut output);
+    }
 
     if let Some(manifest) = manifest {
         events::write_events(&mut output, manifest);
-        methods::write_manifest_methods(&mut output, manifest, &methods_context, &mut warnings);
+        methods::write_manifest_methods(
+            &mut output,
+            manifest,
+            &methods_context,
+            &mut warnings,
+            &mut coverage,
+        );
         methods::write_inferred_methods(
             &mut output,
             &methods_context,
             Some(manifest),
             &mut warnings,
+            &mut coverage,
         );
     } else {
-        methods::write_fallback_entry(&mut output, &methods_context, &mut warnings);
-        methods::write_inferred_methods(&mut output, &methods_context, None, &mut warnings);
+        methods::write_fallback_entry(&mut output, &methods_context, &mut warnings, &mut coverage);
+        methods::write_inferred_methods(
+            &mut output,
+            &methods_context,
+            None,
+            &mut warnings,
+            &mut coverage,
+        );
     }
 
     header::write_contract_close(&mut output);
     CSharpRender {
         source: output,
         warnings,
+        coverage,
     }
 }
 
-/// Build per-method [`SlotTypes`] from the inferred [`TypeInfo`].
-///
-/// Static-field types are global (shared across methods), so they are resolved
-/// once and cloned into each method's `SlotTypes`. Local types come from each
-/// `MethodTypes.locals`. Unknowns map to `""` which the renderer treats as
-/// "fall back to `var`".
-fn build_slot_types_by_offset(types: &TypeInfo) -> BTreeMap<usize, SlotTypes> {
-    let statics: Vec<&'static str> = types
-        .statics
+fn vm_exception_type_name(
+    instructions: &[Instruction],
+    used_names: &mut HashSet<String>,
+) -> Option<String> {
+    instructions
         .iter()
-        .map(|t| inferred_type_to_csharp(*t))
-        .collect();
-    types
-        .methods
-        .iter()
-        .map(|m| {
-            let locals = m
-                .locals
-                .iter()
-                .map(|t| inferred_type_to_csharp(*t))
-                .collect();
-            (
-                m.method.offset,
-                SlotTypes {
-                    locals,
-                    statics: statics.clone(),
-                },
+        .any(|instruction| {
+            matches!(
+                instruction.opcode,
+                OpCode::Throw | OpCode::Try | OpCode::TryL
             )
+        })
+        .then(|| make_unique_identifier(VM_EXCEPTION_TYPE.to_string(), used_names))
+}
+
+fn contract_member_names(
+    contract_name: &str,
+    manifest: Option<&ContractManifest>,
+    method_plans: &structured::plan::CSharpMethodPlans,
+    contract_symbols: &structured::plan::CSharpContractSymbols,
+) -> HashSet<String> {
+    let mut used_names = HashSet::from([contract_name.to_string()]);
+    used_names.extend(method_plans.emitted_names().map(str::to_string));
+    used_names.extend(
+        contract_symbols
+            .static_fields
+            .iter()
+            .map(|field| field.name.clone()),
+    );
+
+    if let Some(manifest) = manifest {
+        let mut event_names = HashSet::new();
+        for event in &manifest.abi.events {
+            let emitted =
+                make_unique_identifier(sanitize_csharp_identifier(&event.name), &mut event_names);
+            used_names.insert(emitted);
+        }
+    }
+
+    used_names
+}
+
+fn assert_message_helper_name(
+    instructions: &[Instruction],
+    used_names: &mut HashSet<String>,
+) -> Option<String> {
+    if !instructions
+        .iter()
+        .any(|instruction| instruction.opcode == OpCode::Assertmsg)
+    {
+        return None;
+    }
+
+    Some(make_unique_identifier(
+        VM_ASSERT_MESSAGE_HELPER.to_string(),
+        used_names,
+    ))
+}
+
+fn tagged_opcode_helpers(
+    instructions: &[Instruction],
+    used_names: &mut HashSet<String>,
+) -> Vec<TaggedOpcodeHelper> {
+    let mut required = BTreeMap::new();
+    for instruction in instructions {
+        let requirement = match instruction.opcode {
+            OpCode::Convert | OpCode::Istype => instruction
+                .operand
+                .as_ref()
+                .and_then(value_type_from_operand)
+                .filter(|target| *target != ValueType::Any)
+                .map(|target| (instruction.opcode, target)),
+            OpCode::Packstruct => Some((OpCode::Convert, ValueType::Struct)),
+            _ => None,
+        };
+        let Some((opcode, target)) = requirement else {
+            continue;
+        };
+        let Some(tag) = stack_item_type_tag(target) else {
+            continue;
+        };
+        required
+            .entry((opcode.byte(), tag))
+            .or_insert((opcode, target));
+    }
+
+    required
+        .into_values()
+        .map(|(opcode, target)| TaggedOpcodeHelper {
+            opcode,
+            target,
+            name: make_unique_identifier(
+                structured::expr::default_tagged_opcode_helper_name(opcode, target),
+                used_names,
+            ),
         })
         .collect()
 }

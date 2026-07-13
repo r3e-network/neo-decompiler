@@ -8,9 +8,10 @@
 //!
 //! The lowering is the structural inverse of [`super::convert`] (`IR → SSA`).
 
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use crate::decompiler::ir::Expr;
+use crate::decompiler::ir::{Expr, Literal};
 
 use super::form::{SsaExpr, SsaForm, SsaStmt};
 use super::variable::{PhiNode, SsaVariable};
@@ -18,30 +19,79 @@ use super::variable::{PhiNode, SsaVariable};
 /// Lower an SSA expression to the typed IR expression tree.
 #[must_use]
 pub fn ssa_expr_to_ir(expr: &SsaExpr) -> Expr {
+    ssa_expr_to_ir_with_source_names(expr, &BTreeMap::new())
+}
+
+pub(crate) fn ssa_expr_to_ir_with_source_names(
+    expr: &SsaExpr,
+    source_names: &BTreeMap<String, String>,
+) -> Expr {
     match expr {
         SsaExpr::Literal(lit) => Expr::Literal(lit.clone()),
-        SsaExpr::Variable(var) => Expr::Variable(ssa_var_name(var)),
-        SsaExpr::Binary { op, left, right } => {
-            Expr::binary(*op, ssa_expr_to_ir(left), ssa_expr_to_ir(right))
+        SsaExpr::Variable(var) if var.base == "?" => Expr::Unknown,
+        SsaExpr::Variable(var) if var.is_vm_null() => Expr::Literal(Literal::Null),
+        SsaExpr::Variable(var) => Expr::Variable(ssa_var_name(var, source_names)),
+        SsaExpr::Binary { op, left, right } => Expr::binary(
+            *op,
+            ssa_expr_to_ir_with_source_names(left, source_names),
+            ssa_expr_to_ir_with_source_names(right, source_names),
+        ),
+        SsaExpr::Unary { op, operand } => {
+            Expr::unary(*op, ssa_expr_to_ir_with_source_names(operand, source_names))
         }
-        SsaExpr::Unary { op, operand } => Expr::unary(*op, ssa_expr_to_ir(operand)),
-        SsaExpr::Call { name, args } => {
-            Expr::call(name.clone(), args.iter().map(ssa_expr_to_ir).collect())
-        }
-        SsaExpr::Index { base, index } => Expr::index(ssa_expr_to_ir(base), ssa_expr_to_ir(index)),
+        SsaExpr::Call { target, args } => Expr::call(
+            target.clone(),
+            args.iter()
+                .map(|arg| ssa_expr_to_ir_with_source_names(arg, source_names))
+                .collect(),
+        ),
+        SsaExpr::Index { base, index } => Expr::index(
+            ssa_expr_to_ir_with_source_names(base, source_names),
+            ssa_expr_to_ir_with_source_names(index, source_names),
+        ),
         SsaExpr::Member { base, name } => Expr::Member {
-            base: Box::new(ssa_expr_to_ir(base)),
+            base: Box::new(ssa_expr_to_ir_with_source_names(base, source_names)),
             name: name.clone(),
         },
         SsaExpr::Cast { expr, target_type } => Expr::Cast {
-            expr: Box::new(ssa_expr_to_ir(expr)),
+            expr: Box::new(ssa_expr_to_ir_with_source_names(expr, source_names)),
             target_type: target_type.clone(),
         },
-        SsaExpr::Array(els) => Expr::Array(els.iter().map(ssa_expr_to_ir).collect()),
+        SsaExpr::Convert { value, target } => Expr::Convert {
+            value: Box::new(ssa_expr_to_ir_with_source_names(value, source_names)),
+            target: *target,
+        },
+        SsaExpr::IsType { value, target } => Expr::IsType {
+            value: Box::new(ssa_expr_to_ir_with_source_names(value, source_names)),
+            target: *target,
+        },
+        SsaExpr::NewArray {
+            length,
+            element_type,
+        } => Expr::NewArray {
+            length: Box::new(ssa_expr_to_ir_with_source_names(length, source_names)),
+            element_type: *element_type,
+        },
+        SsaExpr::Array(els) => Expr::Array(
+            els.iter()
+                .map(|expr| ssa_expr_to_ir_with_source_names(expr, source_names))
+                .collect(),
+        ),
+        SsaExpr::Struct(elements) => Expr::Struct(
+            elements
+                .iter()
+                .map(|expression| ssa_expr_to_ir_with_source_names(expression, source_names))
+                .collect(),
+        ),
         SsaExpr::Map(pairs) => Expr::Map(
             pairs
                 .iter()
-                .map(|(k, v)| (ssa_expr_to_ir(k), ssa_expr_to_ir(v)))
+                .map(|(key, value)| {
+                    (
+                        ssa_expr_to_ir_with_source_names(key, source_names),
+                        ssa_expr_to_ir_with_source_names(value, source_names),
+                    )
+                })
                 .collect(),
         ),
         SsaExpr::Ternary {
@@ -49,9 +99,9 @@ pub fn ssa_expr_to_ir(expr: &SsaExpr) -> Expr {
             then_expr,
             else_expr,
         } => Expr::Ternary {
-            condition: Box::new(ssa_expr_to_ir(condition)),
-            then_expr: Box::new(ssa_expr_to_ir(then_expr)),
-            else_expr: Box::new(ssa_expr_to_ir(else_expr)),
+            condition: Box::new(ssa_expr_to_ir_with_source_names(condition, source_names)),
+            then_expr: Box::new(ssa_expr_to_ir_with_source_names(then_expr, source_names)),
+            else_expr: Box::new(ssa_expr_to_ir_with_source_names(else_expr, source_names)),
         },
     }
 }
@@ -87,13 +137,35 @@ pub fn render_ssa_form(ssa: &SsaForm) -> String {
     out
 }
 
-/// Render a single SSA statement (assignment) as text, without the trailing
-/// semicolon (the caller adds it so φ lines and assign lines compose uniformly).
+/// Render a single SSA statement as text without the trailing semicolon.
 fn render_ssa_stmt(stmt: &SsaStmt) -> String {
     match stmt {
         SsaStmt::Assign { target, value } => {
-            format!("{} = {}", ssa_var_name(target), render_ir_expr(value))
+            format!(
+                "{} = {}",
+                ssa_var_name(target, &BTreeMap::new()),
+                render_ir_expr(value)
+            )
         }
+        SsaStmt::Expr(value) => render_ir_expr(value),
+        SsaStmt::Return(Some(value)) => format!("return {}", render_ir_expr(value)),
+        SsaStmt::Return(None) => "return".to_string(),
+        SsaStmt::Throw(Some(value)) => format!("throw({})", render_ir_expr(value)),
+        SsaStmt::Throw(None) => "throw()".to_string(),
+        SsaStmt::Abort(Some(message)) => format!("abort({})", render_ir_expr(message)),
+        SsaStmt::Abort(None) => "abort()".to_string(),
+        SsaStmt::Assert {
+            condition,
+            message: Some(message),
+        } => format!(
+            "assert({}, {})",
+            render_ir_expr(condition),
+            render_ir_expr(message)
+        ),
+        SsaStmt::Assert {
+            condition,
+            message: None,
+        } => format!("assert({})", render_ir_expr(condition)),
         SsaStmt::Phi(phi) => render_phi(phi),
         SsaStmt::Other(inner) => match inner {
             crate::decompiler::ir::Stmt::Comment(text) => format!("// {text}"),
@@ -112,19 +184,28 @@ fn render_phi(phi: &PhiNode) -> String {
     let mut parts: Vec<String> = phi
         .operands
         .iter()
-        .map(|(pred, var)| format!("{}: {}", pred.0, ssa_var_name(var)))
+        .map(|(pred, var)| format!("{}: {}", pred.0, ssa_var_name(var, &BTreeMap::new())))
         .collect();
     parts.sort();
-    format!("{} = φ({})", ssa_var_name(&phi.target), parts.join(", "))
+    format!(
+        "{} = φ({})",
+        ssa_var_name(&phi.target, &BTreeMap::new()),
+        parts.join(", ")
+    )
 }
 
 /// Human-readable name for an SSA variable: the base name plus version (so the
 /// single-assignment property is visible — IR rendering is analysis-facing).
-fn ssa_var_name(var: &SsaVariable) -> String {
+pub(crate) fn ssa_var_name(var: &SsaVariable, source_names: &BTreeMap<String, String>) -> String {
     if is_unknown(var) {
         "?".to_string()
+    } else if var.is_vm_null() {
+        "null".to_string()
+    } else if let Some(source_name) = source_names.get(&var.base) {
+        source_name.clone()
     } else {
-        format!("{}_{}", var.base, var.version)
+        let generated = format!("{}_{}", var.base, var.version);
+        source_names.get(&generated).cloned().unwrap_or(generated)
     }
 }
 
@@ -137,7 +218,7 @@ mod tests {
     use super::*;
     use crate::decompiler::cfg::ssa::{SsaBlock, SsaExpr, SsaStmt, SsaVariable};
     use crate::decompiler::cfg::BlockId;
-    use crate::decompiler::ir::{BinOp, Literal};
+    use crate::decompiler::ir::{BinOp, Literal, SemanticCallTarget};
 
     fn v(base: &str, ver: usize) -> SsaVariable {
         SsaVariable::new(base.to_string(), ver)
@@ -153,6 +234,53 @@ mod tests {
         let ir = ssa_expr_to_ir(&expr);
         let rendered = crate::decompiler::ir::render_expr(&ir);
         assert_eq!(rendered, "(1 + 2)");
+    }
+
+    #[test]
+    fn lowers_vm_null_sentinel_to_null_literal() {
+        let expr = SsaExpr::var(SsaVariable::vm_null());
+
+        assert_eq!(ssa_expr_to_ir(&expr), Expr::Literal(Literal::Null));
+        assert_eq!(
+            ssa_var_name(&SsaVariable::vm_null(), &BTreeMap::new()),
+            "null"
+        );
+    }
+
+    #[test]
+    fn semantic_call_identity_survives_ssa_to_ir() {
+        let targets = [
+            SemanticCallTarget::Internal {
+                offset: 24,
+                name: "helper".to_string(),
+            },
+            SemanticCallTarget::MethodToken {
+                index: 3,
+                name: "transfer".to_string(),
+                hash_le: None,
+                call_flags: None,
+            },
+            SemanticCallTarget::Syscall {
+                hash: 0x8CEC_27F8,
+                name: Some("System.Runtime.Platform".to_string()),
+            },
+            SemanticCallTarget::Intrinsic(crate::decompiler::ir::Intrinsic::Opcode(
+                crate::instruction::OpCode::Append,
+            )),
+        ];
+
+        for target in targets {
+            let lowered = ssa_expr_to_ir(&SsaExpr::call(target.clone(), vec![]));
+            let Expr::Call {
+                target: lowered_target,
+                args,
+            } = lowered
+            else {
+                panic!("semantic call should remain a call");
+            };
+            assert_eq!(lowered_target, target);
+            assert!(args.is_empty());
+        }
     }
 
     #[test]

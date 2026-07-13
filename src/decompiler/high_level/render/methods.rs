@@ -145,6 +145,11 @@ pub(super) fn write_inferred_methods(
             .map(|index| format!("arg{index}"))
             .collect::<Vec<_>>();
         let argument_signature = argument_labels.join(", ");
+        let returns_void = context
+            .body_context
+            .method_returns_value_by_offset
+            .get(start)
+            .is_some_and(|returns_value| !returns_value);
 
         // Render body into a scratch buffer first. Synthetic helpers that
         // produce only a "no instructions decoded" placeholder are dropped
@@ -157,14 +162,22 @@ pub(super) fn write_inferred_methods(
             (!argument_labels.is_empty()).then_some(argument_labels.as_slice()),
             warnings,
             context.body_context,
-            false, // inferred methods: return type unknown
+            returns_void,
         );
         if body_buffer.trim() == "// no instructions decoded" {
             continue;
         }
 
         writeln!(output).unwrap();
-        writeln!(output, "    fn {method_name}({argument_signature}) {{").unwrap();
+        if returns_void {
+            writeln!(output, "    fn {method_name}({argument_signature}) {{").unwrap();
+        } else {
+            writeln!(
+                output,
+                "    fn {method_name}({argument_signature}) -> any {{"
+            )
+            .unwrap();
+        }
         output.push_str(&body_buffer);
         writeln!(output, "    }}").unwrap();
     }

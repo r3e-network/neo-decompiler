@@ -7,6 +7,8 @@ use crate::util;
 
 use super::super::super::helpers::format_permission_entry;
 use super::super::helpers::escape_csharp_string;
+use super::structured::plan::CSharpContractSymbols;
+use super::TaggedOpcodeHelper;
 
 pub(super) fn write_preamble(output: &mut String) {
     writeln!(output, "using System;").unwrap();
@@ -120,6 +122,96 @@ pub(super) fn write_contract_open(
 
     write_method_tokens_comment(output, nef);
 
+    writeln!(output).unwrap();
+}
+
+pub(super) fn write_static_fields(output: &mut String, symbols: &CSharpContractSymbols) {
+    for field in &symbols.static_fields {
+        writeln!(
+            output,
+            "        private static {} {};",
+            field.csharp_type, field.name
+        )
+        .unwrap();
+    }
+    if !symbols.static_fields.is_empty() {
+        writeln!(output).unwrap();
+    }
+}
+
+pub(super) fn write_vm_exception_type(output: &mut String, type_name: Option<&str>) {
+    let Some(type_name) = type_name else {
+        return;
+    };
+    writeln!(
+        output,
+        "        private sealed class {type_name} : Exception"
+    )
+    .unwrap();
+    writeln!(output, "        {{").unwrap();
+    writeln!(output, "            internal dynamic Payload {{ get; }}").unwrap();
+    writeln!(
+        output,
+        "            internal {type_name}(dynamic payload) : base(Convert.ToString((object)payload))"
+    )
+    .unwrap();
+    writeln!(output, "            {{").unwrap();
+    writeln!(output, "                Payload = payload;").unwrap();
+    writeln!(output, "            }}").unwrap();
+    writeln!(output, "        }}").unwrap();
+    writeln!(output).unwrap();
+}
+
+pub(super) fn write_assert_message_helper(output: &mut String, helper_name: Option<&str>) {
+    let Some(helper_name) = helper_name else {
+        return;
+    };
+    writeln!(
+        output,
+        "        [global::Neo.SmartContract.Framework.Attributes.OpCode(global::Neo.SmartContract.Framework.OpCode.ASSERTMSG)]"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        private static extern void {helper_name}(bool condition, string message);"
+    )
+    .unwrap();
+    writeln!(output).unwrap();
+}
+
+pub(super) fn write_tagged_opcode_helpers(output: &mut String, helpers: &[TaggedOpcodeHelper]) {
+    for helper in helpers {
+        let tag = crate::decompiler::helpers::stack_item_type_tag(helper.target)
+            .expect("planned tagged opcode helper has a VM type tag");
+        let return_type = if helper.opcode == crate::instruction::OpCode::Istype {
+            "bool"
+        } else {
+            super::structured::plan::csharp_type(helper.target, true)
+        };
+        writeln!(
+            output,
+            "        [global::Neo.SmartContract.Framework.Attributes.OpCode(global::Neo.SmartContract.Framework.OpCode.{}, \"{tag:02X}\")]",
+            helper.opcode.mnemonic()
+        )
+        .unwrap();
+        writeln!(
+            output,
+            "        private static extern {return_type} {}(object value);",
+            helper.name
+        )
+        .unwrap();
+    }
+    if !helpers.is_empty() {
+        writeln!(output).unwrap();
+    }
+}
+
+pub(super) fn write_unresolved_call_helper(output: &mut String) {
+    writeln!(
+        output,
+        "        private static dynamic __NeoDecompilerUnresolvedCall(string name, object[] args) => throw new NotImplementedException($\"Unresolved Neo VM call: {{name}}\");"
+    )
+    .unwrap();
     writeln!(output).unwrap();
 }
 

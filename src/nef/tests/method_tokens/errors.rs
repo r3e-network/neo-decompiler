@@ -45,7 +45,7 @@ fn rejects_method_name_with_leading_underscore() {
     data.extend_from_slice(b"_x");
     data.extend_from_slice(&0u16.to_le_bytes());
     data.push(0); // no return
-    data.push(0x10); // call flags (AllowNotify)
+    data.push(0x10); // unsupported call flag bit (name validation happens first)
     data.extend_from_slice(&0u16.to_le_bytes());
     write_varint(&mut data, script.len() as u32);
     data.extend_from_slice(&script);
@@ -73,7 +73,7 @@ fn rejects_call_flags_with_unsupported_bits() {
     data.extend_from_slice(b"foo");
     data.extend_from_slice(&0u16.to_le_bytes());
     data.push(0); // no return
-    data.push(0x80); // unsupported flag bit
+    data.push(0x10); // first bit outside CallFlags::All
     data.extend_from_slice(&0u16.to_le_bytes());
     write_varint(&mut data, script.len() as u32);
     data.extend_from_slice(&script);
@@ -81,10 +81,13 @@ fn rejects_call_flags_with_unsupported_bits() {
     data.extend_from_slice(&checksum.to_le_bytes());
 
     let err = NefParser::new().parse(&data).unwrap_err();
-    assert!(matches!(
-        err,
-        crate::error::Error::Nef(NefError::CallFlagsInvalid { .. })
-    ));
+    match err {
+        crate::error::Error::Nef(NefError::CallFlagsInvalid { flags, allowed }) => {
+            assert_eq!(flags, 0x10);
+            assert_eq!(allowed, 0x0F);
+        }
+        other => panic!("expected CallFlagsInvalid, got {other:?}"),
+    }
 }
 
 #[test]

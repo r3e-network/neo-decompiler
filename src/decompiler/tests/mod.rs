@@ -1,10 +1,13 @@
-use super::csharp::csharpize_statement;
+use super::csharp::legacy_statement_to_csharp;
 use super::helpers::sanitize_identifier;
 use super::high_level::HighLevelEmitter;
 use super::*;
 use crate::disassembler::UnknownHandling;
 use crate::{ContractManifest, NefParser};
 use std::{fs, path::PathBuf};
+
+#[path = "csharp_coverage.rs"]
+mod csharp_coverage;
 
 fn write_varint(buf: &mut Vec<u8>, value: u32) {
     match value {

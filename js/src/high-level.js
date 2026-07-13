@@ -403,7 +403,14 @@ function renderMethodSignature(group, used, context = null) {
   if (renderedReturnType && renderedReturnType !== "void") {
     return `fn ${name}(${args}) -> ${renderedReturnType}`;
   }
-  return `fn ${name}(${args})`;
+  if (renderedReturnType === "void") {
+    return `fn ${name}(${args})`;
+  }
+  const inferredReturnBehavior =
+    context?.methodContractsByOffset?.get(group.start)?.returnBehavior;
+  return inferredReturnBehavior === "void"
+    ? `fn ${name}(${args})`
+    : `fn ${name}(${args}) -> any`;
 }
 
 // Maximum number of instructions a single method body may have before

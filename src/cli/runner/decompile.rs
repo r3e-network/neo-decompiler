@@ -100,6 +100,7 @@ impl Cli {
                     warnings: decompile_warnings,
                     instructions,
                     call_graph,
+                    method_contracts,
                     xrefs,
                     types,
                     pseudocode,
@@ -136,6 +137,7 @@ impl Cli {
                     manifest: manifest.as_ref().map(reports::summarize_manifest),
                     analysis: AnalysisReport {
                         call_graph,
+                        method_contracts,
                         xrefs,
                         types,
                     },

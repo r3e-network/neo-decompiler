@@ -8,6 +8,7 @@ use super::super::emitter::HighLevelEmitter;
 pub(super) struct MethodBodyContext<'a> {
     pub(super) method_labels_by_offset: &'a BTreeMap<usize, String>,
     pub(super) method_arg_counts_by_offset: &'a BTreeMap<usize, usize>,
+    pub(super) method_returns_value_by_offset: &'a BTreeMap<usize, bool>,
     pub(super) call_targets_by_offset: &'a BTreeMap<usize, usize>,
     pub(super) calla_targets_by_offset: &'a BTreeMap<usize, usize>,
     pub(super) noreturn_method_offsets: &'a BTreeSet<usize>,
@@ -55,6 +56,7 @@ pub(super) fn write_method_body(
     emitter.set_callt_returns_value(context.callt_returns_value.to_vec());
     emitter.set_method_labels_by_offset(context.method_labels_by_offset);
     emitter.set_method_arg_counts_by_offset(context.method_arg_counts_by_offset);
+    emitter.set_method_returns_value_by_offset(context.method_returns_value_by_offset);
     emitter.set_call_targets_by_offset(context.call_targets_by_offset);
     emitter.set_calla_targets_by_offset(context.calla_targets_by_offset);
     emitter.set_noreturn_method_offsets(context.noreturn_method_offsets);

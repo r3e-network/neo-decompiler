@@ -3,7 +3,9 @@ use std::collections::HashSet;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::decompiler::analysis::{call_graph::CallGraph, types::TypeInfo, xrefs::Xrefs};
+use crate::decompiler::analysis::{
+    call_graph::CallGraph, method_contracts::MethodContracts, types::TypeInfo, xrefs::Xrefs,
+};
 use crate::decompiler::Decompilation;
 use crate::disassembler::DisassemblyOutput;
 use crate::instruction::{Instruction, OpCode, Operand};
@@ -98,6 +100,7 @@ pub(super) fn build_decompile_report(result: Decompilation) -> WebDecompileRepor
         warnings: decompile_warnings,
         instructions,
         call_graph,
+        method_contracts,
         xrefs,
         types,
         pseudocode,
@@ -135,6 +138,7 @@ pub(super) fn build_decompile_report(result: Decompilation) -> WebDecompileRepor
         manifest: manifest.as_ref().map(summarize_manifest),
         analysis: AnalysisReport {
             call_graph,
+            method_contracts,
             xrefs,
             types,
         },
@@ -145,6 +149,7 @@ pub(super) fn build_decompile_report(result: Decompilation) -> WebDecompileRepor
 #[derive(Debug, Clone, Serialize)]
 struct AnalysisReport {
     call_graph: CallGraph,
+    method_contracts: MethodContracts,
     xrefs: Xrefs,
     types: TypeInfo,
 }

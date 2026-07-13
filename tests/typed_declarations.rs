@@ -9,11 +9,28 @@
 
 use std::fs;
 
-use neo_decompiler::{ContractManifest, Decompiler, OutputFormat};
+use neo_decompiler::{ContractManifest, Decompiler, NefParser, OutputFormat};
 
 /// Locate the repo root from CARGO_MANIFEST_DIR.
 fn repo_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn build_nef(script: &[u8]) -> Vec<u8> {
+    let mut data = Vec::new();
+    data.extend_from_slice(b"NEF3");
+    let mut compiler = [0u8; 64];
+    compiler[..4].copy_from_slice(b"test");
+    data.extend_from_slice(&compiler);
+    data.push(0); // source
+    data.push(0); // reserved byte
+    data.push(0); // method token count
+    data.extend_from_slice(&0u16.to_le_bytes()); // reserved word
+    data.push(script.len() as u8);
+    data.extend_from_slice(script);
+    let checksum = NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+    data
 }
 
 /// Read a `(nef, manifest)` pair from TestingArtifacts.
@@ -98,5 +115,43 @@ fn typed_declarations_off_matches_default() {
     assert_eq!(
         default, off,
         "with_typed_declarations(false) must equal the default decompiler"
+    );
+}
+
+#[test]
+fn typed_declarations_emit_static_slots_once_at_class_scope() {
+    let nef = build_nef(&[
+        0x56, 0x02, // INITSSLOT 2
+        0x11, // PUSH1
+        0x61, // STSFLD1
+        0x59, // LDSFLD1
+        0x40, // RET
+    ]);
+    let csharp = decompile_csharp(&nef, None, true);
+
+    let static0 = csharp
+        .find("private static dynamic static0;")
+        .unwrap_or_else(|| panic!("declared unknown static slot must use dynamic:\n{csharp}"));
+    let static1 = csharp
+        .find("private static BigInteger static1;")
+        .unwrap_or_else(|| panic!("integer static slot must use BigInteger:\n{csharp}"));
+    let method = csharp
+        .find("public static object ScriptEntry")
+        .expect("fallback entry signature");
+
+    assert!(
+        static0 < method && static1 < method,
+        "static fields must precede methods:\n{csharp}"
+    );
+    assert_eq!(
+        csharp.matches("private static BigInteger static1;").count(),
+        1,
+        "each static slot must be declared exactly once:\n{csharp}"
+    );
+    assert!(
+        !csharp.contains("var static1 =")
+            && !csharp.contains("BigInteger static1 =")
+            && !csharp.contains("dynamic static1 ="),
+        "a VM static slot must never be redeclared inside a method:\n{csharp}"
     );
 }

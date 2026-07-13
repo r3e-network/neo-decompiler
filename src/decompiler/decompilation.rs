@@ -3,6 +3,7 @@ use crate::manifest::ContractManifest;
 use crate::nef::NefFile;
 
 use super::analysis::call_graph::CallGraph;
+use super::analysis::method_contracts::MethodContracts;
 use super::analysis::types::TypeInfo;
 use super::analysis::xrefs::Xrefs;
 use super::cfg::ssa::{SsaBuilder, SsaForm};
@@ -24,6 +25,8 @@ pub struct Decompilation {
     pub cfg: Cfg,
     /// Best-effort call graph extracted from the instruction stream.
     pub call_graph: CallGraph,
+    /// Declared and conservatively inferred stack-call contracts by method.
+    pub method_contracts: MethodContracts,
     /// Best-effort cross-reference information for locals/args/statics.
     pub xrefs: Xrefs,
     /// Best-effort primitive/collection type inference.
@@ -166,16 +169,16 @@ impl Decompilation {
             &self.instructions,
             self.manifest.as_ref(),
         );
-        let views = crate::decompiler::cfg::method_view::extract_method_cfgs(
-            &self.cfg,
-            &table,
-            &self.instructions,
-        );
+        let views =
+            crate::decompiler::cfg::method_view::extract_method_cfgs(&table, &self.instructions);
         if !views.is_empty() {
             return crate::decompiler::cfg::method_view::render_envelope(
                 &self.nef,
                 self.manifest.as_ref(),
                 &views,
+                &self.call_graph,
+                &self.method_contracts,
+                &mut self.warnings,
             );
         }
         self.render_structured_ir_single_cfg()

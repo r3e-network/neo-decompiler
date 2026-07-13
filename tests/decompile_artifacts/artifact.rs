@@ -8,6 +8,7 @@ use crate::common::{format_id, relative_base};
 pub(crate) enum ContractStatus {
     Success,
     KnownUnsupported,
+    ExpectedInvalid,
 }
 
 #[derive(Debug)]

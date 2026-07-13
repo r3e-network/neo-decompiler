@@ -259,6 +259,18 @@ export interface CallGraph {
   edges: CallEdge[];
 }
 
+export type ReturnBehavior = "value" | "void" | "unknown";
+
+export interface MethodContract {
+  method: MethodRef;
+  argumentCount: number;
+  returnBehavior: ReturnBehavior;
+}
+
+export interface MethodContracts {
+  methods: MethodContract[];
+}
+
 export interface SlotXref {
   index: number;
   reads: number[];
@@ -331,6 +343,7 @@ export interface DecompileWithManifestResult extends DecompileResult {
 
 export interface HighLevelResult extends DecompileResult {
   methodGroups: MethodGroup[];
+  methodContracts: MethodContracts;
   highLevel: string;
 }
 
@@ -343,6 +356,7 @@ export interface AnalyzeResult extends DecompileResult {
   manifest: ContractManifest | null;
   methodGroups: MethodGroup[];
   callGraph: CallGraph;
+  methodContracts: MethodContracts;
   xrefs: Xrefs;
   types: TypeInfo;
 }

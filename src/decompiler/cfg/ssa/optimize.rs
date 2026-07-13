@@ -18,7 +18,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::decompiler::cfg::BlockId;
 use crate::decompiler::ir::{BinOp, Literal, UnaryOp};
 
-use super::form::{SsaExpr, SsaForm, SsaStmt};
+use super::form::{SsaExpr, SsaForm, SsaStmt, UseSite};
 use super::variable::SsaVariable;
 
 /// Optimize `ssa` in place by running the SSA optimization passes to a fixed
@@ -31,11 +31,6 @@ pub fn optimize(ssa: &mut SsaForm) -> usize {
             break;
         }
         rounds += 1;
-        // Guard against pathological non-convergence (monotone rewrites always
-        // terminate, but cap defensively).
-        if rounds > ssa.blocks.len() + 4 {
-            break;
-        }
     }
     rounds
 }
@@ -45,6 +40,18 @@ pub fn optimize(ssa: &mut SsaForm) -> usize {
 type Subst = BTreeMap<SsaVariable, SsaExpr>;
 
 fn one_round(ssa: &mut SsaForm) -> usize {
+    // A phi whose target is never consumed is dead. Remove it before gathering
+    // substitutions so its operands do not remain artificially live.
+    let live_phi_targets = collect_used(ssa, &BTreeMap::new());
+    let mut rewrites = 0usize;
+    for block in ssa.blocks.values_mut() {
+        let before = block.phi_nodes.len();
+        block
+            .phi_nodes
+            .retain(|phi| live_phi_targets.contains(&phi.target));
+        rewrites += before - block.phi_nodes.len();
+    }
+
     // Gather constants/copies from current assignments.
     let mut subst: Subst = BTreeMap::new();
 
@@ -68,7 +75,7 @@ fn one_round(ssa: &mut SsaForm) -> usize {
                     // never to a temp/literal, so the slot reference stays
                     // visible at use sites.
                     SsaExpr::Variable(src) => {
-                        if !is_slot_var(target) || is_slot_var(src) {
+                        if !is_slot_var(target) || is_slot_var(src) || src.is_vm_null() {
                             subst.insert(target.clone(), value.clone());
                         }
                     }
@@ -139,58 +146,216 @@ fn one_round(ssa: &mut SsaForm) -> usize {
         }
     }
 
+    // Collapse acyclic substitution chains to their terminal expression and
+    // discard cycles. Consumers must never be rewritten only partway through a
+    // chain whose intermediate definition is removed in this round.
+    subst = normalize_substitutions(&subst);
+
     if subst.is_empty() {
-        return 0;
+        if rewrites > 0 {
+            rebuild_indexes(ssa);
+        }
+        return rewrites;
     }
 
-    // Apply substitutions to every expression reference and drop defs that have
-    // been folded away (an assignment whose target is now a pure literal/copy
-    // and is unused is dead).
-    let used = collect_used(ssa, &subst);
+    // Phi operands and terminator conditions can only name variables. A
+    // non-variable phi result therefore has to retain its defining phi while
+    // either kind of consumer still references it. Determine phi consumers
+    // from the nodes themselves: their synthetic UseSite indexes are not
+    // distinguishable from ordinary statement uses.
+    let phi_operand_targets: BTreeSet<_> = ssa
+        .blocks
+        .values()
+        .flat_map(|block| &block.phi_nodes)
+        .flat_map(|phi| {
+            phi.operands
+                .values()
+                .filter(|operand| *operand != &phi.target)
+                .cloned()
+        })
+        .collect();
+    let terminator_targets: BTreeSet<_> = ssa
+        .uses
+        .iter()
+        .filter(|(_, sites)| sites.iter().any(UseSite::is_terminator))
+        .map(|(variable, _)| variable.clone())
+        .collect();
 
-    let mut rewrites = 0usize;
-    for (_bid, block) in ssa.blocks.iter_mut() {
-        // Rewrite φ operands.
+    // Chase variable substitutions before deleting their definitions. This is
+    // required for chains of removable phis: every variable-only consumer must
+    // be rewritten to a target that will still be defined after this round.
+    let variable_replacements: BTreeMap<_, _> = subst
+        .iter()
+        .filter_map(|(target, replacement)| match replacement {
+            SsaExpr::Variable(resolved) => Some((target.clone(), resolved.clone())),
+            _ => None,
+        })
+        .collect();
+    let removable_phi_targets: BTreeSet<_> = ssa
+        .blocks
+        .values()
+        .flat_map(|block| &block.phi_nodes)
+        .filter_map(|phi| {
+            let replacement = subst.get(&phi.target)?;
+            let removable = match replacement {
+                SsaExpr::Variable(_) => variable_replacements.contains_key(&phi.target),
+                _ => {
+                    !terminator_targets.contains(&phi.target)
+                        && !phi_operand_targets.contains(&phi.target)
+                }
+            };
+            removable.then(|| phi.target.clone())
+        })
+        .collect();
+
+    // Rewrite variable-only consumers before liveness and DCE. Rebuilding the
+    // indexes later preserves the retargeted terminator entries, since no
+    // mutable terminator expression exists in SsaForm.
+    for block in ssa.blocks.values_mut() {
         for phi in &mut block.phi_nodes {
-            for (_pred, var) in phi.operands.iter_mut() {
-                if let Some(SsaExpr::Variable(rep_var)) = subst.get(var) {
-                    // φ operands are variables; only substitute when the
-                    // replacement is itself a variable (constant φ results are
-                    // reflected through the target substitution instead).
-                    *var = rep_var.clone();
-                    rewrites += 1;
-                }
-            }
-        }
-        // Rewrite statement RHS expressions and drop dead defs.
-        block.stmts.retain(|stmt| match stmt {
-            SsaStmt::Assign { target, .. } => {
-                // Keep if the target has uses, or if it isn't a pure
-                // constant/copy (i.e. we didn't substitute it).
-                !subst.contains_key(target) || used.contains(target)
-            }
-            _ => true,
-        });
-        for stmt in &mut block.stmts {
-            if let SsaStmt::Assign { target, value } = stmt {
-                let new_value = rewrite_expr(value, &subst);
-                if new_value != *value {
-                    *value = new_value;
-                    rewrites += 1;
-                }
-                // Avoid leaving a redundant `vN = vN` after substitution.
-                if let SsaExpr::Variable(src) = value {
-                    if src == target {
-                        // self-assignment: will be DCE'd next round if unused.
+            for var in phi.operands.values_mut() {
+                if let Some(replacement) = variable_replacements.get(var) {
+                    if replacement != var {
+                        *var = replacement.clone();
+                        rewrites += 1;
                     }
                 }
             }
         }
     }
+    for target in &removable_phi_targets {
+        let Some(replacement) = variable_replacements.get(target) else {
+            continue;
+        };
+        let terminator_uses: Vec<_> = ssa
+            .uses
+            .get(target)
+            .into_iter()
+            .flatten()
+            .filter(|site| site.is_terminator())
+            .cloned()
+            .collect();
+        if terminator_uses.is_empty() {
+            continue;
+        }
+        let mut remove_target_entry = false;
+        if let Some(sites) = ssa.uses.get_mut(target) {
+            sites.retain(|site| !site.is_terminator());
+            remove_target_entry = sites.is_empty();
+        }
+        if remove_target_entry {
+            ssa.uses.remove(target);
+        }
+        let replacement_sites = ssa.uses.entry(replacement.clone()).or_default();
+        for site in terminator_uses {
+            rewrites += usize::from(replacement_sites.insert(site));
+        }
+    }
+    for block in ssa.blocks.values_mut() {
+        let before = block.phi_nodes.len();
+        block
+            .phi_nodes
+            .retain(|phi| !removable_phi_targets.contains(&phi.target));
+        rewrites += before - block.phi_nodes.len();
+    }
+
+    // Rewrite expression roots before liveness. A removed alias phi may point
+    // at a surviving nontrivial phi; its rewritten expression use must keep the
+    // surviving phi and its incoming definitions live.
+    for (_bid, block) in ssa.blocks.iter_mut() {
+        for stmt in &mut block.stmts {
+            match stmt {
+                SsaStmt::Assign { value, .. } => {
+                    let new_value = rewrite_expr(value, &subst);
+                    if new_value != *value {
+                        *value = new_value;
+                        rewrites += 1;
+                    }
+                }
+                SsaStmt::Return(Some(value)) => {
+                    let new_value = rewrite_expr(value, &subst);
+                    if new_value != *value {
+                        *value = new_value;
+                        rewrites += 1;
+                    }
+                }
+                SsaStmt::Expr(value) => {
+                    let new_value = rewrite_expr(value, &subst);
+                    if new_value != *value {
+                        *value = new_value;
+                        rewrites += 1;
+                    }
+                }
+                SsaStmt::Throw(Some(value)) | SsaStmt::Abort(Some(value)) => {
+                    let new_value = rewrite_expr(value, &subst);
+                    if new_value != *value {
+                        *value = new_value;
+                        rewrites += 1;
+                    }
+                }
+                SsaStmt::Assert { condition, message } => {
+                    let new_condition = rewrite_expr(condition, &subst);
+                    if new_condition != *condition {
+                        *condition = new_condition;
+                        rewrites += 1;
+                    }
+                    if let Some(message) = message {
+                        let new_message = rewrite_expr(message, &subst);
+                        if new_message != *message {
+                            *message = new_message;
+                            rewrites += 1;
+                        }
+                    }
+                }
+                SsaStmt::Return(None)
+                | SsaStmt::Throw(None)
+                | SsaStmt::Abort(None)
+                | SsaStmt::Phi(_)
+                | SsaStmt::Other(_) => {}
+            }
+        }
+    }
+
+    // Drop pure substituted definitions only after every representable consumer
+    // has been rewritten to its final value.
+    let used = collect_used(ssa, &subst);
+    for block in ssa.blocks.values_mut() {
+        let before = block.stmts.len();
+        block.stmts.retain(|stmt| match stmt {
+            SsaStmt::Assign { target, .. } => !subst.contains_key(target) || used.contains(target),
+            _ => true,
+        });
+        rewrites += before - block.stmts.len();
+    }
 
     // Rebuild the definitions/uses indexes so downstream consumers stay correct.
-    rebuild_indexes(ssa);
-    rewrites.max(1)
+    if rewrites > 0 {
+        rebuild_indexes(ssa);
+    }
+    rewrites
+}
+
+/// Resolve every acyclic variable chain to its terminal variable or expression.
+/// A cyclic mapping is omitted so it cannot cause oscillating rewrites.
+fn normalize_substitutions(subst: &Subst) -> Subst {
+    subst
+        .keys()
+        .filter_map(|target| {
+            let mut seen = BTreeSet::new();
+            let mut current = target.clone();
+            while seen.insert(current.clone()) {
+                match subst.get(&current) {
+                    Some(SsaExpr::Variable(next)) => current = next.clone(),
+                    Some(replacement) => return Some((target.clone(), replacement.clone())),
+                    None => {
+                        return (current != *target)
+                            .then(|| (target.clone(), SsaExpr::var(current)));
+                    }
+                }
+            }
+            None
+        })
+        .collect()
 }
 
 /// Resolve a single level of substitution through a variable reference.
@@ -215,8 +380,8 @@ fn rewrite_expr(expr: &SsaExpr, subst: &Subst) -> SsaExpr {
                 SsaExpr::binary(*op, go(left, subst), go(right, subst))
             }
             SsaExpr::Unary { op, operand } => SsaExpr::unary(*op, go(operand, subst)),
-            SsaExpr::Call { name, args } => {
-                SsaExpr::call(name.clone(), args.iter().map(|a| go(a, subst)).collect())
+            SsaExpr::Call { target, args } => {
+                SsaExpr::call(target.clone(), args.iter().map(|a| go(a, subst)).collect())
             }
             SsaExpr::Index { base, index } => SsaExpr::Index {
                 base: Box::new(go(base, subst)),
@@ -230,7 +395,25 @@ fn rewrite_expr(expr: &SsaExpr, subst: &Subst) -> SsaExpr {
                 expr: Box::new(go(expr, subst)),
                 target_type: target_type.clone(),
             },
+            SsaExpr::Convert { value, target } => SsaExpr::Convert {
+                value: Box::new(go(value, subst)),
+                target: *target,
+            },
+            SsaExpr::IsType { value, target } => SsaExpr::IsType {
+                value: Box::new(go(value, subst)),
+                target: *target,
+            },
+            SsaExpr::NewArray {
+                length,
+                element_type,
+            } => SsaExpr::NewArray {
+                length: Box::new(go(length, subst)),
+                element_type: *element_type,
+            },
             SsaExpr::Array(els) => SsaExpr::Array(els.iter().map(|e| go(e, subst)).collect()),
+            SsaExpr::Struct(elements) => {
+                SsaExpr::Struct(elements.iter().map(|element| go(element, subst)).collect())
+            }
             SsaExpr::Map(pairs) => SsaExpr::Map(
                 pairs
                     .iter()
@@ -329,25 +512,63 @@ fn fold_unary(op: UnaryOp, a: &Literal) -> Option<Literal> {
     })
 }
 
-/// Variables that are still referenced (in φ operands or expression uses)
-/// after substitution is applied. A substituted def with no remaining uses is
-/// dead and can be dropped.
+/// Variables reachable from statement/terminator roots. Phi operands become
+/// live only when their target is live, so an unreferenced phi component cannot
+/// keep itself alive.
 fn collect_used(ssa: &SsaForm, _subst: &Subst) -> BTreeSet<SsaVariable> {
     let mut used = BTreeSet::new();
-    for (_bid, block) in ssa.blocks.iter() {
-        for phi in &block.phi_nodes {
-            for v in phi.operands.values() {
-                used.insert(v.clone());
-            }
+    for (variable, sites) in &ssa.uses {
+        if sites.iter().any(UseSite::is_terminator) {
+            used.insert(variable.clone());
         }
+    }
+    for (_bid, block) in ssa.blocks.iter() {
         for stmt in &block.stmts {
-            if let SsaStmt::Assign { value, .. } = stmt {
-                for v in collect_expr_vars(value) {
-                    used.insert(v);
+            match stmt {
+                SsaStmt::Assign { value, .. }
+                | SsaStmt::Expr(value)
+                | SsaStmt::Return(Some(value))
+                | SsaStmt::Throw(Some(value))
+                | SsaStmt::Abort(Some(value)) => {
+                    for v in collect_expr_vars(value) {
+                        used.insert(v);
+                    }
                 }
+                SsaStmt::Assert { condition, message } => {
+                    for v in collect_expr_vars(condition) {
+                        used.insert(v);
+                    }
+                    if let Some(message) = message {
+                        for v in collect_expr_vars(message) {
+                            used.insert(v);
+                        }
+                    }
+                }
+                SsaStmt::Return(None)
+                | SsaStmt::Throw(None)
+                | SsaStmt::Abort(None)
+                | SsaStmt::Phi(_)
+                | SsaStmt::Other(_) => {}
             }
         }
     }
+
+    loop {
+        let mut changed = false;
+        for block in ssa.blocks.values() {
+            for phi in &block.phi_nodes {
+                if used.contains(&phi.target) {
+                    for operand in phi.operands.values() {
+                        changed |= used.insert(operand.clone());
+                    }
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
     used
 }
 
@@ -368,7 +589,10 @@ fn collect_expr_vars(expr: &SsaExpr) -> Vec<SsaVariable> {
             }
             SsaExpr::Member { base, .. } => go(base, out),
             SsaExpr::Cast { expr, .. } => go(expr, out),
+            SsaExpr::Convert { value, .. } | SsaExpr::IsType { value, .. } => go(value, out),
+            SsaExpr::NewArray { length, .. } => go(length, out),
             SsaExpr::Array(els) => els.iter().for_each(|e| go(e, out)),
+            SsaExpr::Struct(elements) => elements.iter().for_each(|element| go(element, out)),
             SsaExpr::Map(pairs) => pairs.iter().for_each(|(k, v)| {
                 go(k, out);
                 go(v, out);
@@ -391,7 +615,17 @@ fn collect_expr_vars(expr: &SsaExpr) -> Vec<SsaVariable> {
 
 /// Recompute the `definitions` and `uses` indexes from the current blocks.
 fn rebuild_indexes(ssa: &mut SsaForm) {
-    use super::form::UseSite;
+    let terminator_uses: Vec<_> = ssa
+        .uses
+        .iter()
+        .flat_map(|(variable, sites)| {
+            sites
+                .iter()
+                .filter(|site| site.is_terminator())
+                .cloned()
+                .map(|site| (variable.clone(), site))
+        })
+        .collect();
     let mut definitions: BTreeMap<SsaVariable, BlockId> = BTreeMap::new();
     let mut uses: BTreeMap<SsaVariable, BTreeSet<UseSite>> = BTreeMap::new();
     for (bid, block) in ssa.blocks.iter() {
@@ -404,13 +638,45 @@ fn rebuild_indexes(ssa: &mut SsaForm) {
             }
         }
         for (i, stmt) in block.stmts.iter().enumerate() {
-            if let SsaStmt::Assign { target, value } = stmt {
-                definitions.insert(target.clone(), *bid);
-                for v in collect_expr_vars(value) {
-                    uses.entry(v).or_default().insert(UseSite::new(*bid, i));
+            match stmt {
+                SsaStmt::Assign { target, value } => {
+                    definitions.insert(target.clone(), *bid);
+                    for v in collect_expr_vars(value) {
+                        uses.entry(v).or_default().insert(UseSite::new(*bid, i));
+                    }
                 }
+                SsaStmt::Return(Some(value))
+                | SsaStmt::Throw(Some(value))
+                | SsaStmt::Abort(Some(value)) => {
+                    for v in collect_expr_vars(value) {
+                        uses.entry(v).or_default().insert(UseSite::new(*bid, i));
+                    }
+                }
+                SsaStmt::Expr(value) => {
+                    for v in collect_expr_vars(value) {
+                        uses.entry(v).or_default().insert(UseSite::new(*bid, i));
+                    }
+                }
+                SsaStmt::Assert { condition, message } => {
+                    for v in collect_expr_vars(condition) {
+                        uses.entry(v).or_default().insert(UseSite::new(*bid, i));
+                    }
+                    if let Some(message) = message {
+                        for v in collect_expr_vars(message) {
+                            uses.entry(v).or_default().insert(UseSite::new(*bid, i));
+                        }
+                    }
+                }
+                SsaStmt::Return(None)
+                | SsaStmt::Throw(None)
+                | SsaStmt::Abort(None)
+                | SsaStmt::Phi(_)
+                | SsaStmt::Other(_) => {}
             }
         }
+    }
+    for (variable, site) in terminator_uses {
+        uses.entry(variable).or_default().insert(site);
     }
     ssa.definitions = definitions;
     ssa.uses = uses;
@@ -474,7 +740,7 @@ mod tests {
         // Keep t_0 live.
         block.add_stmt(assign_str(
             v("t", 1),
-            SsaExpr::call("use".to_string(), vec![SsaExpr::var(v("t", 0))]),
+            SsaExpr::unresolved_call("use", vec![SsaExpr::var(v("t", 0))]),
         ));
 
         let mut blocks = BTreeMap::new();
@@ -501,6 +767,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn propagates_vm_null_through_a_slot_load_alias() {
+        let local = v("loc0", 0);
+        let mut block = SsaBlock::new();
+        block.add_stmt(assign_str(
+            local.clone(),
+            SsaExpr::var(SsaVariable::vm_null()),
+        ));
+        block.add_stmt(SsaStmt::ret(Some(SsaExpr::var(local.clone()))));
+
+        let mut blocks = BTreeMap::new();
+        blocks.insert(BlockId(0), block);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+
+        optimize(&mut ssa);
+
+        let block = ssa.block(BlockId(0)).expect("entry block");
+        assert!(!block.stmts.iter().any(
+            |statement| matches!(statement, SsaStmt::Assign { target, .. } if target == &local)
+        ));
+        assert!(block.stmts.iter().any(|statement| matches!(
+            statement,
+            SsaStmt::Return(Some(SsaExpr::Variable(value))) if value.is_vm_null()
+        )));
+    }
+
     /// `(1 + 2)` then use of the result must fold to `3`.
     #[test]
     fn folds_constant_binary_and_propagates() {
@@ -517,7 +809,7 @@ mod tests {
         ));
         block.add_stmt(assign_str(
             v("b0", 3),
-            SsaExpr::call("use".to_string(), vec![SsaExpr::var(v("b0", 2))]),
+            SsaExpr::unresolved_call("use", vec![SsaExpr::var(v("b0", 2))]),
         ));
 
         let mut blocks = BTreeMap::new();
@@ -551,7 +843,7 @@ mod tests {
         block.add_stmt(assign_str(v("b0", 1), SsaExpr::var(v("b0", 0))));
         block.add_stmt(assign_str(
             v("b0", 2),
-            SsaExpr::call("use".to_string(), vec![SsaExpr::var(v("b0", 1))]),
+            SsaExpr::unresolved_call("use", vec![SsaExpr::var(v("b0", 1))]),
         ));
 
         let mut blocks = BTreeMap::new();
@@ -588,7 +880,7 @@ mod tests {
         // use of p0_0
         block.add_stmt(assign_str(
             v("b0", 0),
-            SsaExpr::call("use".to_string(), vec![SsaExpr::var(v("p0", 0))]),
+            SsaExpr::unresolved_call("use", vec![SsaExpr::var(v("p0", 0))]),
         ));
 
         let mut blocks = BTreeMap::new();
@@ -609,6 +901,427 @@ mod tests {
             "trivial phi should resolve through to 5, got {:?}",
             args[0]
         );
+        assert!(
+            ssa.block(BlockId(0))
+                .expect("merge block")
+                .phi_nodes
+                .is_empty(),
+            "substituted phi node must be removed"
+        );
+        assert!(!ssa.definitions.contains_key(&v("p0", 0)));
+        assert_eq!(optimize(&mut ssa), 0, "optimized form must converge");
+    }
+
+    #[test]
+    fn retargets_terminator_use_when_removing_variable_trivial_phi() {
+        let incoming = v("condition", 0);
+        let target = v("merged_condition", 0);
+        let merge_id = BlockId(0);
+        let mut merge = SsaBlock::new();
+        let mut phi = crate::decompiler::cfg::ssa::PhiNode::new(target.clone());
+        phi.add_operand(BlockId(1), incoming.clone());
+        merge.add_phi(phi);
+
+        let mut predecessor = SsaBlock::new();
+        predecessor.add_stmt(assign_str(
+            incoming.clone(),
+            SsaExpr::unresolved_call("condition", vec![]),
+        ));
+
+        let blocks = BTreeMap::from([(merge_id, merge), (BlockId(1), predecessor)]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+        let terminator_use = UseSite::terminator(merge_id);
+        ssa.uses
+            .entry(target.clone())
+            .or_default()
+            .insert(terminator_use.clone());
+
+        optimize(&mut ssa);
+
+        assert!(ssa
+            .block(merge_id)
+            .expect("merge block")
+            .phi_nodes
+            .is_empty());
+        assert!(!ssa.definitions.contains_key(&target));
+        assert!(!ssa.uses.contains_key(&target));
+        assert!(ssa.definitions.contains_key(&incoming));
+        assert_eq!(
+            ssa.uses.get(&incoming),
+            Some(&BTreeSet::from([terminator_use]))
+        );
+        assert_eq!(optimize(&mut ssa), 0, "optimized form must converge");
+    }
+
+    #[test]
+    fn retargets_terminator_through_variable_trivial_phi_chain() {
+        let incoming = v("condition", 0);
+        let intermediate = v("intermediate_condition", 0);
+        let target = v("merged_condition", 0);
+        let merge_id = BlockId(0);
+        let mut merge = SsaBlock::new();
+        let mut outer_phi = crate::decompiler::cfg::ssa::PhiNode::new(target.clone());
+        outer_phi.add_operand(BlockId(1), intermediate.clone());
+        merge.add_phi(outer_phi);
+        let mut inner_phi = crate::decompiler::cfg::ssa::PhiNode::new(intermediate.clone());
+        inner_phi.add_operand(BlockId(1), incoming.clone());
+        merge.add_phi(inner_phi);
+
+        let mut predecessor = SsaBlock::new();
+        predecessor.add_stmt(assign_str(
+            incoming.clone(),
+            SsaExpr::unresolved_call("condition", vec![]),
+        ));
+
+        let blocks = BTreeMap::from([(merge_id, merge), (BlockId(1), predecessor)]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+        let terminator_use = UseSite::terminator(merge_id);
+        ssa.uses
+            .entry(target.clone())
+            .or_default()
+            .insert(terminator_use.clone());
+
+        optimize(&mut ssa);
+
+        assert!(ssa
+            .block(merge_id)
+            .expect("merge block")
+            .phi_nodes
+            .is_empty());
+        assert!(!ssa.definitions.contains_key(&target));
+        assert!(!ssa.definitions.contains_key(&intermediate));
+        assert!(!ssa.uses.contains_key(&target));
+        assert!(!ssa.uses.contains_key(&intermediate));
+        assert!(ssa.definitions.contains_key(&incoming));
+        assert_eq!(
+            ssa.uses.get(&incoming),
+            Some(&BTreeSet::from([terminator_use]))
+        );
+        assert_eq!(optimize(&mut ssa), 0, "optimized form must converge");
+    }
+
+    #[test]
+    fn rewrites_expression_through_variable_trivial_phi_chain() {
+        let incoming = v("value", 0);
+        let intermediate = v("intermediate_value", 0);
+        let target = v("merged_value", 0);
+        let mut merge = SsaBlock::new();
+        let mut outer_phi = crate::decompiler::cfg::ssa::PhiNode::new(target.clone());
+        outer_phi.add_operand(BlockId(1), intermediate.clone());
+        merge.add_phi(outer_phi);
+        let mut inner_phi = crate::decompiler::cfg::ssa::PhiNode::new(intermediate.clone());
+        inner_phi.add_operand(BlockId(1), incoming.clone());
+        merge.add_phi(inner_phi);
+        merge.add_stmt(SsaStmt::expr(SsaExpr::unresolved_call(
+            "use".to_string(),
+            vec![SsaExpr::var(target.clone())],
+        )));
+
+        let mut predecessor = SsaBlock::new();
+        predecessor.add_stmt(assign_str(
+            incoming.clone(),
+            SsaExpr::unresolved_call("value", vec![]),
+        ));
+
+        let blocks = BTreeMap::from([(BlockId(0), merge), (BlockId(1), predecessor)]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+
+        optimize(&mut ssa);
+
+        let effect = ssa
+            .block(BlockId(0))
+            .expect("merge block")
+            .stmts
+            .iter()
+            .find_map(|stmt| match stmt {
+                SsaStmt::Expr(SsaExpr::Call { target, args }) if target.display_name() == "use" => {
+                    Some(args)
+                }
+                _ => None,
+            })
+            .expect("effect use");
+        assert_eq!(effect, &[SsaExpr::var(incoming.clone())]);
+        assert!(!ssa.definitions.contains_key(&target));
+        assert!(!ssa.definitions.contains_key(&intermediate));
+        assert!(ssa.definitions.contains_key(&incoming));
+        assert_eq!(optimize(&mut ssa), 0, "optimized form must converge");
+    }
+
+    #[test]
+    fn rewrites_expression_before_pruning_surviving_phi_operands() {
+        let left = v("left", 0);
+        let right = v("right", 0);
+        let live_phi_target = v("live_phi", 0);
+        let alias_target = v("alias", 0);
+        let mut merge = SsaBlock::new();
+        let mut live_phi = crate::decompiler::cfg::ssa::PhiNode::new(live_phi_target.clone());
+        live_phi.add_operand(BlockId(1), left.clone());
+        live_phi.add_operand(BlockId(2), right.clone());
+        merge.add_phi(live_phi);
+        let mut alias_phi = crate::decompiler::cfg::ssa::PhiNode::new(alias_target.clone());
+        alias_phi.add_operand(BlockId(1), live_phi_target.clone());
+        merge.add_phi(alias_phi);
+        merge.add_stmt(SsaStmt::expr(SsaExpr::unresolved_call(
+            "use".to_string(),
+            vec![SsaExpr::var(alias_target.clone())],
+        )));
+
+        let mut left_predecessor = SsaBlock::new();
+        left_predecessor.add_stmt(assign_str(left.clone(), SsaExpr::lit(Literal::Int(1))));
+        let mut right_predecessor = SsaBlock::new();
+        right_predecessor.add_stmt(assign_str(right.clone(), SsaExpr::lit(Literal::Int(2))));
+
+        let blocks = BTreeMap::from([
+            (BlockId(0), merge),
+            (BlockId(1), left_predecessor),
+            (BlockId(2), right_predecessor),
+        ]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+
+        optimize(&mut ssa);
+
+        let merge = ssa.block(BlockId(0)).expect("merge block");
+        assert!(merge
+            .phi_nodes
+            .iter()
+            .any(|phi| phi.target == live_phi_target));
+        assert!(!merge.phi_nodes.iter().any(|phi| phi.target == alias_target));
+        let effect = merge
+            .stmts
+            .iter()
+            .find_map(|stmt| match stmt {
+                SsaStmt::Expr(SsaExpr::Call { target, args }) if target.display_name() == "use" => {
+                    Some(args)
+                }
+                _ => None,
+            })
+            .expect("effect use");
+        assert_eq!(effect, &[SsaExpr::var(live_phi_target)]);
+        assert!(ssa.definitions.contains_key(&left));
+        assert!(ssa.definitions.contains_key(&right));
+        assert_eq!(optimize(&mut ssa), 0, "optimized form must converge");
+    }
+
+    #[test]
+    fn leaves_rooted_cyclic_phis_stable() {
+        let a = v("a", 0);
+        let b = v("b", 0);
+        let mut phi_a = crate::decompiler::cfg::ssa::PhiNode::new(a.clone());
+        phi_a.add_operand(BlockId(1), b.clone());
+        let mut phi_b = crate::decompiler::cfg::ssa::PhiNode::new(b.clone());
+        phi_b.add_operand(BlockId(1), a.clone());
+        let mut block = SsaBlock::new();
+        block.add_phi(phi_a);
+        block.add_phi(phi_b);
+        block.add_stmt(SsaStmt::expr(SsaExpr::unresolved_call(
+            "use".to_string(),
+            vec![SsaExpr::var(a.clone())],
+        )));
+
+        let blocks = BTreeMap::from([(BlockId(0), block)]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+
+        assert_eq!(
+            one_round(&mut ssa),
+            0,
+            "cyclic substitutions are not rewrites"
+        );
+        assert_eq!(optimize(&mut ssa), 0, "cyclic phis must remain converged");
+        assert!(ssa.definitions.contains_key(&a));
+        assert!(ssa.definitions.contains_key(&b));
+    }
+
+    #[test]
+    fn preserves_literal_trivial_phi_used_by_terminator() {
+        let incoming = v("condition", 0);
+        let target = v("merged_condition", 0);
+        let merge_id = BlockId(0);
+        let mut merge = SsaBlock::new();
+        let mut phi = crate::decompiler::cfg::ssa::PhiNode::new(target.clone());
+        phi.add_operand(BlockId(1), incoming.clone());
+        merge.add_phi(phi);
+
+        let mut predecessor = SsaBlock::new();
+        predecessor.add_stmt(assign_str(
+            incoming.clone(),
+            SsaExpr::lit(Literal::Bool(true)),
+        ));
+
+        let blocks = BTreeMap::from([(merge_id, merge), (BlockId(1), predecessor)]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+        let terminator_use = UseSite::terminator(merge_id);
+        ssa.uses
+            .entry(target.clone())
+            .or_default()
+            .insert(terminator_use.clone());
+
+        optimize(&mut ssa);
+
+        assert!(ssa
+            .block(merge_id)
+            .expect("merge block")
+            .phi_nodes
+            .iter()
+            .any(|phi| phi.target == target));
+        assert!(ssa.definitions.contains_key(&target));
+        assert_eq!(
+            ssa.uses.get(&target),
+            Some(&BTreeSet::from([terminator_use]))
+        );
+        assert_eq!(optimize(&mut ssa), 0, "optimized form must converge");
+    }
+
+    #[test]
+    fn preserves_literal_trivial_phi_used_by_nontrivial_phi() {
+        let incoming = v("constant", 0);
+        let literal_phi_target = v("literal_phi", 0);
+        let other = v("other", 0);
+        let live_phi_target = v("live_phi", 0);
+
+        let mut merge = SsaBlock::new();
+        let mut literal_phi = crate::decompiler::cfg::ssa::PhiNode::new(literal_phi_target.clone());
+        literal_phi.add_operand(BlockId(1), incoming.clone());
+        merge.add_phi(literal_phi);
+        let mut live_phi = crate::decompiler::cfg::ssa::PhiNode::new(live_phi_target.clone());
+        live_phi.add_operand(BlockId(1), literal_phi_target.clone());
+        live_phi.add_operand(BlockId(2), other.clone());
+        merge.add_phi(live_phi);
+        merge.add_stmt(SsaStmt::expr(SsaExpr::unresolved_call(
+            "use".to_string(),
+            vec![SsaExpr::var(live_phi_target.clone())],
+        )));
+
+        let mut constant_predecessor = SsaBlock::new();
+        constant_predecessor.add_stmt(assign_str(incoming, SsaExpr::lit(Literal::Int(7))));
+        let mut other_predecessor = SsaBlock::new();
+        other_predecessor.add_stmt(assign_str(other, SsaExpr::unresolved_call("other", vec![])));
+
+        let blocks = BTreeMap::from([
+            (BlockId(0), merge),
+            (BlockId(1), constant_predecessor),
+            (BlockId(2), other_predecessor),
+        ]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+
+        optimize(&mut ssa);
+
+        let merge = ssa.block(BlockId(0)).expect("merge block");
+        assert!(merge
+            .phi_nodes
+            .iter()
+            .any(|phi| phi.target == literal_phi_target));
+        let live_phi = merge
+            .phi_nodes
+            .iter()
+            .find(|phi| phi.target == live_phi_target)
+            .expect("live nontrivial phi");
+        assert_eq!(
+            live_phi.operands.get(&BlockId(1)),
+            Some(&literal_phi_target)
+        );
+        assert!(ssa.definitions.contains_key(&literal_phi_target));
+        assert_eq!(optimize(&mut ssa), 0, "optimized form must converge");
+    }
+
+    #[test]
+    fn removes_dead_phi_and_releases_operand_definition() {
+        let incoming = v("b1", 0);
+        let target = v("p0", 0);
+        let mut merge = SsaBlock::new();
+        let mut phi = crate::decompiler::cfg::ssa::PhiNode::new(target.clone());
+        phi.add_operand(BlockId(1), incoming.clone());
+        merge.add_phi(phi);
+        merge.add_stmt(SsaStmt::ret(None));
+
+        let mut predecessor = SsaBlock::new();
+        predecessor.add_stmt(assign_str(incoming.clone(), SsaExpr::lit(Literal::Int(5))));
+
+        let blocks = BTreeMap::from([(BlockId(0), merge), (BlockId(1), predecessor)]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+
+        optimize(&mut ssa);
+
+        assert!(ssa
+            .block(BlockId(0))
+            .expect("merge block")
+            .phi_nodes
+            .is_empty());
+        assert!(!ssa.definitions.contains_key(&target));
+        assert!(!ssa.definitions.contains_key(&incoming));
+        assert!(!ssa.uses.contains_key(&incoming));
+    }
+
+    #[test]
+    fn converges_long_reverse_copy_chain_in_one_call() {
+        let chain_len = 512usize;
+        let mut block = SsaBlock::new();
+        for index in 0..chain_len {
+            let value = if index + 1 == chain_len {
+                SsaExpr::lit(Literal::Int(7))
+            } else {
+                SsaExpr::var(v("t", index + 1))
+            };
+            block.add_stmt(assign_str(v("t", index), value));
+        }
+        block.add_stmt(SsaStmt::expr(SsaExpr::unresolved_call(
+            "use".to_string(),
+            vec![SsaExpr::var(v("t", 0))],
+        )));
+        block.add_stmt(SsaStmt::ret(None));
+
+        let blocks = BTreeMap::from([(BlockId(0), block)]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+
+        optimize(&mut ssa);
+
+        let effect = ssa
+            .block(BlockId(0))
+            .expect("chain block")
+            .stmts
+            .iter()
+            .find_map(|stmt| match stmt {
+                SsaStmt::Expr(SsaExpr::Call { target, args }) if target.display_name() == "use" => {
+                    Some(args)
+                }
+                _ => None,
+            })
+            .expect("effect use");
+        assert_eq!(effect, &[SsaExpr::lit(Literal::Int(7))]);
+        assert_eq!(
+            optimize(&mut ssa),
+            0,
+            "a single optimize call must reach its fixed point"
+        );
+    }
+
+    #[test]
+    fn removes_dead_mutually_dependent_phi_component() {
+        let a = v("a", 0);
+        let b = v("b", 0);
+        let mut phi_a = crate::decompiler::cfg::ssa::PhiNode::new(a.clone());
+        phi_a.add_operand(BlockId(1), b.clone());
+        phi_a.add_operand(BlockId(2), v("x", 0));
+        let mut phi_b = crate::decompiler::cfg::ssa::PhiNode::new(b.clone());
+        phi_b.add_operand(BlockId(1), a.clone());
+        phi_b.add_operand(BlockId(2), v("y", 0));
+        let mut block = SsaBlock::new();
+        block.add_phi(phi_a);
+        block.add_phi(phi_b);
+        block.add_stmt(SsaStmt::ret(None));
+
+        let blocks = BTreeMap::from([(BlockId(0), block)]);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+
+        optimize(&mut ssa);
+
+        assert!(ssa
+            .block(BlockId(0))
+            .expect("phi block")
+            .phi_nodes
+            .is_empty());
+        assert!(!ssa.definitions.contains_key(&a));
+        assert!(!ssa.definitions.contains_key(&b));
+        assert_eq!(optimize(&mut ssa), 0);
     }
 
     /// `v0 = 7` with no uses is dead and is removed.
@@ -619,7 +1332,7 @@ mod tests {
         // A *used* def so the block isn't empty and used-tracking is exercised.
         block.add_stmt(assign_str(
             v("b0", 1),
-            SsaExpr::call("use".to_string(), vec![SsaExpr::lit(Literal::Int(1))]),
+            SsaExpr::unresolved_call("use", vec![SsaExpr::lit(Literal::Int(1))]),
         ));
 
         let mut blocks = BTreeMap::new();
@@ -630,5 +1343,73 @@ mod tests {
         let after = ssa.block(BlockId(0)).unwrap().stmt_count();
         assert!(after < before, "dead constant def b0#0 should be removed");
         assert!(!ssa.definitions.contains_key(&v("b0", 0)));
+    }
+
+    #[test]
+    fn effect_statement_keeps_input_definition_live() {
+        let input = v("t", 0);
+        let key = v("t", 1);
+        let mut block = SsaBlock::new();
+        block.add_stmt(assign_str(
+            input.clone(),
+            SsaExpr::unresolved_call("newmap", vec![]),
+        ));
+        block.add_stmt(assign_str(key.clone(), SsaExpr::lit(Literal::Int(1))));
+        block.add_stmt(SsaStmt::expr(SsaExpr::unresolved_call(
+            "set_item".to_string(),
+            vec![
+                SsaExpr::var(input.clone()),
+                SsaExpr::var(key.clone()),
+                SsaExpr::lit(Literal::Int(2)),
+            ],
+        )));
+        block.add_stmt(SsaStmt::ret(None));
+
+        let mut blocks = BTreeMap::new();
+        blocks.insert(BlockId(0), block);
+        let mut ssa = rebuild_test_form(Cfg::new(), DominanceInfo::new(), blocks);
+        let rounds = optimize(&mut ssa);
+
+        assert!(
+            rounds > 0,
+            "the regression must exercise an optimization round"
+        );
+
+        let block = ssa.block(BlockId(0)).expect("test block exists");
+        assert!(
+            block.stmts.iter().any(|stmt| matches!(
+                stmt,
+                SsaStmt::Assign {
+                    target,
+                    value: SsaExpr::Call { target: call_target, args },
+                } if target == &input
+                    && call_target.display_name() == "newmap"
+                    && args.is_empty()
+            )),
+            "effect input definition must survive optimization: {block:?}"
+        );
+        let effect_index = block
+            .stmts
+            .iter()
+            .position(|stmt| {
+                matches!(
+                    stmt,
+                    SsaStmt::Expr(SsaExpr::Call { target, .. })
+                        if target.display_name() == "set_item"
+                )
+            })
+            .expect("set_item effect statement must survive optimization");
+        assert!(ssa.definitions.contains_key(&input));
+        assert!(!ssa.definitions.contains_key(&key));
+        assert!(ssa
+            .uses
+            .get(&input)
+            .is_some_and(|sites| sites.iter().any(|site| site.stmt_index == effect_index)));
+        assert!(block.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Expr(SsaExpr::Call { target, args })
+                if target.display_name() == "set_item"
+                    && args.get(1) == Some(&SsaExpr::lit(Literal::Int(1)))
+        )));
     }
 }

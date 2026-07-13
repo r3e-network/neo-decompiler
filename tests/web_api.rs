@@ -47,6 +47,10 @@ fn write_varint(buf: &mut Vec<u8>, value: u32) {
 
 fn build_sample_nef() -> Vec<u8> {
     let script = [0x10, 0x11, 0x9E, 0x40];
+    build_nef(&script)
+}
+
+fn build_nef(script: &[u8]) -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(b"NEF3");
     let mut compiler = [0u8; 64];
@@ -63,7 +67,7 @@ fn build_sample_nef() -> Vec<u8> {
     data.push(0x0F);
     data.extend_from_slice(&0u16.to_le_bytes());
     write_varint(&mut data, script.len() as u32);
-    data.extend_from_slice(&script);
+    data.extend_from_slice(script);
     let checksum = neo_decompiler::nef::NefParser::calculate_checksum(&data);
     data.extend_from_slice(&checksum.to_le_bytes());
     data
@@ -203,6 +207,11 @@ fn web_decompile_report_exposes_high_level_and_csharp_outputs() {
         .expect("csharp")
         .contains("public class"));
     assert!(value["analysis"]["call_graph"]["methods"].is_array());
+    assert!(value["analysis"]["method_contracts"]["methods"].is_array());
+    assert_eq!(
+        value["analysis"]["method_contracts"]["methods"][0]["return_behavior"],
+        Value::String("value".into())
+    );
     // NEF header fields are surfaced at the top level so JSON
     // consumers don't have to scrape the rendered text. The sample
     // NEF embeds `compiler = "test"` and an empty source.
@@ -215,6 +224,39 @@ fn web_decompile_report_exposes_high_level_and_csharp_outputs() {
         value["source"].is_null(),
         "empty NEF source should serialize as null, not an empty string: {value}",
     );
+}
+
+#[test]
+fn web_decompile_report_exposes_private_void_method_contract() {
+    let nef = build_nef(&[
+        0x19, 0x11, 0x34, 0x05, 0x40, 0x21, 0x21, 0x57, 0x00, 0x01, 0x78, 0x45, 0x40,
+    ]);
+    let manifest = r#"{
+        "name": "InferredVoidHelper",
+        "abi": { "methods": [{
+            "name": "main", "parameters": [], "returntype": "Integer", "offset": 0
+        }] }
+    }"#;
+
+    let report = neo_decompiler::web::decompile_report(
+        &nef,
+        neo_decompiler::web::WebDecompileOptions {
+            manifest_json: Some(manifest.to_string()),
+            ..Default::default()
+        },
+    )
+    .expect("decompile report");
+    let value = serde_json::to_value(&report).expect("serializable");
+    let helper = value["analysis"]["method_contracts"]["methods"]
+        .as_array()
+        .expect("method contracts")
+        .iter()
+        .find(|contract| contract["method"]["offset"].as_u64() == Some(7))
+        .expect("private helper contract");
+
+    assert_eq!(helper["method"]["name"], Value::String("sub_0x0007".into()));
+    assert_eq!(helper["argument_count"], Value::from(1));
+    assert_eq!(helper["return_behavior"], Value::String("void".into()));
 }
 
 #[test]

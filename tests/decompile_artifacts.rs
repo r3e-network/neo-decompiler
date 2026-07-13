@@ -4,8 +4,8 @@ mod common;
 #[path = "decompile_artifacts/csharp_embed.rs"]
 mod csharp_embed;
 
-#[path = "decompile_artifacts/known_unsupported.rs"]
-mod known_unsupported;
+#[path = "decompile_artifacts/expected_failures.rs"]
+mod expected_failures;
 
 #[path = "decompile_artifacts/artifact.rs"]
 mod artifact;

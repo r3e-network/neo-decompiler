@@ -8,14 +8,15 @@ use super::super::super::helpers::{
     find_manifest_entry_method, next_inferred_method_offset, offset_as_usize,
 };
 use super::super::helpers::{
-    collect_csharp_parameters, escape_csharp_string, format_csharp_parameters,
-    format_manifest_type_csharp, format_method_signature, sanitize_csharp_identifier,
+    escape_csharp_string, format_csharp_parameters, format_method_signature,
 };
-use super::body;
+use super::structured::plan::CSharpMethodPlans;
+use super::{body, CSharpCoverage};
 
 pub(super) struct MethodsContext<'a> {
     pub(super) instructions: &'a [Instruction],
     pub(super) inferred_method_starts: &'a [usize],
+    pub(super) method_plans: &'a CSharpMethodPlans,
     pub(super) body_context: body::LiftedBodyContext<'a>,
 }
 
@@ -24,22 +25,25 @@ pub(super) fn write_manifest_methods(
     manifest: &ContractManifest,
     context: &MethodsContext<'_>,
     warnings: &mut Vec<String>,
+    coverage: &mut CSharpCoverage,
 ) {
-    let entry_method = write_script_entry_if_needed(output, manifest, context, warnings);
+    let entry_method = write_script_entry_if_needed(output, manifest, context, warnings, coverage);
     let entry_offset = context
         .instructions
         .first()
         .map(|ins| ins.offset)
         .unwrap_or(0);
 
-    let mut used_signatures: HashSet<(String, String)> = HashSet::new();
     let mut sorted_methods: Vec<&ManifestMethod> = manifest.abi.methods.iter().collect();
     sorted_methods.sort_by_key(|m| m.offset.unwrap_or(i32::MAX));
 
     let (with_offsets, without_offsets): (Vec<_>, Vec<_>) =
         sorted_methods.into_iter().partition(|m| m.offset.is_some());
+    let mut manifest_plan_index = 0usize;
 
     for method in with_offsets.iter() {
+        let method_plan = context.method_plans.manifest_method(manifest_plan_index);
+        manifest_plan_index += 1;
         let start = offset_as_usize(method.offset).unwrap_or(0);
         let end = next_inferred_method_offset(context.inferred_method_starts, start)
             .or_else(|| context.instructions.last().map(|i| i.offset + 1))
@@ -51,55 +55,41 @@ pub(super) fn write_manifest_methods(
             .cloned()
             .collect();
 
-        let params = collect_csharp_parameters(&method.parameters);
-        let signature_key = params
-            .iter()
-            .map(|param| param.ty.as_str())
-            .collect::<Vec<_>>()
-            .join(",");
-        let param_signature = format_csharp_parameters(&params);
-        let base_name = sanitize_csharp_identifier(&method.name);
-        let method_name = make_unique_method_name(base_name, &signature_key, &mut used_signatures);
-        let return_type = format_manifest_type_csharp(&method.return_type, true);
-        let signature = format_method_signature(&method_name, &param_signature, &return_type);
+        let param_signature = format_csharp_parameters(&method_plan.parameters);
+        let signature = format_method_signature(
+            &method_plan.emitted_name,
+            &param_signature,
+            &method_plan.return_type,
+        );
 
-        write_method_attributes(output, &method_name, &method.name, method.safe);
+        write_method_attributes(output, &method_plan.emitted_name, &method.name, method.safe);
         writeln!(output, "        {signature}").unwrap();
         writeln!(output, "        {{").unwrap();
 
-        if slice.is_empty() {
-            writeln!(output, "            throw new NotImplementedException();").unwrap();
-        } else {
-            let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-            let is_void = return_type == "void";
-            body::write_lifted_body(
-                output,
-                &slice,
-                Some(&labels),
-                warnings,
-                &context.body_context,
-                is_void,
-            );
-        }
+        write_body(
+            output,
+            &slice,
+            method_plan,
+            warnings,
+            coverage,
+            &context.body_context,
+        );
 
         writeln!(output, "        }}").unwrap();
         writeln!(output).unwrap();
     }
 
     for method in without_offsets {
-        let params = collect_csharp_parameters(&method.parameters);
-        let signature_key = params
-            .iter()
-            .map(|param| param.ty.as_str())
-            .collect::<Vec<_>>()
-            .join(",");
-        let param_signature = format_csharp_parameters(&params);
-        let base_name = sanitize_csharp_identifier(&method.name);
-        let method_name = make_unique_method_name(base_name, &signature_key, &mut used_signatures);
-        let return_type = format_manifest_type_csharp(&method.return_type, true);
-        let signature = format_method_signature(&method_name, &param_signature, &return_type);
+        let method_plan = context.method_plans.manifest_method(manifest_plan_index);
+        manifest_plan_index += 1;
+        let param_signature = format_csharp_parameters(&method_plan.parameters);
+        let signature = format_method_signature(
+            &method_plan.emitted_name,
+            &param_signature,
+            &method_plan.return_type,
+        );
 
-        write_method_attributes(output, &method_name, &method.name, method.safe);
+        write_method_attributes(output, &method_plan.emitted_name, &method.name, method.safe);
         writeln!(output, "        {signature}").unwrap();
         writeln!(output, "        {{").unwrap();
 
@@ -123,18 +113,23 @@ pub(super) fn write_manifest_methods(
             } else {
                 slice
             };
-            let labels: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-            let is_void = return_type == "void";
-            body::write_lifted_body(
+            write_body(
                 output,
                 &slice,
-                Some(&labels),
+                method_plan,
                 warnings,
+                coverage,
                 &context.body_context,
-                is_void,
             );
         } else {
-            writeln!(output, "            throw new NotImplementedException();").unwrap();
+            write_body(
+                output,
+                &[],
+                method_plan,
+                warnings,
+                coverage,
+                &context.body_context,
+            );
         }
 
         writeln!(output, "        }}").unwrap();
@@ -147,6 +142,7 @@ pub(super) fn write_inferred_methods(
     context: &MethodsContext<'_>,
     manifest: Option<&ContractManifest>,
     warnings: &mut Vec<String>,
+    coverage: &mut CSharpCoverage,
 ) {
     let entry_offset = context.instructions.first().map(|ins| ins.offset);
     let manifest_offsets: HashSet<usize> = manifest
@@ -182,16 +178,11 @@ pub(super) fn write_inferred_methods(
             continue;
         }
 
-        let arg_count = context
-            .body_context
-            .method_arg_counts_by_offset
-            .get(start)
-            .copied()
-            .unwrap_or(0);
-        let params = (0..arg_count)
-            .map(|index| format!("dynamic arg{index}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let method_plan = context
+            .method_plans
+            .inferred_method(*start)
+            .expect("every emitted inferred method must have a precomputed plan");
+        let params = format_csharp_parameters(&method_plan.parameters);
 
         // Each inferred helper is preceded by the trailing blank line
         // emitted by the previous method (the synthetic ScriptEntry from
@@ -201,20 +192,18 @@ pub(super) fn write_inferred_methods(
         // separator.
         writeln!(
             output,
-            "        private static dynamic sub_0x{start:04X}({params})"
+            "        private static {} {}({params})",
+            method_plan.return_type, method_plan.emitted_name
         )
         .unwrap();
         writeln!(output, "        {{").unwrap();
-        let labels = (0..arg_count)
-            .map(|index| format!("arg{index}"))
-            .collect::<Vec<_>>();
-        body::write_lifted_body(
+        write_body(
             output,
             &slice,
-            (!labels.is_empty()).then_some(labels.as_slice()),
+            method_plan,
             warnings,
+            coverage,
             &context.body_context,
-            false,
         );
         writeln!(output, "        }}").unwrap();
         writeln!(output).unwrap();
@@ -226,6 +215,7 @@ fn write_script_entry_if_needed<'a>(
     manifest: &'a ContractManifest,
     context: &MethodsContext<'_>,
     warnings: &mut Vec<String>,
+    coverage: &mut CSharpCoverage,
 ) -> Option<(&'a ManifestMethod, bool)> {
     let entry_offset = context.instructions.first().map(|ins| ins.offset)?;
 
@@ -233,6 +223,10 @@ fn write_script_entry_if_needed<'a>(
     if entry_method.is_some() {
         return entry_method;
     }
+    let method_plan = context
+        .method_plans
+        .synthetic_entry()
+        .expect("a manifest without a script-entry declaration needs a synthetic plan");
 
     let end = next_inferred_method_offset(context.inferred_method_starts, entry_offset);
     let slice: Vec<Instruction> = match end {
@@ -256,49 +250,32 @@ fn write_script_entry_if_needed<'a>(
         "        // warning: manifest entry offset did not match script entry at 0x{entry_offset:04X}; using synthetic ScriptEntry"
     )
     .unwrap();
-    // Without a matching manifest entry the return type isn't known.
-    // Default to `object` and let the high-level lift preserve any
-    // return value (a hardcoded `void` here would make the emitter
-    // discard whatever the bytecode's RET was returning).
-    let (parameters, argument_labels) = synthetic_entry_arguments(&slice, entry_offset);
-    let entry_signature = format_method_signature("ScriptEntry", &parameters, "object");
+    let parameters = format_csharp_parameters(&method_plan.parameters);
+    let entry_signature = format_method_signature(
+        &method_plan.emitted_name,
+        &parameters,
+        &method_plan.return_type,
+    );
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(
+    write_body(
         output,
         &slice,
-        (!argument_labels.is_empty()).then_some(argument_labels.as_slice()),
+        method_plan,
         warnings,
+        coverage,
         &context.body_context,
-        false,
     );
     writeln!(output, "        }}").unwrap();
     writeln!(output).unwrap();
     None
 }
 
-/// Build the `object arg0, object arg1, ...` parameter list and the
-/// matching `arg0`, `arg1`, ... label list for a synthetic ScriptEntry.
-/// `slice` is the bytecode slice covering the entry method, used to
-/// recover the INITSLOT-declared argument count. Returns `(parameters,
-/// labels)` where `labels` is empty when the method takes no
-/// arguments (the caller can short-circuit `argument_labels` with
-/// `then_some(...)`).
-fn synthetic_entry_arguments(slice: &[Instruction], entry_offset: usize) -> (String, Vec<String>) {
-    let arg_count =
-        crate::decompiler::helpers::initslot_argument_count_at(slice, entry_offset).unwrap_or(0);
-    let parameters = (0..arg_count)
-        .map(|i| format!("object arg{i}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let labels: Vec<String> = (0..arg_count).map(|i| format!("arg{i}")).collect();
-    (parameters, labels)
-}
-
 pub(super) fn write_fallback_entry(
     output: &mut String,
     context: &MethodsContext<'_>,
     warnings: &mut Vec<String>,
+    coverage: &mut CSharpCoverage,
 ) {
     let entry_offset = context
         .instructions
@@ -320,23 +297,25 @@ pub(super) fn write_fallback_entry(
         slice
     };
 
-    let entry_method_name = "ScriptEntry".to_string();
-    // No manifest is available, so the return type isn't known.
-    // Default to `object` (widest type) and let the high-level
-    // lift preserve any return value — a hardcoded `void` here
-    // would make the emitter discard whatever the bytecode's
-    // RET was returning.
-    let (parameters, argument_labels) = synthetic_entry_arguments(&slice, entry_offset);
-    let entry_signature = format_method_signature(&entry_method_name, &parameters, "object");
+    let method_plan = context
+        .method_plans
+        .fallback_entry()
+        .expect("manifest-free C# rendering needs a fallback entry plan");
+    let parameters = format_csharp_parameters(&method_plan.parameters);
+    let entry_signature = format_method_signature(
+        &method_plan.emitted_name,
+        &parameters,
+        &method_plan.return_type,
+    );
     writeln!(output, "        {entry_signature}").unwrap();
     writeln!(output, "        {{").unwrap();
-    body::write_lifted_body(
+    write_body(
         output,
         &slice,
-        (!argument_labels.is_empty()).then_some(argument_labels.as_slice()),
+        method_plan,
         warnings,
+        coverage,
         &context.body_context,
-        false,
     );
     writeln!(output, "        }}").unwrap();
     // Trailing blank line for consistency with manifest-driven
@@ -344,6 +323,20 @@ pub(super) fn write_fallback_entry(
     // this the close-brace of a synthetic ScriptEntry sits flush
     // against the class close-brace.
     writeln!(output).unwrap();
+}
+
+fn write_body(
+    output: &mut String,
+    instructions: &[Instruction],
+    method_plan: &super::structured::plan::CSharpMethodPlan,
+    warnings: &mut Vec<String>,
+    coverage: &mut CSharpCoverage,
+    context: &body::LiftedBodyContext<'_>,
+) {
+    let result = body::render_method_body(instructions, method_plan, context);
+    coverage.record(method_plan, &result);
+    warnings.extend(result.warnings);
+    output.push_str(&result.source);
 }
 
 fn write_method_attributes(output: &mut String, method_name: &str, raw_name: &str, is_safe: bool) {
@@ -358,18 +351,4 @@ fn write_method_attributes(output: &mut String, method_name: &str, raw_name: &st
     if is_safe {
         writeln!(output, "        [Safe]").unwrap();
     }
-}
-
-fn make_unique_method_name(
-    base: String,
-    signature: &str,
-    used: &mut HashSet<(String, String)>,
-) -> String {
-    let mut candidate = base.clone();
-    let mut index = 1usize;
-    while !used.insert((candidate.clone(), signature.to_string())) {
-        candidate = format!("{base}_{index}");
-        index += 1;
-    }
-    candidate
 }

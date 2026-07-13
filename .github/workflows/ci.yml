@@ -143,6 +143,48 @@ jobs:
       - name: Run artifact sweep
         run: bash tools/ci/artifact_sweep.sh
 
+  devpack-corpus:
+    name: Pinned devpack v3.10.0 corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out neo-devpack-dotnet v3.10.0
+        uses: actions/checkout@v4
+        with:
+          repository: neo-project/neo-devpack-dotnet
+          ref: v3.10.0
+          path: neo-devpack-dotnet
+      - name: Verify pinned devpack revision
+        run: |
+          expected_sha="5b0b63880b6201ae3f974cc845e93a90462d8043"
+          actual_sha="$(git -C neo-devpack-dotnet rev-parse HEAD)"
+          actual_tag="$(git -C neo-devpack-dotnet describe --tags --exact-match HEAD)"
+          test "$actual_sha" = "$expected_sha"
+          test "$actual_tag" = "v3.10.0"
+      - name: Test devpack extractor
+        run: python3 -m unittest discover -s tools/tests -p '*_tests.py'
+      - name: Extract pinned corpus
+        run: |
+          python3 tools/extract_devpack_artifacts.py \
+            --devpack-root neo-devpack-dotnet \
+            --output-dir TestingArtifacts/devpack \
+            --expected-count 103 \
+            --strict \
+            --clean
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-devpack-v3.10.0-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run pinned corpus sweep
+        run: bash tools/ci/artifact_sweep.sh
+
   build:
     name: Build
     runs-on: ${{ matrix.os }}

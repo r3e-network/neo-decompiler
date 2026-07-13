@@ -16,6 +16,15 @@ impl<'a> CfgBuilder<'a> {
 
         let last_instr = &self.instructions[end_index - 1];
 
+        if self.non_returning_calls.contains(&last_instr.offset)
+            && matches!(
+                last_instr.opcode,
+                OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::CallT
+            )
+        {
+            return Terminator::NoReturnCall;
+        }
+
         match last_instr.opcode {
             OpCode::Ret => Terminator::Return,
             OpCode::Throw => Terminator::Throw,
@@ -36,7 +45,10 @@ impl<'a> CfgBuilder<'a> {
             OpCode::Endtry | OpCode::EndtryL => {
                 if let Some(target) = self.jump_target(end_index - 1, last_instr) {
                     let continuation = self.offset_to_block_id(target, leaders);
-                    Terminator::EndTry { continuation }
+                    Terminator::EndTry {
+                        continuation,
+                        nonlocal: false,
+                    }
                 } else {
                     Terminator::Unknown
                 }

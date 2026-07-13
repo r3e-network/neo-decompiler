@@ -41,7 +41,7 @@ fn test_while_loop_rendering() {
 #[test]
 fn test_try_catch_rendering() {
     let try_catch = ControlFlow::try_catch(
-        Block::with_stmts(vec![Stmt::expr(Expr::call("risky", vec![]))]),
+        Block::with_stmts(vec![Stmt::expr(Expr::unresolved_call("risky", vec![]))]),
         Some("e".into()),
         Some(Block::with_stmts(vec![Stmt::comment("handle error")])),
         Some(Block::with_stmts(vec![Stmt::comment("cleanup")])),

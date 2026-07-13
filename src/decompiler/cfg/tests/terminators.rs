@@ -31,6 +31,28 @@ fn abort_creates_exit_block() {
 }
 
 #[test]
+fn resolved_non_returning_call_terminates_its_block() {
+    let instructions = vec![
+        super::make_instr(0, super::OpCode::Call, Some(super::Operand::Jump(4))),
+        super::make_instr(2, super::OpCode::Push1, None),
+        super::make_instr(3, super::OpCode::Ret, None),
+        super::make_instr(4, super::OpCode::Abort, None),
+    ];
+
+    let cfg = super::CfgBuilder::new(&instructions)
+        .with_non_returning_calls([0])
+        .build();
+    let entry = cfg.entry_block().expect("entry block");
+
+    assert!(matches!(entry.terminator, Terminator::NoReturnCall));
+    assert!(cfg.successors(entry.id).is_empty());
+    assert!(cfg.exit_blocks().contains(&entry.id));
+    assert!(cfg
+        .block_at_offset(2)
+        .is_some_and(|block| block.id != entry.id));
+}
+
+#[test]
 fn terminator_successors() {
     let ret = Terminator::Return;
     assert!(ret.successors().is_empty());

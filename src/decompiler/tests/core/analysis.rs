@@ -1134,6 +1134,72 @@ fn decompilation_infers_collection_types_for_locals() {
 }
 
 #[test]
+fn type_inference_consumes_reverseitems_operand() {
+    // INITSLOT 1,0; PUSH9; NEWARRAY0; REVERSEITEMS; STLOC0; RET.
+    let script = [0x57, 0x01, 0x00, 0x19, 0xC2, 0xD1, 0x70, 0x40];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    assert_eq!(
+        decompilation.types.methods[0].locals,
+        vec![ValueType::Integer]
+    );
+}
+
+#[test]
+fn type_inference_consumes_all_memcpy_operands() {
+    // INITSLOT 1,0; PUSH9; PUSH1..PUSH5; MEMCPY; STLOC0; RET.
+    let script = [
+        0x57, 0x01, 0x00, 0x19, 0x11, 0x12, 0x13, 0x14, 0x15, 0x89, 0x70, 0x40,
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    assert_eq!(
+        decompilation.types.methods[0].locals,
+        vec![ValueType::Integer]
+    );
+}
+
+#[test]
+fn type_inference_consumes_known_syscall_arguments() {
+    // INITSLOT 2,0; PUSH9 sentinel; PUSH1..PUSH2; Storage.Local.Find; STLOC0; STLOC1; RET.
+    let script = [
+        0x57, 0x02, 0x00, 0x19, 0x11, 0x12, 0x41, 0x07, 0x76, 0x52, 0xF3, 0x70, 0x71, 0x40,
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    assert_eq!(
+        decompilation.types.methods[0].locals,
+        vec![ValueType::Unknown, ValueType::Integer]
+    );
+}
+
+#[test]
+fn type_inference_does_not_reuse_values_below_a_syscall_result() {
+    // INITSLOT 2,0; PUSHDATA1 sentinel; Storage.GetContext; STLOC0; STLOC1; RET.
+    let script = [
+        0x57, 0x02, 0x00, 0x0C, 0x01, 0xAA, 0x41, 0x9B, 0xF6, 0x67, 0xCE, 0x70, 0x71, 0x40,
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    assert_eq!(
+        decompilation.types.methods[0].locals,
+        vec![ValueType::Unknown, ValueType::ByteString]
+    );
+}
+
+#[test]
 fn decompilation_propagates_manifest_argument_types() {
     // Script:
     // INITSLOT 0 locals, 2 args

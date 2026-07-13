@@ -6,10 +6,12 @@ mod manifest;
 mod methods;
 mod parameters;
 mod types;
+mod vm_values;
 
 pub(super) use identifiers::{make_unique_identifier, sanitize_identifier};
 pub(super) use lifted::{
     build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
+    build_method_returns_value_by_offset,
 };
 pub(super) use manifest::{extract_contract_name, format_permission_entry, render_extra_scalar};
 pub(super) use methods::{
@@ -18,4 +20,7 @@ pub(super) use methods::{
     next_inferred_method_offset, offset_as_usize,
 };
 pub(super) use parameters::{format_manifest_parameters, sanitize_parameter_names};
-pub(super) use types::{format_manifest_type, inferred_type_to_csharp};
+pub(super) use types::format_manifest_type;
+pub(crate) use vm_values::{
+    printable_utf8, signed_le_bytes_to_decimal, stack_item_type_tag, value_type_from_operand,
+};

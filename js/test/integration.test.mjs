@@ -115,6 +115,30 @@ test("integration: complete workflow from bytes to analysis output", () => {
   assert.match(hlResult.highLevel, /fn/, "should have function declaration");
 });
 
+test("integration: rejects call flags outside the 0x0F allowed mask", () => {
+  const invalid = buildNef({
+    tokens: [
+      {
+        hash: new Uint8Array(20),
+        method: "foo",
+        params: 0,
+        hasReturn: false,
+        callFlags: 0x10,
+      },
+    ],
+  });
+
+  assert.throws(
+    () => parseNef(invalid),
+    (error) => {
+      assert.equal(error.details.code, "CallFlagsInvalid");
+      assert.equal(error.details.flags, 0x10);
+      assert.equal(error.details.allowed, 0x0f);
+      return true;
+    },
+  );
+});
+
 test("integration: ERC-20 like token contract simulation", () => {
   // Simulates a simple token transfer function
   const script = new Uint8Array([

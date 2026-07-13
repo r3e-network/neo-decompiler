@@ -1,179 +1,426 @@
 use std::collections::BTreeMap;
 use std::fmt::Write;
 
-use crate::instruction::Instruction;
-
-use super::super::super::high_level::HighLevelEmitter;
-use super::super::helpers::{
-    csharpize_statement, csharpize_statement_typed, line_is_csharp_terminator, SlotTypes,
+use crate::decompiler::analysis::method_contracts::ReturnBehavior;
+use crate::decompiler::cfg::method_body::{
+    lower_method_body, Fidelity, FidelityReport, LoweringIssue, LoweringIssueKind, MethodIrRequest,
 };
+use crate::instruction::Instruction;
+use crate::instruction::OpCode;
+use crate::instruction::Operand;
+
+use super::super::helpers::VM_ASSERT_MESSAGE_HELPER;
+use super::structured::plan::plan_declarations;
+use super::structured::plan::CSharpMethodPlan;
+use super::structured::stmt;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BodyBackend {
+    Structured,
+    ThrowingStub,
+}
+
+pub(super) struct BodyRenderResult {
+    pub(super) source: String,
+    pub(super) backend: BodyBackend,
+    pub(super) fidelity: FidelityReport,
+    pub(super) warnings: Vec<String>,
+}
 
 pub(super) struct LiftedBodyContext<'a> {
     pub(super) method_labels_by_offset: &'a BTreeMap<usize, String>,
     pub(super) method_arg_counts_by_offset: &'a BTreeMap<usize, usize>,
-    pub(super) call_targets_by_offset: &'a BTreeMap<usize, usize>,
-    pub(super) calla_targets_by_offset: &'a BTreeMap<usize, usize>,
-    pub(super) callt_labels: &'a [String],
-    pub(super) callt_param_counts: &'a [usize],
-    pub(super) callt_returns_value: &'a [bool],
+    pub(super) method_return_types_by_offset: &'a BTreeMap<usize, String>,
     pub(super) inline_single_use_temps: bool,
     pub(super) emit_trace_comments: bool,
     /// When true, body-local declarations use inferred C# types (`BigInteger
     /// loc0 = ...;`) instead of `var`. Off by default to preserve historical
     /// output.
     pub(super) typed_declarations: bool,
-    /// Inferred C# slot types keyed by method start offset. Only consulted when
-    /// `typed_declarations` is true.
-    pub(super) slot_types_by_offset: &'a BTreeMap<usize, SlotTypes>,
+    pub(super) vm_exception_type: &'a str,
+    /// Inferred C# slot types keyed by method start offset. Assertion rendering
+    /// uses these even when typed local declarations are disabled.
+    pub(super) assert_message_helper_call: Option<&'a str>,
+    pub(super) tagged_opcode_helper_calls: &'a BTreeMap<(u8, u8), String>,
 }
 
-pub(super) fn write_lifted_body(
-    output: &mut String,
+pub(super) fn render_method_body(
     instructions: &[Instruction],
-    argument_labels: Option<&[String]>,
-    warnings: &mut Vec<String>,
+    method_plan: &CSharpMethodPlan,
     context: &LiftedBodyContext<'_>,
-    returns_void: bool,
-) {
-    if instructions.len() > super::super::super::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS {
-        let offset = instructions.first().map(|i| i.offset).unwrap_or(0);
-        writeln!(
-            output,
-            "            // method body too large for high-level lifting: {} instructions \
-             exceeds the {}-instruction limit; use `disasm` for the full listing",
-            instructions.len(),
-            super::super::super::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS
-        )
-        .unwrap();
-        warnings.push(format!(
-            "csharp: method at 0x{offset:04X} skipped — {} instructions exceeds the \
-             high-level lifting limit ({})",
-            instructions.len(),
-            super::super::super::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS
-        ));
-        return;
-    }
-    let mut emitter = HighLevelEmitter::with_program(instructions);
-    if let Some(labels) = argument_labels {
-        emitter.set_argument_labels(labels);
-    }
-    emitter.set_callt_labels(context.callt_labels.to_vec());
-    emitter.set_callt_param_counts(context.callt_param_counts.to_vec());
-    emitter.set_callt_returns_value(context.callt_returns_value.to_vec());
-    emitter.set_method_labels_by_offset(context.method_labels_by_offset);
-    emitter.set_method_arg_counts_by_offset(context.method_arg_counts_by_offset);
-    emitter.set_call_targets_by_offset(context.call_targets_by_offset);
-    emitter.set_calla_targets_by_offset(context.calla_targets_by_offset);
-    emitter.set_returns_void(returns_void);
-    emitter.set_inline_single_use_temps(context.inline_single_use_temps);
-    emitter.set_emit_trace_comments(context.emit_trace_comments);
-    for instruction in instructions {
-        emitter.advance_to(instruction.offset);
-        emitter.emit_instruction(instruction);
-    }
-    let result = emitter.finish();
-    warnings.extend(result.warnings);
-    let mut statements = result.statements;
-    if statements.is_empty() {
-        // A non-void method with no body fails to compile (C# error CS0161:
-        // not all code paths return a value). Mirror the empty-slice stub in
-        // render/methods.rs and throw; void methods can keep the bare comment
-        // since C# supplies the implicit return.
-        if returns_void {
-            writeln!(output, "            // no instructions decoded").unwrap();
-        } else {
-            writeln!(output, "            throw new NotImplementedException();").unwrap();
-        }
-        return;
+) -> BodyRenderResult {
+    if instructions.is_empty() {
+        return throwing_stub(
+            method_plan,
+            fidelity_issue(
+                method_plan.start,
+                LoweringIssueKind::LostStackValue,
+                "method has no decoded instructions",
+            ),
+        );
     }
 
-    // C# void methods receive an implicit return at the end of the body, so
-    // the explicit trailing `return;` lifted from the bytecode RET is
-    // redundant clutter. Drop it when it is the final non-blank statement.
-    if returns_void {
-        if let Some(last_idx) = statements.iter().rposition(|s| !s.trim().is_empty()) {
-            if statements[last_idx].trim() == "return;" {
-                statements[last_idx].clear();
-            }
-        }
+    let lowered = lower_method_body(MethodIrRequest {
+        start: method_plan.start,
+        end: method_plan.end,
+        instructions,
+        context: method_plan.method_context.clone(),
+        symbol_types: method_plan.symbol_types.clone(),
+    });
+    let mut fidelity = lowered.fidelity;
+    fidelity
+        .issues
+        .extend(method_plan.planning_issues.iter().cloned());
+    fidelity.finish();
+
+    if fidelity
+        .issues
+        .iter()
+        .any(|issue| issue.kind == LoweringIssueKind::BudgetExceeded)
+    {
+        return throwing_stub_with_fidelity(method_plan, fidelity);
     }
 
-    let method_start = instructions.first().map(|i| i.offset).unwrap_or(0);
-    let slot_types = if context.typed_declarations {
+    if fidelity.status == Fidelity::Incomplete && recover_with_compatibility(&fidelity) {
+        return recovered_result(
+            instructions,
+            method_plan,
+            context,
+            &lowered.body,
+            &lowered.symbols,
+            fidelity,
+        );
+    }
+    if fidelity.status == Fidelity::Incomplete && requires_structured_stub(&fidelity) {
+        return throwing_stub_with_fidelity(method_plan, fidelity);
+    }
+
+    let declarations =
+        plan_declarations(&lowered.body, &lowered.symbols, context.typed_declarations);
+    fidelity.issues.extend(declarations.issues.iter().cloned());
+    fidelity.finish();
+    if fidelity.status == Fidelity::Incomplete && requires_structured_stub(&fidelity) {
+        return throwing_stub_with_fidelity(method_plan, fidelity);
+    }
+
+    let source = stmt::render_block_with_trace(
+        &lowered.body,
+        &declarations,
+        &lowered.symbols,
+        method_plan.return_behavior,
+        context.inline_single_use_temps,
         context
-            .slot_types_by_offset
-            .get(&method_start)
-            .cloned()
-            .unwrap_or_default()
-    } else {
-        SlotTypes::default()
-    };
+            .assert_message_helper_call
+            .unwrap_or(VM_ASSERT_MESSAGE_HELPER),
+        context.vm_exception_type,
+        context.tagged_opcode_helper_calls,
+        context.method_return_types_by_offset,
+        Some(&method_plan.return_type),
+        context.emit_trace_comments.then_some(&lowered.source_map),
+        instructions,
+    );
+    let source = ensure_non_void_termination(source, &lowered.body, method_plan.return_behavior);
+    if source.trim().is_empty() && method_plan.return_behavior != ReturnBehavior::Void {
+        fidelity.issues.push(fidelity_issue(
+            method_plan.start,
+            LoweringIssueKind::LostStackValue,
+            "structured non-void body produced no return",
+        ));
+        fidelity.finish();
+        return throwing_stub_with_fidelity(method_plan, fidelity);
+    }
 
-    // Track which open braces correspond to a `case`/`default` body so we
-    // can synthesise a trailing `break;` before the matching close. C#
-    // forbids implicit fall-through, so a case body that does not already
-    // end in a control-transfer statement (return/throw/goto/break) needs
-    // the explicit `break;` to compile.
-    let mut indent_level = 0usize;
-    let mut block_kinds: Vec<BlockKind> = Vec::new();
-    let mut last_emitted: Option<String> = None;
-    for line in statements {
-        let converted = if context.typed_declarations {
-            csharpize_statement_typed(&line, &slot_types)
-        } else {
-            csharpize_statement(&line)
-        };
-        let trimmed = converted.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        if trimmed == "}" {
-            indent_level = indent_level.saturating_sub(1);
-            if matches!(block_kinds.last(), Some(BlockKind::Case)) {
-                let needs_break = last_emitted
-                    .as_deref()
-                    .map(|prev| !line_is_csharp_terminator(prev))
-                    .unwrap_or(true);
-                if needs_break {
-                    let break_indent = 12 + (indent_level + 1) * 4;
-                    writeln!(output, "{:indent$}break;", "", indent = break_indent).unwrap();
-                }
-            }
-            block_kinds.pop();
-        } else if trimmed.starts_with('}') {
-            // `} else { ... } else if (...) { ...`: closes one block and
-            // opens another. Pop the closed block's kind; the new opener
-            // is pushed below if the line ends with `{`.
-            indent_level = indent_level.saturating_sub(1);
-            block_kinds.pop();
-        }
-
-        let rendered = if !returns_void && trimmed == "return;" {
-            "return default;"
-        } else {
-            trimmed
-        };
-
-        let indent = 12 + indent_level * 4;
-        writeln!(output, "{:indent$}{}", "", rendered, indent = indent).unwrap();
-
-        if rendered.ends_with('{') {
-            let kind = if rendered.starts_with("case ") || rendered.starts_with("default:") {
-                BlockKind::Case
-            } else {
-                BlockKind::Other
-            };
-            block_kinds.push(kind);
-            indent_level += 1;
-        }
-
-        last_emitted = Some(rendered.to_string());
+    BodyRenderResult {
+        source: indent_body(&source),
+        backend: BodyBackend::Structured,
+        warnings: semantic_warnings(method_plan, &fidelity),
+        fidelity,
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum BlockKind {
-    Case,
-    Other,
+fn semantic_warnings(method_plan: &CSharpMethodPlan, fidelity: &FidelityReport) -> Vec<String> {
+    fidelity
+        .issues
+        .iter()
+        .filter(|issue| {
+            issue.fidelity == Fidelity::Conservative
+                && matches!(issue.opcode, OpCode::Abort | OpCode::Abortmsg)
+        })
+        .map(|issue| {
+            format!(
+                "csharp: {} at 0x{:04X}: {} at 0x{:04X}: {}",
+                method_plan.emitted_name,
+                method_plan.start,
+                issue.opcode.mnemonic(),
+                issue.offset,
+                issue.detail
+            )
+        })
+        .collect()
+}
+
+fn requires_structured_stub(fidelity: &FidelityReport) -> bool {
+    fidelity
+        .issues
+        .iter()
+        .filter(|issue| issue.fidelity == Fidelity::Incomplete)
+        .any(|issue| match issue.kind {
+            LoweringIssueKind::LostStackValue | LoweringIssueKind::UnresolvedCall => false,
+            LoweringIssueKind::MissingProvenance => {
+                !(issue.detail.starts_with("collection packing requires")
+                    || issue
+                        .detail
+                        .starts_with("collection packing has fewer values")
+                    || issue
+                        .detail
+                        .starts_with("collection element count overflows")
+                    || issue.detail.starts_with("UNPACK source")
+                    || issue.detail.starts_with("UNPACK element count exceeds"))
+            }
+            LoweringIssueKind::MissingOperandMetadata => {
+                !issue.detail.starts_with("StackItemType Any is invalid")
+            }
+            LoweringIssueKind::UnsupportedControl => !matches!(issue.opcode, OpCode::Jmp),
+            _ => true,
+        })
+}
+
+fn recover_with_compatibility(fidelity: &FidelityReport) -> bool {
+    fidelity.issues.iter().any(|issue| {
+        issue.fidelity == Fidelity::Incomplete
+            && ((issue.detail.starts_with("requires ")
+                && matches!(issue.opcode, OpCode::Call | OpCode::CallA))
+                || issue
+                    .detail
+                    .starts_with("structured output contains an unresolved control transfer")
+                || matches!(issue.opcode, OpCode::Endtry | OpCode::EndtryL)
+                || (issue.kind == LoweringIssueKind::LostStackValue
+                    && matches!(issue.opcode, OpCode::Ret)))
+    })
+}
+
+fn recovered_result(
+    instructions: &[Instruction],
+    method_plan: &CSharpMethodPlan,
+    context: &LiftedBodyContext<'_>,
+    body: &crate::decompiler::ir::Block,
+    symbols: &BTreeMap<String, crate::decompiler::cfg::method_body::SymbolInfo>,
+    fidelity: FidelityReport,
+) -> BodyRenderResult {
+    let mut source = String::new();
+    if body.stmts.iter().any(|statement| {
+        !matches!(
+            statement,
+            crate::decompiler::ir::Stmt::Comment(_) | crate::decompiler::ir::Stmt::Return(None)
+        )
+    }) {
+        let declarations = plan_declarations(body, symbols, context.typed_declarations);
+        let structured = stmt::render_block_with_trace(
+            body,
+            &declarations,
+            symbols,
+            method_plan.return_behavior,
+            context.inline_single_use_temps,
+            context
+                .assert_message_helper_call
+                .unwrap_or(VM_ASSERT_MESSAGE_HELPER),
+            context.vm_exception_type,
+            context.tagged_opcode_helper_calls,
+            context.method_return_types_by_offset,
+            Some(&method_plan.return_type),
+            None,
+            instructions,
+        );
+        let structured = ensure_non_void_termination(structured, body, method_plan.return_behavior);
+        if !structured.trim().is_empty() {
+            return BodyRenderResult {
+                source: indent_body(&structured),
+                backend: BodyBackend::Structured,
+                warnings: semantic_warnings(method_plan, &fidelity),
+                fidelity,
+            };
+        }
+    }
+    let mut rendered = false;
+    let argument_underflow = fidelity
+        .issues
+        .iter()
+        .any(|issue| issue.detail.starts_with("requires "));
+
+    for instruction in instructions {
+        let target = match instruction.operand {
+            Some(Operand::Jump(delta)) => instruction.offset.checked_add_signed(delta as isize),
+            Some(Operand::Jump32(delta)) => instruction.offset.checked_add_signed(delta as isize),
+            _ => None,
+        };
+        let target = target.and_then(|offset| {
+            context
+                .method_labels_by_offset
+                .get(&offset)
+                .map(|name| (offset, name))
+        });
+        let (target_offset, target_name) = match target {
+            Some(target) => target,
+            None => continue,
+        };
+        let argument_count = context
+            .method_arg_counts_by_offset
+            .get(&target_offset)
+            .copied()
+            .unwrap_or(0);
+        let args = if argument_underflow || argument_count > 0 {
+            std::iter::repeat_n("(dynamic)null", argument_count.max(1))
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            String::new()
+        };
+        let call = format!("{target_name}({args})");
+        match instruction.opcode {
+            OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::Jmp | OpCode::Jmp_L => {
+                if method_plan.return_behavior == ReturnBehavior::Void {
+                    writeln!(source, "            {call};").unwrap();
+                } else {
+                    if argument_underflow || argument_count > 0 {
+                        writeln!(
+                            source,
+                            "            // VM argument underflow: return {target_name}(???);"
+                        )
+                        .unwrap();
+                    }
+                    writeln!(source, "            return {call};").unwrap();
+                }
+                rendered = true;
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    if !rendered {
+        if let Some(instruction) = instructions
+            .iter()
+            .find(|instruction| matches!(instruction.opcode, OpCode::Endtry | OpCode::EndtryL))
+        {
+            if let Some(target) = match instruction.operand {
+                Some(Operand::Jump(delta)) => instruction.offset.checked_add_signed(delta as isize),
+                Some(Operand::Jump32(delta)) => {
+                    instruction.offset.checked_add_signed(delta as isize)
+                }
+                _ => None,
+            } {
+                writeln!(source, "            goto label_0x{target:04X};").unwrap();
+                writeln!(source, "            label_0x{target:04X}:;").unwrap();
+                rendered = true;
+            }
+        }
+    }
+
+    if !rendered && method_plan.return_behavior != ReturnBehavior::Void {
+        source.push_str("            throw new NotImplementedException();\n");
+    }
+    BodyRenderResult {
+        source,
+        backend: BodyBackend::Structured,
+        warnings: semantic_warnings(method_plan, &fidelity),
+        fidelity,
+    }
+}
+
+fn throwing_stub(method_plan: &CSharpMethodPlan, issue: LoweringIssue) -> BodyRenderResult {
+    let mut fidelity = FidelityReport::exact(0);
+    fidelity.issues.push(issue);
+    fidelity.finish();
+    throwing_stub_with_fidelity(method_plan, fidelity)
+}
+
+fn throwing_stub_with_fidelity(
+    method_plan: &CSharpMethodPlan,
+    fidelity: FidelityReport,
+) -> BodyRenderResult {
+    let warnings = fidelity
+        .primary_issue()
+        .map(|issue| {
+            format!(
+                "csharp: {} at 0x{:04X} used throwing stub: {} at 0x{:04X}: {}",
+                method_plan.emitted_name,
+                method_plan.start,
+                issue.opcode.mnemonic(),
+                issue.offset,
+                issue_kind_label(issue.kind)
+            )
+        })
+        .into_iter()
+        .collect();
+    BodyRenderResult {
+        source: "            throw new NotImplementedException();\n".to_string(),
+        backend: BodyBackend::ThrowingStub,
+        fidelity,
+        warnings,
+    }
+}
+
+fn fidelity_issue(offset: usize, kind: LoweringIssueKind, detail: &str) -> LoweringIssue {
+    LoweringIssue {
+        offset,
+        opcode: OpCode::Unknown(0),
+        kind,
+        fidelity: Fidelity::Incomplete,
+        detail: detail.to_string(),
+    }
+}
+
+fn issue_kind_label(kind: LoweringIssueKind) -> &'static str {
+    match kind {
+        LoweringIssueKind::UnsupportedControl => "unsupported control",
+        LoweringIssueKind::UnsupportedOpcode => "unsupported opcode",
+        LoweringIssueKind::LostStackValue => "lost stack value",
+        LoweringIssueKind::MissingOperandMetadata => "missing operand metadata",
+        LoweringIssueKind::UnresolvedCall => "unresolved call",
+        LoweringIssueKind::MissingProvenance => "missing provenance",
+        LoweringIssueKind::BudgetExceeded => "budget exceeded",
+    }
+}
+
+fn indent_body(source: &str) -> String {
+    let mut indented = String::new();
+    for line in source.lines() {
+        writeln!(indented, "            {line}").unwrap();
+    }
+    indented
+}
+
+fn ensure_non_void_termination(
+    mut source: String,
+    body: &crate::decompiler::ir::Block,
+    return_behavior: ReturnBehavior,
+) -> String {
+    if return_behavior != ReturnBehavior::Void && !stmt::terminates(body) {
+        if !source.is_empty() && !source.ends_with('\n') {
+            source.push('\n');
+        }
+        source
+            .push_str("throw new InvalidOperationException(\"Unreachable Neo VM fallthrough.\");");
+    }
+    source
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decompiler::ir::{Block, Expr, Stmt};
+
+    #[test]
+    fn non_void_partial_body_gets_fail_closed_fallthrough() {
+        let body = Block::with_stmts(vec![Stmt::expr(Expr::int(1))]);
+
+        assert_eq!(
+            ensure_non_void_termination("_ = 1;".to_string(), &body, ReturnBehavior::Value),
+            "_ = 1;\nthrow new InvalidOperationException(\"Unreachable Neo VM fallthrough.\");"
+        );
+        assert_eq!(
+            ensure_non_void_termination("_ = 1;".to_string(), &body, ReturnBehavior::Void),
+            "_ = 1;"
+        );
+    }
 }

@@ -41,10 +41,16 @@ impl Cfg {
     pub fn add_block(&mut self, block: BasicBlock) {
         let id = block.id;
         let start_offset = block.start_offset;
-        if matches!(
+        let is_exit = matches!(
             block.terminator,
-            Terminator::Return | Terminator::Throw | Terminator::Abort
-        ) {
+            Terminator::Return | Terminator::Throw | Terminator::Abort | Terminator::NoReturnCall
+        ) || matches!(
+            &block.terminator,
+            Terminator::EndFinally {
+                normal_continuations,
+            } if normal_continuations.is_empty()
+        );
+        if is_exit {
             self.exits.insert(id);
         }
         self.offset_to_block.insert(start_offset, id);
@@ -109,6 +115,21 @@ impl Cfg {
     #[must_use]
     pub fn predecessors(&self, id: BlockId) -> &[BlockId] {
         self.predecessors.get(&id).map(Vec::as_slice).unwrap_or(&[])
+    }
+
+    /// Get the unambiguous kind of an edge between two blocks.
+    ///
+    /// Malformed graphs may contain duplicate edges with conflicting kinds. In
+    /// that case no kind is fabricated and `None` is returned.
+    #[must_use]
+    pub fn edge_kind(&self, from: BlockId, to: BlockId) -> Option<EdgeKind> {
+        let mut kinds = self
+            .edges
+            .iter()
+            .filter(|edge| edge.from == from && edge.to == to)
+            .map(|edge| edge.kind);
+        let first = kinds.next()?;
+        kinds.all(|kind| kind == first).then_some(first)
     }
 
     /// Get exit blocks.

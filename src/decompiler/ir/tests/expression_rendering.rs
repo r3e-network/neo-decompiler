@@ -48,10 +48,10 @@ fn test_unary_expression_rendering() {
 
 #[test]
 fn test_call_expression_rendering() {
-    let call = Expr::call("foo", vec![Expr::int(1), Expr::int(2)]);
+    let call = Expr::unresolved_call("foo", vec![Expr::int(1), Expr::int(2)]);
     assert_eq!(render_expr(&call), "foo(1, 2)");
 
-    let no_args = Expr::call("bar", vec![]);
+    let no_args = Expr::unresolved_call("bar", vec![]);
     assert_eq!(render_expr(&no_args), "bar()");
 }
 

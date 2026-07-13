@@ -5,6 +5,7 @@
 //! downstream tooling and future decompiler passes:
 //!
 //! - Call graph construction (internal calls, method tokens, syscalls)
+//! - Shared method argument and return-behavior contracts
 //! - Slot cross-reference tracking (reads/writes for locals/args/statics)
 //! - Lightweight type inference for common primitives and collections
 //!
@@ -41,6 +42,7 @@
 mod methods;
 
 pub mod call_graph;
+pub mod method_contracts;
 pub mod types;
 pub mod xrefs;
 

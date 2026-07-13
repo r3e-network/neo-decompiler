@@ -35,15 +35,26 @@ impl<'a> CfgBuilder<'a> {
                         cfg.add_edge(block.id, *c, EdgeKind::Exception);
                     }
                     if let Some(f) = finally_target {
-                        cfg.add_edge(block.id, *f, EdgeKind::Finally);
+                        cfg.add_edge(block.id, *f, EdgeKind::FinallyException);
                     }
                 }
-                Terminator::EndTry { continuation } => {
+                Terminator::EndTry { continuation, .. } => {
                     cfg.add_edge(block.id, *continuation, EdgeKind::Unconditional);
+                }
+                Terminator::EndTryFinally { finally_target, .. } => {
+                    cfg.add_edge(block.id, *finally_target, EdgeKind::Finally);
+                }
+                Terminator::EndFinally {
+                    normal_continuations,
+                } => {
+                    for continuation in normal_continuations {
+                        cfg.add_edge(block.id, *continuation, EdgeKind::FinallyContinuation);
+                    }
                 }
                 Terminator::Return
                 | Terminator::Throw
                 | Terminator::Abort
+                | Terminator::NoReturnCall
                 | Terminator::Unknown => {}
             }
         }

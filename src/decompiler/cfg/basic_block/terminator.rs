@@ -26,6 +26,8 @@ pub enum Terminator {
     Throw,
     /// Abort execution.
     Abort,
+    /// A resolved call that cannot return normally.
+    NoReturnCall,
     /// Try block entry with catch/finally targets.
     TryEntry {
         /// The main try body block.
@@ -39,6 +41,23 @@ pub enum Terminator {
     EndTry {
         /// Block to continue execution after try/catch/finally.
         continuation: BlockId,
+        /// Whether this leaves the owning try/catch region non-locally.
+        nonlocal: bool,
+    },
+    /// ENDTRY that first executes its owning finally region.
+    EndTryFinally {
+        /// Logical block resumed after ENDFINALLY.
+        continuation: BlockId,
+        /// First block of the owning finally region.
+        finally_target: BlockId,
+        /// Whether the continuation is a non-local leave from the try arm.
+        nonlocal: bool,
+    },
+    /// ENDFINALLY dispatches to the continuation saved by the entering ENDTRY.
+    /// An exceptional entry rethrows instead of taking any normal successor.
+    EndFinally {
+        /// All normal continuations associated with this physical finally body.
+        normal_continuations: Vec<BlockId>,
     },
     /// Unknown or unanalyzed terminator.
     Unknown,
@@ -55,7 +74,10 @@ impl Terminator {
                 then_target,
                 else_target,
             } => vec![*then_target, *else_target],
-            Terminator::Return | Terminator::Throw | Terminator::Abort => vec![],
+            Terminator::Return
+            | Terminator::Throw
+            | Terminator::Abort
+            | Terminator::NoReturnCall => vec![],
             Terminator::TryEntry {
                 body_target,
                 catch_target,
@@ -70,7 +92,11 @@ impl Terminator {
                 }
                 succs
             }
-            Terminator::EndTry { continuation } => vec![*continuation],
+            Terminator::EndTry { continuation, .. } => vec![*continuation],
+            Terminator::EndTryFinally { finally_target, .. } => vec![*finally_target],
+            Terminator::EndFinally {
+                normal_continuations,
+            } => normal_continuations.clone(),
             Terminator::Unknown => vec![],
         }
     }

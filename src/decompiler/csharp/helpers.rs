@@ -60,43 +60,72 @@ pub(super) fn format_method_signature(name: &str, parameters: &str, return_type:
     }
 }
 
-pub(in crate::decompiler) fn csharpize_statement(line: &str) -> String {
-    csharpize_statement_typed(line, &SlotTypes::default())
+pub(super) const VM_ASSERT_MESSAGE_HELPER: &str = "__NeoDecompilerAssertMessage";
+pub(super) const VM_EXCEPTION_TYPE: &str = "__NeoDecompilerVmException";
+
+#[cfg(test)]
+pub(in crate::decompiler) fn legacy_statement_to_csharp(line: &str) -> String {
+    legacy_statement_to_csharp_with_context(
+        line,
+        &SlotTypes::default(),
+        false,
+        VM_ASSERT_MESSAGE_HELPER,
+    )
 }
 
-/// Inferred C# type strings for body-local slots of a single method.
+/// Inferred C# type strings for the argument, local, and static slots visible
+/// while rendering one method.
 ///
 /// Built from [`crate::decompiler::analysis::types::TypeInfo`] for the method
 /// being rendered. Entries are empty (`""`) when no type was inferred, in which
 /// case the declaration falls back to `var`.
+#[cfg(test)]
 #[derive(Debug, Clone, Default)]
 pub(in crate::decompiler) struct SlotTypes {
+    /// C# type name per argument-slot index, or `""` when unknown.
+    pub arguments: Vec<&'static str>,
+    /// Emitted parameter name per argument-slot index.
+    pub argument_names: Vec<String>,
     /// C# type name per local-slot index, or `""` when unknown.
     pub locals: Vec<&'static str>,
     /// C# type name per static-field-slot index, or `""` when unknown.
     pub statics: Vec<&'static str>,
 }
 
+#[cfg(test)]
 impl SlotTypes {
     /// Resolve the C# declaration type for a slot name emitted by the lifter
-    /// (`loc3`, `static1`). Returns `Some("int")`-style only when a non-empty
-    /// type was inferred; returns `None` for temps (`t0`), arguments, and
-    /// unknown slots so the caller emits `var`.
+    /// (`arg0`, a named parameter, `loc3`, or `static1`). Returns a type only
+    /// when inference or the manifest supplied one.
     fn declaration_type(&self, name: &str) -> Option<&'static str> {
-        let (slots, idx) = if let Some(rest) = name.strip_prefix("loc") {
-            (&self.locals, parse_slot_index(rest)?)
-        } else if let Some(rest) = name.strip_prefix("static") {
-            (&self.statics, parse_slot_index(rest)?)
-        } else {
-            return None;
-        };
-        slots.get(idx).copied().filter(|ty| !ty.is_empty())
+        let slot_type = self
+            .argument_names
+            .iter()
+            .position(|argument| argument == name)
+            .and_then(|index| self.arguments.get(index))
+            .or_else(|| {
+                name.strip_prefix("arg")
+                    .and_then(parse_slot_index)
+                    .and_then(|index| self.arguments.get(index))
+            })
+            .or_else(|| {
+                name.strip_prefix("loc")
+                    .and_then(parse_slot_index)
+                    .and_then(|index| self.locals.get(index))
+            })
+            .or_else(|| {
+                name.strip_prefix("static")
+                    .and_then(parse_slot_index)
+                    .and_then(|index| self.statics.get(index))
+            });
+        slot_type.copied().filter(|ty| !ty.is_empty())
     }
 }
 
 /// Parse the trailing digit run of a slot name (`"3"` from `"loc3"`) as a slot
 /// index. Returns `None` unless the remainder is all-ASCII-digits so that
 /// unrelated identifiers never accidentally match.
+#[cfg(test)]
 fn parse_slot_index(rest: &str) -> Option<usize> {
     if rest.is_empty() || !rest.bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -104,12 +133,14 @@ fn parse_slot_index(rest: &str) -> Option<usize> {
     rest.parse::<usize>().ok()
 }
 
-/// Typed-declaration variant of [`csharpize_statement`].
-///
-/// When `types` knows a C# type for the declared local/static, the `let` line
-/// is rendered as `<type> name = ...;` instead of `var name = ...;`. Passing an
-/// empty [`SlotTypes`] reproduces the historical `var` behaviour exactly.
-pub(in crate::decompiler) fn csharpize_statement_typed(line: &str, types: &SlotTypes) -> String {
+/// Rewrite one lifted statement with method type and helper context.
+#[cfg(test)]
+pub(in crate::decompiler) fn legacy_statement_to_csharp_with_context(
+    line: &str,
+    types: &SlotTypes,
+    typed_declarations: bool,
+    assert_message_helper: &str,
+) -> String {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return String::new();
@@ -125,17 +156,24 @@ pub(in crate::decompiler) fn csharpize_statement_typed(line: &str, types: &SlotT
             .split(|c: char| c.is_whitespace() || c == '=')
             .next()
             .unwrap_or("");
-        let body = csharpize_expression(stripped);
-        match types.declaration_type(name) {
-            Some(ty) => return format!("{ty} {body}"),
-            None => return format!("var {body}"),
+        let body = legacy_expression_to_csharp(stripped);
+        if typed_declarations {
+            if let Some(ty) = types.declaration_type(name) {
+                return format!("{ty} {body}");
+            }
         }
+        return format!("var {body}");
     }
-    csharpize_statement_untyped(trimmed)
+    legacy_statement_to_csharp_untyped(trimmed, types, assert_message_helper)
 }
 
-/// Historical line-level rewrite that does not depend on slot types.
-fn csharpize_statement_untyped(trimmed: &str) -> String {
+/// Shared line-level rewrites after declaration handling.
+#[cfg(test)]
+fn legacy_statement_to_csharp_untyped(
+    trimmed: &str,
+    types: &SlotTypes,
+    assert_message_helper: &str,
+) -> String {
     if trimmed == "loop {" {
         return "while (true) {".to_string();
     }
@@ -143,38 +181,50 @@ fn csharpize_statement_untyped(trimmed: &str) -> String {
         .strip_prefix("if ")
         .and_then(|rest| rest.strip_suffix(" {"))
     {
-        return format!("if ({}) {{", csharpize_expression(condition.trim()));
+        return format!("if ({}) {{", legacy_expression_to_csharp(condition.trim()));
     }
     if let Some(condition) = trimmed
         .strip_prefix("else if ")
         .and_then(|rest| rest.strip_suffix(" {"))
     {
-        return format!("else if ({}) {{", csharpize_expression(condition.trim()));
+        return format!(
+            "else if ({}) {{",
+            legacy_expression_to_csharp(condition.trim())
+        );
     }
     if let Some(condition) = trimmed
         .strip_prefix("} else if ")
         .and_then(|rest| rest.strip_suffix(" {"))
     {
-        return format!("}} else if ({}) {{", csharpize_expression(condition.trim()));
+        return format!(
+            "}} else if ({}) {{",
+            legacy_expression_to_csharp(condition.trim())
+        );
     }
     if let Some(condition) = trimmed
         .strip_prefix("while ")
         .and_then(|rest| rest.strip_suffix(" {"))
     {
-        return format!("while ({}) {{", csharpize_expression(condition.trim()));
+        return format!(
+            "while ({}) {{",
+            legacy_expression_to_csharp(condition.trim())
+        );
     }
     if trimmed.starts_with("for (") && trimmed.ends_with(" {") {
         let inner = &trimmed[4..trimmed.len() - 2];
         let inner = inner.strip_prefix('(').unwrap_or(inner);
         let inner = inner.strip_suffix(')').unwrap_or(inner);
         let converted = inner.replacen("let ", "var ", 1);
-        return format!("for ({}) {{", csharpize_expression(&converted));
+        return format!("for ({}) {{", legacy_expression_to_csharp(&converted));
     }
     if let Some(scrutinee) = trimmed
         .strip_prefix("switch ")
         .and_then(|rest| rest.strip_suffix(" {"))
     {
-        return format!("switch ({}) {{", csharpize_expression(scrutinee.trim()));
+        return format!(
+            "switch ({}) {{",
+            legacy_expression_to_csharp(scrutinee.trim())
+        );
     }
     if let Some(value) = trimmed
         .strip_prefix("case ")
@@ -188,111 +238,89 @@ fn csharpize_statement_untyped(trimmed: &str) -> String {
     if let Some(target) = trimmed.strip_prefix("leave ") {
         return format!("goto {target}");
     }
-    // The high-level emitter renders NEO's `THROW` opcode as
-    // `throw(value);` — NEO can throw any stack value (int, string,
-    // byte[], etc.). `System.Exception`'s constructor takes a
-    // `string`, so non-string operands need to be coerced. We
-    // detect string-literal operands (already valid) and wrap
-    // everything else in `$"{value}"` interpolation, which calls
-    // ToString implicitly and always produces a `string`. The
-    // operand itself is run through `csharpize_expression` so
-    // helper-call rewrites inside (e.g. `throw(BigInteger.Pow(a, b))`)
-    // also apply.
+    // Neo can throw any stack value, while C# exception payloads are strings.
+    // Match the structured renderer's explicit, single-evaluation coercion.
     if let Some(rest) = trimmed
         .strip_prefix("throw(")
         .and_then(|r| r.strip_suffix(");"))
     {
-        let operand = csharpize_expression(rest);
-        return format!(
-            "throw new Exception({});",
-            wrap_exception_operand_for_csharp(&operand)
-        );
+        let operand = legacy_expression_to_csharp(rest);
+        return format!("throw new Exception(Convert.ToString({operand}));");
     }
-    // NEO `ABORT` / `ABORTMSG` are uncatchable VM aborts. C# has no
-    // direct equivalent, but `throw new Exception(...)` (uncaught)
-    // terminates execution the same way and reads naturally for a
-    // post-decompile reader. Bare `abort()` becomes `throw new
-    // Exception();`; `abort(msg)` applies the same coercion as
-    // `throw(...)`.
+    // C# cannot model an uncatchable VM abort. Keep it distinct from THROW so
+    // the conservative translation remains visible in every renderer path.
     if trimmed == "abort();" {
-        return "throw new Exception();".to_string();
+        return "throw new InvalidOperationException();".to_string();
     }
     if let Some(rest) = trimmed
         .strip_prefix("abort(")
         .and_then(|r| r.strip_suffix(");"))
     {
-        let operand = csharpize_expression(rest);
-        return format!(
-            "throw new Exception({});",
-            wrap_exception_operand_for_csharp(&operand)
-        );
+        let operand = legacy_expression_to_csharp(rest);
+        return format!("throw new InvalidOperationException(Convert.ToString({operand}));");
     }
-    // NEO's `ASSERT` / `ASSERTMSG` are runtime checks: throw if the
-    // condition is false. C# has no `assert(...)` keyword/function in
-    // scope, so a `assert(cond);` line wouldn't compile. The closest
-    // universal form is `if (!(cond)) throw new Exception();` (and
-    // `throw new Exception(msg);` when a message is supplied) — works
-    // without any helper imports. Both the condition and the message
-    // run through `csharpize_expression` so helper rewrites apply.
+    // ASSERT uses the framework intrinsic; ASSERTMSG uses the generated direct
+    // opcode helper so its message remains eagerly validated. Casts supply C#
+    // parameter types without changing the VM stack items.
     if let Some(args) = trimmed
         .strip_prefix("assert(")
         .and_then(|r| r.strip_suffix(");"))
     {
         if let Some((cond, message)) = split_top_level_comma(args) {
-            // Same `Exception(string)` coercion rule as throw/abort:
-            // string-typed messages pass through, non-string get
-            // wrapped in `$"{...}"` interpolation.
-            let message_expr = csharpize_expression(message.trim());
-            return format!(
-                "if (!({})) throw new Exception({});",
-                csharpize_expression(cond.trim()),
-                wrap_exception_operand_for_csharp(&message_expr)
+            let message_expr = legacy_expression_to_csharp(message.trim());
+            return format_vm_assertion(
+                &csharpize_vm_condition(cond, types),
+                Some(&message_expr),
+                assert_message_helper,
             );
         }
-        return format!(
-            "if (!({})) throw new Exception();",
-            csharpize_expression(args.trim())
+        return format_vm_assertion(
+            &csharpize_vm_condition(args, types),
+            None,
+            assert_message_helper,
         );
     }
-    csharpize_expression(trimmed)
+    legacy_expression_to_csharp(trimmed)
 }
 
-/// Coerce a `throw(...)` / `abort(...)` operand into something
-/// `new Exception(string)` accepts. NEO bytecode can THROW any
-/// stack value; `System.Exception`'s only constructor that takes a
-/// payload is `Exception(string)`, so non-string operands need to
-/// be coerced. The detection is:
-///
-/// - Self-contained `"…"` string literal → already valid; pass
-///   through verbatim.
-/// - Contains a `"` somewhere → likely a string concatenation
-///   (`"err" + code`, `prefix + "..." + suffix`, etc.). The result
-///   is a `string`; pass through.
-/// - Otherwise (numeric literals, identifiers without `"`, helper
-///   calls returning non-string) → wrap in C# interpolation
-///   `$"{value}"`, which calls `ToString()` implicitly and always
-///   produces a `string`.
-///
-/// The "any `"` triggers pass-through" heuristic occasionally
-/// false-positives (e.g. `BigInteger.Parse("123") + 1` would slip
-/// through and produce `Exception(BigInteger)` — uncompilable). In
-/// practice the lift produces `"…"` only inside genuine string
-/// constructions, so the heuristic stays cleaner than a full type
-/// inference and the user can still hand-edit the rare miss.
-fn wrap_exception_operand_for_csharp(operand: &str) -> String {
-    let trimmed = operand.trim();
-    if operand_appears_string_typed(trimmed) {
-        operand.to_string()
+#[cfg(test)]
+fn csharpize_vm_condition(condition: &str, types: &SlotTypes) -> String {
+    let condition = condition.trim();
+    let rendered = legacy_expression_to_csharp(condition);
+    if condition == "null" {
+        "false".to_string()
+    } else if is_decimal_integer_literal(condition)
+        || types.declaration_type(condition) == Some("BigInteger")
+    {
+        format!("{rendered} != 0")
+    } else if matches!(condition, "true" | "false")
+        || types.declaration_type(condition) == Some("bool")
+    {
+        rendered
     } else {
-        format!("$\"{{{trimmed}}}\"")
+        format_vm_truthiness(&rendered)
     }
 }
 
-/// Return `true` when `text` plausibly evaluates to a `string`
-/// without further coercion — either a single string literal or
-/// any expression containing one (most commonly a string-concat).
-fn operand_appears_string_typed(text: &str) -> bool {
-    text.contains('"')
+/// Give an arbitrary VM value a C# bool type without emitting a VM conversion.
+/// Neo.Compiler.CSharp erases these object casts, leaving the raw stack item for
+/// ASSERT to evaluate through StackItem.GetBoolean().
+pub(super) fn format_vm_truthiness(expression: &str) -> String {
+    format!("(bool)(object)({expression})")
+}
+
+/// Render native VM assertion APIs. ASSERTMSG uses an opcode-annotated helper:
+/// Neo.Compiler.CSharp rewrites its framework overload to lazy JMPIF + ABORTMSG,
+/// which skips the native opcode's eager message validation on success.
+pub(super) fn format_vm_assertion(
+    condition: &str,
+    message: Option<&str>,
+    assert_message_helper: &str,
+) -> String {
+    message.map_or_else(
+        || format!("global::Neo.SmartContract.Framework.ExecutionEngine.Assert({condition});"),
+        |message| format!("{assert_message_helper}({condition}, (string)(object)({message}));"),
+    )
 }
 
 /// Apply the C# expression-level rewrites (cat → `+`, NEO helper
@@ -300,10 +328,11 @@ fn operand_appears_string_typed(text: &str) -> bool {
 /// that's already known to be a single expression — for instance the
 /// condition of an `if`/`while`, or the scrutinee of a `switch`.
 ///
-/// `csharpize_statement`'s control-flow branches dispatch to this so
+/// The statement rewriter's control-flow branches dispatch to this so
 /// the rewrites apply uniformly whether the helper appears in a
 /// statement position or inside a control header.
-fn csharpize_expression(text: &str) -> String {
+#[cfg(test)]
+fn legacy_expression_to_csharp(text: &str) -> String {
     rewrite_numeric_helpers(&rewrite_cat_operator(text))
 }
 
@@ -334,6 +363,7 @@ fn csharpize_expression(text: &str) -> String {
 /// The rewrite is identifier-boundary aware (so `pow(x)` matches
 /// but `mypow(x)` does not) and string-aware (so a literal
 /// containing `abs(...)` is preserved verbatim).
+#[cfg(test)]
 fn rewrite_numeric_helpers(line: &str) -> String {
     let bytes = line.as_bytes();
     let mut out = String::with_capacity(line.len());
@@ -439,6 +469,7 @@ fn rewrite_numeric_helpers(line: &str) -> String {
 /// `t12`/`loc5` are never matched). Only the magnitude is wrapped, so a leading
 /// unary `-` stays valid (`-BigInteger.Parse("…")`). Hex (`0x…`) and literals
 /// that continue into an identifier or a `.` are left untouched.
+#[cfg(test)]
 fn match_big_integer_literal(s: &str) -> Option<(String, usize)> {
     let bytes = s.as_bytes();
     if bytes.is_empty() || !bytes[0].is_ascii_digit() {
@@ -476,7 +507,8 @@ fn match_big_integer_literal(s: &str) -> Option<(String, usize)> {
 /// form is handled by [`match_collection_constructor`]; a body carrying a
 /// `/* N more … */` truncation marker is left untouched (it is an incomplete
 /// literal that cannot be rendered faithfully). Keys and values are recursively
-/// run through [`csharpize_expression`] so nested helpers/maps are translated.
+/// run through [`legacy_expression_to_csharp`] so nested helpers/maps are translated.
+#[cfg(test)]
 fn match_map_literal(rest: &str) -> Option<(String, usize)> {
     let inner = rest.strip_prefix("Map(")?;
     let close = matching_paren(inner)?;
@@ -489,8 +521,8 @@ fn match_map_literal(rest: &str) -> Option<(String, usize)> {
         let (key, value) = split_top_level_colon(entry)?;
         entries.push(format!(
             "[{}] = {}",
-            csharpize_expression(key.trim()),
-            csharpize_expression(value.trim())
+            legacy_expression_to_csharp(key.trim()),
+            legacy_expression_to_csharp(value.trim())
         ));
     }
     let consumed = "Map(".len() + close + 1;
@@ -503,6 +535,7 @@ fn match_map_literal(rest: &str) -> Option<(String, usize)> {
 /// Index of the `)` that closes an already-opened paren at the start of `s`
 /// (i.e. `s` is the text *after* the opening `(`). String- and nesting-aware
 /// over `()[]{}`. Returns `None` if unbalanced.
+#[cfg(test)]
 fn matching_paren(s: &str) -> Option<usize> {
     let bytes = s.as_bytes();
     let mut depth = 0i32;
@@ -535,6 +568,7 @@ fn matching_paren(s: &str) -> Option<usize> {
 
 /// Split a single map entry `key: value` at its first top-level `:`
 /// (string/nesting aware). Returns `None` when no top-level `:` is present.
+#[cfg(test)]
 fn split_top_level_colon(entry: &str) -> Option<(&str, &str)> {
     let bytes = entry.as_bytes();
     let mut depth = 0i32;
@@ -578,6 +612,7 @@ fn split_top_level_colon(entry: &str) -> Option<(&str, &str)> {
 /// return, an expression operand). A manifest-typed return such as `UInt160`
 /// still needs a cast the text rewriter can't infer here, but eliminating the
 /// uncompilable integer literal is the correct minimal fix.
+#[cfg(test)]
 fn match_big_byte_literal(s: &str) -> Option<(String, usize)> {
     let bytes = s.as_bytes();
     if bytes.len() < 2 || bytes[0] != b'0' || !(bytes[1] == b'x' || bytes[1] == b'X') {
@@ -613,6 +648,7 @@ fn match_big_byte_literal(s: &str) -> Option<(String, usize)> {
 /// `u64::MAX` (18446744073709551615) — i.e. beyond what a C# `ulong` literal
 /// can hold. Compared by length then lexically to avoid overflowing any fixed
 /// integer width (PUSHINT256 values can be up to 78 digits).
+#[cfg(test)]
 fn decimal_exceeds_u64(digits: &str) -> bool {
     const U64_MAX: &str = "18446744073709551615";
     let trimmed = digits.trim_start_matches('0');
@@ -624,6 +660,7 @@ fn decimal_exceeds_u64(digits: &str) -> bool {
     }
 }
 
+#[cfg(test)]
 struct HelperRule {
     replacement: &'static str,
     needle_len: usize,
@@ -653,6 +690,7 @@ struct HelperRule {
 /// (e.g. `Map(k1, v1, k2, v2)`) are deferred — they need
 /// collection-initialiser rendering that the lift doesn't supply
 /// the structure for yet.
+#[cfg(test)]
 fn match_collection_constructor(rest: &str) -> Option<(&'static str, usize)> {
     const TABLE: &[(&str, &str)] = &[
         ("Map()", "new Map<object, object>()"),
@@ -679,6 +717,7 @@ fn match_collection_constructor(rest: &str) -> Option<(&'static str, usize)> {
 /// - `new_array(n)` → `new object[(int)(n)]` — NEO arrays are
 ///   heterogeneous; `object[]` is the safe fallback without
 ///   element-type info.
+#[cfg(test)]
 fn match_unary_pattern(rest: &str) -> Option<HelperRewrite> {
     if let Some(rendered) = match_simple_unary(rest, "is_null(", |arg| format!("({arg} is null)")) {
         return Some(rendered);
@@ -747,12 +786,14 @@ fn match_unary_pattern(rest: &str) -> Option<HelperRewrite> {
     None
 }
 
+#[cfg(test)]
 const METHOD_CALL_TABLE: &[(&str, &str)] = &[
     ("remove_item(", "Remove"),
     ("append(", "Add"),
     ("has_key(", "ContainsKey"),
 ];
 
+#[cfg(test)]
 const CONVERT_TYPED_TABLE: &[(&str, &str)] = &[
     ("convert_to_bool(", "bool"),
     ("convert_to_integer(", "BigInteger"),
@@ -760,6 +801,7 @@ const CONVERT_TYPED_TABLE: &[(&str, &str)] = &[
     ("convert_to_buffer(", "byte[]"),
 ];
 
+#[cfg(test)]
 const IS_TYPE_TYPED_TABLE: &[(&str, &str)] = &[
     ("is_type_bool(", "bool"),
     ("is_type_integer(", "BigInteger"),
@@ -775,21 +817,27 @@ const IS_TYPE_TYPED_TABLE: &[(&str, &str)] = &[
 /// literal is unambiguously an `int` to the C# parser, and the
 /// redundant cast just adds visual noise (`new object[(int)(3)]`
 /// → `new object[3]`).
+#[cfg(test)]
 fn wrap_int_cast_unless_literal(arg: &str) -> String {
     let trimmed = arg.trim();
-    let is_decimal_literal = !trimmed.is_empty()
-        && trimmed
-            .strip_prefix('-')
-            .unwrap_or(trimmed)
-            .chars()
-            .all(|ch| ch.is_ascii_digit());
-    if is_decimal_literal {
+    if is_decimal_integer_literal(trimmed) {
         trimmed.to_string()
     } else {
         format!("(int)({trimmed})")
     }
 }
 
+#[cfg(test)]
+fn is_decimal_integer_literal(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .strip_prefix('-')
+            .unwrap_or(text)
+            .chars()
+            .all(|ch| ch.is_ascii_digit())
+}
+
+#[cfg(test)]
 fn match_simple_unary(
     rest: &str,
     needle: &str,
@@ -811,6 +859,7 @@ fn match_simple_unary(
 /// into a C# method invocation `arg0.method_name(arg1, ...)`. Used
 /// for collection helpers like `remove_item(coll, key)` →
 /// `coll.Remove(key)` where the first argument is the receiver.
+#[cfg(test)]
 fn match_method_call(rest: &str, needle: &str, method_name: &str) -> Option<HelperRewrite> {
     if !rest.starts_with(needle) {
         return None;
@@ -834,6 +883,7 @@ fn match_method_call(rest: &str, needle: &str, method_name: &str) -> Option<Help
     })
 }
 
+#[cfg(test)]
 fn match_numeric_helper(bytes: &[u8]) -> Option<HelperRule> {
     const TABLE: &[(&[u8], &str, &[usize])] = &[
         (b"abs(", "BigInteger.Abs", &[]),
@@ -861,11 +911,13 @@ fn match_numeric_helper(bytes: &[u8]) -> Option<HelperRule> {
     None
 }
 
+#[cfg(test)]
 struct HelperRewrite {
     body: String,
     consumed: usize,
 }
 
+#[cfg(test)]
 fn format_helper_with_casts(rest: &str, rule: &HelperRule) -> Option<HelperRewrite> {
     let after_open = &rest[rule.needle_len..];
     let close_index = find_matching_close_paren(after_open.as_bytes())?;
@@ -877,7 +929,7 @@ fn format_helper_with_casts(rest: &str, rule: &HelperRule) -> Option<HelperRewri
         // non-cast helpers use, so nested NEO helper calls (abs/min/sqrt/
         // is_null/convert_to_*, ` cat `) become compilable C# rather than being
         // emitted verbatim (e.g. `pow(abs(x), 2)` → `BigInteger.Pow(BigInteger.Abs(x), 2)`).
-        let normalized = csharpize_expression(part.trim());
+        let normalized = legacy_expression_to_csharp(part.trim());
         if rule.int_cast_args.contains(&index) {
             // Same idea as `wrap_int_cast_unless_literal`: defensive
             // `(int)` casts are necessary for variable / expression
@@ -899,6 +951,7 @@ fn format_helper_with_casts(rest: &str, rule: &HelperRule) -> Option<HelperRewri
 
 /// Split a top-level argument list — like `split_top_level_comma` but
 /// returns every comma-separated piece, not just the first split.
+#[cfg(test)]
 fn split_top_level_args(args: &str) -> Vec<&str> {
     let bytes = args.as_bytes();
     let mut parts = Vec::new();
@@ -939,6 +992,7 @@ fn split_top_level_args(args: &str) -> Vec<&str> {
     parts
 }
 
+#[cfg(test)]
 fn find_matching_close_paren(bytes: &[u8]) -> Option<usize> {
     let mut depth: i32 = 0;
     let mut in_string: Option<u8> = None;
@@ -976,6 +1030,7 @@ fn find_matching_close_paren(bytes: &[u8]) -> Option<usize> {
 /// Split a comma-separated argument list at the first top-level comma —
 /// i.e. ignore commas inside parens / brackets / strings. Used by the
 /// C#-ize pass to peel `assert(cond, message);` into its two pieces.
+#[cfg(test)]
 fn split_top_level_comma(args: &str) -> Option<(&str, &str)> {
     let bytes = args.as_bytes();
     let mut depth = 0i32;
@@ -1010,6 +1065,7 @@ fn split_top_level_comma(args: &str) -> Option<(&str, &str)> {
 /// Translate the high-level `cat` (CAT / string-concat) operator to C#'s
 /// `+`. The replacement only fires for ` cat ` tokens that sit outside
 /// string literals so contents like `"a cat b"` are preserved verbatim.
+#[cfg(test)]
 fn rewrite_cat_operator(line: &str) -> String {
     if !line.contains(" cat ") {
         return line.to_string();
@@ -1072,21 +1128,6 @@ fn rewrite_cat_operator(line: &str) -> String {
         i += 1;
     }
     out
-}
-
-/// Returns true if `line` already terminates control flow such that a trailing
-/// `break;` would be unreachable. Used by C# switch-case rendering to skip
-/// inserting a redundant `break;` after `return`/`throw`/`goto`/`break`.
-pub(in crate::decompiler) fn line_is_csharp_terminator(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.starts_with("return ")
-        || trimmed == "return;"
-        || trimmed.starts_with("return;")
-        || trimmed.starts_with("throw ")
-        || trimmed == "throw;"
-        || trimmed.starts_with("goto ")
-        || trimmed == "break;"
-        || trimmed == "continue;"
 }
 
 pub(super) fn sanitize_csharp_identifier(input: &str) -> String {

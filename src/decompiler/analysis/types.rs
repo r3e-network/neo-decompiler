@@ -16,10 +16,14 @@
     clippy::cast_sign_loss
 )]
 
+use std::fmt;
+
 use serde::Serialize;
 
+use crate::decompiler::helpers::value_type_from_operand;
 use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::ContractManifest;
+use crate::syscalls;
 
 use super::{MethodRef, MethodTable};
 
@@ -76,6 +80,26 @@ impl ValueType {
             (Null, _) | (_, Null) => Any,
             _ => Any,
         }
+    }
+}
+
+impl fmt::Display for ValueType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Self::Unknown => "unknown",
+            Self::Any => "any",
+            Self::Null => "null",
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::ByteString => "bytestring",
+            Self::Buffer => "buffer",
+            Self::Array => "array",
+            Self::Struct => "struct",
+            Self::Map => "map",
+            Self::InteropInterface => "interopinterface",
+            Self::Pointer => "pointer",
+        };
+        formatter.write_str(name)
     }
 }
 
@@ -251,6 +275,22 @@ fn infer_types_in_slice(
                 }
             }
             OpCode::PushA => stack.push(StackValue::with_type(ValueType::Pointer)),
+
+            OpCode::Syscall => {
+                let Some(info) = instr.operand.as_ref().and_then(|operand| match operand {
+                    Operand::Syscall(hash) => syscalls::lookup(*hash),
+                    _ => None,
+                }) else {
+                    stack.push(StackValue::unknown());
+                    continue;
+                };
+                for _ in 0..info.param_count {
+                    let _ = pop_or_unknown(&mut stack);
+                }
+                if info.returns_value {
+                    stack.push(StackValue::unknown());
+                }
+            }
 
             // Stack manipulation
             OpCode::Clear => stack.clear(),
@@ -461,8 +501,13 @@ fn infer_types_in_slice(
                 let _ = pop_or_unknown(&mut stack);
                 let _ = pop_or_unknown(&mut stack);
             }
-            OpCode::Clearitems => {
+            OpCode::Clearitems | OpCode::Reverseitems => {
                 let _ = pop_or_unknown(&mut stack);
+            }
+            OpCode::Memcpy => {
+                for _ in 0..5 {
+                    let _ = pop_or_unknown(&mut stack);
+                }
             }
             OpCode::Popitem => {
                 let _ = pop_or_unknown(&mut stack);
@@ -484,7 +529,6 @@ fn infer_types_in_slice(
             }
             OpCode::Istype => {
                 let _ = pop_or_unknown(&mut stack);
-                let _ = pop_or_unknown(&mut stack);
                 stack.push(StackValue::with_type(ValueType::Boolean));
             }
             OpCode::Convert => {
@@ -496,7 +540,7 @@ fn infer_types_in_slice(
                 let target = instr
                     .operand
                     .as_ref()
-                    .and_then(convert_target_type)
+                    .and_then(value_type_from_operand)
                     .unwrap_or(ValueType::Any);
                 stack.push(StackValue::with_type(target));
             }
@@ -691,26 +735,5 @@ fn type_from_manifest(kind: &str) -> ValueType {
         "map" => ValueType::Map,
         "interopinterface" => ValueType::InteropInterface,
         _ => ValueType::Unknown,
-    }
-}
-
-fn convert_target_type(operand: &Operand) -> Option<ValueType> {
-    let byte = match operand {
-        Operand::U8(v) => *v,
-        Operand::I8(v) => *v as u8,
-        _ => return None,
-    };
-    match byte {
-        0x00 => Some(ValueType::Any),
-        0x10 => Some(ValueType::Pointer),
-        0x20 => Some(ValueType::Boolean),
-        0x21 => Some(ValueType::Integer),
-        0x28 => Some(ValueType::ByteString),
-        0x30 => Some(ValueType::Buffer),
-        0x40 => Some(ValueType::Array),
-        0x41 => Some(ValueType::Struct),
-        0x48 => Some(ValueType::Map),
-        0x60 => Some(ValueType::InteropInterface),
-        _ => None,
     }
 }

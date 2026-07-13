@@ -7,6 +7,9 @@ use std::fmt;
 
 use crate::decompiler::cfg::BlockId;
 
+const VM_NULL_SENTINEL_BASE: &str = "<vm-null>";
+const EXCEPTION_PAYLOAD_PREFIX: &str = "exception_b";
+
 /// A versioned variable in SSA form.
 ///
 /// Each SSA variable combines a base name (like `"local_0"` or `"arg_1"`) with a
@@ -70,6 +73,30 @@ impl SsaVariable {
     #[must_use]
     pub const fn is_initial(&self) -> bool {
         self.version == 0
+    }
+
+    /// Internal value used for VM-initialized local slots before a source-level
+    /// assignment exists. It must never be rendered as an identifier.
+    pub(crate) fn vm_null() -> Self {
+        Self::initial(VM_NULL_SENTINEL_BASE.to_string())
+    }
+
+    #[must_use]
+    pub(crate) fn is_vm_null(&self) -> bool {
+        self.base == VM_NULL_SENTINEL_BASE
+    }
+
+    /// VM stack item supplied at a specific exception-handler entry.
+    pub(crate) fn exception_payload(handler: BlockId) -> Self {
+        Self::initial(format!("{EXCEPTION_PAYLOAD_PREFIX}{}", handler.index()))
+    }
+
+    #[must_use]
+    pub(crate) fn is_exception_payload(&self) -> bool {
+        self.base.starts_with(EXCEPTION_PAYLOAD_PREFIX)
+            && self.base[EXCEPTION_PAYLOAD_PREFIX.len()..]
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
     }
 }
 
@@ -205,6 +232,18 @@ mod tests {
         assert_eq!(v0.to_string(), "local_0");
         assert_eq!(v1.to_string(), "local_0");
         assert_eq!(v2.to_string(), "local_0");
+    }
+
+    #[test]
+    fn exception_payloads_are_handler_scoped() {
+        let first = SsaVariable::exception_payload(BlockId::from(3));
+        let second = SsaVariable::exception_payload(BlockId::from(7));
+
+        assert_eq!(first.base, "exception_b3");
+        assert_eq!(second.base, "exception_b7");
+        assert_ne!(first, second);
+        assert!(first.is_exception_payload());
+        assert!(!SsaVariable::initial("exception_bx".to_string()).is_exception_payload());
     }
 
     #[test]

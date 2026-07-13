@@ -5,6 +5,7 @@
 //! data flow analyses and optimizations.
 
 pub mod builder;
+mod context;
 mod dominance;
 mod effects;
 mod form;
@@ -13,10 +14,12 @@ mod to_ir;
 mod variable;
 
 pub use builder::SsaBuilder;
+pub(crate) use context::{CallContract, MethodContext};
 pub use dominance::{compute, DominanceInfo};
 pub use form::{SsaBlock, SsaExpr, SsaForm, SsaStats, SsaStmt, UseSite};
 pub use optimize::optimize as optimize_ssa;
 pub use to_ir::{render_ssa_form, ssa_expr_to_ir};
+pub(crate) use to_ir::{ssa_expr_to_ir_with_source_names, ssa_var_name};
 pub use variable::{PhiNode, SsaVariable};
 
 #[cfg(test)]

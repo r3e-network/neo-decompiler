@@ -8,12 +8,13 @@ use crate::common::create_parent;
 use crate::csharp_embed::{
     extract_section, unescape_verbatim, MANIFEST_PREFIX, MANIFEST_SUFFIX, NEF_PREFIX, NEF_SUFFIX,
 };
-use crate::known_unsupported::{find_known_entry, KnownUnsupported};
+use crate::expected_failures::{find_entry, ExpectedFailure};
 
 pub(crate) fn process_artifact(
     decompiler: &Decompiler,
     artifact: &ArtifactEntry,
-    known_unsupported: &[KnownUnsupported],
+    known_unsupported: &[ExpectedFailure],
+    expected_invalid: &[ExpectedFailure],
 ) -> ContractStatus {
     match &artifact.kind {
         Artifact::CSharp { path } => process_csharp_contract(
@@ -22,6 +23,7 @@ pub(crate) fn process_artifact(
             &artifact.output_base,
             &artifact.id,
             known_unsupported,
+            expected_invalid,
         ),
         Artifact::NefManifest {
             nef_path,
@@ -33,6 +35,7 @@ pub(crate) fn process_artifact(
             &artifact.output_base,
             &artifact.id,
             known_unsupported,
+            expected_invalid,
         ),
     }
 }
@@ -42,7 +45,8 @@ fn process_csharp_contract(
     source_path: &Path,
     output_base: &Path,
     id: &str,
-    known_unsupported: &[KnownUnsupported],
+    known_unsupported: &[ExpectedFailure],
+    expected_invalid: &[ExpectedFailure],
 ) -> ContractStatus {
     let source = fs::read_to_string(source_path).unwrap_or_else(|err| {
         panic!("failed to read {}: {err}", source_path.display());
@@ -80,6 +84,7 @@ fn process_csharp_contract(
         &manifest_path,
         output_base,
         known_unsupported,
+        expected_invalid,
     )
 }
 
@@ -89,7 +94,8 @@ fn process_nef_contract(
     manifest_path: &Path,
     output_base: &Path,
     id: &str,
-    known_unsupported: &[KnownUnsupported],
+    known_unsupported: &[ExpectedFailure],
+    expected_invalid: &[ExpectedFailure],
 ) -> ContractStatus {
     assert!(nef_path.is_file(), "NEF missing: {}", nef_path.display());
     assert!(
@@ -105,6 +111,7 @@ fn process_nef_contract(
         manifest_path,
         output_base,
         known_unsupported,
+        expected_invalid,
     )
 }
 
@@ -114,7 +121,8 @@ fn decompile_and_write_outputs(
     nef_path: &Path,
     manifest_path: &Path,
     output_base: &Path,
-    known_unsupported: &[KnownUnsupported],
+    known_unsupported: &[ExpectedFailure],
+    expected_invalid: &[ExpectedFailure],
 ) -> ContractStatus {
     let high_level_path = output_base.with_extension("high-level.cs");
     let pseudocode_path = output_base.with_extension("pseudocode.txt");
@@ -129,6 +137,14 @@ fn decompile_and_write_outputs(
     match decompiler.decompile_file_with_manifest(nef_path, Some(manifest_path), OutputFormat::All)
     {
         Ok(result) => {
+            assert!(
+                find_entry(id, expected_invalid).is_none(),
+                "expected-invalid artifact {id} unexpectedly decompiled"
+            );
+            assert!(
+                find_entry(id, known_unsupported).is_none(),
+                "known-unsupported artifact {id} now decompiles; remove its registry entry"
+            );
             let high_level = result.high_level.as_deref().unwrap_or_default();
             let pseudocode = result.pseudocode.as_deref().unwrap_or_default();
             let csharp = result.csharp.as_deref().unwrap_or_default();
@@ -143,7 +159,13 @@ fn decompile_and_write_outputs(
             ContractStatus::Success
         }
         Err(err) => {
-            if find_known_entry(id, known_unsupported).is_some() {
+            if find_entry(id, expected_invalid).is_some() {
+                fs::write(&error_path, err.to_string()).unwrap_or_else(|io_err| {
+                    panic!("failed to write {}: {io_err}", error_path.display())
+                });
+                eprintln!("Rejected expected-invalid artifact {id}: {err}");
+                ContractStatus::ExpectedInvalid
+            } else if find_entry(id, known_unsupported).is_some() {
                 fs::write(&error_path, err.to_string()).unwrap_or_else(|io_err| {
                     panic!("failed to write {}: {io_err}", error_path.display())
                 });

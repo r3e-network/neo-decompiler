@@ -3,6 +3,10 @@
 use super::control_flow::ControlFlow;
 use super::expression::Expr;
 
+/// Deterministic label assigned to a CFG basic block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct BlockLabel(pub usize);
+
 /// Statement nodes in the IR.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
@@ -10,10 +14,29 @@ pub enum Stmt {
     Assign { target: String, value: Expr },
     /// Return statement with optional value.
     Return(Option<Expr>),
+    /// Catchable VM throw with an optional payload.
+    Throw(Option<Expr>),
+    /// Uncatchable VM abort with an optional diagnostic payload.
+    Abort(Option<Expr>),
+    /// Runtime assertion with an optional failure message.
+    Assert {
+        /// Value tested by the assertion.
+        condition: Expr,
+        /// Optional diagnostic value produced when the assertion fails.
+        message: Option<Expr>,
+    },
     /// Expression evaluated for side effects.
     ExprStmt(Expr),
     /// Inline comment.
     Comment(String),
+    /// Exit the nearest enclosing loop or switch.
+    Break,
+    /// Continue the nearest enclosing loop.
+    Continue,
+    /// Label an irreducible basic block.
+    Label(BlockLabel),
+    /// Transfer to a labeled irreducible basic block.
+    Goto(BlockLabel),
     /// Control flow construct.
     ControlFlow(Box<ControlFlow>),
 }
@@ -37,6 +60,24 @@ impl Stmt {
     #[must_use]
     pub fn ret_void() -> Self {
         Stmt::Return(None)
+    }
+
+    /// Create a catchable throw statement.
+    #[must_use]
+    pub fn throw(value: Option<Expr>) -> Self {
+        Stmt::Throw(value)
+    }
+
+    /// Create an uncatchable abort statement.
+    #[must_use]
+    pub fn abort(message: Option<Expr>) -> Self {
+        Stmt::Abort(message)
+    }
+
+    /// Create an assertion statement.
+    #[must_use]
+    pub fn assert(condition: Expr, message: Option<Expr>) -> Self {
+        Stmt::Assert { condition, message }
     }
 
     /// Create an expression statement.

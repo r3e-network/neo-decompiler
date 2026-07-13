@@ -136,7 +136,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | Continue-in-Try Detection     | ✅     | `ENDTRY` targeting loop conditions emitted as `continue`                     |
 | Temp Variable Collapsing      | ✅     | Identity temps, temp-into-store, and temp-into-return patterns simplified    |
 | Try/Catch Nesting Fix         | ✅     | Correct catch/finally sibling ordering in control flow reconstruction        |
-| 101-Contract Audit Validation | ✅     | Comprehensive parity testing against full Neo N3 devpack                     |
+| 103-Contract Audit Validation | ✅     | Pinned parity testing against neo-devpack-dotnet v3.10.0                      |
 
 ### Shipped Features (v0.7.x — advanced-decompiler evolution)
 
@@ -579,14 +579,14 @@ neo-decompiler catalog opcodes
 ## Testing artifacts
 
 Detailed contributor instructions (including CI sweep semantics and
-known-unsupported rules) live in `docs/testing-artifacts.md`.
+expected-failure registry rules) live in `docs/testing-artifacts.md`.
 
 - Drop real contracts anywhere under `TestingArtifacts/` to extend coverage:
   - C# source with embedded manifest/NEF blobs (`*.cs`) are parsed and rewritten into `TestingArtifacts/decompiled/<relative>/`.
   - Paired files (`Example.nef` + `Example.manifest.json`) are also picked up automatically (recursively).
-- Known limitations can be listed in `TestingArtifacts/known_unsupported.txt` (one name per line, `#` for comments, optional `path:expected substring` to assert the error text); matching artifacts are allowed to fail and are copied to `*.error.txt`.
-- Outputs mirror the artifact layout under `TestingArtifacts/decompiled/`, which is git-ignored by default. Known-unsupported entries are still processed and must emit a non-empty `*.error.txt` to document the failure reason.
-- Current samples ship under `TestingArtifacts/edgecases/` (loop lifting, method tokens, manifest metadata, permissions/trusts, call-flag failure, events) and `TestingArtifacts/embedded/` (compiler-style C# with embedded manifest/NEF).
+- Valid contracts with known decompiler limitations can be listed in `TestingArtifacts/known_unsupported.txt`; only decompilation may fail for those entries. Intentionally malformed fixtures belong in `TestingArtifacts/expected_invalid.txt` and must be rejected by every parser-backed command. Both registries accept `path:expected substring` entries and produce `*.error.txt` records.
+- Outputs mirror the artifact layout under `TestingArtifacts/decompiled/`, which is git-ignored by default. Expected-failure entries are still processed and must emit a non-empty `*.error.txt` to document the rejection reason.
+- Current samples ship under `TestingArtifacts/edgecases/` (loop lifting, method tokens, manifest metadata, permissions/trusts, invalid call flags, events) and `TestingArtifacts/embedded/` (compiler-style C# with embedded manifest/NEF). CI also strictly extracts the pinned 103-contract neo-devpack-dotnet v3.10.0 corpus.
 
 ### Extending opcode coverage
 
@@ -725,6 +725,31 @@ cargo test
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --no-default-features
 ```
+
+To compile representative generated C# through Roslyn, provide the Neo
+framework assembly explicitly and run:
+
+```bash
+NEO_SMARTCONTRACT_FRAMEWORK_DLL=/absolute/path/Neo.SmartContract.Framework.dll \
+  tools/ci/csharp_compile.sh
+```
+
+The compile harness targets `net8.0` by default. Override it with
+`NEO_CSHARP_TARGET_FRAMEWORK` when using a framework assembly built for a
+different runtime. A compatible framework assembly can be
+extracted from the `Neo.SmartContract.Framework` NuGet package (for example,
+package version `3.7.4.1`, `lib/net8.0/Neo.SmartContract.Framework.dll`):
+
+```bash
+curl -L https://api.nuget.org/v3-flatcontainer/neo.smartcontract.framework/3.7.4.1/neo.smartcontract.framework.3.7.4.1.nupkg -o /tmp/neo-framework.nupkg
+unzip -j /tmp/neo-framework.nupkg 'lib/net8.0/Neo.SmartContract.Framework.dll' -d /tmp/neo-framework
+NEO_SMARTCONTRACT_FRAMEWORK_DLL=/tmp/neo-framework/Neo.SmartContract.Framework.dll \
+  tools/ci/csharp_compile.sh
+```
+
+Newer framework packages may target a newer .NET runtime than the harness and
+will fail with an assembly-version mismatch unless `NEO_CSHARP_TARGET_FRAMEWORK`
+is updated alongside them (for example, use `net10.0` with package 3.10.0).
 
 If you use [`just`](https://github.com/casey/just), the repository ships with a
 `Justfile` providing shortcuts for the common workflows above.

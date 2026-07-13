@@ -1,3 +1,2 @@
-# List contracts that are expected to fail decompilation.
-# One name per line; lines starting with # are ignored.
-edgecases/callflags/CallFlagInvalid:unsupported bits
+# Valid contracts that exercise a known decompiler limitation.
+# Format: path/or/name[:expected error substring]
