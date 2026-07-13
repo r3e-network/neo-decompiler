@@ -479,10 +479,18 @@ fn fold_binary(op: BinOp, a: &Literal, b: &Literal) -> Option<Literal> {
             }
             Literal::Int(x.wrapping_rem(y))
         }
-        BinOp::Pow => (0..y)
-            .take(1024)
-            .try_fold(1i64, |acc, _| acc.checked_mul(x))
-            .map(Literal::Int)?,
+        BinOp::Pow => {
+            // Neo's integer exponentiation is not represented by the i64
+            // fallback for negative exponents. Do not turn an unsupported
+            // case into the mathematically unrelated value `1`.
+            if y < 0 {
+                return None;
+            }
+            (0..y)
+                .take(1024)
+                .try_fold(1i64, |acc, _| acc.checked_mul(x))
+                .map(Literal::Int)?
+        }
         BinOp::And => Literal::Int(x & y),
         BinOp::Or => Literal::Int(x | y),
         BinOp::Xor => Literal::Int(x ^ y),
@@ -766,6 +774,14 @@ mod tests {
             matches!(args[0], SsaExpr::Literal(Literal::Int(3))),
             "constant (1+2) should propagate as 3 into the use, got {:?}",
             args[0]
+        );
+    }
+
+    #[test]
+    fn does_not_fold_negative_integer_exponents() {
+        assert_eq!(
+            fold_binary(BinOp::Pow, &Literal::Int(2), &Literal::Int(-1)),
+            None
         );
     }
 
