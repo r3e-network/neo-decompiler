@@ -1013,6 +1013,70 @@ fn csharp_bare_throw_helper_preserves_the_opcode_and_avoids_collisions() {
 }
 
 #[test]
+fn csharp_static_initializer_keeps_adjacent_static_and_local_slot_prologues_together() {
+    let script = [
+        crate::instruction::OpCode::Ldsfld0.byte(),
+        crate::instruction::OpCode::Ret.byte(),
+        crate::instruction::OpCode::Initsslot.byte(),
+        1,
+        crate::instruction::OpCode::Initslot.byte(),
+        0,
+        0,
+        crate::instruction::OpCode::Push3.byte(),
+        crate::instruction::OpCode::Stsfld0.byte(),
+        crate::instruction::OpCode::Ret.byte(),
+    ];
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "StaticInitializer",
+            "abi": { "methods": [
+                {
+                    "name": "testStatic",
+                    "parameters": [],
+                    "returntype": "Integer",
+                    "offset": 0
+                },
+                {
+                    "name": "_initialize",
+                    "parameters": [],
+                    "returntype": "Void",
+                    "offset": 2
+                }
+            ] }
+        }"#,
+    )
+    .expect("manifest parsed");
+
+    let rendered =
+        render_csharp_with_coverage(&build_nef(&script), Some(manifest), true, false, true);
+
+    assert!(
+        rendered.source.contains("public static void _initialize()"),
+        "manifest initializer must be emitted:\n{}",
+        rendered.source
+    );
+    assert!(
+        rendered.source.contains("static0 = 3;"),
+        "initializer body must retain its static assignment:\n{}",
+        rendered.source
+    );
+    assert!(
+        !rendered.source.contains("sub_0x0004"),
+        "the local-slot prologue must not create a detached helper:\n{}",
+        rendered.source
+    );
+    assert_eq!(
+        rendered
+            .coverage
+            .method(2, "_initialize")
+            .expect("initializer coverage")
+            .fidelity
+            .status,
+        crate::decompiler::cfg::method_body::Fidelity::Exact
+    );
+}
+
+#[test]
 fn csharp_type_tags_preserve_bytestring_and_struct_identity() {
     let cases = [
         (

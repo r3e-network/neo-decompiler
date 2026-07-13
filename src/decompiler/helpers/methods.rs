@@ -106,8 +106,15 @@ pub(in super::super) fn initslot_argument_count_at(
 pub(in super::super) fn collect_initslot_offsets(instructions: &[Instruction]) -> Vec<usize> {
     let mut offsets = instructions
         .iter()
-        .filter(|ins| matches!(ins.opcode, OpCode::Initslot))
-        .map(|ins| ins.offset)
+        .enumerate()
+        .filter(|(index, instruction)| {
+            instruction.opcode == OpCode::Initslot
+                && index
+                    .checked_sub(1)
+                    .and_then(|previous| instructions.get(previous))
+                    .is_none_or(|previous| previous.opcode != OpCode::Initsslot)
+        })
+        .map(|(_, instruction)| instruction.offset)
         .collect::<Vec<_>>();
     offsets.sort_unstable();
     offsets.dedup();
