@@ -142,8 +142,8 @@ function inferExpressionType(expression) {
   }
   if (/^convert_to_bool\s*\(/i.test(value)) return "bool";
   if (/^convert_to_bytestring\s*\(/i.test(value)) return "ByteString";
-  if (/[+\-*\/%]|\b(?:and|or|xor|shl|shr)\b/.test(value)) return "BigInteger";
   if (/[<>=!]=?|&&|\|\|/.test(value)) return "bool";
+  if (/[+\-*\/%]|\b(?:and|or|xor|shl|shr)\b/.test(value)) return "BigInteger";
   return "dynamic";
 }
 

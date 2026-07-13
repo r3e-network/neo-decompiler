@@ -267,6 +267,7 @@ test("C# rendering can opt into conservative typed declarations", () => {
     "fn main() -> void {",
     "    let count = 0;",
     "    count = count + 1;",
+    "    let comparison = count * 2 > 1;",
     "    let values = new_array_t(2, integer);",
     "    let unknown = call();",
     "}",
@@ -276,6 +277,7 @@ test("C# rendering can opt into conservative typed declarations", () => {
   const typedRendered = renderCSharpContract(source, null, { typedDeclarations: true });
   assert.match(defaultRendered, /var count = 0;/);
   assert.match(typedRendered, /BigInteger count = 0;/);
+  assert.match(typedRendered, /bool comparison = count \* 2 > 1;/);
   assert.match(typedRendered, /BigInteger\[\] values = new BigInteger\[/);
   assert.match(typedRendered, /dynamic unknown = call\(\);/);
 });
