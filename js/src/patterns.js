@@ -14,7 +14,9 @@ export function identifyPatterns(nef, instructions, manifest = null) {
 
   const declaredStandards = Array.isArray(manifest?.supportedStandards)
     ? manifest.supportedStandards
-    : [];
+    : Array.isArray(manifest?.supportedstandards)
+      ? manifest.supportedstandards
+      : [];
   for (const standard of declaredStandards) {
     const normalized = String(standard).trim().toUpperCase();
     if (!normalized) continue;

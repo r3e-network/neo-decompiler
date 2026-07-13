@@ -39,6 +39,17 @@ test("pattern analysis treats declared NEP standards as authoritative", () => {
   assert.ok(info.evidence.some((entry) => entry.source === "nef.header.compiler"));
 });
 
+test("pattern analysis accepts canonical raw manifest standard field names", () => {
+  const info = identifyPatterns(
+    nef(),
+    [],
+    { supportedstandards: ["NEP-17"], abi: { methods: [], events: [] } },
+  );
+  assert.deepEqual(info.standards, ["NEP-17"]);
+  assert.deepEqual(info.patterns, ["NEP-17"]);
+  assert.equal(info.confidence, "high");
+});
+
 test("basic JS decompile APIs expose the same pattern summary", () => {
   const bytes = buildNef();
   const basic = decompileBytes(bytes);
