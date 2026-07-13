@@ -239,6 +239,11 @@ fn decompile_command_supports_json_format() {
     );
     assert!(value["analysis"]["call_graph"]["methods"].is_array());
     assert!(value["analysis"]["call_graph"]["edges"].is_array());
+    assert!(value["analysis"]["method_contracts"]["methods"].is_array());
+    assert_eq!(
+        value["analysis"]["method_contracts"]["methods"][0]["return_behavior"],
+        Value::String("value".into())
+    );
     assert!(value["analysis"]["xrefs"]["methods"].is_array());
     assert!(value["analysis"]["types"]["methods"].is_array());
     assert_schema(SchemaKind::Decompile, &value);

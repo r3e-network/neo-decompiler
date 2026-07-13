@@ -393,7 +393,7 @@ test("keeps manifest helper methods separate from the entry range", () => {
 
 test("lifts straight-line arithmetic into a high-level return", () => {
   const result = decompileHighLevelBytes(buildSampleNef());
-  assert.match(result.highLevel, /fn script_entry\(\) \{/);
+  assert.match(result.highLevel, /fn script_entry\(\) -> any \{/);
   assert.match(result.highLevel, /return 0 \+ 1;/);
 });
 
@@ -628,6 +628,65 @@ test("lifts internal CALL targets into named helper calls", () => {
   const result = decompileHighLevelBytes(buildNefFromScript(script));
   assert.match(result.highLevel, /fn sub_0x0005\(\) \{/);
   assert.match(result.highLevel, /sub_0x0005\(\)/);
+});
+
+test("keeps a manifest-known void helper CALL as a statement", () => {
+  const script = new Uint8Array([
+    0x34, 0x03, // CALL +3 -> helper at 0x0003
+    0x40, // RET
+    0x40, // helper: RET
+  ]);
+  const manifest = {
+    name: "VoidCalls",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Void", offset: 0 },
+        { name: "helper", parameters: [], returntype: "Void", offset: 3 },
+      ],
+      events: [],
+    },
+  };
+
+  const result = decompileHighLevelBytesWithManifest(
+    buildNefFromScript(script),
+    manifest,
+  );
+
+  assert.match(
+    result.highLevel,
+    /fn main\(\) \{\s+helper\(\);\s+return;/,
+    "a void helper call must not disappear at the caller's RET",
+  );
+});
+
+test("keeps a manifest-known void helper CALLA as a statement", () => {
+  const script = new Uint8Array([
+    0x0a, 0x07, 0x00, 0x00, 0x00, // PUSHA +7 -> helper at 0x0007
+    0x36, // CALLA
+    0x40, // RET
+    0x40, // helper: RET
+  ]);
+  const manifest = {
+    name: "VoidCalls",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Void", offset: 0 },
+        { name: "helper", parameters: [], returntype: "Void", offset: 7 },
+      ],
+      events: [],
+    },
+  };
+
+  const result = decompileHighLevelBytesWithManifest(
+    buildNefFromScript(script),
+    manifest,
+  );
+
+  assert.match(
+    result.highLevel,
+    /fn main\(\) \{\s+helper\(\);\s+return;/,
+    "a resolved void helper call must not disappear at the caller's RET",
+  );
 });
 
 test("string and hex literal operands do not get redundant outer parens", () => {
@@ -1307,7 +1366,10 @@ test("emits fallthrough call statements instead of empty method bodies", () => {
     result.highLevel,
     /fn script_entry\(\) \{\n\s*\/\/ no instructions decoded/,
   );
-  assert.match(result.highLevel, /fn script_entry\(\) \{\n\s*sub_0x0002\(\);/);
+  assert.match(
+    result.highLevel,
+    /fn script_entry\(\) -> any \{\n\s*sub_0x0002\(\);/,
+  );
 });
 
 test("uses method token metadata to lift CALLT arguments and void returns", () => {
@@ -1325,6 +1387,146 @@ test("uses method token metadata to lift CALLT arguments and void returns", () =
   assert.match(result.highLevel, /return;/);
 });
 
+test("uses call-graph-resolved CALLA targets across method arguments", () => {
+  // main passes &helper into invoke; invoke loads that argument and CALLA uses
+  // it. Method-local pointer maps cannot recover this provenance, but the call
+  // graph's interprocedural argument pass resolves CALLA@13 to helper@15.
+  const script = new Uint8Array([
+    0x0a, 0x0f, 0x00, 0x00, 0x00, // 0x00 PUSHA helper@15
+    0x34, 0x04, // 0x05 CALL invoke@9
+    0x40, // 0x07 RET
+    0x21, // 0x08 NOP padding
+    0x57, 0x00, 0x01, // 0x09 INITSLOT 0 locals, 1 arg
+    0x78, // 0x0C LDARG0
+    0x36, // 0x0D CALLA
+    0x40, // 0x0E RET
+    0x40, // 0x0F helper: RET
+  ]);
+  const manifest = JSON.stringify({
+    name: "IndirectVoid",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Void", offset: 0 },
+        {
+          name: "invoke",
+          parameters: [{ name: "target", type: "Any" }],
+          returntype: "Void",
+          offset: 9,
+        },
+        { name: "helper", parameters: [], returntype: "Void", offset: 15 },
+      ],
+      events: [],
+    },
+  });
+  const nef = buildNefFromScript(script);
+
+  const analysis = analyzeBytes(nef, manifest);
+  const calla = analysis.callGraph.edges.find((edge) => edge.callOffset === 13);
+  assert.equal(calla?.target.kind, "Internal");
+  assert.equal(calla?.target.method.offset, 15);
+
+  const { highLevel } = decompileHighLevelBytesWithManifest(nef, manifest);
+  assert.match(
+    highLevel,
+    /fn invoke\(target: any\) \{\s+helper\(\);\s+return;/,
+    `resolved void CALLA should remain visible in invoke: ${highLevel}`,
+  );
+  assert.doesNotMatch(highLevel, /= helper\(\)/);
+});
+
+test("does not resolve CALLA through a value-returning internal call", () => {
+  // The helper pointer remains below value()'s result. CALLA consumes the
+  // result, not the stale pointer, so analysis must keep the target indirect.
+  const script = new Uint8Array([
+    0x0a, 0x0c, 0x00, 0x00, 0x00, // 0x00 PUSHA helper@12
+    0x34, 0x04, // 0x05 CALL value@9
+    0x36, // 0x07 CALLA (consumes value() result)
+    0x40, // 0x08 RET
+    0x11, 0x40, // 0x09 value: PUSH1; RET
+    0x21, // 0x0B NOP padding
+    0x40, // 0x0C helper: RET
+  ]);
+  const manifest = JSON.stringify({
+    name: "IndirectValue",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Void", offset: 0 },
+        { name: "value", parameters: [], returntype: "Integer", offset: 9 },
+        { name: "helper", parameters: [], returntype: "Void", offset: 12 },
+      ],
+      events: [],
+    },
+  });
+  const nef = buildNefFromScript(script);
+
+  const analysis = analyzeBytes(nef, manifest);
+  const calla = analysis.callGraph.edges.find((edge) => edge.callOffset === 7);
+  assert.equal(calla?.target.kind, "Indirect");
+
+  const { highLevel } = decompileHighLevelBytesWithManifest(nef, manifest);
+  assert.doesNotMatch(
+    highLevel,
+    /^\s*helper\(\);$/m,
+    `CALLA must not consume the stale pointer below value()'s result: ${highLevel}`,
+  );
+});
+
+test("does not resolve CALLA through unmodeled value producers", () => {
+  const cases = [
+    {
+      name: "unknown CALLT",
+      script: new Uint8Array([
+        0x0a, 0x0a, 0x00, 0x00, 0x00, // PUSHA helper@10
+        0x37, 0x00, 0x00, // CALLT token 0 (token table is empty)
+        0x36, 0x40, // CALLA; RET
+        0x40, // helper@10: RET
+      ]),
+      helperOffset: 10,
+      callaOffset: 8,
+    },
+    {
+      name: "NEWMAP",
+      script: new Uint8Array([
+        0x0a, 0x08, 0x00, 0x00, 0x00, // PUSHA helper@8
+        0xc8, // NEWMAP
+        0x36, 0x40, // CALLA; RET
+        0x40, // helper@8: RET
+      ]),
+      helperOffset: 8,
+      callaOffset: 6,
+    },
+  ];
+
+  for (const { name, script, helperOffset, callaOffset } of cases) {
+    const manifest = JSON.stringify({
+      name: "IndirectUnknown",
+      abi: {
+        methods: [
+          { name: "main", parameters: [], returntype: "Void", offset: 0 },
+          {
+            name: "helper",
+            parameters: [],
+            returntype: "Void",
+            offset: helperOffset,
+          },
+        ],
+        events: [],
+      },
+    });
+    const nef = buildNefFromScript(script);
+    const analysis = analyzeBytes(nef, manifest);
+    const calla = analysis.callGraph.edges.find((edge) => edge.callOffset === callaOffset);
+    assert.equal(calla?.target.kind, "Indirect", `${name} must hide the stale pointer`);
+
+    const { highLevel } = decompileHighLevelBytesWithManifest(nef, manifest);
+    assert.doesNotMatch(
+      highLevel,
+      /^\s*helper\(\);$/m,
+      `${name} must not fabricate a helper call: ${highLevel}`,
+    );
+  }
+});
+
 test("infers entry-stack arguments for syscall-only helpers", () => {
   const script = new Uint8Array([
     0x0c, 0x01, 0x78, // PUSHDATA1 "x"
@@ -1336,6 +1538,180 @@ test("infers entry-stack arguments for syscall-only helpers", () => {
   const result = decompileHighLevelBytes(buildNefFromScript(script));
   assert.match(result.highLevel, /fn sub_0x0006\(arg0\) \{/);
   assert.match(result.highLevel, /syscall\("System\.Runtime\.Log", arg0\);/);
+});
+
+test("method contracts classify a private void helper and preserve the caller return", () => {
+  const script = new Uint8Array([
+    0x19, 0x11, 0x34, 0x05, 0x40, 0x21, 0x21,
+    0x57, 0x00, 0x01, 0x78, 0x45, 0x40,
+  ]);
+  const manifest = JSON.stringify({
+    name: "InferredVoidHelper",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Integer", offset: 0 },
+      ],
+      events: [],
+    },
+  });
+  const nef = buildNefFromScript(script);
+  const analysis = analyzeBytes(nef, manifest);
+
+  assert.deepEqual(analysis.methodContracts.methods, [
+    {
+      method: { offset: 0, name: "main" },
+      argumentCount: 0,
+      returnBehavior: "value",
+    },
+    {
+      method: { offset: 7, name: "sub_0x0007" },
+      argumentCount: 1,
+      returnBehavior: "void",
+    },
+  ]);
+
+  const result = decompileHighLevelBytesWithManifest(nef, manifest, {
+    inlineSingleUseTemps: true,
+  });
+  assert.deepEqual(result.methodContracts, analysis.methodContracts);
+  assert.match(result.highLevel, /sub_0x0007\(1\);/);
+  assert.match(result.highLevel, /return 9;/);
+  assert.doesNotMatch(result.highLevel, /return sub_0x0007\(1\)/);
+  assert.match(result.highLevel, /fn sub_0x0007\(arg0\) \{/);
+});
+
+test("method contracts converge through a private void wrapper chain", () => {
+  const nef = buildNefFromScript(
+    new Uint8Array([0x19, 0x34, 0x03, 0x40, 0x34, 0x03, 0x40, 0x40]),
+  );
+  const manifest = JSON.stringify({
+    name: "VoidWrapperChain",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Integer", offset: 0 },
+      ],
+      events: [],
+    },
+  });
+
+  const result = decompileHighLevelBytesWithManifest(nef, manifest, {
+    inlineSingleUseTemps: true,
+  });
+
+  assert.deepEqual(
+    result.methodContracts.methods.map(({ method, returnBehavior }) => [
+      method.offset,
+      returnBehavior,
+    ]),
+    [[0, "value"], [4, "void"], [7, "void"]],
+  );
+  assert.match(result.highLevel, /sub_0x0004\(\);/);
+  assert.match(result.highLevel, /sub_0x0007\(\);/);
+  assert.match(result.highLevel, /return 9;/);
+});
+
+test("method contracts keep recursive, mixed, and missing private returns unknown", () => {
+  const manifest = JSON.stringify({
+    name: "AmbiguousHelpers",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Integer", offset: 0 },
+      ],
+      events: [],
+    },
+  });
+  const recursive = analyzeBytes(
+    buildNefFromScript(
+      new Uint8Array([0x19, 0x34, 0x03, 0x40, 0x34, 0x00, 0x40]),
+    ),
+    manifest,
+  );
+  const mixed = analyzeBytes(
+    buildNefFromScript(
+      new Uint8Array([
+        0x34, 0x06, 0x40, 0x21, 0x21, 0x21,
+        0x11, 0x26, 0x04, 0x11, 0x40, 0x40,
+      ]),
+    ),
+    manifest,
+  );
+  const missing = analyzeBytes(
+    buildNefFromScript(new Uint8Array([0x34, 0x04, 0x40, 0x21, 0x38])),
+    manifest,
+  );
+
+  assert.equal(
+    recursive.methodContracts.methods.find(({ method }) => method.offset === 4)
+      ?.returnBehavior,
+    "unknown",
+  );
+  assert.equal(
+    mixed.methodContracts.methods.find(({ method }) => method.offset === 6)
+      ?.returnBehavior,
+    "unknown",
+  );
+  assert.equal(
+    missing.methodContracts.methods.find(({ method }) => method.offset === 4)
+      ?.returnBehavior,
+    "unknown",
+  );
+});
+
+test("method contracts keep manifest return declarations authoritative", () => {
+  const script = new Uint8Array([0x34, 0x04, 0x40, 0x21, 0x11, 0x40]);
+  const nef = buildNefFromScript(script);
+  const withHelperReturn = (returntype) =>
+    JSON.stringify({
+      name: "DeclaredHelper",
+      abi: {
+        methods: [
+          { name: "main", parameters: [], returntype: "Void", offset: 0 },
+          { name: "helper", parameters: [], returntype, offset: 4 },
+        ],
+        events: [],
+      },
+    });
+
+  const value = analyzeBytes(nef, withHelperReturn("Integer"));
+  const voidResult = analyzeBytes(nef, withHelperReturn("Void"));
+
+  assert.equal(
+    value.methodContracts.methods.find(({ method }) => method.offset === 4)
+      ?.returnBehavior,
+    "value",
+  );
+  assert.equal(
+    voidResult.methodContracts.methods.find(({ method }) => method.offset === 4)
+      ?.returnBehavior,
+    "void",
+  );
+});
+
+test("unknown private method contracts remain conservatively value-producing", () => {
+  const nef = buildNefFromScript(
+    new Uint8Array([0x34, 0x04, 0x40, 0x21, 0x11, 0x40]),
+  );
+  const manifest = JSON.stringify({
+    name: "UnknownValueHelper",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Integer", offset: 0 },
+      ],
+      events: [],
+    },
+  });
+
+  const result = decompileHighLevelBytesWithManifest(nef, manifest, {
+    inlineSingleUseTemps: true,
+  });
+
+  assert.equal(
+    result.methodContracts.methods.find(({ method }) => method.offset === 4)
+      ?.returnBehavior,
+    "unknown",
+  );
+  assert.match(result.highLevel, /fn sub_0x0004\(\) -> any \{/);
+  assert.match(result.highLevel, /return sub_0x0004\(\);/);
 });
 
 test("renders known syscalls with human-readable names", () => {

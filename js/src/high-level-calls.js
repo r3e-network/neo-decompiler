@@ -22,7 +22,7 @@ export function tryInternalCall(state, instruction) {
     state.context.methodLabelsByOffset.get(target) ?? `call_0x${hexOffset(target)}`;
   const argCount = state.context.methodArgCountsByOffset.get(target) ?? 0;
   const args = popCallArguments(state, instruction, callee, argCount);
-  state.stack.push(`${callee}(${args.join(", ")})`);
+  emitInternalCallResult(state, target, `${callee}(${args.join(", ")})`);
   return true;
 }
 
@@ -35,6 +35,7 @@ export function tryIndirectCall(state, instruction) {
   const resolvedTarget =
     state.pointerTargetsByExpression.get(targetExpr) ??
     state.pointerTargetsBySlot.get(targetExpr) ??
+    state.context.callaTargetsByOffset?.get(instruction.offset) ??
     null;
 
   if (resolvedTarget !== null) {
@@ -43,11 +44,19 @@ export function tryIndirectCall(state, instruction) {
       `sub_0x${hexOffset(resolvedTarget)}`;
     const argCount = state.context.methodArgCountsByOffset.get(resolvedTarget) ?? 0;
     const args = popCallArguments(state, instruction, callee, argCount);
-    state.stack.push(`${callee}(${args.join(", ")})`);
+    emitInternalCallResult(state, resolvedTarget, `${callee}(${args.join(", ")})`);
   } else {
     state.stack.push(`calla(${targetExpr})`);
   }
   return true;
+}
+
+function emitInternalCallResult(state, target, expression) {
+  if (state.context.methodReturnsValueByOffset?.get(target) === false) {
+    state.statements.push(`${expression};`);
+  } else {
+    state.stack.push(expression);
+  }
 }
 
 export function tryTokenCall(state, instruction) {

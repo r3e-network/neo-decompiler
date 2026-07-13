@@ -42,9 +42,10 @@ const manifest = parseManifest(manifestJson);
 const withManifest = decompileHighLevelBytesWithManifest(nefBytes, manifest);
 console.log(withManifest.highLevel);
 
-// Full analysis: call graph, xrefs, types
+// Full analysis: call graph, method contracts, xrefs, types
 const analysis = analyzeBytes(nefBytes, manifestJson);
 console.log(analysis.callGraph);
+console.log(analysis.methodContracts);
 console.log(analysis.xrefs);
 console.log(analysis.types);
 
@@ -72,7 +73,7 @@ Parse and disassemble. Returns simple pseudocode listing.
 
 Parse, disassemble, and group methods using manifest ABI info. Returns grouped pseudocode.
 
-### `decompileHighLevelBytes(bytes, options?) → { ..., highLevel }`
+### `decompileHighLevelBytes(bytes, options?) → { ..., highLevel, methodContracts }`
 
 Full decompilation to structured pseudocode (if/else, loops, etc.).
 
@@ -89,14 +90,18 @@ Full decompilation to structured pseudocode (if/else, loops, etc.).
 - `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
   for opcodes the disassembler does not recognise.
 
-### `decompileHighLevelBytesWithManifest(bytes, manifest, options?) → { ..., highLevel }`
+### `decompileHighLevelBytesWithManifest(bytes, manifest, options?) → { ..., highLevel, methodContracts }`
 
 Same as above but with manifest-driven method signatures. Accepts the
 same `options` object.
 
-### `analyzeBytes(bytes, manifest?) → { ..., callGraph, xrefs, types, methodGroups }`
+### `analyzeBytes(bytes, manifest?) → { ..., callGraph, methodContracts, xrefs, types, methodGroups }`
 
-Full analysis with call graph, cross-references, and type inference.
+Full analysis with call graph, deterministic method stack-call contracts,
+cross-references, and type inference. Each method contract reports
+`argumentCount` and a tri-state `returnBehavior` (`value`, `void`, or
+`unknown`); unknown methods remain conservatively value-producing while
+lifting calls.
 
 ### `parseManifest(json) → { name, abi, ... }`
 

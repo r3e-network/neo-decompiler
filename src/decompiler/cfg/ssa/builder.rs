@@ -36,6 +36,7 @@ use crate::decompiler::cfg::{BlockId, Cfg};
 use crate::decompiler::ir::{BinOp, Literal, UnaryOp};
 use crate::instruction::{Instruction, OpCode, Operand};
 
+use super::context::MethodContext;
 use super::dominance::{self, DominanceInfo};
 use super::effects;
 use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
@@ -53,6 +54,7 @@ pub struct SsaBuilder<'a> {
     cfg: &'a Cfg,
     instructions: &'a [Instruction],
     dominance: DominanceInfo,
+    method_context: Option<&'a MethodContext>,
 }
 
 impl<'a> SsaBuilder<'a> {
@@ -64,7 +66,15 @@ impl<'a> SsaBuilder<'a> {
             cfg,
             instructions,
             dominance,
+            method_context: None,
         }
+    }
+
+    /// Attach source-level method and call metadata to this SSA build.
+    #[must_use]
+    pub(crate) fn with_method_context(mut self, context: &'a MethodContext) -> Self {
+        self.method_context = Some(context);
+        self
     }
 
     /// Build the stack-effect SSA form from the CFG and instructions.
@@ -107,6 +117,7 @@ impl<'a> SsaBuilder<'a> {
             changed = false;
             iterations += 1;
             versions.clear();
+            self.reserve_argument_versions(&mut versions);
             for &bid in &block_ids {
                 let (new_entry, _new_phis) = self.compute_join_entry(bid, &exit_stacks);
                 let (new_slot_entry, _new_slot_phis) =
@@ -134,6 +145,7 @@ impl<'a> SsaBuilder<'a> {
         let mut uses: BTreeMap<SsaVariable, BTreeSet<UseSite>> = BTreeMap::new();
 
         versions.clear();
+        self.reserve_argument_versions(&mut versions);
         for &bid in &block_ids {
             let entry = entry_stacks.get(&bid).cloned().unwrap_or_default();
             let slot_entry = entry_slots.get(&bid).cloned().unwrap_or_default();
@@ -161,6 +173,11 @@ impl<'a> SsaBuilder<'a> {
                 }
                 sb.add_stmt(stmt.clone());
             }
+            if let Some(condition) = exec.terminator_condition {
+                uses.entry(condition)
+                    .or_default()
+                    .insert(UseSite::terminator(bid));
+            }
             // Fold in uses recorded for non-Assign consumers (stores, jumps, …).
             for (var, idx) in block_uses.get(&bid).cloned().unwrap_or_default() {
                 uses.entry(var).or_default().insert(UseSite::new(bid, idx));
@@ -181,25 +198,47 @@ impl<'a> SsaBuilder<'a> {
     ) -> (Vec<SsaVariable>, Vec<super::variable::PhiNode>) {
         use super::variable::PhiNode;
         let preds = self.cfg.predecessors(bid);
+        let initial_arguments = self.initial_entry_stack(bid);
         if preds.is_empty() {
-            return (Vec::new(), Vec::new());
+            return (initial_arguments, Vec::new());
         }
 
         let mut entry = Vec::new();
         let mut phis = Vec::new();
-        let mut depth = 0usize;
-        loop {
-            // Gather the var each predecessor holds at this depth, if any.
+        let predecessor_depth = preds
+            .iter()
+            .filter_map(|pred| exit_stacks.get(pred))
+            .map(Vec::len)
+            .max()
+            .unwrap_or(0);
+        let max_depth = predecessor_depth.max(initial_arguments.len());
+        let entry_source = BlockId::from(usize::MAX);
+        for depth in 0..max_depth {
+            // A predecessor with a known but shorter stack contributes `?` at
+            // this depth. Skipping it would fabricate a value on that path.
             let mut operands: Vec<(BlockId, SsaVariable)> = Vec::new();
             for pred in preds {
                 if let Some(stack) = exit_stacks.get(pred) {
-                    if let Some(var) = stack.get(depth) {
-                        operands.push((*pred, var.clone()));
-                    }
+                    let leading_underflow = max_depth.saturating_sub(stack.len());
+                    let variable = depth
+                        .checked_sub(leading_underflow)
+                        .and_then(|index| stack.get(index))
+                        .cloned()
+                        .unwrap_or_else(unknown_var);
+                    operands.push((*pred, variable));
                 }
             }
+            if !initial_arguments.is_empty() {
+                let leading_underflow = max_depth.saturating_sub(initial_arguments.len());
+                let variable = depth
+                    .checked_sub(leading_underflow)
+                    .and_then(|index| initial_arguments.get(index))
+                    .cloned()
+                    .unwrap_or_else(unknown_var);
+                operands.push((entry_source, variable));
+            }
             if operands.is_empty() {
-                break;
+                continue;
             }
             let first = operands[0].1.clone();
             let all_agree = operands.iter().all(|(_, v)| *v == first);
@@ -215,7 +254,6 @@ impl<'a> SsaBuilder<'a> {
                 entry.push(target);
                 phis.push(phi);
             }
-            depth += 1;
         }
 
         (entry, phis)
@@ -236,12 +274,32 @@ impl<'a> SsaBuilder<'a> {
     ) -> (SlotState, Vec<super::variable::PhiNode>) {
         use super::variable::PhiNode;
         let preds = self.cfg.predecessors(bid);
-        if preds.is_empty() {
+        let is_entry = self.cfg.entry_block().is_some_and(|entry| entry.id == bid);
+        let argument_count = if is_entry {
+            self.method_context
+                .filter(|context| !context.arguments_on_entry_stack)
+                .map_or(0, |context| context.argument_names.len())
+        } else {
+            0
+        };
+        if preds.is_empty() && argument_count == 0 {
             return (SlotState::new(), Vec::new());
         }
 
-        // Union of slot names any predecessor holds.
+        // The method entry has a virtual incoming edge carrying ABI arguments.
+        // Keep that source in entry-loop phis so a backedge cannot replace the
+        // initial parameter value before the first iteration.
+        let entry_source = BlockId::from(usize::MAX);
+        let mut initial_arguments = SlotState::new();
         let mut names: BTreeSet<String> = BTreeSet::new();
+        for index in 0..argument_count {
+            let base = format!("arg{index}");
+            initial_arguments.insert(base.clone(), SsaVariable::initial(base.clone()));
+            names.insert(base.clone());
+            versions.entry(base).or_insert(1);
+        }
+
+        // Union of slot names any predecessor holds.
         for pred in preds {
             if let Some(state) = exit_slots.get(pred) {
                 for name in state.keys() {
@@ -258,6 +316,9 @@ impl<'a> SsaBuilder<'a> {
                 if let Some(var) = exit_slots.get(pred).and_then(|s| s.get(&name)) {
                     operands.push((*pred, var.clone()));
                 }
+            }
+            if let Some(initial) = initial_arguments.get(&name) {
+                operands.push((entry_source, initial.clone()));
             }
             if operands.is_empty() {
                 continue;
@@ -279,8 +340,32 @@ impl<'a> SsaBuilder<'a> {
         (entry, phis)
     }
 
+    fn initial_entry_stack(&self, bid: BlockId) -> Vec<SsaVariable> {
+        let is_entry = self.cfg.entry_block().is_some_and(|entry| entry.id == bid);
+        let Some(context) = self
+            .method_context
+            .filter(|context| is_entry && context.arguments_on_entry_stack)
+        else {
+            return Vec::new();
+        };
+
+        (0..context.argument_names.len())
+            .rev()
+            .map(|index| SsaVariable::initial(format!("arg{index}")))
+            .collect()
+    }
+
+    fn reserve_argument_versions(&self, versions: &mut BTreeMap<String, usize>) {
+        let argument_count = self
+            .method_context
+            .map_or(0, |context| context.argument_names.len());
+        for index in 0..argument_count {
+            versions.insert(format!("arg{index}"), 1);
+        }
+    }
+
     /// Symbolically execute one block straight-line from `entry`, producing the
-    /// exit stack, the SSA statements (assignments only), and the use list
+    /// exit stack, the SSA statements, and the use list
     /// (vars consumed by non-assignment opcodes such as stores / conditions).
     fn execute_block(
         &self,
@@ -296,14 +381,17 @@ impl<'a> SsaBuilder<'a> {
         let mut slots: SlotState = entry_slots.clone();
         let mut stmts: Vec<SsaStmt> = Vec::new();
         let mut uses: Vec<(SsaVariable, usize)> = Vec::new();
+        let mut terminator_condition = None;
 
         for idx in block.instruction_range.clone() {
             let Some(instr) = self.instructions.get(idx) else {
                 continue;
             };
-            self.apply_instruction(
+            if let Some(condition) = self.apply_instruction(
                 instr, &mut stack, &mut slots, &mut stmts, &mut uses, versions,
-            );
+            ) {
+                terminator_condition = Some(condition);
+            }
         }
 
         BlockExec {
@@ -311,6 +399,7 @@ impl<'a> SsaBuilder<'a> {
             exit_slots: slots,
             stmts,
             uses,
+            terminator_condition,
         }
     }
 
@@ -323,16 +412,49 @@ impl<'a> SsaBuilder<'a> {
         stmts: &mut Vec<SsaStmt>,
         uses: &mut Vec<(SsaVariable, usize)>,
         versions: &mut BTreeMap<String, usize>,
-    ) {
+    ) -> Option<SsaVariable> {
         let op = instr.opcode;
+
+        if op == OpCode::Ret {
+            let returns_value = self
+                .method_context
+                .and_then(|context| context.returns_value);
+            let value = if returns_value == Some(false) {
+                None
+            } else {
+                stack.last().cloned()
+            };
+            if let Some(value) = &value {
+                if !is_unknown(value) {
+                    uses.push((value.clone(), stmts.len()));
+                }
+            }
+            stmts.push(SsaStmt::ret(value.map(SsaExpr::var)));
+            return None;
+        }
+
+        if matches!(
+            op,
+            OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::CallT
+        ) {
+            if let Some(contract) = self
+                .method_context
+                .and_then(|context| context.calls_by_offset.get(&instr.offset))
+            {
+                self.apply_known_call(instr, contract, stack, stmts, uses, versions);
+            } else {
+                self.apply_opaque_call(instr, stack, stmts, uses, versions);
+            }
+            return None;
+        }
 
         if effects::is_stack_reorder(op) {
             self.apply_reorder(op, stack, stmts, versions);
-            return;
+            return None;
         }
         if effects::is_stack_special(op) {
-            self.apply_special(instr, stack, stmts, uses);
-            return;
+            self.apply_special(instr, stack, stmts, uses, versions);
+            return None;
         }
 
         let (pop, push) = effects::stack_effect(op);
@@ -352,6 +474,29 @@ impl<'a> SsaBuilder<'a> {
             if !is_unknown(v) {
                 uses.push((v.clone(), use_index));
             }
+        }
+
+        if is_boolean_branch(op) {
+            return popped.first().cloned();
+        }
+
+        if let Some(branch_op) = comparison_branch_op(op) {
+            let left = popped.first().cloned().unwrap_or_else(unknown_var);
+            let right = popped.get(1).cloned().unwrap_or_else(unknown_var);
+            let target = fresh_var(versions, "t");
+            stmts.push(SsaStmt::assign(
+                target.clone(),
+                SsaExpr::binary(branch_op, SsaExpr::var(left), SsaExpr::var(right)),
+            ));
+            return Some(target);
+        }
+
+        if let Some(name) = effectful_collection_name(op) {
+            stmts.push(SsaStmt::expr(SsaExpr::call(
+                name.to_string(),
+                popped.into_iter().map(SsaExpr::var).collect(),
+            )));
+            return None;
         }
 
         if push == 1 {
@@ -382,6 +527,72 @@ impl<'a> SsaBuilder<'a> {
                     slots.insert(name, target);
                 }
             }
+        }
+        None
+    }
+
+    fn apply_opaque_call(
+        &self,
+        instruction: &Instruction,
+        stack: &mut Vec<SsaVariable>,
+        stmts: &mut Vec<SsaStmt>,
+        uses: &mut Vec<(SsaVariable, usize)>,
+        versions: &mut BTreeMap<String, usize>,
+    ) {
+        let pointer =
+            (instruction.opcode == OpCode::CallA).then(|| stack.pop().unwrap_or_else(unknown_var));
+        if let Some(pointer) = &pointer {
+            if !is_unknown(pointer) {
+                uses.push((pointer.clone(), stmts.len()));
+            }
+        }
+
+        // This call site has no resolved contract metadata. Keeping deeper
+        // values would let consumed arguments resurface after a dropped result,
+        // so invalidate the unknown pre-call stack conservatively.
+        stack.clear();
+
+        let value = SsaExpr::call(
+            call_name(instruction.opcode, instruction),
+            pointer.into_iter().map(SsaExpr::var).collect(),
+        );
+        let target = fresh_var(versions, "t");
+        stmts.push(SsaStmt::assign(target.clone(), value));
+        stack.push(target);
+    }
+
+    fn apply_known_call(
+        &self,
+        instruction: &Instruction,
+        contract: &super::context::CallContract,
+        stack: &mut Vec<SsaVariable>,
+        stmts: &mut Vec<SsaStmt>,
+        uses: &mut Vec<(SsaVariable, usize)>,
+        versions: &mut BTreeMap<String, usize>,
+    ) {
+        if instruction.opcode == OpCode::CallA {
+            let pointer = stack.pop().unwrap_or_else(unknown_var);
+            if !is_unknown(&pointer) {
+                uses.push((pointer, stmts.len()));
+            }
+        }
+
+        let mut args = Vec::with_capacity(contract.argument_count);
+        for _ in 0..contract.argument_count {
+            let argument = stack.pop().unwrap_or_else(unknown_var);
+            if !is_unknown(&argument) {
+                uses.push((argument.clone(), stmts.len()));
+            }
+            args.push(SsaExpr::var(argument));
+        }
+
+        let call = SsaExpr::call(contract.name.clone(), args);
+        if contract.returns_value {
+            let target = fresh_var(versions, "t");
+            stmts.push(SsaStmt::assign(target.clone(), call));
+            stack.push(target);
+        } else {
+            stmts.push(SsaStmt::expr(call));
         }
     }
 
@@ -471,8 +682,9 @@ impl<'a> SsaBuilder<'a> {
         &self,
         instr: &Instruction,
         stack: &mut Vec<SsaVariable>,
-        _stmts: &mut Vec<SsaStmt>,
+        stmts: &mut Vec<SsaStmt>,
         uses: &mut Vec<(SsaVariable, usize)>,
+        versions: &mut BTreeMap<String, usize>,
     ) {
         match instr.opcode {
             OpCode::Pick | OpCode::Roll | OpCode::Xdrop | OpCode::Reversen => {
@@ -490,23 +702,7 @@ impl<'a> SsaBuilder<'a> {
             OpCode::Clear => {
                 stack.clear();
             }
-            OpCode::Syscall => {
-                let (pop, push) = syscall_effect(instr);
-                let mut popped = Vec::with_capacity(pop);
-                for _ in 0..pop {
-                    let v = stack.pop().unwrap_or_else(unknown_var);
-                    popped.push(v);
-                }
-                popped.reverse();
-                for v in &popped {
-                    if !is_unknown(v) {
-                        uses.push((v.clone(), 0));
-                    }
-                }
-                if push {
-                    stack.push(unknown_var());
-                }
-            }
+            OpCode::Syscall => self.apply_syscall(instr, stack, stmts, uses, versions),
             // PACK family: count is on the stack and operand-dependent. Model
             // conservatively (drop the count, push one result) so the stack
             // stays consistent without a precise count analysis. Phase 3 can
@@ -524,6 +720,56 @@ impl<'a> SsaBuilder<'a> {
                 stack.push(unknown_var());
             }
             _ => {}
+        }
+    }
+
+    fn apply_syscall(
+        &self,
+        instruction: &Instruction,
+        stack: &mut Vec<SsaVariable>,
+        stmts: &mut Vec<SsaStmt>,
+        uses: &mut Vec<(SsaVariable, usize)>,
+        versions: &mut BTreeMap<String, usize>,
+    ) {
+        let info = match &instruction.operand {
+            Some(Operand::Syscall(hash)) => crate::syscalls::lookup(*hash),
+            _ => None,
+        };
+
+        let Some(info) = info else {
+            let selector = match &instruction.operand {
+                Some(Operand::Syscall(hash)) => format!("0x{hash:08X}"),
+                _ => "unknown".to_string(),
+            };
+            stack.clear();
+            let call = SsaExpr::call(
+                "syscall".to_string(),
+                vec![SsaExpr::lit(Literal::String(selector))],
+            );
+            let target = fresh_var(versions, "t");
+            stmts.push(SsaStmt::assign(target.clone(), call));
+            stack.push(target);
+            return;
+        };
+
+        let use_index = stmts.len();
+        let mut args = Vec::with_capacity(usize::from(info.param_count) + 1);
+        args.push(SsaExpr::lit(Literal::String(info.name.to_string())));
+        for _ in 0..info.param_count {
+            let argument = stack.pop().unwrap_or_else(unknown_var);
+            if !is_unknown(&argument) {
+                uses.push((argument.clone(), use_index));
+            }
+            args.push(SsaExpr::var(argument));
+        }
+
+        let call = SsaExpr::call("syscall".to_string(), args);
+        if info.returns_value {
+            let target = fresh_var(versions, "t");
+            stmts.push(SsaStmt::assign(target.clone(), call));
+            stack.push(target);
+        } else {
+            stmts.push(SsaStmt::expr(call));
         }
     }
 
@@ -592,6 +838,7 @@ struct BlockExec {
     exit_slots: SlotState,
     stmts: Vec<SsaStmt>,
     uses: Vec<(SsaVariable, usize)>,
+    terminator_condition: Option<SsaVariable>,
 }
 
 /// Canonical SSA variable for the φ placed at `depth` in `block`.
@@ -704,18 +951,6 @@ fn reverse_top(stack: &mut [SsaVariable], n: usize) {
     stack[len - n..].reverse();
 }
 
-/// Resolve the syscall stack effect `(params popped, returns value?)` from the
-/// embedded syscall hash. Unknown hashes are conservatively modelled as
-/// `(0, true)` so a result slot is reserved.
-fn syscall_effect(instr: &Instruction) -> (usize, bool) {
-    if let Some(Operand::Syscall(hash)) = &instr.operand {
-        if let Some(info) = crate::syscalls::lookup(*hash) {
-            return (info.param_count as usize, info.returns_value);
-        }
-    }
-    (0, true)
-}
-
 /// Lower a push opcode (with its operand) to a literal, if it is one.
 fn literal_for_push(op: OpCode, instr: &Instruction) -> Option<Literal> {
     use OpCode::*;
@@ -741,6 +976,14 @@ fn literal_for_push(op: OpCode, instr: &Instruction) -> Option<Literal> {
         PushT => Some(Literal::Bool(true)),
         PushF => Some(Literal::Bool(false)),
         PushNull => Some(Literal::Null),
+        PushA => match &instr.operand {
+            Some(Operand::I32(delta)) => instr
+                .offset
+                .checked_add_signed(*delta as isize)
+                .and_then(|target| i64::try_from(target).ok())
+                .map(Literal::Int),
+            _ => None,
+        },
         Pushint8 | Pushint16 | Pushint32 | Pushint64 => match &instr.operand {
             Some(Operand::I8(v)) => Some(Literal::Int(i64::from(*v))),
             Some(Operand::I16(v)) => Some(Literal::Int(i64::from(*v))),
@@ -787,6 +1030,39 @@ fn binary_op_for(op: OpCode) -> Option<BinOp> {
     })
 }
 
+fn is_boolean_branch(op: OpCode) -> bool {
+    matches!(
+        op,
+        OpCode::Jmpif | OpCode::Jmpif_L | OpCode::Jmpifnot | OpCode::Jmpifnot_L
+    )
+}
+
+fn comparison_branch_op(op: OpCode) -> Option<BinOp> {
+    use OpCode::*;
+    Some(match op {
+        JmpEq | JmpEq_L => BinOp::Eq,
+        JmpNe | JmpNe_L => BinOp::Ne,
+        JmpGt | JmpGt_L => BinOp::Gt,
+        JmpGe | JmpGe_L => BinOp::Ge,
+        JmpLt | JmpLt_L => BinOp::Lt,
+        JmpLe | JmpLe_L => BinOp::Le,
+        _ => return None,
+    })
+}
+
+fn effectful_collection_name(op: OpCode) -> Option<&'static str> {
+    use OpCode::*;
+    match op {
+        Setitem => Some("set_item"),
+        Append => Some("append"),
+        Remove => Some("remove_item"),
+        Clearitems => Some("clear_items"),
+        Reverseitems => Some("reverse_items"),
+        Memcpy => Some("memcpy"),
+        _ => None,
+    }
+}
+
 /// Map a unary compute opcode to its IR operator, if applicable.
 fn unary_op_for(op: OpCode) -> Option<UnaryOp> {
     use OpCode::*;
@@ -805,6 +1081,28 @@ fn unary_op_for(op: OpCode) -> Option<UnaryOp> {
 /// A short mnemonic for call-placeholder expressions.
 fn mnemonic(op: OpCode) -> String {
     format!("{op:?}").to_lowercase()
+}
+
+fn call_name(op: OpCode, instruction: &Instruction) -> String {
+    match (op, &instruction.operand) {
+        (OpCode::Call | OpCode::Call_L, Some(Operand::Jump(delta))) => instruction
+            .offset
+            .checked_add_signed(*delta as isize)
+            .map_or_else(
+                || "call".to_string(),
+                |target| format!("call_0x{target:04X}"),
+            ),
+        (OpCode::Call | OpCode::Call_L, Some(Operand::Jump32(delta))) => instruction
+            .offset
+            .checked_add_signed(*delta as isize)
+            .map_or_else(
+                || "call".to_string(),
+                |target| format!("call_0x{target:04X}"),
+            ),
+        (OpCode::CallT, Some(Operand::U16(index))) => format!("callt_0x{index:04X}"),
+        (OpCode::CallA, _) => "calla".to_string(),
+        _ => mnemonic(op),
+    }
 }
 
 /// Collect every [`SsaVariable`] referenced by an [`SsaExpr`].
@@ -854,6 +1152,7 @@ fn collect_expr_uses_into(expr: &SsaExpr, out: &mut Vec<SsaVariable>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decompiler::cfg::ssa::{CallContract, MethodContext};
     use crate::decompiler::cfg::{BasicBlock, BlockId, CfgBuilder, EdgeKind, Terminator};
     use crate::instruction::{Instruction, OpCode, Operand};
 
@@ -886,7 +1185,12 @@ mod tests {
             .expect("a block with >= 3 assignments should exist");
 
         // v0 = 1, v1 = 2, v2 = (v0 + v2)
-        assert_eq!(block.stmt_count(), 3, "expected 3 push/compute assignments");
+        let assignment_count = block
+            .stmts
+            .iter()
+            .filter(|stmt| matches!(stmt, SsaStmt::Assign { .. }))
+            .count();
+        assert_eq!(assignment_count, 3, "expected 3 push/compute assignments");
         let add = &block.stmts[2];
         let SsaStmt::Assign { value, .. } = add else {
             panic!("third stmt should be the ADD assignment: {add:?}");
@@ -904,6 +1208,7 @@ mod tests {
             matches!(right.as_ref(), SsaExpr::Variable(_)),
             "right operand"
         );
+        assert!(matches!(block.stmts.last(), Some(SsaStmt::Return(Some(_)))));
     }
 
     #[test]
@@ -919,7 +1224,12 @@ mod tests {
         let block = ssa.blocks_iter().next().expect("a block exists").1;
 
         // Two assignments: v0 = 1, v1 = v0 (the DUP copy).
-        assert_eq!(block.stmt_count(), 2);
+        let assignment_count = block
+            .stmts
+            .iter()
+            .filter(|stmt| matches!(stmt, SsaStmt::Assign { .. }))
+            .count();
+        assert_eq!(assignment_count, 2);
         let copy = &block.stmts[1];
         let SsaStmt::Assign { value, .. } = copy else {
             panic!("DUP should produce an assignment: {copy:?}");
@@ -928,6 +1238,594 @@ mod tests {
             matches!(value, SsaExpr::Variable(_)),
             "DUP copy should reference its source var, got {value:?}"
         );
+        assert!(matches!(block.stmts.last(), Some(SsaStmt::Return(Some(_)))));
+    }
+
+    #[test]
+    fn call_results_replace_pre_call_stack_values_at_ret() {
+        let cases = [
+            (
+                "call_0x0005",
+                vec![
+                    instr(0, OpCode::Push1),
+                    Instruction::new(1, OpCode::Call, Some(Operand::Jump(4))),
+                    instr(3, OpCode::Ret),
+                ],
+            ),
+            (
+                "callt_0x0002",
+                vec![
+                    instr(0, OpCode::Push1),
+                    Instruction::new(1, OpCode::CallT, Some(Operand::U16(2))),
+                    instr(4, OpCode::Ret),
+                ],
+            ),
+            (
+                "calla",
+                vec![
+                    Instruction::new(0, OpCode::PushA, Some(Operand::I32(6))),
+                    instr(5, OpCode::CallA),
+                    instr(6, OpCode::Ret),
+                ],
+            ),
+        ];
+
+        for (expected_name, instructions) in cases {
+            let cfg = CfgBuilder::new(&instructions).build();
+            let ssa = SsaBuilder::new(&cfg, &instructions).build();
+            let block = ssa.blocks_iter().next().expect("a block exists").1;
+            let Some(SsaStmt::Return(Some(SsaExpr::Variable(returned)))) = block.stmts.last()
+            else {
+                panic!("{expected_name} must produce the value consumed by RET: {block:?}");
+            };
+            assert!(
+                block.stmts.iter().any(|stmt| matches!(
+                    stmt,
+                    SsaStmt::Assign {
+                        target,
+                        value: SsaExpr::Call { name, .. }
+                    } if target == returned && name == expected_name
+                )),
+                "{expected_name} must define RET's value: {block:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn dropping_opaque_call_result_does_not_expose_pre_call_values() {
+        let cases = [
+            vec![
+                instr(0, OpCode::Push1),
+                Instruction::new(1, OpCode::Call, Some(Operand::Jump(5))),
+                instr(3, OpCode::Drop),
+                instr(4, OpCode::Ret),
+            ],
+            vec![
+                instr(0, OpCode::Push1),
+                Instruction::new(1, OpCode::CallT, Some(Operand::U16(2))),
+                instr(4, OpCode::Drop),
+                instr(5, OpCode::Ret),
+            ],
+            vec![
+                instr(0, OpCode::Push1),
+                Instruction::new(1, OpCode::PushA, Some(Operand::I32(7))),
+                instr(6, OpCode::CallA),
+                instr(7, OpCode::Drop),
+                instr(8, OpCode::Ret),
+            ],
+        ];
+
+        for instructions in cases {
+            let cfg = CfgBuilder::new(&instructions).build();
+            let ssa = SsaBuilder::new(&cfg, &instructions).build();
+            let block = ssa.blocks_iter().next().expect("a block exists").1;
+            assert!(
+                matches!(block.stmts.last(), Some(SsaStmt::Return(None))),
+                "opaque call arguments must not survive a dropped result: {block:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn known_call_contract_preserves_stack_and_uses_source_argument_order() {
+        // Ambient value 9 stays below two call arguments. Neo pushes call
+        // arguments right-to-left, so popping top-first must render (1, 2).
+        let instructions = vec![
+            instr(0, OpCode::Push9),
+            instr(1, OpCode::Push2),
+            instr(2, OpCode::Push1),
+            Instruction::new(3, OpCode::Call, Some(Operand::Jump(4))),
+            instr(5, OpCode::Drop),
+            instr(6, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let mut context = MethodContext::default();
+        context
+            .calls_by_offset
+            .insert(3, CallContract::new("helper", 2, true));
+
+        let mut ssa = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build();
+        super::super::optimize_ssa(&mut ssa);
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(
+            block.stmts.iter().any(|stmt| matches!(
+                stmt,
+                SsaStmt::Assign {
+                    value: SsaExpr::Call { name, args },
+                    ..
+                } if name == "helper"
+                    && args.as_slice() == [
+                        SsaExpr::lit(Literal::Int(1)),
+                        SsaExpr::lit(Literal::Int(2)),
+                    ]
+            )),
+            "known value call must retain its ordered arguments: {block:?}"
+        );
+        assert!(
+            matches!(
+                block.stmts.last(),
+                Some(SsaStmt::Return(Some(SsaExpr::Literal(Literal::Int(9)))))
+            ),
+            "dropping a known call result must reveal the preserved ambient value: {block:?}"
+        );
+    }
+
+    #[test]
+    fn known_call_contract_emits_void_call_without_phantom_result() {
+        let instructions = vec![
+            instr(0, OpCode::Push9),
+            instr(1, OpCode::Push1),
+            Instruction::new(2, OpCode::CallT, Some(Operand::U16(0))),
+            instr(5, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let mut context = MethodContext::default();
+        context
+            .calls_by_offset
+            .insert(2, CallContract::new("notify", 1, false));
+
+        let mut ssa = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build();
+        super::super::optimize_ssa(&mut ssa);
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(
+            block.stmts.iter().any(|stmt| matches!(
+                stmt,
+                SsaStmt::Expr(SsaExpr::Call { name, args })
+                    if name == "notify"
+                        && args.as_slice() == [SsaExpr::lit(Literal::Int(1))]
+            )),
+            "known void call must survive as a side-effect statement: {block:?}"
+        );
+        assert!(
+            matches!(
+                block.stmts.last(),
+                Some(SsaStmt::Return(Some(SsaExpr::Literal(Literal::Int(9)))))
+            ),
+            "known void call must not replace the ambient return value: {block:?}"
+        );
+    }
+
+    #[test]
+    fn known_calla_contract_consumes_pointer_without_rendering_it_as_an_argument() {
+        let instructions = vec![
+            instr(0, OpCode::Push9),
+            instr(1, OpCode::Push1),
+            Instruction::new(2, OpCode::PushA, Some(Operand::I32(8))),
+            instr(7, OpCode::CallA),
+            instr(8, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let mut context = MethodContext::default();
+        context
+            .calls_by_offset
+            .insert(7, CallContract::new("delegate", 1, false));
+
+        let mut ssa = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build();
+        super::super::optimize_ssa(&mut ssa);
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(
+            block.stmts.iter().any(|stmt| matches!(
+                stmt,
+                SsaStmt::Expr(SsaExpr::Call { name, args })
+                    if name == "delegate"
+                        && args.as_slice() == [SsaExpr::lit(Literal::Int(1))]
+            )),
+            "CALLA pointer must be consumed separately from source arguments: {block:?}"
+        );
+        assert!(
+            matches!(
+                block.stmts.last(),
+                Some(SsaStmt::Return(Some(SsaExpr::Literal(Literal::Int(9)))))
+            ),
+            "resolved void CALLA must preserve deeper caller stack state: {block:?}"
+        );
+    }
+
+    #[test]
+    fn collection_mutations_emit_ordered_effect_calls() {
+        let cases = [
+            (
+                OpCode::Setitem,
+                "set_item",
+                vec![OpCode::Push1, OpCode::Push2, OpCode::Push3],
+                vec![1, 2, 3],
+            ),
+            (
+                OpCode::Append,
+                "append",
+                vec![OpCode::Push1, OpCode::Push2],
+                vec![1, 2],
+            ),
+            (
+                OpCode::Remove,
+                "remove_item",
+                vec![OpCode::Push1, OpCode::Push2],
+                vec![1, 2],
+            ),
+            (
+                OpCode::Clearitems,
+                "clear_items",
+                vec![OpCode::Push1],
+                vec![1],
+            ),
+            (
+                OpCode::Reverseitems,
+                "reverse_items",
+                vec![OpCode::Push1],
+                vec![1],
+            ),
+            (
+                OpCode::Memcpy,
+                "memcpy",
+                vec![
+                    OpCode::Push1,
+                    OpCode::Push2,
+                    OpCode::Push3,
+                    OpCode::Push4,
+                    OpCode::Push5,
+                ],
+                vec![1, 2, 3, 4, 5],
+            ),
+        ];
+
+        for (opcode, expected_name, pushes, expected_values) in cases {
+            let mut instructions = vec![instr(0, OpCode::Push9)];
+            instructions.extend(
+                pushes
+                    .into_iter()
+                    .enumerate()
+                    .map(|(offset, push)| instr(offset + 1, push)),
+            );
+            instructions.push(instr(instructions.len(), opcode));
+            instructions.push(instr(instructions.len(), OpCode::Ret));
+
+            let cfg = CfgBuilder::new(&instructions).build();
+            let mut ssa = SsaBuilder::new(&cfg, &instructions).build();
+            super::super::optimize_ssa(&mut ssa);
+            let block = ssa.blocks_iter().next().expect("a block exists").1;
+            let matching_calls: Vec<_> = block
+                .stmts
+                .iter()
+                .filter_map(|stmt| match stmt {
+                    SsaStmt::Expr(SsaExpr::Call { name, args }) if name == expected_name => {
+                        Some(args)
+                    }
+                    _ => None,
+                })
+                .collect();
+            let expected_args: Vec<_> = expected_values
+                .into_iter()
+                .map(|value| SsaExpr::lit(Literal::Int(value)))
+                .collect();
+
+            assert_eq!(
+                matching_calls.len(),
+                1,
+                "{opcode:?} must emit one {expected_name} effect call: {block:?}"
+            );
+            assert_eq!(
+                matching_calls[0], &expected_args,
+                "{opcode:?} must preserve deep-to-top operand order"
+            );
+            assert!(
+                matches!(
+                    block.stmts.last(),
+                    Some(SsaStmt::Return(Some(SsaExpr::Literal(Literal::Int(9)))))
+                ),
+                "{opcode:?} must consume exactly its operands and preserve ambient 9: {block:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn collection_mutation_underflow_preserves_declared_arity() {
+        let cases = [
+            (OpCode::Setitem, "set_item", 3, true),
+            (OpCode::Append, "append", 2, true),
+            (OpCode::Remove, "remove_item", 2, true),
+            (OpCode::Clearitems, "clear_items", 1, false),
+            (OpCode::Reverseitems, "reverse_items", 1, false),
+            (OpCode::Memcpy, "memcpy", 5, true),
+        ];
+
+        for (opcode, expected_name, arity, has_available_top) in cases {
+            let mut instructions = Vec::new();
+            if has_available_top {
+                instructions.push(instr(0, OpCode::Push1));
+            }
+            instructions.push(instr(instructions.len(), opcode));
+            instructions.push(instr(instructions.len(), OpCode::Ret));
+
+            let cfg = CfgBuilder::new(&instructions).build();
+            let mut ssa = SsaBuilder::new(&cfg, &instructions).build();
+            super::super::optimize_ssa(&mut ssa);
+            let block = ssa.blocks_iter().next().expect("a block exists").1;
+            let args = block.stmts.iter().find_map(|stmt| match stmt {
+                SsaStmt::Expr(SsaExpr::Call { name, args }) if name == expected_name => Some(args),
+                _ => None,
+            });
+            let args = args
+                .unwrap_or_else(|| panic!("{opcode:?} underflow must remain visible: {block:?}"));
+
+            assert_eq!(args.len(), arity, "{opcode:?} must retain declared arity");
+            let unknown_count = args
+                .iter()
+                .filter(|arg| **arg == SsaExpr::var(unknown_var()))
+                .count();
+            assert_eq!(
+                unknown_count,
+                arity - usize::from(has_available_top),
+                "{opcode:?} must preserve each missing operand position"
+            );
+            if has_available_top {
+                assert_eq!(
+                    args.last(),
+                    Some(&SsaExpr::lit(Literal::Int(1))),
+                    "{opcode:?} must keep the available top value in the final operand position"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn structured_known_syscall_value_uses_catalog_contract() {
+        let instructions = vec![
+            instr(0, OpCode::Push9),
+            instr(1, OpCode::Push1),
+            Instruction::new(2, OpCode::Syscall, Some(Operand::Syscall(0x8CEC_27F8))),
+            instr(7, OpCode::Drop),
+            instr(8, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+
+        let mut ssa = SsaBuilder::new(&cfg, &instructions).build();
+        super::super::optimize_ssa(&mut ssa);
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(block.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Assign {
+                value: SsaExpr::Call { name, args },
+                ..
+            } if name == "syscall"
+                && args.as_slice() == [
+                    SsaExpr::lit(Literal::String(
+                        "System.Runtime.CheckWitness".to_string()
+                    )),
+                    SsaExpr::lit(Literal::Int(1)),
+                ]
+        )));
+        assert!(matches!(
+            block.stmts.last(),
+            Some(SsaStmt::Return(Some(SsaExpr::Literal(Literal::Int(9)))))
+        ));
+    }
+
+    #[test]
+    fn structured_known_syscall_void_preserves_ambient_stack_value() {
+        let instructions = vec![
+            instr(0, OpCode::Push9),
+            instr(1, OpCode::Push1),
+            Instruction::new(2, OpCode::Syscall, Some(Operand::Syscall(0x9647_E7CF))),
+            instr(7, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+
+        let mut ssa = SsaBuilder::new(&cfg, &instructions).build();
+        super::super::optimize_ssa(&mut ssa);
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(block.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Expr(SsaExpr::Call { name, args })
+                if name == "syscall"
+                    && args.as_slice() == [
+                        SsaExpr::lit(Literal::String("System.Runtime.Log".to_string())),
+                        SsaExpr::lit(Literal::Int(1)),
+                    ]
+        )));
+        assert!(matches!(
+            block.stmts.last(),
+            Some(SsaStmt::Return(Some(SsaExpr::Literal(Literal::Int(9)))))
+        ));
+    }
+
+    #[test]
+    fn structured_known_syscall_preserves_declaration_order() {
+        let instructions = vec![
+            instr(0, OpCode::Push9),
+            instr(1, OpCode::Push1),
+            instr(2, OpCode::Push2),
+            instr(3, OpCode::Push3),
+            Instruction::new(4, OpCode::Syscall, Some(Operand::Syscall(0x8418_3FE6))),
+            instr(9, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+
+        let mut ssa = SsaBuilder::new(&cfg, &instructions).build();
+        super::super::optimize_ssa(&mut ssa);
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(block.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Expr(SsaExpr::Call { name, args })
+                if name == "syscall"
+                    && args.as_slice() == [
+                        SsaExpr::lit(Literal::String("System.Storage.Put".to_string())),
+                        SsaExpr::lit(Literal::Int(3)),
+                        SsaExpr::lit(Literal::Int(2)),
+                        SsaExpr::lit(Literal::Int(1)),
+                    ]
+        )));
+        assert!(matches!(
+            block.stmts.last(),
+            Some(SsaStmt::Return(Some(SsaExpr::Literal(Literal::Int(9)))))
+        ));
+    }
+
+    #[test]
+    fn structured_syscall_fallback_keeps_missing_known_argument_visible() {
+        let instructions = vec![
+            Instruction::new(0, OpCode::Syscall, Some(Operand::Syscall(0x9647_E7CF))),
+            instr(5, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let ssa = SsaBuilder::new(&cfg, &instructions).build();
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(block.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Expr(SsaExpr::Call { name, args })
+                if name == "syscall"
+                    && args.as_slice() == [
+                        SsaExpr::lit(Literal::String("System.Runtime.Log".to_string())),
+                        SsaExpr::var(unknown_var()),
+                    ]
+        )));
+    }
+
+    #[test]
+    fn structured_syscall_fallback_unknown_hash_uses_opaque_barrier() {
+        let instructions = vec![
+            instr(0, OpCode::Push9),
+            Instruction::new(1, OpCode::Syscall, Some(Operand::Syscall(0xDEAD_BEEF))),
+            instr(6, OpCode::Drop),
+            instr(7, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let ssa = SsaBuilder::new(&cfg, &instructions).build();
+        let block = ssa.blocks_iter().next().expect("a block exists").1;
+
+        assert!(block.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Assign {
+                value: SsaExpr::Call { name, args },
+                ..
+            } if name == "syscall"
+                && args.as_slice() == [SsaExpr::lit(Literal::String(
+                    "0xDEADBEEF".to_string()
+                ))]
+        )));
+        assert!(matches!(block.stmts.last(), Some(SsaStmt::Return(None))));
+    }
+
+    #[test]
+    fn entry_loop_keeps_manifest_arguments_as_incoming_slots() {
+        let instructions = vec![instr(0, OpCode::Ldarg0), instr(1, OpCode::Drop)];
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            2,
+            0..2,
+            Terminator::Jump { target: BlockId(0) },
+        ));
+        cfg.add_edge(BlockId(0), BlockId(0), EdgeKind::Unconditional);
+        let context = MethodContext {
+            argument_names: vec!["value".to_string()],
+            ..MethodContext::default()
+        };
+
+        let ssa = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build();
+        let block = ssa.block(BlockId(0)).expect("entry loop block");
+
+        assert!(
+            block.stmts.iter().any(|stmt| matches!(
+                stmt,
+                SsaStmt::Assign {
+                    value: SsaExpr::Variable(source),
+                    ..
+                } if source == &SsaVariable::initial("arg0".to_string())
+            )),
+            "entry-loop LDARG0 must read the incoming manifest argument: {block:?}"
+        );
+    }
+
+    #[test]
+    fn inferred_entry_stack_arguments_follow_vm_order() {
+        let instructions = vec![instr(0, OpCode::Sub), instr(1, OpCode::Ret)];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let context = MethodContext {
+            argument_names: vec!["left".to_string(), "right".to_string()],
+            arguments_on_entry_stack: true,
+            returns_value: Some(true),
+            ..MethodContext::default()
+        };
+
+        let ssa = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build();
+        let block = ssa.block(BlockId(0)).expect("entry block");
+
+        assert!(matches!(
+            block.stmts.first(),
+            Some(SsaStmt::Assign {
+                value: SsaExpr::Binary { left, right, .. },
+                ..
+            }) if matches!(left.as_ref(), SsaExpr::Variable(value) if value.base == "arg1")
+                && matches!(right.as_ref(), SsaExpr::Variable(value) if value.base == "arg0")
+        ));
+    }
+
+    #[test]
+    fn entry_loop_keeps_inferred_arguments_as_incoming_stack_values() {
+        let instructions = vec![instr(0, OpCode::Drop)];
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            1,
+            0..1,
+            Terminator::Jump { target: BlockId(0) },
+        ));
+        cfg.add_edge(BlockId(0), BlockId(0), EdgeKind::Unconditional);
+        let context = MethodContext {
+            argument_names: vec!["value".to_string()],
+            arguments_on_entry_stack: true,
+            ..MethodContext::default()
+        };
+
+        let ssa = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build();
+        let block = ssa.block(BlockId(0)).expect("entry loop block");
+
+        assert!(block.phi_nodes.iter().any(|phi| {
+            phi.operands
+                .values()
+                .any(|value| value == &SsaVariable::initial("arg0".to_string()))
+        }));
     }
 
     #[test]

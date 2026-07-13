@@ -358,9 +358,9 @@ pub(in super::super) fn build_method_labels_by_offset(
             let Some(start) = offset_as_usize(method.offset) else {
                 continue;
             };
-            labels.entry(start).or_insert_with(|| {
-                make_unique_identifier(sanitize(&method.name), &mut used)
-            });
+            labels
+                .entry(start)
+                .or_insert_with(|| make_unique_identifier(sanitize(&method.name), &mut used));
         }
     }
 

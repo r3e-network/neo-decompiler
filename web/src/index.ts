@@ -169,6 +169,18 @@ export interface CallGraph {
   edges: CallEdge[];
 }
 
+export type ReturnBehavior = "value" | "void" | "unknown";
+
+export interface MethodContract {
+  method: MethodRef;
+  argument_count: number;
+  return_behavior: ReturnBehavior;
+}
+
+export interface MethodContracts {
+  methods: MethodContract[];
+}
+
 export interface SlotXref {
   index: number;
   reads: number[];
@@ -213,6 +225,7 @@ export interface TypeInfo {
 
 export interface AnalysisReport {
   call_graph: CallGraph;
+  method_contracts: MethodContracts;
   xrefs: Xrefs;
   types: TypeInfo;
 }

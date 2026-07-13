@@ -6,6 +6,7 @@ import { SYSCALLS } from "./generated/syscalls.js";
 import { renderGroupedPseudocode } from "./grouped-pseudocode.js";
 import { renderHighLevelMethodGroups } from "./high-level.js";
 import { classifyPermissionContract, parseManifest } from "./manifest.js";
+import { inferMethodContracts } from "./method-contracts.js";
 import { buildMethodGroups } from "./methods.js";
 import { describeMethodToken } from "./native-contracts.js";
 import { renderPseudocode } from "./pseudocode.js";
@@ -59,8 +60,8 @@ export function decompileBytes(bytes, options = {}) {
 /**
  * Run the full analysis pipeline (CFG, xrefs, type inference) against
  * a NEF and an optional manifest. Returns the same fields as
- * `decompileBytes` plus method groups, call graph, xrefs, and
- * inferred types.
+ * `decompileBytes` plus method groups, call graph, method contracts,
+ * xrefs, and inferred types.
  */
 export function analyzeBytes(bytes, manifestInput = null, options = {}) {
   const manifest = manifestInput ? parseManifest(manifestInput) : null;
@@ -74,11 +75,20 @@ export function analyzeBytes(bytes, manifestInput = null, options = {}) {
   const analysisGroups = buildMethodGroups(result.instructions, manifest, {
     includePostTerminatorTails: false,
   });
+  const callGraph = buildCallGraph(result.nef, result.instructions, analysisGroups);
+  const context = buildHighLevelContext(
+    analysisGroups,
+    analysisGroups,
+    result.nef,
+    options,
+    callGraph,
+  );
   return {
     ...result,
     manifest,
     methodGroups,
-    callGraph: buildCallGraph(result.nef, result.instructions, analysisGroups),
+    callGraph,
+    methodContracts: context.methodContracts,
     xrefs: buildXrefs(result.instructions, analysisGroups),
     types: inferTypes(result.instructions, analysisGroups, manifest),
   };
@@ -125,12 +135,23 @@ export function decompileBytesWithManifest(bytes, manifestInput, options = {}) {
 export function decompileHighLevelBytes(bytes, options = {}) {
   const result = decompileBytes(bytes, options);
   const methodGroups = buildMethodGroups(result.instructions, null);
-  const context = buildHighLevelContext(methodGroups, result.nef, options);
+  const analysisGroups = buildMethodGroups(result.instructions, null, {
+    includePostTerminatorTails: false,
+  });
+  const callGraph = buildCallGraph(result.nef, result.instructions, analysisGroups);
+  const context = buildHighLevelContext(
+    methodGroups,
+    analysisGroups,
+    result.nef,
+    options,
+    callGraph,
+  );
   const highLevel = renderHighLevelMethodGroups(methodGroups, null, context);
   return {
     ...result,
     warnings: [...result.warnings, ...context.highLevelWarnings],
     methodGroups,
+    methodContracts: context.methodContracts,
     highLevel,
   };
 }
@@ -148,24 +169,46 @@ export function decompileHighLevelBytesWithManifest(bytes, manifestInput, option
   const manifest = parseManifest(manifestInput);
   const result = decompileBytes(bytes, options);
   const methodGroups = buildMethodGroups(result.instructions, manifest);
-  const context = buildHighLevelContext(methodGroups, result.nef, options);
+  const analysisGroups = buildMethodGroups(result.instructions, manifest, {
+    includePostTerminatorTails: false,
+  });
+  const callGraph = buildCallGraph(result.nef, result.instructions, analysisGroups);
+  const context = buildHighLevelContext(
+    methodGroups,
+    analysisGroups,
+    result.nef,
+    options,
+    callGraph,
+  );
   const highLevel = renderHighLevelMethodGroups(methodGroups, manifest, context);
   return {
     ...result,
     warnings: [...result.warnings, ...context.highLevelWarnings],
     manifest,
     methodGroups,
+    methodContracts: context.methodContracts,
     highLevel,
     groupedPseudocode: renderGroupedPseudocode(methodGroups, manifest),
   };
 }
 
-function buildHighLevelContext(methodGroups, nef, options = {}) {
+function buildHighLevelContext(
+  methodGroups,
+  contractGroups,
+  nef,
+  options = {},
+  callGraph = null,
+) {
   const entryOffset = methodGroups[0]?.start ?? 0;
-  return {
+  const context = {
     methodLabelsByOffset: new Map(methodGroups.map((group) => [group.start, group.name])),
     methodArgCountsByOffset: new Map(
       methodGroups.map((group) => [group.start, inferMethodArgCount(group, entryOffset)]),
+    ),
+    callaTargetsByOffset: new Map(
+      (callGraph?.edges ?? [])
+        .filter((edge) => edge.opcode === "CALLA" && edge.target.kind === "Internal")
+        .map((edge) => [edge.callOffset, edge.target.method.offset]),
     ),
     // Resolve token-call labels through the native-contract describe
     // table so calls into known contracts render as
@@ -196,6 +239,10 @@ function buildHighLevelContext(methodGroups, nef, options = {}) {
         !!options.inlineSingleUseTemps || !!options.clean,
       clean: !!options.clean,
     },
+  };
+  return {
+    ...context,
+    ...inferMethodContracts(contractGroups, context, callGraph),
   };
 }
 

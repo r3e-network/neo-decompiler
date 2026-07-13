@@ -75,3 +75,4 @@ neo_csharp/**/obj/
 /fuzz/target/
 /fuzz/corpus/
 /fuzz/artifacts/
+.omx/

@@ -25,7 +25,7 @@ test("client maps camelCase info options to the wasm ABI", () => {
         instructions: [],
         method_tokens: [],
         manifest: null,
-        analysis: { call_graph: { methods: [], edges: [] }, xrefs: { methods: [] }, types: { methods: [], statics: [] } },
+        analysis: { call_graph: { methods: [], edges: [] }, method_contracts: { methods: [] }, xrefs: { methods: [] }, types: { methods: [], statics: [] } },
         warnings: [],
       };
     },
@@ -65,7 +65,7 @@ test("client maps decompile options to the wasm ABI", () => {
         instructions: [],
         method_tokens: [],
         manifest: null,
-        analysis: { call_graph: { methods: [], edges: [] }, xrefs: { methods: [] }, types: { methods: [], statics: [] } },
+        analysis: { call_graph: { methods: [], edges: [] }, method_contracts: { methods: [] }, xrefs: { methods: [] }, types: { methods: [], statics: [] } },
         warnings: [],
       };
     },

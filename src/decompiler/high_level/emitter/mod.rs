@@ -83,6 +83,8 @@ pub(crate) struct HighLevelEmitter {
     /// Resolved argument counts keyed by method start offset.
     /// Used to preserve call-site argument expressions for internal calls.
     method_arg_counts_by_offset: BTreeMap<usize, usize>,
+    /// Manifest-declared return behavior keyed by method start offset.
+    method_returns_value_by_offset: BTreeMap<usize, bool>,
     /// Resolved internal CALL/CALL_L targets keyed by call instruction offset.
     /// Used when the immediate call target lands inside a method body.
     call_targets_by_offset: BTreeMap<usize, usize>,

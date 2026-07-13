@@ -461,8 +461,13 @@ fn infer_types_in_slice(
                 let _ = pop_or_unknown(&mut stack);
                 let _ = pop_or_unknown(&mut stack);
             }
-            OpCode::Clearitems => {
+            OpCode::Clearitems | OpCode::Reverseitems => {
                 let _ = pop_or_unknown(&mut stack);
+            }
+            OpCode::Memcpy => {
+                for _ in 0..5 {
+                    let _ = pop_or_unknown(&mut stack);
+                }
             }
             OpCode::Popitem => {
                 let _ = pop_or_unknown(&mut stack);

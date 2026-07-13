@@ -10,6 +10,7 @@ mod types;
 pub(super) use identifiers::{make_unique_identifier, sanitize_identifier};
 pub(super) use lifted::{
     build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
+    build_method_returns_value_by_offset,
 };
 pub(super) use manifest::{extract_contract_name, format_permission_entry, render_extra_scalar};
 pub(super) use methods::{

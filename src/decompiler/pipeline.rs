@@ -150,6 +150,11 @@ impl Decompiler {
         let cfg = CfgBuilder::new(&instructions).build();
         let call_graph =
             analysis::call_graph::build_call_graph(&nef, &instructions, manifest.as_ref());
+        let method_contracts = analysis::method_contracts::infer_method_contracts(
+            &instructions,
+            manifest.as_ref(),
+            &call_graph,
+        );
         let xrefs = analysis::xrefs::build_xrefs(&instructions, manifest.as_ref());
         let types = analysis::types::infer_types(&instructions, manifest.as_ref());
 
@@ -168,6 +173,7 @@ impl Decompiler {
                 &instructions,
                 manifest.as_ref(),
                 &call_graph,
+                &method_contracts,
                 &render_opts,
             );
             for warning in render.warnings {
@@ -181,6 +187,7 @@ impl Decompiler {
                 &instructions,
                 manifest.as_ref(),
                 &call_graph,
+                &method_contracts,
                 &types,
                 &render_opts,
             );
@@ -197,6 +204,7 @@ impl Decompiler {
             instructions,
             cfg,
             call_graph,
+            method_contracts,
             xrefs,
             types,
             pseudocode,

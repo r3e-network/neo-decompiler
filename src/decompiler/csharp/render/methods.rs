@@ -192,6 +192,12 @@ pub(super) fn write_inferred_methods(
             .map(|index| format!("dynamic arg{index}"))
             .collect::<Vec<_>>()
             .join(", ");
+        let returns_void = context
+            .body_context
+            .method_returns_value_by_offset
+            .get(start)
+            .is_some_and(|returns_value| !returns_value);
+        let return_type = if returns_void { "void" } else { "dynamic" };
 
         // Each inferred helper is preceded by the trailing blank line
         // emitted by the previous method (the synthetic ScriptEntry from
@@ -201,7 +207,7 @@ pub(super) fn write_inferred_methods(
         // separator.
         writeln!(
             output,
-            "        private static dynamic sub_0x{start:04X}({params})"
+            "        private static {return_type} sub_0x{start:04X}({params})"
         )
         .unwrap();
         writeln!(output, "        {{").unwrap();
@@ -214,7 +220,7 @@ pub(super) fn write_inferred_methods(
             (!labels.is_empty()).then_some(labels.as_slice()),
             warnings,
             &context.body_context,
-            false,
+            returns_void,
         );
         writeln!(output, "        }}").unwrap();
         writeln!(output).unwrap();

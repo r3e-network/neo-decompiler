@@ -54,6 +54,10 @@ impl HighLevelEmitter {
         self.method_arg_counts_by_offset = counts.clone();
     }
 
+    pub(crate) fn set_method_returns_value_by_offset(&mut self, returns: &BTreeMap<usize, bool>) {
+        self.method_returns_value_by_offset = returns.clone();
+    }
+
     pub(crate) fn set_call_targets_by_offset(&mut self, targets: &BTreeMap<usize, usize>) {
         self.call_targets_by_offset = targets.clone();
     }

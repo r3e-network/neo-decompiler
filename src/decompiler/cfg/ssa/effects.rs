@@ -74,7 +74,7 @@ pub(crate) fn stack_effect(op: OpCode) -> Effect {
         Remove => (2, 0),       // container, key
         Clearitems => (1, 0),   // container
         Reverseitems => (1, 0), // container
-        Memcpy => (3, 0),       // dst, src, count
+        Memcpy => (5, 0),       // destination, destination index, source, source index, count
 
         // --- Conditional jumps pop their condition(s): handled as pops so the
         //     symbolic stack stays consistent across branch merges. ---
@@ -87,11 +87,15 @@ pub(crate) fn stack_effect(op: OpCode) -> Effect {
         Assertmsg => (2, 0),
         Abortmsg => (1, 0),
 
-        // --- True stack-level no-ops (terminators, slot init, opaque calls). ---
-        // CALL/CALLT return values are not modelled at the SSA layer yet; the
-        // SSA pass is structural/data-flow and lives off the main pipeline.
-        Nop | Jmp | Jmp_L | Call | Call_L | CallA | CallT | Abort | Try | TryL | Endtry
-        | EndtryL | Endfinally | Ret | Initsslot | Initslot => (0, 0),
+        // --- Opaque calls conservatively produce a value. CALLA additionally
+        // consumes its function pointer. Precise argument/void metadata is
+        // layered on by per-method render contexts when available.
+        Call | Call_L | CallT => (0, 1),
+        CallA => (1, 1),
+
+        // --- True stack-level no-ops (terminators and slot init). ---
+        Nop | Jmp | Jmp_L | Abort | Try | TryL | Endtry | EndtryL | Endfinally | Ret
+        | Initsslot | Initslot => (0, 0),
 
         // --- Reorders / specials: dispatched by the builder. ---
         Depth | Drop | Nip | Dup | Over | Tuck | Swap | Rot | Reverse3 | Reverse4 | Xdrop
@@ -181,6 +185,10 @@ mod tests {
         assert_eq!(stack_effect(OpCode::Pickitem), (2, 1));
         assert_eq!(stack_effect(OpCode::Append), (2, 0));
         assert_eq!(stack_effect(OpCode::Setitem), (3, 0));
+        assert_eq!(stack_effect(OpCode::Remove), (2, 0));
+        assert_eq!(stack_effect(OpCode::Clearitems), (1, 0));
+        assert_eq!(stack_effect(OpCode::Reverseitems), (1, 0));
+        assert_eq!(stack_effect(OpCode::Memcpy), (5, 0));
         assert_eq!(stack_effect(OpCode::Popitem), (1, 1));
     }
 
@@ -217,12 +225,10 @@ mod tests {
     }
 
     #[test]
-    fn control_flow_and_calls_are_neutral() {
+    fn control_flow_is_neutral_and_calls_produce_values() {
         for op in [
             OpCode::Nop,
             OpCode::Jmp,
-            OpCode::Call,
-            OpCode::CallT,
             OpCode::Ret,
             OpCode::Initslot,
             OpCode::Try,
@@ -232,5 +238,9 @@ mod tests {
             assert!(!is_stack_reorder(op));
             assert!(!is_stack_special(op));
         }
+        assert_eq!(stack_effect(OpCode::Call), (0, 1));
+        assert_eq!(stack_effect(OpCode::Call_L), (0, 1));
+        assert_eq!(stack_effect(OpCode::CallT), (0, 1));
+        assert_eq!(stack_effect(OpCode::CallA), (1, 1));
     }
 }

@@ -220,6 +220,7 @@ impl fmt::Display for SsaBlock {
 
 /// A statement in SSA form.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum SsaStmt {
     /// Variable assignment with SSA target.
     Assign {
@@ -228,6 +229,12 @@ pub enum SsaStmt {
         /// The value being assigned (in SSA expression form).
         value: SsaExpr,
     },
+
+    /// Expression evaluated for side effects, such as a void call.
+    Expr(SsaExpr),
+
+    /// Method return with the evaluation stack's top value, if present.
+    Return(Option<SsaExpr>),
 
     /// φ node (internal representation, typically transformed before output).
     Phi(PhiNode),
@@ -241,6 +248,18 @@ impl SsaStmt {
     #[must_use]
     pub fn assign(target: SsaVariable, value: SsaExpr) -> Self {
         Self::Assign { target, value }
+    }
+
+    /// Create an expression statement.
+    #[must_use]
+    pub fn expr(value: SsaExpr) -> Self {
+        Self::Expr(value)
+    }
+
+    /// Create a return statement.
+    #[must_use]
+    pub fn ret(value: Option<SsaExpr>) -> Self {
+        Self::Return(value)
     }
 
     /// Create a φ node statement.
@@ -427,6 +446,9 @@ impl fmt::Display for SsaStmt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Assign { target, value } => write!(f, "{} = {};", target, value),
+            Self::Expr(value) => write!(f, "{value};"),
+            Self::Return(Some(value)) => write!(f, "return {value};"),
+            Self::Return(None) => write!(f, "return;"),
             Self::Phi(phi) => write!(f, "{}", phi), // φ nodes have their own Display
             Self::Other(stmt) => write!(f, "{:?}", stmt), // Use debug for other statements
         }
@@ -443,10 +465,24 @@ pub struct UseSite {
 }
 
 impl UseSite {
+    const TERMINATOR_INDEX: usize = usize::MAX;
+
     /// Create a new use site.
     #[must_use]
     pub const fn new(block: BlockId, stmt_index: usize) -> Self {
         Self { block, stmt_index }
+    }
+
+    /// Create the synthetic use site for a block terminator condition.
+    #[must_use]
+    pub(crate) const fn terminator(block: BlockId) -> Self {
+        Self::new(block, Self::TERMINATOR_INDEX)
+    }
+
+    /// Whether this use belongs to a block terminator rather than a statement.
+    #[must_use]
+    pub(crate) const fn is_terminator(&self) -> bool {
+        self.stmt_index == Self::TERMINATOR_INDEX
     }
 }
 

@@ -45,11 +45,31 @@
   "definitions": {
     "analysisReport": {
       "type": "object",
-      "required": ["call_graph", "xrefs", "types"],
+      "required": ["call_graph", "method_contracts", "xrefs", "types"],
       "properties": {
         "call_graph": {"$ref": "#/definitions/callGraph"},
+        "method_contracts": {"$ref": "#/definitions/methodContracts"},
         "xrefs": {"$ref": "#/definitions/xrefs"},
         "types": {"$ref": "#/definitions/typeInfo"}
+      }
+    },
+    "methodContracts": {
+      "type": "object",
+      "required": ["methods"],
+      "properties": {
+        "methods": {
+          "type": "array",
+          "items": {"$ref": "#/definitions/methodContract"}
+        }
+      }
+    },
+    "methodContract": {
+      "type": "object",
+      "required": ["method", "argument_count", "return_behavior"],
+      "properties": {
+        "method": {"$ref": "#/definitions/methodRef"},
+        "argument_count": {"type": "integer", "minimum": 0},
+        "return_behavior": {"enum": ["value", "void", "unknown"]}
       }
     },
     "methodRef": {

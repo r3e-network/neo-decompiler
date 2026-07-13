@@ -20,6 +20,8 @@ export function createState(
   // arg0;`). Mirrors the Rust `set_argument_labels` guard.
   const startsWithInitslot =
     instructions[0]?.opcode?.mnemonic === "INITSLOT";
+  const inferredReturnBehavior =
+    context?.methodContractsByOffset?.get(methodOffset)?.returnBehavior;
   return {
     stack:
       manifestMethod?.parameters?.length ||
@@ -33,7 +35,8 @@ export function createState(
     initializedStatics: new Set(),
     parameterNames,
     returnsVoid:
-      manifestMethod?.returnType === "Void" || manifestMethod?.returnType === "void",
+      manifestMethod?.returnType?.toLowerCase() === "void" ||
+      inferredReturnBehavior === "void",
     context,
     nextTempId: 0,
     pointerTargetsByExpression: new Map(),
@@ -113,6 +116,9 @@ export function emptyContext() {
   return {
     methodLabelsByOffset: new Map(),
     methodArgCountsByOffset: new Map(),
+    methodReturnsValueByOffset: new Map(),
+    methodContractsByOffset: new Map(),
+    callaTargetsByOffset: new Map(),
     calltLabels: [],
     calltParamCounts: [],
     calltReturnsValue: [],

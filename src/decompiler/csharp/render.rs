@@ -5,6 +5,7 @@
 //! pseudo-bodies when method offsets are available.
 
 use super::super::analysis::call_graph::CallGraph;
+use super::super::analysis::method_contracts::MethodContracts;
 use super::super::analysis::types::TypeInfo;
 use super::super::helpers::build_method_labels_by_offset;
 use crate::decompiler::output_format::RenderOptions;
@@ -15,8 +16,8 @@ use crate::nef::NefFile;
 use std::collections::BTreeMap;
 
 use super::super::helpers::{
-    build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
-    extract_contract_name, inferred_method_starts, inferred_type_to_csharp,
+    build_call_targets_by_offset, build_calla_targets_by_offset, extract_contract_name,
+    inferred_method_starts, inferred_type_to_csharp,
 };
 use super::helpers::sanitize_csharp_identifier;
 use super::helpers::SlotTypes;
@@ -37,6 +38,7 @@ pub(crate) fn render_csharp(
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
     call_graph: &CallGraph,
+    method_contracts: &MethodContracts,
     types: &TypeInfo,
     opts: &RenderOptions,
 ) -> CSharpRender {
@@ -77,8 +79,8 @@ pub(crate) fn render_csharp(
         sanitize_csharp_identifier,
         "ScriptEntry",
     );
-    let method_arg_counts_by_offset =
-        build_method_arg_counts_by_offset(instructions, &inferred_starts, manifest);
+    let method_arg_counts_by_offset = method_contracts.argument_counts_by_offset();
+    let method_returns_value_by_offset = method_contracts.returns_value_by_offset();
     let call_targets_by_offset = build_call_targets_by_offset(call_graph);
     let calla_targets_by_offset = build_calla_targets_by_offset(call_graph);
 
@@ -90,6 +92,7 @@ pub(crate) fn render_csharp(
     let body_context = body::LiftedBodyContext {
         method_labels_by_offset: &method_labels_by_offset,
         method_arg_counts_by_offset: &method_arg_counts_by_offset,
+        method_returns_value_by_offset: &method_returns_value_by_offset,
         call_targets_by_offset: &call_targets_by_offset,
         calla_targets_by_offset: &calla_targets_by_offset,
         callt_labels: &callt_labels,

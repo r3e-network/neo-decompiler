@@ -61,6 +61,39 @@ fn csharp_omits_trailing_return_in_void_methods() {
 }
 
 #[test]
+fn csharp_private_void_call_preserves_ambient_return_value() {
+    let nef_bytes = build_nef(&[
+        0x19, 0x11, 0x34, 0x05, 0x40, 0x21, 0x21, 0x57, 0x00, 0x01, 0x78, 0x45, 0x40,
+    ]);
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "InferredVoidHelper",
+            "abi": { "methods": [{
+                "name": "main", "parameters": [], "returntype": "Integer", "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+
+    assert!(
+        csharp.contains("sub_0x0007(1);") && csharp.contains("return 9;"),
+        "private void call must preserve the caller's ambient value: {csharp}"
+    );
+    assert!(
+        csharp.contains("private static void sub_0x0007(dynamic arg0)")
+            && !csharp.contains("return sub_0x0007(1)"),
+        "private helper must have a void C# signature: {csharp}"
+    );
+}
+
+#[test]
 fn csharp_keeps_explicit_return_value_in_non_void_methods() {
     // Script: PUSH1 RET — high-level lifts as `return 1;`, which the C#
     // emitter must preserve since the method is non-void.
@@ -768,6 +801,342 @@ fn csharp_resolves_internal_calls_to_method_names() {
     assert!(
         !csharp.contains("call_0x0004"),
         "C# output should not emit raw call_0x placeholders when a helper name is known: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_manifest_void_internal_call_is_a_statement() {
+    // 0x0000: CALL +3 (helper at 0x0003)
+    // 0x0002: RET
+    // 0x0003: RET
+    let nef_bytes = build_nef(&[0x34, 0x03, 0x40, 0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "VoidCall",
+                "abi": {
+                    "methods": [
+                        { "name": "main", "parameters": [], "returntype": "Void", "offset": 0 },
+                        { "name": "helper", "parameters": [], "returntype": "Void", "offset": 3 }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("            helper();"),
+        "void internal CALL should render as a statement: {csharp}"
+    );
+    assert!(
+        !csharp.contains(" = helper();"),
+        "void internal CALL must not be assigned to a temp: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_manifest_void_resolved_calla_is_a_statement() {
+    // 0x0000: PUSHA +10 (helper at 0x000A)
+    // 0x0005: CALLA
+    // 0x0006: RET
+    // 0x0007..0x0009: NOP padding
+    // 0x000A: INITSLOT 0,0; RET
+    let nef_bytes = build_nef(&[
+        0x0A, 0x0A, 0x00, 0x00, 0x00, 0x36, 0x40, 0x21, 0x21, 0x21, 0x57, 0x00, 0x00, 0x40,
+    ]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "VoidCallA",
+                "abi": {
+                    "methods": [
+                        { "name": "main", "parameters": [], "returntype": "Void", "offset": 0 },
+                        { "name": "helper", "parameters": [], "returntype": "Void", "offset": 10 }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("            helper();"),
+        "manifest-known void CALLA target should render as a statement: {csharp}"
+    );
+    assert!(
+        !csharp.contains(" = helper();"),
+        "manifest-known void CALLA target must not be assigned to a temp: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_offsetless_manifest_void_internal_call_is_a_statement() {
+    // All ABI offsets are absent, so the first manifest method names the
+    // script entry at 0x0000. The recursive CALL must inherit its void return.
+    let nef_bytes = build_nef(&[0x34, 0x00, 0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "OffsetlessVoidCall",
+                "abi": {
+                    "methods": [
+                        { "name": "main", "parameters": [], "returntype": "Void" }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("            main();"),
+        "offsetless manifest entry CALL should render as a void statement: {csharp}"
+    );
+    assert!(
+        !csharp.contains(" = main();"),
+        "offsetless void entry CALL must not be assigned to a temp: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_offsetless_manifest_void_resolved_calla_is_a_statement() {
+    // PUSHA 0 resolves CALLA back to the offsetless manifest entry.
+    let nef_bytes = build_nef(&[0x0A, 0x00, 0x00, 0x00, 0x00, 0x36, 0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "OffsetlessVoidCallA",
+                "abi": {
+                    "methods": [
+                        { "name": "main", "parameters": [], "returntype": "Void" }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("            main();"),
+        "offsetless manifest entry CALLA should render as a void statement: {csharp}"
+    );
+    assert!(
+        !csharp.contains(" = main();"),
+        "offsetless void entry CALLA must not be assigned to a temp: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_manifest_void_tail_call_does_not_return_ambient_stack_value() {
+    // main: PUSH1; JMP +2 -> helper@3. A void tail call produces no value, so
+    // the pre-existing PUSH1 must not be consumed as the method's return.
+    let nef_bytes = build_nef(&[0x11, 0x22, 0x02, 0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "VoidTailCall",
+                "abi": {
+                    "methods": [
+                        { "name": "main", "parameters": [], "returntype": "Void", "offset": 0 },
+                        { "name": "helper", "parameters": [], "returntype": "Void", "offset": 3 }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("            helper();"),
+        "void tail call should remain visible as a statement: {csharp}"
+    );
+    assert!(
+        !csharp.contains("return t0;") && !csharp.contains("return 1;"),
+        "void tail call must not return an unrelated ambient stack value: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_manifest_void_internal_call_underflow_keeps_call_visible() {
+    // helper@0 declares one argument. caller@4 invokes it with an empty
+    // evaluation stack; the decompiler must retain the call shape and mark the
+    // missing argument instead of silently dropping the CALL.
+    let nef_bytes = build_nef(&[0x57, 0x00, 0x01, 0x40, 0x34, 0xFC, 0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "VoidCallUnderflow",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "helper",
+                            "parameters": [{ "name": "value", "type": "Integer" }],
+                            "returntype": "Void",
+                            "offset": 0
+                        },
+                        {
+                            "name": "caller",
+                            "parameters": [],
+                            "returntype": "Void",
+                            "offset": 4
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("helper(???);"),
+        "argument underflow must preserve a manifest-known void CALL: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_manifest_value_tail_call_underflow_still_returns_call() {
+    // caller@4 tail-jumps to helper@0 without supplying helper's declared
+    // argument. Underflow must not be mistaken for a void return contract.
+    let nef_bytes = build_nef(&[0x57, 0x00, 0x01, 0x40, 0x22, 0xFC]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "ValueTailCallUnderflow",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "helper",
+                            "parameters": [{ "name": "value", "type": "Integer" }],
+                            "returntype": "Integer",
+                            "offset": 0
+                        },
+                        {
+                            "name": "caller",
+                            "parameters": [],
+                            "returntype": "Integer",
+                            "offset": 4
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("return helper(???);"),
+        "argument underflow must preserve value-producing tail-call behavior: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_manifest_value_internal_call_still_produces_a_value() {
+    // 0x0000: CALL +3 (helper at 0x0003)
+    // 0x0002: RET
+    // 0x0003: PUSH1; RET
+    let nef_bytes = build_nef(&[0x34, 0x03, 0x40, 0x11, 0x40]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "ValueCall",
+                "abi": {
+                    "methods": [
+                        { "name": "main", "parameters": [], "returntype": "Integer", "offset": 0 },
+                        { "name": "helper", "parameters": [], "returntype": "Integer", "offset": 3 }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("return helper();"),
+        "the internal CALL result should remain on the lifted stack: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_unknown_resolved_calla_still_produces_a_value() {
+    // No manifest describes the target, so return behavior is unknown and must
+    // conservatively remain value-producing.
+    let nef_bytes = build_nef(&[
+        0x0A, 0x0A, 0x00, 0x00, 0x00, 0x36, 0x40, 0x21, 0x21, 0x21, 0x57, 0x00, 0x00, 0x11, 0x40,
+    ]);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(
+        csharp.contains("return sub_0x000A();"),
+        "the unknown CALLA result should remain on the lifted stack: {csharp}"
     );
 }
 

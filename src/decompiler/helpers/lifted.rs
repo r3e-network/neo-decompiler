@@ -42,7 +42,7 @@ pub(in super::super) fn build_method_arg_counts_by_offset(
         }
     }
 
-    let manifest_offsets: HashSet<usize> = manifest
+    let mut manifest_offsets: HashSet<usize> = manifest
         .map(|m| {
             m.abi
                 .methods
@@ -51,6 +51,9 @@ pub(in super::super) fn build_method_arg_counts_by_offset(
                 .collect()
         })
         .unwrap_or_default();
+    if use_manifest_entry {
+        manifest_offsets.insert(entry_offset);
+    }
 
     for start in inferred_starts {
         if manifest_offsets.contains(start) {
@@ -69,6 +72,30 @@ pub(in super::super) fn build_method_arg_counts_by_offset(
     }
 
     counts
+}
+
+/// Build manifest-declared return behavior keyed by method start offset.
+#[must_use]
+pub(in super::super) fn build_method_returns_value_by_offset(
+    instructions: &[Instruction],
+    manifest: Option<&ContractManifest>,
+) -> BTreeMap<usize, bool> {
+    let mut returns_value = BTreeMap::new();
+    if let Some(manifest) = manifest {
+        let entry_offset = instructions.first().map(|ins| ins.offset).unwrap_or(0);
+        if let Some((entry_method, _)) = find_manifest_entry_method(manifest, entry_offset) {
+            returns_value.insert(
+                entry_offset,
+                !entry_method.return_type.eq_ignore_ascii_case("void"),
+            );
+        }
+        for method in &manifest.abi.methods {
+            if let Some(start) = offset_as_usize(method.offset) {
+                returns_value.insert(start, !method.return_type.eq_ignore_ascii_case("void"));
+            }
+        }
+    }
+    returns_value
 }
 
 fn infer_entry_stack_arg_count_for_inferred_start(
@@ -232,8 +259,12 @@ fn stack_effect_for_arg_inference(
             pops: 3,
             pushes: vec![None],
         }),
-        Memcpy | Setitem => Some(StackEffect {
+        Setitem => Some(StackEffect {
             pops: 3,
+            pushes: vec![],
+        }),
+        Memcpy => Some(StackEffect {
+            pops: 5,
             pushes: vec![],
         }),
         Pack | Packmap | Packstruct => {
@@ -297,4 +328,20 @@ pub(in super::super) fn build_call_targets_by_offset(
         }
     }
     targets
+}
+
+#[cfg(test)]
+mod tests {
+    use super::estimate_required_entry_stack_depth;
+    use crate::instruction::{Instruction, OpCode};
+
+    #[test]
+    fn memcpy_requires_five_entry_stack_arguments() {
+        let instructions = [
+            Instruction::new(0, OpCode::Memcpy, None),
+            Instruction::new(1, OpCode::Ret, None),
+        ];
+
+        assert_eq!(estimate_required_entry_stack_depth(&instructions), Some(5));
+    }
 }
