@@ -208,3 +208,16 @@ test("C# rendering keeps ABORT distinct from catchable THROW", () => {
   assert.match(csharp, /throw new InvalidOperationException\(Convert\.ToString\("bad"\)\);/);
   assert.doesNotMatch(csharp, /ABORT/);
 });
+
+test("C# rendering lowers native qualified calls outside literals", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn call() -> any {",
+    "    let value = GasToken::Transfer(from, to, amount);",
+    '    return "GasToken::Transfer(x)";',
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /GasToken\.Transfer\(from, to, amount\)/);
+  assert.match(csharp, /GasToken::Transfer\(x\)/);
+});

@@ -116,11 +116,11 @@ function renderBodyLine(line) {
   const trimmed = line.trim();
   const declaration = trimmed.match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*.*)?;$/);
   if (declaration) {
-    return rewriteKnownSyscalls(
+    return rewriteQualifiedCalls(rewriteKnownSyscalls(
       rewriteKnownHelpers(
         `${indentation}var ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
       ),
-    );
+    ));
   }
   const throwExpression = trimmed.match(/^throw\((.*)\);$/);
   if (throwExpression) {
@@ -136,7 +136,21 @@ function renderBodyLine(line) {
   if (trimmed === "abort" || trimmed === "abort;") {
     return `${indentation}throw new InvalidOperationException();`;
   }
-  return rewriteKnownSyscalls(rewriteKnownHelpers(line)).replace(/\bunknown\b/g, "default");
+  return rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(line)))
+    .replace(/\bunknown\b/g, "default");
+}
+
+function rewriteQualifiedCalls(line) {
+  const pattern = /\b([A-Za-z_][A-Za-z0-9_]*)::([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  let output = "";
+  let cursor = 0;
+  let match;
+  while ((match = nextOutsideMatch(line, pattern)) !== null) {
+    output += line.slice(cursor, match.index);
+    output += `${match[1]}.${match[2]}(`;
+    cursor = pattern.lastIndex;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
 }
 
 const CSHARP_COLLECTION_HELPERS = new Map([
