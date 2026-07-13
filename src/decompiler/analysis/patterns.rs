@@ -351,6 +351,8 @@ fn infer_language(compiler: &str) -> Option<&'static str> {
         Some("Python")
     } else if compiler.contains("neogo") || compiler.contains("neo-go") {
         Some("Go")
+    } else if compiler.contains("rust") {
+        Some("Rust")
     } else if compiler.contains("typescript") || compiler.contains("javascript") {
         Some("TypeScript/JavaScript")
     } else {
@@ -368,6 +370,8 @@ fn infer_language_from_source(source: &str) -> Option<&'static str> {
         Some("Python")
     } else if filename.ends_with(".go") {
         Some("Go")
+    } else if filename.ends_with(".rs") {
+        Some("Rust")
     } else if filename.ends_with(".ts") || filename.ends_with(".js") {
         Some("TypeScript/JavaScript")
     } else {
@@ -428,10 +432,18 @@ mod tests {
             ("/contracts/Token.csproj", "C#"),
             ("/contracts/Token.py?build=42", "Python"),
             ("src/token.go#source", "Go"),
+            ("src/token.rs#source", "Rust"),
         ] {
             let info = identify_patterns(&nef("", source), &[], None);
             assert_eq!(info.language.as_deref(), Some(expected));
         }
+    }
+
+    #[test]
+    fn rust_compiler_metadata_infers_rust_language() {
+        let info = identify_patterns(&nef("neo-rustc 1", ""), &[], None);
+        assert_eq!(info.language.as_deref(), Some("Rust"));
+        assert_eq!(info.confidence, PatternConfidence::Medium);
     }
 
     #[test]

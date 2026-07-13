@@ -76,10 +76,17 @@ test("pattern analysis normalizes source paths and URI suffixes", () => {
     ["/contracts/Token.csproj", "C#"],
     ["/contracts/Token.py?build=42", "Python"],
     ["src/token.go#source", "Go"],
+    ["src/token.rs#source", "Rust"],
   ]) {
     const info = identifyPatterns(nef("", source), [], null);
     assert.equal(info.language, expected);
   }
+});
+
+test("pattern analysis infers Rust from compiler metadata", () => {
+  const info = identifyPatterns(nef("neo-rustc 1"), [], null);
+  assert.equal(info.language, "Rust");
+  assert.equal(info.confidence, "medium");
 });
 
 test("pattern analysis identifies wildcard call permissions", () => {
