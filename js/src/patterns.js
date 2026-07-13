@@ -80,8 +80,13 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     evidence.push({ source: "nef.method_tokens", value: String(nef.methodTokens.length) });
   }
   for (const token of nef?.methodTokens ?? []) {
-    if (!(token.hash instanceof Uint8Array)) continue;
-    const hint = describeMethodToken(token.hash, token.method);
+    const hash = token.hash instanceof Uint8Array
+      ? token.hash
+      : Array.isArray(token.hash) && token.hash.length === 20
+        ? Uint8Array.from(token.hash)
+        : null;
+    if (!hash) continue;
+    const hint = describeMethodToken(hash, token.method);
     if (hint?.hasExactMethod()) {
       patterns.add("native_contract_calls");
       evidence.push({
