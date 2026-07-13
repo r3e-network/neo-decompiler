@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use crate::decompiler::analysis::method_contracts::ReturnBehavior;
 use crate::decompiler::cfg::method_body::{
-    lower_method_body, Fidelity, FidelityReport, LoweringIssue, LoweringIssueKind, MethodIrRequest,
+    lower_method_body, Fidelity, FidelityReport, LoweringIssueKind, MethodIrRequest,
 };
 use crate::instruction::Instruction;
 use crate::instruction::OpCode;
@@ -13,6 +13,12 @@ use super::super::helpers::VM_ASSERT_MESSAGE_HELPER;
 use super::structured::plan::plan_declarations;
 use super::structured::plan::CSharpMethodPlan;
 use super::structured::stmt;
+
+mod fidelity;
+use fidelity::{
+    fidelity_issue, recover_with_compatibility, requires_structured_stub, semantic_warnings,
+    throwing_stub, throwing_stub_with_fidelity,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum BodyBackend {
@@ -142,67 +148,6 @@ pub(super) fn render_method_body(
     }
 }
 
-fn semantic_warnings(method_plan: &CSharpMethodPlan, fidelity: &FidelityReport) -> Vec<String> {
-    fidelity
-        .issues
-        .iter()
-        .filter(|issue| {
-            issue.fidelity == Fidelity::Conservative
-                && matches!(issue.opcode, OpCode::Abort | OpCode::Abortmsg)
-        })
-        .map(|issue| {
-            format!(
-                "csharp: {} at 0x{:04X}: {} at 0x{:04X}: {}",
-                method_plan.emitted_name,
-                method_plan.start,
-                issue.opcode.mnemonic(),
-                issue.offset,
-                issue.detail
-            )
-        })
-        .collect()
-}
-
-fn requires_structured_stub(fidelity: &FidelityReport) -> bool {
-    fidelity
-        .issues
-        .iter()
-        .filter(|issue| issue.fidelity == Fidelity::Incomplete)
-        .any(|issue| match issue.kind {
-            LoweringIssueKind::LostStackValue | LoweringIssueKind::UnresolvedCall => false,
-            LoweringIssueKind::MissingProvenance => {
-                !(issue.detail.starts_with("collection packing requires")
-                    || issue
-                        .detail
-                        .starts_with("collection packing has fewer values")
-                    || issue
-                        .detail
-                        .starts_with("collection element count overflows")
-                    || issue.detail.starts_with("UNPACK source")
-                    || issue.detail.starts_with("UNPACK element count exceeds"))
-            }
-            LoweringIssueKind::MissingOperandMetadata => {
-                !issue.detail.starts_with("StackItemType Any is invalid")
-            }
-            LoweringIssueKind::UnsupportedControl => !matches!(issue.opcode, OpCode::Jmp),
-            _ => true,
-        })
-}
-
-fn recover_with_compatibility(fidelity: &FidelityReport) -> bool {
-    fidelity.issues.iter().any(|issue| {
-        issue.fidelity == Fidelity::Incomplete
-            && ((issue.detail.starts_with("requires ")
-                && matches!(issue.opcode, OpCode::Call | OpCode::CallA))
-                || issue
-                    .detail
-                    .starts_with("structured output contains an unresolved control transfer")
-                || matches!(issue.opcode, OpCode::Endtry | OpCode::EndtryL)
-                || (issue.kind == LoweringIssueKind::LostStackValue
-                    && matches!(issue.opcode, OpCode::Ret)))
-    })
-}
-
 fn recovered_result(
     instructions: &[Instruction],
     method_plan: &CSharpMethodPlan,
@@ -330,61 +275,6 @@ fn recovered_result(
         backend: BodyBackend::Structured,
         warnings: semantic_warnings(method_plan, &fidelity),
         fidelity,
-    }
-}
-
-fn throwing_stub(method_plan: &CSharpMethodPlan, issue: LoweringIssue) -> BodyRenderResult {
-    let mut fidelity = FidelityReport::exact(0);
-    fidelity.issues.push(issue);
-    fidelity.finish();
-    throwing_stub_with_fidelity(method_plan, fidelity)
-}
-
-fn throwing_stub_with_fidelity(
-    method_plan: &CSharpMethodPlan,
-    fidelity: FidelityReport,
-) -> BodyRenderResult {
-    let warnings = fidelity
-        .primary_issue()
-        .map(|issue| {
-            format!(
-                "csharp: {} at 0x{:04X} used throwing stub: {} at 0x{:04X}: {}",
-                method_plan.emitted_name,
-                method_plan.start,
-                issue.opcode.mnemonic(),
-                issue.offset,
-                issue_kind_label(issue.kind)
-            )
-        })
-        .into_iter()
-        .collect();
-    BodyRenderResult {
-        source: "            throw new NotImplementedException();\n".to_string(),
-        backend: BodyBackend::ThrowingStub,
-        fidelity,
-        warnings,
-    }
-}
-
-fn fidelity_issue(offset: usize, kind: LoweringIssueKind, detail: &str) -> LoweringIssue {
-    LoweringIssue {
-        offset,
-        opcode: OpCode::Unknown(0),
-        kind,
-        fidelity: Fidelity::Incomplete,
-        detail: detail.to_string(),
-    }
-}
-
-fn issue_kind_label(kind: LoweringIssueKind) -> &'static str {
-    match kind {
-        LoweringIssueKind::UnsupportedControl => "unsupported control",
-        LoweringIssueKind::UnsupportedOpcode => "unsupported opcode",
-        LoweringIssueKind::LostStackValue => "lost stack value",
-        LoweringIssueKind::MissingOperandMetadata => "missing operand metadata",
-        LoweringIssueKind::UnresolvedCall => "unresolved call",
-        LoweringIssueKind::MissingProvenance => "missing provenance",
-        LoweringIssueKind::BudgetExceeded => "budget exceeded",
     }
 }
 
