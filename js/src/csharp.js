@@ -376,6 +376,15 @@ export function renderCSharpContract(highLevel, manifest = null) {
   ];
   let classSeen = false;
   const sourceLines = highLevel.split(/\r?\n/);
+  const nullableParametersByLine = new Map();
+  for (const [lineIndex, line] of sourceLines.entries()) {
+    if (/^\s*fn\s+/.test(line)) {
+      nullableParametersByLine.set(
+        lineIndex,
+        nullableParametersForMethod(sourceLines, lineIndex),
+      );
+    }
+  }
   for (const [lineIndex, line] of sourceLines.entries()) {
     const contract = line.match(/^contract\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{$/);
     if (contract) {
@@ -393,7 +402,10 @@ export function renderCSharpContract(highLevel, manifest = null) {
       output.push(event ?? `${line.match(/^\s*/)?.[0] ?? ""}// ${line.trim()}`);
       continue;
     }
-    const signature = renderSignature(line, nullableParametersForMethod(sourceLines, lineIndex));
+    const signature = renderSignature(
+      line,
+      nullableParametersByLine.get(lineIndex) ?? new Set(),
+    );
     if (signature) {
       const name = line.match(/^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
       const method = name ? manifestMethodForName(name, manifest) : null;
