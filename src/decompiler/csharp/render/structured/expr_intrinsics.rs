@@ -329,10 +329,26 @@ pub(super) fn render_intrinsic(
                 render_low_level_opcode(opcode, args, context, expanding)
             }
         }
-        OpCode::Reverseitems => RenderedExpr::new(
-            format!("Helper.Reverse({})", arg(0, expanding)),
-            PREC_PRIMARY,
-        ),
+        OpCode::Reverseitems => {
+            let receiver_type = args
+                .first()
+                .map_or(ValueType::Unknown, |value| context.value_type(value));
+            if matches!(
+                receiver_type,
+                ValueType::Boolean
+                    | ValueType::Integer
+                    | ValueType::ByteString
+                    | ValueType::Buffer
+                    | ValueType::Map
+                    | ValueType::Null
+            ) {
+                return render_low_level_opcode(opcode, args, context, expanding);
+            }
+            RenderedExpr::new(
+                format!("Helper.Reverse({})", arg(0, expanding)),
+                PREC_PRIMARY,
+            )
+        }
         OpCode::Popitem => {
             let receiver_type = args
                 .first()

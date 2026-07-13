@@ -1742,6 +1742,13 @@ fn map_intrinsics_guard_known_non_map_receivers() {
     );
     assert!(popitem.contains("Runtime.LoadScript"), "{popitem}");
     assert!(!popitem.contains("List<object>"), "{popitem}");
+
+    let reverse = render_expr(
+        &intrinsic(OpCode::Reverseitems, vec![Expr::var("map")]),
+        &context,
+    );
+    assert!(reverse.contains("Runtime.LoadScript"), "{reverse}");
+    assert!(!reverse.contains("Helper.Reverse"), "{reverse}");
 }
 
 #[test]
