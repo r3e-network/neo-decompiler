@@ -8,6 +8,7 @@ use crate::decompiler::ir::{
     BinOp, Block, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt, UnaryOp,
 };
 use crate::instruction::OpCode;
+use crate::native_contracts;
 
 const PREC_ASSIGNMENT: u8 = 1;
 const PREC_TERNARY: u8 = 2;
@@ -1015,6 +1016,28 @@ fn render_method_token_call(
             PREC_PRIMARY,
         );
     };
+    let native_hash = (bytes.len() == 20).then(|| {
+        let mut hash = [0u8; 20];
+        hash.copy_from_slice(&bytes);
+        hash
+    });
+    if let Some(hint) = native_hash
+        .as_ref()
+        .and_then(|hash| native_contracts::describe_method_token(hash, name))
+        .filter(|hint| hint.has_exact_method())
+    {
+        let method = hint
+            .canonical_method
+            .expect("exact native method hint has a canonical name");
+        return RenderedExpr::new(
+            format!(
+                "{}.{method}({})",
+                hint.contract,
+                render_expr_list(args, context, expanding)
+            ),
+            PREC_PRIMARY,
+        );
+    }
     let bytes = bytes
         .iter()
         .map(|byte| format!("0x{byte:02X}"))

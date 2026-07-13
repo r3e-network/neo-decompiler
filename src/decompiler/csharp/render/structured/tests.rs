@@ -896,6 +896,19 @@ fn renders_all_expression_variants() {
         render_expr(&token_call, &context),
         "(dynamic)Contract.Call((UInt160)new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11, 0x22, 0x33 }, \"transfer\", (CallFlags)0x0F, new object[] { items })"
     );
+    let native_token_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 3,
+            name: "getCandidates".to_string(),
+            hash_le: Some("F563EA40BC283D4D0E05C48EA305B3F2A07340EF".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![Expr::var("items")],
+    );
+    assert_eq!(
+        render_expr(&native_token_call, &context),
+        "NeoToken.GetCandidates(items)"
+    );
     assert_eq!(
         render_expr(&known_syscall, &context),
         "(bool)Runtime.LoadScript((ByteString)new byte[] { 0x41, 0xF8, 0x27, 0xEC, 0x8C }, CallFlags.All, new object[] { items })"
