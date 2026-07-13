@@ -6,11 +6,8 @@ use crate::decompiler::ir::{Block as IrBlock, ControlFlow, Expr, Stmt};
 use super::StructCtx;
 
 impl<'a> StructCtx<'a> {
-    /// Emit a `while` loop for a loop-header branch. (A `for`-form promotion is
-    /// intentionally not attempted: SSA versions differ across the init /
-    /// condition / update, so a clean `for(i=0; i<n; i++)` would require
-    /// de-versioning the loop variable — a cosmetic refinement that isn't worth
-    /// the complexity, since the `while` form is semantically exact.)
+    /// Emit a loop for a loop-header branch, promoting only an unambiguous
+    /// source-level induction shape and retaining `while` otherwise.
     pub(super) fn build_loop(
         &self,
         out: &mut IrBlock,
@@ -21,10 +18,50 @@ impl<'a> StructCtx<'a> {
         // Backedge phi copies are already at the body tail. Replay the header
         // after them so its effects run before the next condition check.
         self.emit_body_except_condition(body, bid);
+        if self.try_promote_for(out, cond.clone(), body) {
+            return;
+        }
         out.push(Stmt::ControlFlow(Box::new(ControlFlow::while_loop(
             cond,
             std::mem::take(body),
         ))));
+    }
+
+    /// Promote `i = init; while (cond(i)) { ...; i++; }` only when the update
+    /// is an explicit unary increment/decrement. SSA phi-copy updates remain
+    /// `while` loops because de-versioning them requires a separate proof.
+    fn try_promote_for(&self, out: &mut IrBlock, condition: Expr, body: &mut IrBlock) -> bool {
+        let Some(Stmt::ExprStmt(update @ Expr::Unary { op, operand })) = body.stmts.last() else {
+            return false;
+        };
+        if !matches!(
+            op,
+            crate::decompiler::ir::UnaryOp::Inc | crate::decompiler::ir::UnaryOp::Dec
+        ) {
+            return false;
+        }
+        let Expr::Variable(variable) = operand.as_ref() else {
+            return false;
+        };
+        if !contains_variable(&condition, variable) {
+            return false;
+        }
+        let Some(Stmt::Assign { target, .. }) = out.stmts.last() else {
+            return false;
+        };
+        if target != variable {
+            return false;
+        }
+        let update = update.clone();
+        let init = out.stmts.pop();
+        body.stmts.pop();
+        out.push(Stmt::ControlFlow(Box::new(ControlFlow::for_loop(
+            init,
+            Some(condition),
+            Some(update),
+            std::mem::take(body),
+        ))));
+        true
     }
 
     /// For a do-while loop header `header`, find its latch: the back-edge
@@ -154,5 +191,39 @@ impl<'a> StructCtx<'a> {
             body,
         ))));
         true
+    }
+}
+
+fn contains_variable(expression: &Expr, name: &str) -> bool {
+    match expression {
+        Expr::Variable(variable) => variable == name,
+        Expr::Binary { left, right, .. } => {
+            contains_variable(left, name) || contains_variable(right, name)
+        }
+        Expr::Unary { operand, .. }
+        | Expr::Convert { value: operand, .. }
+        | Expr::IsType { value: operand, .. }
+        | Expr::Cast { expr: operand, .. } => contains_variable(operand, name),
+        Expr::Call { args, .. } | Expr::Array(args) | Expr::Struct(args) => {
+            args.iter().any(|arg| contains_variable(arg, name))
+        }
+        Expr::Index { base, index } => {
+            contains_variable(base, name) || contains_variable(index, name)
+        }
+        Expr::Member { base, .. } => contains_variable(base, name),
+        Expr::NewArray { length, .. } => contains_variable(length, name),
+        Expr::Map(entries) => entries
+            .iter()
+            .any(|(key, value)| contains_variable(key, name) || contains_variable(value, name)),
+        Expr::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            contains_variable(condition, name)
+                || contains_variable(then_expr, name)
+                || contains_variable(else_expr, name)
+        }
+        Expr::Unknown | Expr::Literal(_) | Expr::StackTemp(_) => false,
     }
 }

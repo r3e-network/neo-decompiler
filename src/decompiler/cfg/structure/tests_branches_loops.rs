@@ -1412,3 +1412,105 @@ fn structures_false_edge_loop_body_with_nested_break() {
         "the true-edge follow must resume after the loop: {structured:?}"
     );
 }
+
+#[test]
+fn promotes_explicit_induction_loop_to_for() {
+    let preheader = BlockId(0);
+    let header = BlockId(1);
+    let body = BlockId(2);
+    let exit = BlockId(3);
+    let mut cfg = Cfg::new();
+    cfg.add_block(BasicBlock::new(
+        preheader,
+        0,
+        1,
+        0..1,
+        Terminator::Jump { target: header },
+    ));
+    cfg.add_block(BasicBlock::new(
+        header,
+        1,
+        2,
+        1..2,
+        Terminator::Branch {
+            then_target: body,
+            else_target: exit,
+        },
+    ));
+    cfg.add_block(BasicBlock::new(
+        body,
+        2,
+        3,
+        2..3,
+        Terminator::Jump { target: header },
+    ));
+    cfg.add_block(BasicBlock::new(exit, 3, 4, 3..4, Terminator::Return));
+    cfg.add_edge(preheader, header, EdgeKind::Unconditional);
+    cfg.add_edge(header, body, EdgeKind::ConditionalTrue);
+    cfg.add_edge(header, exit, EdgeKind::ConditionalFalse);
+    cfg.add_edge(body, header, EdgeKind::Unconditional);
+
+    let induction = v("index", 0);
+    let condition = v("condition", 0);
+    let ssa = SsaForm {
+        dominance: crate::decompiler::cfg::ssa::compute(&cfg),
+        cfg,
+        blocks: BTreeMap::from([
+            (
+                preheader,
+                block_with(vec![SsaStmt::assign(
+                    induction.clone(),
+                    SsaExpr::lit(Literal::Int(0)),
+                )]),
+            ),
+            (
+                header,
+                block_with(vec![SsaStmt::assign(
+                    condition.clone(),
+                    SsaExpr::binary(
+                        BinOp::Lt,
+                        SsaExpr::var(induction.clone()),
+                        SsaExpr::lit(Literal::Int(3)),
+                    ),
+                )]),
+            ),
+            (
+                body,
+                block_with(vec![SsaStmt::expr(SsaExpr::unary(
+                    UnaryOp::Inc,
+                    SsaExpr::var(induction.clone()),
+                ))]),
+            ),
+            (exit, SsaBlock::new()),
+        ]),
+        definitions: BTreeMap::new(),
+        uses: BTreeMap::from([(condition, BTreeSet::from([UseSite::terminator(header)]))]),
+    };
+
+    let structured = structure(&ssa);
+    let Some(Stmt::ControlFlow(control)) = structured
+        .stmts
+        .iter()
+        .find(|statement| matches!(statement, Stmt::ControlFlow(control) if matches!(control.as_ref(), ControlFlow::For { .. })))
+    else {
+        panic!("expected promoted for loop: {structured:?}");
+    };
+    let ControlFlow::For {
+        init,
+        condition,
+        update,
+        ..
+    } = control.as_ref()
+    else {
+        panic!("expected promoted for loop: {structured:?}");
+    };
+    assert!(matches!(init.as_deref(), Some(Stmt::Assign { target, .. }) if target == "index_0"));
+    assert!(matches!(condition, Some(Expr::Binary { .. })));
+    assert!(matches!(
+        update,
+        Some(Expr::Unary {
+            op: UnaryOp::Inc,
+            ..
+        })
+    ));
+}

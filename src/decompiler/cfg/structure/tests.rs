@@ -3,7 +3,7 @@ use crate::decompiler::cfg::ssa::DominanceInfo;
 use crate::decompiler::cfg::ssa::SsaForm;
 use crate::decompiler::cfg::ssa::{PhiNode, SsaBlock, SsaExpr, SsaStmt, SsaVariable};
 use crate::decompiler::cfg::{BasicBlock, BlockId, Cfg, EdgeKind, Terminator};
-use crate::decompiler::ir::{BinOp, Literal, Stmt};
+use crate::decompiler::ir::{BinOp, ControlFlow, Literal, Stmt, UnaryOp};
 
 fn v(base: &str, n: usize) -> SsaVariable {
     SsaVariable::new(base.to_string(), n)
