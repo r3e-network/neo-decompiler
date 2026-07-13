@@ -33,15 +33,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::analysis::types::ValueType;
-use crate::decompiler::cfg::method_body::{
-    classify_opcode, Fidelity, FidelityReport, LoweringIssue, LoweringIssueKind, OpcodeFidelity,
-};
+use crate::decompiler::cfg::method_body::{FidelityReport, LoweringIssue, LoweringIssueKind};
 use crate::decompiler::cfg::{BlockId, Cfg, EdgeKind};
 use crate::decompiler::helpers::{
     printable_utf8, signed_le_bytes_to_decimal, value_type_from_operand,
 };
 use crate::decompiler::ir::{BinOp, Intrinsic, Literal, SemanticCallTarget, UnaryOp};
-use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
+use crate::instruction::{Instruction, OpCode, Operand};
 
 use super::context::{
     CollectionArgumentEffect, CollectionShape, CollectionShapeFacts, MethodContext,
@@ -52,12 +50,14 @@ use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
 use super::variable::SsaVariable;
 
 mod collection;
+mod diagnostics;
 mod expr;
 mod helpers;
 mod instructions;
 mod slots;
 
 use collection::*;
+use diagnostics::*;
 use helpers::*;
 use slots::*;
 
@@ -906,119 +906,6 @@ impl<'a> SsaBuilder<'a> {
 }
 
 // ─────────────────────────── helpers ───────────────────────────
-
-fn record_instruction_ceiling(instruction: &Instruction, issues: &mut Vec<LoweringIssue>) {
-    match classify_opcode(instruction.opcode) {
-        OpcodeFidelity::Exact => {}
-        OpcodeFidelity::Conservative => {
-            let detail = if matches!(instruction.opcode, OpCode::Abort | OpCode::Abortmsg) {
-                format!(
-                    "{} is represented as a catchable exception because an uncatchable VM abort has no direct structured equivalent",
-                    instruction.opcode.mnemonic()
-                )
-            } else {
-                format!(
-                    "{} is preserved as a low-level call",
-                    instruction.opcode.mnemonic()
-                )
-            };
-            issues.push(LoweringIssue {
-                offset: instruction.offset,
-                opcode: instruction.opcode,
-                kind: LoweringIssueKind::MissingProvenance,
-                fidelity: Fidelity::Conservative,
-                detail,
-            });
-        }
-        OpcodeFidelity::Incomplete(kind) => record_incomplete_issue(
-            instruction,
-            kind,
-            format!(
-                "{} semantics are not represented exactly",
-                instruction.opcode.mnemonic()
-            ),
-            issues,
-        ),
-    }
-}
-
-fn record_missing_operand_metadata(instruction: &Instruction, issues: &mut Vec<LoweringIssue>) {
-    let encoding = instruction.opcode.operand_encoding();
-    if operand_matches_encoding(encoding, instruction.operand.as_ref()) {
-        return;
-    }
-    record_incomplete_issue(
-        instruction,
-        LoweringIssueKind::MissingOperandMetadata,
-        format!(
-            "{} requires {encoding:?} operand metadata",
-            instruction.opcode.mnemonic()
-        ),
-        issues,
-    );
-}
-
-fn operand_matches_encoding(encoding: OperandEncoding, operand: Option<&Operand>) -> bool {
-    match (encoding, operand) {
-        (OperandEncoding::None, _) => true,
-        (OperandEncoding::I8, Some(Operand::I8(_)))
-        | (OperandEncoding::I16, Some(Operand::I16(_)))
-        | (OperandEncoding::I32, Some(Operand::I32(_)))
-        | (OperandEncoding::I64, Some(Operand::I64(_)))
-        | (OperandEncoding::Jump8, Some(Operand::Jump(_)))
-        | (OperandEncoding::Jump32, Some(Operand::Jump32(_)))
-        | (OperandEncoding::U8, Some(Operand::U8(_)))
-        | (OperandEncoding::U16, Some(Operand::U16(_)))
-        | (OperandEncoding::U32, Some(Operand::U32(_)))
-        | (OperandEncoding::Syscall, Some(Operand::Syscall(_)))
-        | (
-            OperandEncoding::Data1 | OperandEncoding::Data2 | OperandEncoding::Data4,
-            Some(Operand::Bytes(_)),
-        ) => true,
-        (OperandEncoding::Bytes(expected), Some(Operand::Bytes(bytes))) => bytes.len() == expected,
-        _ => false,
-    }
-}
-
-fn record_incomplete_issue(
-    instruction: &Instruction,
-    kind: LoweringIssueKind,
-    detail: impl Into<String>,
-    issues: &mut Vec<LoweringIssue>,
-) {
-    issues.push(LoweringIssue {
-        offset: instruction.offset,
-        opcode: instruction.opcode,
-        kind,
-        fidelity: Fidelity::Incomplete,
-        detail: detail.into(),
-    });
-}
-
-fn record_stack_underflow(
-    instruction: &Instruction,
-    required: usize,
-    available: usize,
-    issues: &mut Vec<LoweringIssue>,
-) {
-    record_incomplete_issue(
-        instruction,
-        LoweringIssueKind::LostStackValue,
-        format!("requires {required} stack values, but only {available} are available"),
-        issues,
-    );
-}
-
-fn fixed_reorder_arity(opcode: OpCode) -> Option<usize> {
-    match opcode {
-        OpCode::Depth => None,
-        OpCode::Drop | OpCode::Dup => Some(1),
-        OpCode::Nip | OpCode::Over | OpCode::Tuck | OpCode::Swap => Some(2),
-        OpCode::Rot | OpCode::Reverse3 => Some(3),
-        OpCode::Reverse4 => Some(4),
-        _ => None,
-    }
-}
 
 /// Straight-line execution result for one block.
 #[derive(Default)]
