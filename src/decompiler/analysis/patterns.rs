@@ -164,6 +164,12 @@ pub fn identify_patterns(
             if hint.contract == "OracleContract" {
                 patterns.insert("oracle".to_string());
             }
+            if hint.contract == "ContractManagement" && hint.canonical_method == Some("Update") {
+                patterns.insert("upgradeable".to_string());
+            }
+            if hint.contract == "Governance" {
+                patterns.insert("governance".to_string());
+            }
         }
     }
     if instructions.iter().any(|instruction| {
@@ -455,5 +461,27 @@ mod tests {
             .evidence
             .iter()
             .any(|entry| entry.value == "OracleContract::Request"));
+    }
+
+    #[test]
+    fn native_contract_management_update_reports_upgradeability() {
+        let nef = NefFile {
+            method_tokens: vec![crate::nef::MethodToken {
+                hash: [
+                    0xFD, 0xA3, 0xFA, 0x43, 0x46, 0xEA, 0x53, 0x2A, 0x25, 0x8F, 0xC4, 0x97, 0xDD,
+                    0xAD, 0xDB, 0x64, 0x37, 0xC9, 0xFD, 0xFF,
+                ],
+                method: "Update".to_string(),
+                parameters_count: 0,
+                has_return_value: false,
+                call_flags: 0x0F,
+            }],
+            ..nef("", "")
+        };
+        let info = identify_patterns(&nef, &[], None);
+        assert_eq!(
+            info.patterns,
+            vec!["method_tokens", "native_contract_calls", "upgradeable"]
+        );
     }
 }

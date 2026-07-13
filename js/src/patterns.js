@@ -89,6 +89,10 @@ export function identifyPatterns(nef, instructions, manifest = null) {
         value: hint.formattedLabel(token.method),
       });
       if (hint.contract === "OracleContract") patterns.add("oracle");
+      if (hint.contract === "ContractManagement" && hint.canonicalMethod === "Update") {
+        patterns.add("upgradeable");
+      }
+      if (hint.contract === "Governance") patterns.add("governance");
     }
   }
   if ((instructions ?? []).some((instruction) =>

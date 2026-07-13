@@ -146,6 +146,24 @@ test("pattern analysis identifies native oracle calls from method tokens", () =>
   assert.ok(info.evidence.some((entry) => entry.value === "OracleContract::Request"));
 });
 
+test("pattern analysis identifies upgradeable native contracts", () => {
+  const info = identifyPatterns(
+    {
+      ...nef(),
+      methodTokens: [{
+        hash: Uint8Array.from([
+          0xFD, 0xA3, 0xFA, 0x43, 0x46, 0xEA, 0x53, 0x2A, 0x25, 0x8F, 0xC4,
+          0x97, 0xDD, 0xAD, 0xDB, 0x64, 0x37, 0xC9, 0xFD, 0xFF,
+        ]),
+        method: "Update",
+      }],
+    },
+    [],
+    null,
+  );
+  assert.deepEqual(info.patterns, ["method_tokens", "native_contract_calls", "upgradeable"]);
+});
+
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const source = [
     "contract Token {",

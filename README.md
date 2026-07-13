@@ -542,7 +542,7 @@ as authoritative, while ABI names, events, syscalls, permissions, and NEF
 compiler/source metadata are retained as explainable evidence with lower
 confidence. Behavior signals currently include storage, notifications, events,
 ownership, external calls, method tokens, native contract calls (including
-Oracle), and wildcard permissions.
+Oracle, governance, and upgradeability), and wildcard permissions.
 
 `contract.type` is `Hash` for explicit script hashes, `Group` for public-key groups,
 and `Wildcard` when `*` is specified. `methods.type` mirrors the same wildcard vs list

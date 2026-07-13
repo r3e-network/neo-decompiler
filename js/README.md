@@ -111,9 +111,9 @@ lifting calls.
 
 `patterns` reports declared or inferred standards, behavior patterns such as
 `storage`, `notifications`, `events`, `ownership`, and native contract calls
-(including `oracle`), compiler/language hints, an aggregate confidence, and the
-evidence signals behind each result. Manifest standards are high confidence;
-bytecode-only hints remain conservative.
+(including `oracle`, `governance`, and `upgradeable`), compiler/language hints,
+an aggregate confidence, and the evidence signals behind each result. Manifest
+standards are high confidence; bytecode-only hints remain conservative.
 
 ### `parseManifest(json) → { name, abi, ... }`
 
