@@ -189,15 +189,19 @@ pub fn identify_patterns(
             value: nef.header.source.clone(),
         });
     }
-    let language = compiler
-        .as_deref()
-        .and_then(infer_language)
-        .or_else(|| infer_language_from_source(&nef.header.source));
+    let compiler_language = compiler.as_deref().and_then(infer_language);
+    let language = compiler_language.or_else(|| infer_language_from_source(&nef.header.source));
 
     let confidence = if strong_standard {
         PatternConfidence::High
-    } else if !patterns.is_empty() || language.is_some() {
+    } else if compiler_language.is_some()
+        || patterns.contains("NEP-17")
+        || patterns.contains("NEP-11")
+        || (evidence.len() >= 2 && !patterns.is_empty())
+    {
         PatternConfidence::Medium
+    } else if !evidence.is_empty() {
+        PatternConfidence::Low
     } else {
         PatternConfidence::Unknown
     };
@@ -310,7 +314,7 @@ mod tests {
         let info = identify_patterns(&nef("", "contract.py"), &[], None);
         assert!(info.standards.is_empty());
         assert_eq!(info.language.as_deref(), Some("Python"));
-        assert_eq!(info.confidence, PatternConfidence::Medium);
+        assert_eq!(info.confidence, PatternConfidence::Low);
         assert!(info
             .evidence
             .iter()

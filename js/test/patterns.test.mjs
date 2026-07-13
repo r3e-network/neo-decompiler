@@ -55,7 +55,7 @@ test("pattern analysis keeps weak source metadata explainable", () => {
   const info = identifyPatterns(nef("", "contract.py"), [], null);
   assert.deepEqual(info.standards, []);
   assert.equal(info.language, "Python");
-  assert.equal(info.confidence, "medium");
+  assert.equal(info.confidence, "low");
   assert.ok(info.evidence.some((entry) => entry.source === "nef.header.source"));
 });
 

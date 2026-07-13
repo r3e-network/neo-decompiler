@@ -86,12 +86,16 @@ export function identifyPatterns(nef, instructions, manifest = null) {
   if (nef?.header?.source?.trim()) {
     evidence.push({ source: "nef.header.source", value: nef.header.source });
   }
-  const language = inferLanguage(compiler) ?? inferLanguageFromSource(nef?.header?.source);
+  const compilerLanguage = inferLanguage(compiler);
+  const language = compilerLanguage ?? inferLanguageFromSource(nef?.header?.source);
+  const strongInferredPattern = patterns.has("NEP-17") || patterns.has("NEP-11");
   const confidence = declaredStandard
     ? "high"
-    : patterns.size > 0 || language
+    : compilerLanguage || strongInferredPattern || (evidence.length >= 2 && patterns.size > 0)
       ? "medium"
-      : "unknown";
+      : evidence.length > 0
+        ? "low"
+        : "unknown";
   return {
     standards: [...standards].sort(),
     patterns: [...patterns].sort(),
