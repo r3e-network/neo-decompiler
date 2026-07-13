@@ -70,3 +70,17 @@ test("C# rendering preserves ABI events as framework events", () => {
   assert.match(csharp, /\[DisplayName\("class"\)\]/);
   assert.match(csharp, /public static event Action @class;/);
 });
+
+test("C# rendering emits manifest class attributes", () => {
+  const csharp = renderCSharpContract(
+    "contract Token {\n}",
+    {
+      supportedStandards: ["NEP-17", "NEP-11"],
+      extra: { Email: "owner@example.com", Version: 2, Nested: { ignored: true } },
+    },
+  );
+  assert.match(csharp, /\[SupportedStandards\("NEP-17", "NEP-11"\)\]/);
+  assert.match(csharp, /\[ManifestExtra\("Email", "owner@example.com"\)\]/);
+  assert.match(csharp, /\[ManifestExtra\("Version", "2"\)\]/);
+  assert.doesNotMatch(csharp, /Nested/);
+});

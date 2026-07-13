@@ -36,6 +36,29 @@ function csharpType(type) {
   return TYPE_MAP.get(String(type ?? "any").trim().toLowerCase()) ?? "object";
 }
 
+function escapeCSharpString(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function renderManifestAttributes(manifest) {
+  if (!manifest || typeof manifest !== "object") return [];
+  const lines = [];
+  const standards = Array.isArray(manifest.supportedStandards)
+    ? manifest.supportedStandards.filter((value) => typeof value === "string")
+    : [];
+  if (standards.length > 0) {
+    lines.push(`[SupportedStandards(${standards.map((value) => `"${escapeCSharpString(value)}"`).join(", ")})]`);
+  }
+  if (manifest.extra && typeof manifest.extra === "object" && !Array.isArray(manifest.extra)) {
+    for (const key of Object.keys(manifest.extra).sort()) {
+      const value = manifest.extra[key];
+      if (value === null || typeof value === "object") continue;
+      lines.push(`[ManifestExtra("${escapeCSharpString(key)}", "${escapeCSharpString(value)}")]`);
+    }
+  }
+  return lines;
+}
+
 function splitParameters(parameters) {
   const parts = [];
   let start = 0;
@@ -235,7 +258,7 @@ function renderEventDeclaration(line) {
  * representable as a C# expression. This is a source-oriented view, not a
  * claim that every generated body is compilable against the Neo framework.
  */
-export function renderCSharpContract(highLevel, _manifest = null) {
+export function renderCSharpContract(highLevel, manifest = null) {
   if (typeof highLevel !== "string") {
     throw new TypeError("highLevel must be a string");
   }
@@ -252,6 +275,7 @@ export function renderCSharpContract(highLevel, _manifest = null) {
   for (const line of highLevel.split(/\r?\n/)) {
     const contract = line.match(/^contract\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{$/);
     if (contract) {
+      for (const attribute of renderManifestAttributes(manifest)) output.push(attribute);
       output.push(`public class ${csharpIdentifier(contract[1])} : SmartContract {`);
       classSeen = true;
       continue;
