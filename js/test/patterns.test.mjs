@@ -200,7 +200,12 @@ test("pattern analysis identifies upgradeable native contracts", () => {
     [],
     null,
   );
-  assert.deepEqual(info.patterns, ["method_tokens", "native_contract_calls", "upgradeable"]);
+  assert.deepEqual(info.patterns, [
+    "contract_management",
+    "method_tokens",
+    "native_contract_calls",
+    "upgradeable",
+  ]);
 });
 
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {

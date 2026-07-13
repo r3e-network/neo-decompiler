@@ -165,7 +165,10 @@ pub fn identify_patterns(
                 patterns.insert("oracle".to_string());
             }
             if hint.contract == "ContractManagement" && hint.canonical_method == Some("Update") {
+                patterns.insert("contract_management".to_string());
                 patterns.insert("upgradeable".to_string());
+            } else if hint.contract == "ContractManagement" {
+                patterns.insert("contract_management".to_string());
             }
             if hint.contract == "Governance" {
                 patterns.insert("governance".to_string());
@@ -504,7 +507,12 @@ mod tests {
         let info = identify_patterns(&nef, &[], None);
         assert_eq!(
             info.patterns,
-            vec!["method_tokens", "native_contract_calls", "upgradeable"]
+            vec![
+                "contract_management",
+                "method_tokens",
+                "native_contract_calls",
+                "upgradeable"
+            ]
         );
     }
 }
