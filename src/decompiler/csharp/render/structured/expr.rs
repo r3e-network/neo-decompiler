@@ -1024,7 +1024,7 @@ fn render_method_token_call(
     if let Some(hint) = native_hash
         .as_ref()
         .and_then(|hash| native_contracts::describe_method_token(hash, name))
-        .filter(|hint| hint.has_exact_method())
+        .filter(|hint| hint.has_exact_method() && call_flags == 0x0F)
     {
         let method = hint
             .canonical_method

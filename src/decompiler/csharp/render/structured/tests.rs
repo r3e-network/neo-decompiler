@@ -909,6 +909,16 @@ fn renders_all_expression_variants() {
         render_expr(&native_token_call, &context),
         "NeoToken.GetCandidates(items)"
     );
+    let restricted_native_token_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 4,
+            name: "getCandidates".to_string(),
+            hash_le: Some("F563EA40BC283D4D0E05C48EA305B3F2A07340EF".to_string()),
+            call_flags: Some(0x01),
+        },
+        vec![Expr::var("items")],
+    );
+    assert!(render_expr(&restricted_native_token_call, &context).contains("Contract.Call"));
     assert_eq!(
         render_expr(&known_syscall, &context),
         "(bool)Runtime.LoadScript((ByteString)new byte[] { 0x41, 0xF8, 0x27, 0xEC, 0x8C }, CallFlags.All, new object[] { items })"
