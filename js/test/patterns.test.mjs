@@ -261,6 +261,25 @@ test("C# rendering widens direct nullable parameter aliases", () => {
   assert.match(rendered, /BigInteger valueOrDefault\(dynamic value\)/);
 });
 
+test("C# rendering can opt into conservative typed declarations", () => {
+  const source = [
+    "contract Typed {",
+    "fn main() -> void {",
+    "    let count = 0;",
+    "    count = count + 1;",
+    "    let values = new_array_t(2, integer);",
+    "    let unknown = call();",
+    "}",
+    "}",
+  ].join("\n");
+  const defaultRendered = renderCSharpContract(source);
+  const typedRendered = renderCSharpContract(source, null, { typedDeclarations: true });
+  assert.match(defaultRendered, /var count = 0;/);
+  assert.match(typedRendered, /BigInteger count = 0;/);
+  assert.match(typedRendered, /BigInteger\[\] values = new BigInteger\[/);
+  assert.match(typedRendered, /dynamic unknown = call\(\);/);
+});
+
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const source = [
     "contract Token {",

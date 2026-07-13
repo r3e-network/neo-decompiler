@@ -161,7 +161,7 @@ export function decompileHighLevelBytes(bytes, options = {}) {
     methodContracts: context.methodContracts,
     patterns: identifyPatterns(result.nef, result.instructions, null),
     highLevel,
-    csharp: renderCSharpContract(highLevel),
+    csharp: renderCSharpContract(highLevel, null, options),
   };
 }
 
@@ -198,7 +198,7 @@ export function decompileHighLevelBytesWithManifest(bytes, manifestInput, option
     methodContracts: context.methodContracts,
     patterns: identifyPatterns(result.nef, result.instructions, manifest),
     highLevel,
-    csharp: renderCSharpContract(highLevel, manifest),
+    csharp: renderCSharpContract(highLevel, manifest, options),
     groupedPseudocode: renderGroupedPseudocode(methodGroups, manifest),
   };
 }

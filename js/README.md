@@ -86,9 +86,9 @@ Full decompilation to structured pseudocode (if/else, loops, etc.).
   the high-level output as source code.
 - `inlineSingleUseTemps: true` — replace every single-use `tN` with its
   RHS at the use site. Implied by `clean: true`.
-- `typedDeclarations: true` — annotate inferred argument signatures and
-  local/static declarations with Neo VM types, such as `arg0: int`,
-  `int loc0`, or `map static0`.
+- `typedDeclarations: true` — use conservative inferred C# declaration types
+  for obvious literals, arithmetic, and collection helpers. Unresolved or
+  conflicting values remain `dynamic`; the default keeps `var` declarations.
 - `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
   for opcodes the disassembler does not recognise.
 

@@ -112,14 +112,69 @@ function manifestMethodForName(name, manifest) {
   ) ?? null;
 }
 
-function renderBodyLine(line) {
+function inferExpressionType(expression) {
+  let value = expression.trim();
+  while (value.startsWith("(") && value.endsWith(")")) {
+    value = value.slice(1, -1).trim();
+  }
+  if (/^(?:true|false)$/i.test(value)) return "bool";
+  if (/^-?\d+$/.test(value)) return "BigInteger";
+  if (/^"(?:[^"\\]|\\.)*"$/.test(value)) return "string";
+  if (/^new_array_t\s*\(/i.test(value)) {
+    const type = value.match(/,\s*"?([a-z]+)"?\s*\)\s*$/i)?.[1]?.toLowerCase();
+    return {
+      bool: "bool[]",
+      boolean: "bool[]",
+      int: "BigInteger[]",
+      integer: "BigInteger[]",
+      buffer: "byte[]",
+      bytes: "ByteString[]",
+      bytestring: "ByteString[]",
+    }[type] ?? "object[]";
+  }
+  if (/^(?:new_array|pack)\s*\(/i.test(value)) return "object[]";
+  if (/^Map\s*\(/i.test(value)) return "Map<object, object>";
+  if (/^(?:is_null|is_type|has_key|within|equals|not_equals|not|is_valid)\s*\(/i.test(value)) {
+    return "bool";
+  }
+  if (/^(?:len|size|abs|sqrt|min|max|sign|convert_to_integer)\s*\(/i.test(value)) {
+    return "BigInteger";
+  }
+  if (/^convert_to_bool\s*\(/i.test(value)) return "bool";
+  if (/^convert_to_bytestring\s*\(/i.test(value)) return "ByteString";
+  if (/[+\-*\/%]|\b(?:and|or|xor|shl|shr)\b/.test(value)) return "BigInteger";
+  if (/[<>=!]=?|&&|\|\|/.test(value)) return "bool";
+  return "dynamic";
+}
+
+function inferDeclarationTypes(lines) {
+  const observed = new Map();
+  for (const line of lines) {
+    const match = line.trim().match(/^(?:let\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);$/);
+    if (!match) continue;
+    const type = inferExpressionType(match[2]);
+    if (!observed.has(match[1])) observed.set(match[1], new Set());
+    observed.get(match[1]).add(type);
+  }
+  return new Map(
+    [...observed].map(([name, types]) => [
+      name,
+      types.size === 1 && !types.has("dynamic") ? [...types][0] : "dynamic",
+    ]),
+  );
+}
+
+function renderBodyLine(line, declarationTypes = null) {
   const indentation = line.match(/^\s*/)?.[0] ?? "";
   const trimmed = line.trim();
   const declaration = trimmed.match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*.*)?;$/);
   if (declaration) {
+    const declarationType = declarationTypes
+      ? declarationTypes.get(declaration[1]) ?? "dynamic"
+      : "var";
     return rewriteQualifiedCalls(rewriteKnownSyscalls(
       rewriteKnownHelpers(
-        `${indentation}var ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
+        `${indentation}${declarationType} ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
       ),
     ));
   }
@@ -159,7 +214,15 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["new_buffer", (args) => `new byte[(int)(${args[0] ?? "???"})]`],
   ["new_array_t", (args) => {
     const type = String(args[1] ?? "").replace(/^"|"$/g, "").toLowerCase();
-    const element = type === "buffer" ? "byte" : "object";
+    const element = {
+      bool: "bool",
+      boolean: "bool",
+      integer: "BigInteger",
+      int: "BigInteger",
+      bytes: "ByteString",
+      bytestring: "ByteString",
+      buffer: "byte",
+    }[type] ?? "object";
     return `new ${element}[(int)(${args[0] ?? "???"})]`;
   }],
   ["Map", (args) => args.length === 0 ? "new Map<object, object>()" : null],
@@ -361,7 +424,7 @@ function renderEventDeclaration(line) {
  * representable as a C# expression. This is a source-oriented view, not a
  * claim that every generated body is compilable against the Neo framework.
  */
-export function renderCSharpContract(highLevel, manifest = null) {
+export function renderCSharpContract(highLevel, manifest = null, options = {}) {
   if (typeof highLevel !== "string") {
     throw new TypeError("highLevel must be a string");
   }
@@ -376,6 +439,9 @@ export function renderCSharpContract(highLevel, manifest = null) {
   ];
   let classSeen = false;
   const sourceLines = highLevel.split(/\r?\n/);
+  const declarationTypes = options.typedDeclarations
+    ? inferDeclarationTypes(sourceLines)
+    : null;
   const nullableParametersByLine = new Map();
   for (const [lineIndex, line] of sourceLines.entries()) {
     if (/^\s*fn\s+/.test(line)) {
@@ -420,7 +486,7 @@ export function renderCSharpContract(highLevel, manifest = null) {
       continue;
     }
     const metadata = renderMetadataLine(line);
-    output.push(metadata ?? renderBodyLine(line));
+    output.push(metadata ?? renderBodyLine(line, declarationTypes));
   }
   if (!classSeen) {
     output.push("public class NeoContract : SmartContract {");

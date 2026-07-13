@@ -323,6 +323,11 @@ export interface DisassemblyOptions {
 
 export interface DecompileOptions extends DisassemblyOptions {
   /**
+   * Use conservative inferred C# declaration types when rendering the
+   * `csharp` result. Defaults to `false`, which preserves `var` declarations.
+   */
+  typedDeclarations?: boolean;
+  /**
    * Inline single-use temporary variables (`tN`) into their first use site
    * for tighter, more readable output. Disabled by default to preserve
    * one-name-per-stack-slot output that's easier to step through.
@@ -398,7 +403,11 @@ export function parseManifest(
   options?: { strict?: boolean },
 ): ContractManifest;
 
-export function renderCSharpContract(highLevel: string, manifest?: ContractManifest | null): string;
+export function renderCSharpContract(
+  highLevel: string,
+  manifest?: ContractManifest | null,
+  options?: { typedDeclarations?: boolean },
+): string;
 
 export function decompileBytes(
   bytes: Uint8Array | ArrayBuffer | number[],
