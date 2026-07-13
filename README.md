@@ -541,8 +541,10 @@ Pattern analysis is deliberately conservative: manifest standards are treated
 as authoritative, while ABI names, events, syscalls, permissions, and NEF
 compiler/source metadata are retained as explainable evidence with lower
 confidence. Behavior signals currently include storage, notifications, events,
-ownership, external calls, method tokens, native contract calls (including
-Oracle, governance, and upgradeability), and wildcard permissions.
+ownership, royalties, external calls, method tokens, native contract calls
+(including Oracle, governance, and upgradeability), and wildcard permissions.
+ABI method signatures can conservatively infer NEP-17, NEP-11, and NEP-24
+(royaltyInfo) when no standard is declared by the manifest.
 
 `contract.type` is `Hash` for explicit script hashes, `Group` for public-key groups,
 and `Wildcard` when `*` is specified. `methods.type` mirrors the same wildcard vs list

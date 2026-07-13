@@ -110,10 +110,13 @@ cross-references, and type inference. Each method contract reports
 lifting calls.
 
 `patterns` reports declared or inferred standards, behavior patterns such as
-`storage`, `notifications`, `events`, `ownership`, and native contract calls
-(including `oracle`, `governance`, and `upgradeable`), compiler/language hints,
+`storage`, `notifications`, `events`, `ownership`, `royalties`, and native
+contract calls (including `oracle`, `governance`, and `upgradeable`),
+compiler/language hints,
 an aggregate confidence, and the evidence signals behind each result. Manifest
-standards are high confidence; bytecode-only hints remain conservative.
+standards are high confidence; bytecode-only hints remain conservative. ABI
+method signatures can infer NEP-17, NEP-11, and NEP-24 (`royaltyInfo`) when
+the manifest does not declare a standard.
 
 ### `parseManifest(json) → { name, abi, ... }`
 
