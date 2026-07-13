@@ -28,31 +28,60 @@ impl<'a> StructCtx<'a> {
     }
 
     /// Promote `i = init; while (cond(i)) { ...; i++; }` only when the update
-    /// is an explicit unary increment/decrement. SSA phi-copy updates remain
-    /// `while` loops because de-versioning them requires a separate proof.
+    /// is an explicit unary increment/decrement. Versioned assignments from
+    /// SSA are accepted when their target and operand share the same base;
+    /// unrelated phi-copy updates remain `while` loops.
     fn try_promote_for(&self, out: &mut IrBlock, condition: Expr, body: &mut IrBlock) -> bool {
-        let Some(Stmt::ExprStmt(update @ Expr::Unary { op, operand })) = body.stmts.last() else {
+        let Some(last) = body.stmts.last() else {
             return false;
         };
-        if !matches!(
-            op,
-            crate::decompiler::ir::UnaryOp::Inc | crate::decompiler::ir::UnaryOp::Dec
-        ) {
-            return false;
-        }
-        let Expr::Variable(variable) = operand.as_ref() else {
-            return false;
+        let (update, variable) = match last {
+            Stmt::ExprStmt(
+                update @ Expr::Unary {
+                    op: crate::decompiler::ir::UnaryOp::Inc | crate::decompiler::ir::UnaryOp::Dec,
+                    operand,
+                },
+            ) => {
+                let Expr::Variable(variable) = operand.as_ref() else {
+                    return false;
+                };
+                (update.clone(), variable.clone())
+            }
+            Stmt::Assign {
+                target,
+                value:
+                    Expr::Unary {
+                        op:
+                            op @ (crate::decompiler::ir::UnaryOp::Inc
+                            | crate::decompiler::ir::UnaryOp::Dec),
+                        operand,
+                    },
+            } => {
+                let Expr::Variable(variable) = operand.as_ref() else {
+                    return false;
+                };
+                if symbol_base(target) != symbol_base(variable) {
+                    return false;
+                }
+                (
+                    Expr::Unary {
+                        op: *op,
+                        operand: Box::new(Expr::Variable(variable.clone())),
+                    },
+                    variable.clone(),
+                )
+            }
+            _ => return false,
         };
-        if !contains_variable(&condition, variable) {
+        if !contains_variable(&condition, &variable) {
             return false;
         }
         let Some(Stmt::Assign { target, .. }) = out.stmts.last() else {
             return false;
         };
-        if target != variable {
+        if symbol_base(target) != symbol_base(&variable) {
             return false;
         }
-        let update = update.clone();
         let init = out.stmts.pop();
         body.stmts.pop();
         out.push(Stmt::ControlFlow(Box::new(ControlFlow::for_loop(
@@ -192,6 +221,14 @@ impl<'a> StructCtx<'a> {
         ))));
         true
     }
+}
+
+fn symbol_base(name: &str) -> &str {
+    name.rsplit_once('_')
+        .filter(|(_, suffix)| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        .map_or(name, |(base, _)| base)
 }
 
 fn contains_variable(expression: &Expr, name: &str) -> bool {

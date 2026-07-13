@@ -1451,6 +1451,7 @@ fn promotes_explicit_induction_loop_to_for() {
     cfg.add_edge(body, header, EdgeKind::Unconditional);
 
     let induction = v("index", 0);
+    let next_induction = v("index", 1);
     let condition = v("condition", 0);
     let ssa = SsaForm {
         dominance: crate::decompiler::cfg::ssa::compute(&cfg),
@@ -1476,10 +1477,10 @@ fn promotes_explicit_induction_loop_to_for() {
             ),
             (
                 body,
-                block_with(vec![SsaStmt::expr(SsaExpr::unary(
-                    UnaryOp::Inc,
-                    SsaExpr::var(induction.clone()),
-                ))]),
+                block_with(vec![SsaStmt::assign(
+                    next_induction,
+                    SsaExpr::unary(UnaryOp::Inc, SsaExpr::var(induction.clone())),
+                )]),
             ),
             (exit, SsaBlock::new()),
         ]),
