@@ -144,6 +144,20 @@ test("pattern analysis exposes ABI event behavior", () => {
   assert.ok(info.evidence.some((entry) => entry.source === "manifest.abi.events" && entry.value === "1"));
 });
 
+test("pattern analysis identifies token transfer behavior from paired ABI method and event", () => {
+  const info = identifyPatterns(nef(), [], {
+    supportedStandards: [],
+    abi: {
+      methods: [{ name: "transfer" }],
+      events: [{ name: "Transfer", parameters: [] }],
+    },
+  });
+  assert.deepEqual(info.patterns, ["events", "token_transfers"]);
+  assert.ok(info.evidence.some((entry) =>
+    entry.source === "manifest.abi.methods" && entry.value === "transfer + Transfer"
+  ));
+});
+
 test("pattern analysis identifies ownership behavior from paired ABI methods", () => {
   const info = identifyPatterns(
     nef(),

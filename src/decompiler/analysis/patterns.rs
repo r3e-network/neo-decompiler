@@ -102,16 +102,23 @@ pub fn identify_patterns(
                 value: manifest.abi.events.len().to_string(),
             });
         }
-        if manifest
+        let has_transfer_event = manifest
             .abi
             .events
             .iter()
-            .any(|event| event.name.eq_ignore_ascii_case("Transfer"))
-        {
+            .any(|event| event.name.eq_ignore_ascii_case("Transfer"));
+        if has_transfer_event {
             evidence.push(PatternEvidence {
                 source: "manifest.abi.events".to_string(),
                 value: "Transfer".to_string(),
             });
+            if names.contains("transfer") {
+                patterns.insert("token_transfers".to_string());
+                evidence.push(PatternEvidence {
+                    source: "manifest.abi.methods".to_string(),
+                    value: "transfer + Transfer".to_string(),
+                });
+            }
         }
 
         if !manifest.permissions.is_empty() {
@@ -534,6 +541,19 @@ mod tests {
             .evidence
             .iter()
             .any(|entry| { entry.source == "manifest.abi.events" && entry.value == "1" }));
+    }
+
+    #[test]
+    fn transfer_event_and_method_report_token_transfer_behavior() {
+        let manifest: ContractManifest = serde_json::from_str(
+            r#"{"name":"Token","abi":{"methods":[{"name":"transfer","returntype":"Boolean"}],"events":[{"name":"Transfer","parameters":[]}]}}"#,
+        )
+        .expect("manifest fixture");
+        let info = identify_patterns(&nef("", ""), &[], Some(&manifest));
+        assert_eq!(info.patterns, vec!["events", "token_transfers"]);
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "manifest.abi.methods" && entry.value == "transfer + Transfer"
+        }));
     }
 
     #[test]

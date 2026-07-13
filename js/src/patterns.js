@@ -89,8 +89,13 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     patterns.add("events");
     evidence.push({ source: "manifest.abi.events", value: String(events.length) });
   }
-  if (events.some((event) => event?.name?.toLowerCase() === "transfer")) {
+  const hasTransferEvent = events.some((event) => event?.name?.toLowerCase() === "transfer");
+  if (hasTransferEvent) {
     evidence.push({ source: "manifest.abi.events", value: "Transfer" });
+    if (methodNames.has("transfer")) {
+      patterns.add("token_transfers");
+      evidence.push({ source: "manifest.abi.methods", value: "transfer + Transfer" });
+    }
   }
   const permissions = Array.isArray(manifest?.permissions) ? manifest.permissions : [];
   if (permissions.length > 0) {
