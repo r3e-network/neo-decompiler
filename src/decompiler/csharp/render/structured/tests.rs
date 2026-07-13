@@ -40,6 +40,8 @@ fn method_contract(
             crate::decompiler::cfg::ssa::CollectionArgumentEffect::Unknown;
             argument_count
         ],
+        argument_collection_facts: vec![Default::default(); argument_count],
+        argument_field_writes: vec![BTreeMap::new(); argument_count],
     }
 }
 
@@ -130,6 +132,7 @@ fn plans_overloads_and_calls_together() {
             method_contract(20, "transfer", 1, ReturnBehavior::Value),
             method_contract(40, "transfer", 1, ReturnBehavior::Value),
         ],
+        static_collection_facts: BTreeMap::new(),
     };
 
     let plans = build_csharp_method_plans(
@@ -214,6 +217,7 @@ fn plans_overloads_and_calls_together() {
             method_contract(0, "caller", 0, ReturnBehavior::Void),
             method_contract(20, "left", 0, ReturnBehavior::Void),
         ],
+        static_collection_facts: BTreeMap::new(),
     };
     let ambiguous_plans = build_csharp_method_plans(
         &ambiguous_instructions,

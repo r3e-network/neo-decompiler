@@ -24,6 +24,22 @@ impl CollectionShape {
     }
 }
 
+/// Fixed collection facts retained without assuming element identity.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct CollectionShapeFacts {
+    /// Fixed outer collection shape, when proven.
+    pub shape: Option<CollectionShape>,
+    /// Fixed shapes of values stored at constant collection indexes.
+    pub indexed: BTreeMap<usize, CollectionShape>,
+}
+
+impl CollectionShapeFacts {
+    #[must_use]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.shape.is_none() && self.indexed.is_empty()
+    }
+}
+
 /// Effect of one call argument on fixed collection shape.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -32,6 +48,8 @@ pub enum CollectionArgumentEffect {
     /// The callee may change the argument's collection length.
     #[default]
     Unknown,
+    /// The callee does not mutate or escape the argument.
+    ReadOnly,
     /// The callee may change contents but preserves collection length.
     PreservesShape,
 }
@@ -45,6 +63,7 @@ pub(crate) struct CallContract {
     pub(crate) may_return: bool,
     pub(crate) return_shape: Option<CollectionShape>,
     pub(crate) argument_effects: Vec<CollectionArgumentEffect>,
+    pub(crate) argument_field_writes: Vec<BTreeMap<usize, CollectionShape>>,
 }
 
 impl CallContract {
@@ -61,6 +80,7 @@ impl CallContract {
             may_return: true,
             return_shape: None,
             argument_effects: vec![CollectionArgumentEffect::Unknown; argument_count],
+            argument_field_writes: vec![BTreeMap::new(); argument_count],
         }
     }
 
@@ -84,6 +104,15 @@ impl CallContract {
         self.argument_effects = argument_effects;
         self
     }
+
+    #[must_use]
+    pub(crate) fn with_argument_field_writes(
+        mut self,
+        argument_field_writes: Vec<BTreeMap<usize, CollectionShape>>,
+    ) -> Self {
+        self.argument_field_writes = argument_field_writes;
+        self
+    }
 }
 
 /// Source and call metadata for one method SSA build.
@@ -93,6 +122,8 @@ pub(crate) struct MethodContext {
     pub(crate) arguments_on_entry_stack: bool,
     pub(crate) returns_value: Option<bool>,
     pub(crate) calls_by_offset: BTreeMap<usize, CallContract>,
+    pub(crate) argument_collection_facts: Vec<CollectionShapeFacts>,
+    pub(crate) static_collection_facts: BTreeMap<usize, CollectionShapeFacts>,
 }
 
 impl MethodContext {

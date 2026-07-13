@@ -755,7 +755,11 @@ struct MethodPlanDraft {
     addressable_offset: Option<usize>,
 }
 
-fn draft_method_context(draft: &MethodPlanDraft) -> MethodContext {
+fn draft_method_context(
+    draft: &MethodPlanDraft,
+    method_contracts: &MethodContracts,
+) -> MethodContext {
+    let method_contract = method_contracts.get(draft.start);
     MethodContext {
         argument_names: draft
             .parameters
@@ -765,6 +769,10 @@ fn draft_method_context(draft: &MethodPlanDraft) -> MethodContext {
         arguments_on_entry_stack: draft.arguments_on_entry_stack,
         returns_value: return_value_option(draft.return_behavior),
         calls_by_offset: BTreeMap::new(),
+        argument_collection_facts: method_contract
+            .map(|contract| contract.argument_collection_facts.clone())
+            .unwrap_or_default(),
+        static_collection_facts: method_contracts.static_collection_facts.clone(),
     }
 }
 
@@ -924,7 +932,7 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                 start: draft.start,
                 end: draft.end,
                 instructions,
-                context: draft_method_context(draft),
+                context: draft_method_context(draft, method_contracts),
                 symbol_types: method_symbol_types(types, draft.start, &draft.parameters),
             })
             .symbols
@@ -958,7 +966,7 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                 parameters: draft.parameters.clone(),
                 return_type: draft.return_type.clone(),
                 return_behavior: draft.return_behavior,
-                method_context: draft_method_context(draft),
+                method_context: draft_method_context(draft, method_contracts),
                 symbol_types: method_symbol_types(types, draft.start, &draft.parameters),
                 planning_issues: Vec::new(),
             }
@@ -1013,6 +1021,12 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                             method_contracts
                                 .get(method.offset)
                                 .map(|contract| contract.argument_effects.clone())
+                                .unwrap_or_default(),
+                        )
+                        .with_argument_field_writes(
+                            method_contracts
+                                .get(method.offset)
+                                .map(|contract| contract.argument_field_writes.clone())
                                 .unwrap_or_default(),
                         )
                     }
@@ -1091,7 +1105,17 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                     target.parameters.len(),
                     plan.return_behavior.returns_value(),
                 )
-                .with_may_return(true),
+                .with_may_return(true)
+                .with_argument_effects(
+                    target_contract
+                        .map(|contract| contract.argument_effects.clone())
+                        .unwrap_or_default(),
+                )
+                .with_argument_field_writes(
+                    target_contract
+                        .map(|contract| contract.argument_field_writes.clone())
+                        .unwrap_or_default(),
+                ),
             );
         }
         planning_issues.sort_by(|left, right| {

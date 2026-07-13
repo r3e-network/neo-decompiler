@@ -10,6 +10,7 @@ use crate::decompiler::analysis::{MethodRef, MethodTable};
 use crate::decompiler::cfg::method_body::{
     build_method_cfg, lower_method_body, FidelityReport, MethodIrRequest, MethodSymbolTypes,
 };
+use crate::decompiler::cfg::ssa::CollectionShapeFacts;
 use crate::decompiler::cfg::ssa::{CallContract, MethodContext};
 use crate::decompiler::cfg::Cfg;
 use crate::decompiler::helpers::{
@@ -71,6 +72,7 @@ pub(crate) fn render_method_body(
     manifest: Option<&ContractManifest>,
     calls_by_offset: &BTreeMap<usize, CallContract>,
     method_contract: Option<&MethodContract>,
+    static_collection_facts: &BTreeMap<usize, CollectionShapeFacts>,
     warnings: &mut Vec<String>,
 ) -> String {
     let manifest_method = manifest.and_then(|manifest| manifest_method_for_view(view, manifest));
@@ -105,6 +107,10 @@ pub(crate) fn render_method_body(
                 .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
         returns_value,
         calls_by_offset: calls_for_view(view, calls_by_offset),
+        argument_collection_facts: method_contract
+            .map(|contract| contract.argument_collection_facts.clone())
+            .unwrap_or_default(),
+        static_collection_facts: static_collection_facts.clone(),
     };
     let ret = manifest_method.map_or_else(
         || match method_contract.map(|contract| contract.return_behavior) {
@@ -204,6 +210,7 @@ pub(crate) fn render_envelope(
             manifest,
             &calls_by_offset,
             method_contracts.get(view.method.offset),
+            &method_contracts.static_collection_facts,
             warnings,
         ));
         out.push('\n');
@@ -273,6 +280,11 @@ fn build_call_contracts(
                 .with_argument_effects(
                     method_contract
                         .map(|contract| contract.argument_effects.clone())
+                        .unwrap_or_default(),
+                )
+                .with_argument_field_writes(
+                    method_contract
+                        .map(|contract| contract.argument_field_writes.clone())
                         .unwrap_or_default(),
                 )
             }
@@ -367,6 +379,7 @@ mod tests {
             Some(&manifest),
             &BTreeMap::new(),
             None,
+            &BTreeMap::new(),
             &mut Vec::new(),
         );
         assert!(out.contains("fn main() -> int"), "got:\n{out}");
@@ -402,6 +415,7 @@ mod tests {
             Some(&manifest),
             &BTreeMap::new(),
             None,
+            &BTreeMap::new(),
             &mut Vec::new(),
         );
         assert!(
@@ -444,6 +458,7 @@ mod tests {
             Some(&manifest),
             &BTreeMap::new(),
             None,
+            &BTreeMap::new(),
             &mut Vec::new(),
         );
 

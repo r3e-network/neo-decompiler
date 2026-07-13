@@ -2,23 +2,23 @@
 status: investigating
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-13T15:52:45+08:00
+updated: 2026-07-13T18:20:48+08:00
 ---
 
 ## Current Focus
 
-hypothesis: One-level constant-index field postconditions plus unanimous private-entry/static facts can carry Array(2) from Reentrancy constructor arg0[0] through static0 into all three remaining fixed-shape UNPACK sites without inferring arity from consumers.
-test: Infer only non-escaping per-argument indexed writes, intersect every non-null static writer and resolved incoming call, then seed PICKITEM results while preserving null/runtime faults and invalidating conflicting, dynamic-index, resizing, or opaque paths.
-expecting: Contract_Reentrancy@0272 and @02AE move from incomplete to conservative, yielding Exact 1106 / Conservative 70 / Incomplete 3; Foreach and both Enum methods remain fail-closed until their separate models are addressed.
-next_action: Add bounded indexed-shape facts and negative tests for conflicting writes, dynamic indexes, partial paths, static conflicts, alias escape, and unknown callsites before wiring the Reentrancy fixed point.
+hypothesis: The two residual Contract_Enum methods share a loop-carried stack-join failure around Enum.Parse(ignoreCase); recovering the exact VM stack invariant at the backedge may eliminate their DROP underflows without weakening the genuinely variable Foreach UNPACK guard.
+test: Compare the 0x0057 and 0x00F1 CFG/SSA loop headers against the original bytecode, identify which predecessor stack value is lost or tainted, and model only the invariant proven on every entry/backedge.
+expecting: Contract_Foreach@04AC remains fail-closed; the Enum methods improve only if their loop stack invariant is unanimous and independent of consumer-driven arity assumptions.
+next_action: Disassemble and trace Contract_Enum@0057 and @00F1 through CFG joins, then add a minimal loop regression before changing stack analysis.
 reasoning_checkpoint: null
 tdd_checkpoint: null
 
 ## Symptoms
 
 expected: Every pinned v3.10.0 contract whose runtime collection arity is statically provable should decompile exactly, while genuinely variable UNPACK sources remain fail-closed.
-actual: The corpus has nine incomplete methods: seven standalone UNPACK roots and two enum loop-stack roots. Four standalone roots have bounded recovery paths; three Reentrancy roots need field/static summaries; Foreach is genuinely variable.
-errors: UNPACK source is not a direct unmodified PACK or PACKSTRUCT definition; loop stack joins lose exact enum parse values.
+actual: The corpus now has three incomplete methods: Foreach@04AC has a genuinely variable UNPACK source, while Enum@0057 and @00F1 lose values at loop-carried stack joins.
+errors: Foreach reports MissingProvenance at UNPACK plus downstream stack loss; both Enum methods report DROP underflow from tainted loop stack joins.
 reproduction: Run the pinned v3.10.0 Roslyn corpus census with /tmp/devpack-artifacts-v3.10.0 and inspect Contract_Returns.mix, Contract_Tuple.t1, Contract_NEP11.transfer, Contract_Record.test_DeconstructRecord, Contract_Reentrancy helpers, Contract_Foreach, and the two Contract_Enum parse-ignore-case methods.
 started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858d850.
 
@@ -84,9 +84,19 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   found: Review caught an initially unsound all-arguments preservation rule and traversal-order/static/parameter typed hazards before commit. A broad external-symbol seed then caused Contract_FieldKeyword CS0266 errors; narrowing provenance to actual runtime Index definitions restored required casts. Final gates pass: 715 library tests passed / 1 ignored, all integration targets pass with and without default features, both Clippy runs pass with warnings denied, Contract_Record has no stale object[] casts, and Roslyn is 103 passed / 0 failed / 0 errors.
   implication: The Record slice is ready to checkpoint; the observed Roslyn regression is eliminated rather than accepted as a known limitation.
 
+- timestamp: 2026-07-13T18:20:48+08:00
+  checked: Bounded indexed argument postconditions, unanimous static/private-entry fixed point, read-only versus content-mutating argument effects, static alias invalidation, and the pinned Reentrancy constructor/consumer chain.
+  found: sub_0x0252 proves arg0[0] = Array(2); noReentrancyByAttribute stores Array(2) with nested field zero into static0; direct incoming calls prove the same indexed fact for sub_0x0272 and sub_0x02AE. Runtime UNPACK indexes inherit the nested shape, while conflicting/dynamic/partial/overwritten fields, unknown incoming calls, ABI/address-taken entries, opaque calls, static conflicts, and alias resize remain fail-closed. A seeded-static SSA version collision found by the regression fixture was fixed by reserving static version zero.
+  implication: All three Reentrancy UNPACK sites are now locally producer-proven rather than consumer-inferred, and static facts cannot be reused after a possible alias mutation.
+
+- timestamp: 2026-07-13T18:20:48+08:00
+  checked: Full all-target Rust tests with all and no default features, both Clippy configurations with warnings denied, pinned v3.10.0 fidelity census, generated Reentrancy C#, and pinned net10 Roslyn compilation.
+  found: 722 library tests pass / 1 ignored in both feature configurations; all integration targets pass; both Clippy runs pass; census is Exact 1106 / Conservative 70 / Incomplete 3; Reentrancy helpers emit direct runtime indexes with no synthetic UNPACK fallback; Roslyn compiles 103 contracts with 0 failures and 0 errors; TestingArtifacts/devpack is absent after the gate.
+  implication: The Reentrancy slice is verified and ready to checkpoint. The residual investigation is limited to genuinely variable Foreach and the two Enum loop-stack methods.
+
 ## Resolution
 
-root_cause: Fixed collection shape was lost both across resolved call returns and across content-only argument mutation; method-global invalidation also let later calls poison earlier facts. Record additionally exposed stale typed declarations for runtime index values.
-fix: Added flow-sensitive content-versus-shape invalidation, unanimous Array/Struct return summaries, escape-aware per-argument shape-preserving effects, runtime Index expansion, and fixed-point typed-index safety for locals plus live parameter/static storage.
-verification: Focused positive/negative shape and escape tests pass; full all-target Rust tests pass with all and no default features; both Clippy configurations pass with warnings denied; pinned census is Exact 1106 / Conservative 68 / Incomplete 5; pinned Roslyn is 103 passed / 0 failed / 0 errors; formatting and diff checks pass.
+root_cause: Fixed collection shape was lost across resolved call returns, content-only argument mutation, constructor field writes, static storage, and private method entry. Method-global invalidation also let later calls poison earlier facts, while Record exposed stale typed declarations for runtime index values.
+fix: Added flow-sensitive content-versus-shape invalidation, unanimous Array/Struct return summaries, escape-aware read-only/shape-preserving effects, bounded constant-index postconditions, unanimous static/private-entry fixed points, flow-sensitive static alias invalidation, runtime Index expansion, and fixed-point typed-index safety for locals plus live parameter/static storage.
+verification: Focused positive/negative shape, escape, field, static, entry, and mutation tests pass; full all-target Rust tests pass with all and no default features; both Clippy configurations pass with warnings denied; pinned census is Exact 1106 / Conservative 70 / Incomplete 3; pinned Roslyn is 103 passed / 0 failed / 0 errors; formatting and diff checks pass.
 files_changed: [src/decompiler/analysis/method_contracts.rs, src/decompiler/cfg/method_view.rs, src/decompiler/cfg/ssa/builder.rs, src/decompiler/cfg/ssa/context.rs, src/decompiler/cfg/ssa/mod.rs, src/decompiler/csharp/render.rs, src/decompiler/csharp/render/structured/plan.rs, src/decompiler/csharp/render/structured/stmt.rs, src/decompiler/csharp/render/structured/tests.rs, src/lib.rs]

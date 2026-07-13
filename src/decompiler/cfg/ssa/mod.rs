@@ -15,7 +15,7 @@ mod variable;
 
 pub use builder::SsaBuilder;
 pub(crate) use context::{CallContract, MethodContext};
-pub use context::{CollectionArgumentEffect, CollectionShape};
+pub use context::{CollectionArgumentEffect, CollectionShape, CollectionShapeFacts};
 pub use dominance::{compute, DominanceInfo};
 pub use form::{SsaBlock, SsaExpr, SsaForm, SsaStats, SsaStmt, UseSite};
 pub use optimize::optimize as optimize_ssa;

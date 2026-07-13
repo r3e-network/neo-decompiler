@@ -6,16 +6,19 @@ use serde::Serialize;
 
 use crate::decompiler::cfg::method_body::{build_method_cfg_with_non_returning_calls, Fidelity};
 use crate::decompiler::cfg::method_view::{extract_method_cfgs, MethodView};
+use crate::decompiler::cfg::ssa::builder::{SsaCollectionAnalysis, StaticCollectionWrite};
 use crate::decompiler::cfg::ssa::{
     CallContract, MethodContext, SsaBuilder, SsaExpr, SsaStmt, SsaVariable,
 };
-pub use crate::decompiler::cfg::ssa::{CollectionArgumentEffect, CollectionShape};
+pub use crate::decompiler::cfg::ssa::{
+    CollectionArgumentEffect, CollectionShape, CollectionShapeFacts,
+};
 use crate::decompiler::cfg::Terminator;
 use crate::decompiler::helpers::{
     build_method_arg_counts_by_offset, build_method_returns_value_by_offset,
 };
 use crate::decompiler::ir::{Intrinsic, SemanticCallTarget};
-use crate::instruction::{Instruction, OpCode};
+use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::ContractManifest;
 
 use super::call_graph::{CallGraph, CallTarget};
@@ -56,6 +59,10 @@ pub struct MethodContract {
     pub return_shape: Option<CollectionShape>,
     /// Per-argument effects on fixed collection shape.
     pub argument_effects: Vec<CollectionArgumentEffect>,
+    /// Fixed collection facts shared by every resolved incoming call.
+    pub argument_collection_facts: Vec<CollectionShapeFacts>,
+    /// Fixed constant-index shapes guaranteed on every normal return.
+    pub argument_field_writes: Vec<BTreeMap<usize, CollectionShape>>,
 }
 
 /// Deterministic method-contract analysis for a script.
@@ -63,6 +70,8 @@ pub struct MethodContract {
 pub struct MethodContracts {
     /// Contracts sorted by method entry offset.
     pub methods: Vec<MethodContract>,
+    /// Fixed shapes shared by every non-null write to each static slot.
+    pub static_collection_facts: BTreeMap<usize, CollectionShapeFacts>,
 }
 
 impl MethodContracts {
@@ -143,6 +152,17 @@ pub fn infer_method_contracts(
                         CollectionArgumentEffect::Unknown;
                         argument_counts.get(&offset).copied().unwrap_or(0)
                     ],
+                    argument_collection_facts: vec![
+                        CollectionShapeFacts::default();
+                        argument_counts
+                            .get(&offset)
+                            .copied()
+                            .unwrap_or(0)
+                    ],
+                    argument_field_writes: vec![
+                        BTreeMap::new();
+                        argument_counts.get(&offset).copied().unwrap_or(0)
+                    ],
                 },
             )
         })
@@ -221,7 +241,13 @@ pub fn infer_method_contracts(
             let contract = contracts.get(offset)?;
             Some((
                 *offset,
-                method_argument_effects(view, &calls_by_offset, contract.argument_count),
+                method_argument_effects(
+                    view,
+                    &calls_by_offset,
+                    contract.argument_count,
+                    &[],
+                    &BTreeMap::new(),
+                ),
             ))
         })
         .collect::<Vec<_>>();
@@ -249,8 +275,466 @@ pub fn infer_method_contracts(
         }
     }
 
+    infer_argument_field_writes(&views_by_offset, call_graph, &mut contracts);
+    let static_collection_facts = infer_entry_and_static_collection_facts(
+        instructions,
+        manifest,
+        call_graph,
+        &views_by_offset,
+        &mut contracts,
+    );
+
     MethodContracts {
         methods: contracts.into_values().collect(),
+        static_collection_facts,
+    }
+}
+
+#[derive(Debug)]
+struct MethodCollectionAnalysis {
+    trustworthy: bool,
+    analysis: SsaCollectionAnalysis,
+}
+
+fn infer_argument_field_writes(
+    views_by_offset: &BTreeMap<usize, &MethodView>,
+    call_graph: &CallGraph,
+    contracts: &mut BTreeMap<usize, MethodContract>,
+) {
+    let iteration_limit = contracts.len().saturating_mul(2).saturating_add(4);
+    let mut converged = false;
+    for _ in 0..iteration_limit {
+        let calls_by_offset = build_call_contracts(call_graph, contracts);
+        let updates = views_by_offset
+            .iter()
+            .filter_map(|(offset, view)| {
+                let contract = contracts.get(offset)?;
+                let analysis = method_collection_analysis(
+                    view,
+                    &calls_by_offset,
+                    contract,
+                    &vec![CollectionShapeFacts::default(); contract.argument_count],
+                    &BTreeMap::new(),
+                );
+                let writes = analysis
+                    .filter(|analysis| analysis.trustworthy)
+                    .map_or_else(
+                        || vec![BTreeMap::new(); contract.argument_count],
+                        |analysis| {
+                            (0..contract.argument_count)
+                                .map(|index| {
+                                    if contract.argument_effects.get(index)
+                                        == Some(&CollectionArgumentEffect::PreservesShape)
+                                    {
+                                        analysis
+                                            .analysis
+                                            .argument_field_writes
+                                            .get(index)
+                                            .cloned()
+                                            .unwrap_or_default()
+                                    } else {
+                                        BTreeMap::new()
+                                    }
+                                })
+                                .collect()
+                        },
+                    );
+                Some((*offset, writes))
+            })
+            .collect::<Vec<_>>();
+        if updates.iter().all(|(offset, writes)| {
+            contracts
+                .get(offset)
+                .is_some_and(|contract| contract.argument_field_writes == *writes)
+        }) {
+            converged = true;
+            break;
+        }
+        for (offset, writes) in updates {
+            if let Some(contract) = contracts.get_mut(&offset) {
+                contract.argument_field_writes = writes;
+            }
+        }
+    }
+    if !converged {
+        for contract in contracts.values_mut() {
+            contract.argument_field_writes = vec![BTreeMap::new(); contract.argument_count];
+        }
+    }
+}
+
+fn infer_entry_and_static_collection_facts(
+    instructions: &[Instruction],
+    manifest: Option<&ContractManifest>,
+    call_graph: &CallGraph,
+    views_by_offset: &BTreeMap<usize, &MethodView>,
+    contracts: &mut BTreeMap<usize, MethodContract>,
+) -> BTreeMap<usize, CollectionShapeFacts> {
+    let abi_offsets = manifest
+        .map(|manifest| {
+            manifest
+                .abi
+                .methods
+                .iter()
+                .filter_map(|method| {
+                    method
+                        .offset
+                        .and_then(|offset| usize::try_from(offset).ok())
+                })
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let address_taken_offsets = instructions
+        .iter()
+        .filter_map(|instruction| {
+            (instruction.opcode == OpCode::PushA)
+                .then(|| match instruction.operand {
+                    Some(Operand::I32(delta)) => {
+                        instruction.offset.checked_add_signed(delta as isize)
+                    }
+                    _ => None,
+                })
+                .flatten()
+        })
+        .collect::<BTreeSet<_>>();
+    let has_opaque_internal_call = call_graph.edges.iter().any(|edge| {
+        matches!(
+            edge.target,
+            CallTarget::Indirect { .. } | CallTarget::UnresolvedInternal { .. }
+        )
+    });
+
+    let iteration_limit = contracts.len().saturating_mul(4).saturating_add(8);
+    let mut static_seed_facts = BTreeMap::new();
+    let mut static_facts = BTreeMap::new();
+    let mut converged = false;
+    for _ in 0..iteration_limit {
+        let calls_by_offset = build_call_contracts(call_graph, contracts);
+        let effect_updates = views_by_offset
+            .iter()
+            .filter_map(|(offset, view)| {
+                let contract = contracts.get(offset)?;
+                Some((
+                    *offset,
+                    method_argument_effects(
+                        view,
+                        &calls_by_offset,
+                        contract.argument_count,
+                        &contract.argument_collection_facts,
+                        &static_seed_facts,
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let effects_changed = effect_updates.iter().any(|(offset, effects)| {
+            contracts
+                .get(offset)
+                .is_some_and(|contract| contract.argument_effects != *effects)
+        });
+        for (offset, effects) in effect_updates {
+            if let Some(contract) = contracts.get_mut(&offset) {
+                contract.argument_effects = effects;
+            }
+        }
+        let calls_by_offset = build_call_contracts(call_graph, contracts);
+        let analyses = views_by_offset
+            .iter()
+            .filter_map(|(offset, view)| {
+                let contract = contracts.get(offset)?;
+                method_collection_analysis(
+                    view,
+                    &calls_by_offset,
+                    contract,
+                    &contract.argument_collection_facts,
+                    &static_seed_facts,
+                )
+                .map(|analysis| (*offset, analysis))
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        let (new_static_seed_facts, new_static_facts) = if has_opaque_internal_call {
+            (BTreeMap::new(), BTreeMap::new())
+        } else {
+            (
+                aggregate_static_collection_facts(views_by_offset, &analyses, false),
+                aggregate_static_collection_facts(views_by_offset, &analyses, true),
+            )
+        };
+        let new_argument_facts = aggregate_private_argument_facts(
+            call_graph,
+            contracts,
+            &analyses,
+            &abi_offsets,
+            &address_taken_offsets,
+        );
+        let arguments_unchanged = contracts.iter().all(|(offset, contract)| {
+            new_argument_facts
+                .get(offset)
+                .is_some_and(|facts| *facts == contract.argument_collection_facts)
+        });
+        if new_static_seed_facts == static_seed_facts
+            && new_static_facts == static_facts
+            && arguments_unchanged
+            && !effects_changed
+        {
+            static_facts = new_static_facts;
+            converged = true;
+            break;
+        }
+        static_seed_facts = new_static_seed_facts;
+        static_facts = new_static_facts;
+        for (offset, facts) in new_argument_facts {
+            if let Some(contract) = contracts.get_mut(&offset) {
+                contract.argument_collection_facts = facts;
+            }
+        }
+    }
+
+    if converged {
+        static_facts
+    } else {
+        for contract in contracts.values_mut() {
+            contract.argument_collection_facts =
+                vec![CollectionShapeFacts::default(); contract.argument_count];
+        }
+        BTreeMap::new()
+    }
+}
+
+fn method_collection_analysis(
+    view: &MethodView,
+    calls_by_offset: &BTreeMap<usize, CallContract>,
+    contract: &MethodContract,
+    argument_collection_facts: &[CollectionShapeFacts],
+    static_collection_facts: &BTreeMap<usize, CollectionShapeFacts>,
+) -> Option<MethodCollectionAnalysis> {
+    if view.instructions.len() > crate::decompiler::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS {
+        return None;
+    }
+    let context = MethodContext {
+        argument_names: (0..contract.argument_count)
+            .map(|index| format!("arg{index}"))
+            .collect(),
+        arguments_on_entry_stack: view
+            .instructions
+            .first()
+            .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
+        returns_value: Some(contract.return_behavior.returns_value()),
+        calls_by_offset: calls_for_view(view, calls_by_offset),
+        argument_collection_facts: argument_collection_facts.to_vec(),
+        static_collection_facts: static_collection_facts.clone(),
+    };
+    let non_returning_calls = calls_by_offset
+        .iter()
+        .filter_map(|(offset, call)| {
+            (!call.may_return && *offset >= view.method.offset && *offset < view.end)
+                .then_some(*offset)
+        })
+        .collect::<BTreeSet<_>>();
+    let rebuilt_cfg;
+    let cfg = if non_returning_calls.is_empty() {
+        &view.cfg
+    } else {
+        rebuilt_cfg = build_method_cfg_with_non_returning_calls(
+            &view.instructions,
+            view.method.offset,
+            view.end,
+            &non_returning_calls,
+        );
+        &rebuilt_cfg
+    };
+    let built = SsaBuilder::new(cfg, &view.instructions)
+        .with_method_context(&context)
+        .build_with_report();
+    Some(MethodCollectionAnalysis {
+        trustworthy: built.fidelity.status != Fidelity::Incomplete,
+        analysis: built.collection_analysis,
+    })
+}
+
+fn aggregate_static_collection_facts(
+    views_by_offset: &BTreeMap<usize, &MethodView>,
+    analyses: &BTreeMap<usize, MethodCollectionAnalysis>,
+    include_provisional: bool,
+) -> BTreeMap<usize, CollectionShapeFacts> {
+    let mut writes_by_index: BTreeMap<usize, Vec<StaticCollectionWrite>> = BTreeMap::new();
+    for (offset, analysis) in analyses {
+        if analysis.trustworthy {
+            for write in &analysis.analysis.static_writes {
+                if write.provisional && !include_provisional {
+                    continue;
+                }
+                writes_by_index
+                    .entry(write.index)
+                    .or_default()
+                    .push(write.clone());
+            }
+            continue;
+        }
+        for write in &analysis.analysis.static_writes {
+            if write.provisional && !include_provisional {
+                continue;
+            }
+            writes_by_index
+                .entry(write.index)
+                .or_default()
+                .push(StaticCollectionWrite {
+                    index: write.index,
+                    facts: None,
+                    is_null: write.is_null,
+                    provisional: write.provisional,
+                });
+        }
+        if let Some(view) = views_by_offset.get(offset) {
+            for index in view.instructions.iter().filter_map(static_load_index) {
+                writes_by_index
+                    .entry(index)
+                    .or_default()
+                    .push(StaticCollectionWrite {
+                        index,
+                        facts: None,
+                        is_null: false,
+                        provisional: false,
+                    });
+            }
+        }
+    }
+    for (offset, view) in views_by_offset {
+        if analyses.contains_key(offset) {
+            continue;
+        }
+        for index in view.instructions.iter().filter_map(|instruction| {
+            static_load_index(instruction).or_else(|| static_store_index(instruction))
+        }) {
+            writes_by_index
+                .entry(index)
+                .or_default()
+                .push(StaticCollectionWrite {
+                    index,
+                    facts: None,
+                    is_null: false,
+                    provisional: false,
+                });
+        }
+    }
+
+    writes_by_index
+        .into_iter()
+        .filter_map(|(index, writes)| intersect_static_writes(&writes).map(|facts| (index, facts)))
+        .collect()
+}
+
+fn intersect_static_writes(writes: &[StaticCollectionWrite]) -> Option<CollectionShapeFacts> {
+    let mut non_null = writes.iter().filter(|write| !write.is_null);
+    let mut facts = non_null.next()?.facts.clone()?;
+    for write in non_null {
+        let next = write.facts.as_ref()?;
+        if facts.shape != next.shape {
+            facts.shape = None;
+        }
+        facts.indexed.retain(|index, shape| {
+            next.indexed
+                .get(index)
+                .is_some_and(|next_shape| next_shape == shape)
+        });
+    }
+    (!facts.is_empty()).then_some(facts)
+}
+
+fn aggregate_private_argument_facts(
+    call_graph: &CallGraph,
+    contracts: &BTreeMap<usize, MethodContract>,
+    analyses: &BTreeMap<usize, MethodCollectionAnalysis>,
+    abi_offsets: &BTreeSet<usize>,
+    address_taken_offsets: &BTreeSet<usize>,
+) -> BTreeMap<usize, Vec<CollectionShapeFacts>> {
+    contracts
+        .iter()
+        .map(|(offset, contract)| {
+            let empty = vec![CollectionShapeFacts::default(); contract.argument_count];
+            if abi_offsets.contains(offset) || address_taken_offsets.contains(offset) {
+                return (*offset, empty);
+            }
+            let incoming = call_graph
+                .edges
+                .iter()
+                .filter(|edge| {
+                    matches!(
+                        &edge.target,
+                        CallTarget::Internal { method } if method.offset == *offset
+                    )
+                })
+                .collect::<Vec<_>>();
+            if incoming.is_empty()
+                || incoming
+                    .iter()
+                    .any(|edge| !matches!(edge.opcode.as_str(), "CALL" | "CALL_L"))
+            {
+                return (*offset, empty);
+            }
+            let facts = (0..contract.argument_count)
+                .map(|argument_index| {
+                    let mut agreed: Option<CollectionShapeFacts> = None;
+                    for edge in &incoming {
+                        let Some(analysis) = analyses
+                            .get(&edge.caller.offset)
+                            .filter(|analysis| analysis.trustworthy)
+                        else {
+                            return CollectionShapeFacts::default();
+                        };
+                        let Some(facts) = analysis
+                            .analysis
+                            .call_argument_facts
+                            .get(&edge.call_offset)
+                            .and_then(|facts| facts.get(argument_index))
+                            .filter(|facts| !facts.is_empty())
+                        else {
+                            return CollectionShapeFacts::default();
+                        };
+                        if agreed.as_ref().is_some_and(|agreed| agreed != facts) {
+                            return CollectionShapeFacts::default();
+                        }
+                        agreed = Some(facts.clone());
+                    }
+                    agreed.unwrap_or_default()
+                })
+                .collect();
+            (*offset, facts)
+        })
+        .collect()
+}
+
+fn static_load_index(instruction: &Instruction) -> Option<usize> {
+    match instruction.opcode {
+        OpCode::Ldsfld0 => Some(0),
+        OpCode::Ldsfld1 => Some(1),
+        OpCode::Ldsfld2 => Some(2),
+        OpCode::Ldsfld3 => Some(3),
+        OpCode::Ldsfld4 => Some(4),
+        OpCode::Ldsfld5 => Some(5),
+        OpCode::Ldsfld6 => Some(6),
+        OpCode::Ldsfld => match instruction.operand {
+            Some(Operand::U8(index)) => Some(usize::from(index)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn static_store_index(instruction: &Instruction) -> Option<usize> {
+    match instruction.opcode {
+        OpCode::Stsfld0 => Some(0),
+        OpCode::Stsfld1 => Some(1),
+        OpCode::Stsfld2 => Some(2),
+        OpCode::Stsfld3 => Some(3),
+        OpCode::Stsfld4 => Some(4),
+        OpCode::Stsfld5 => Some(5),
+        OpCode::Stsfld6 => Some(6),
+        OpCode::Stsfld => match instruction.operand {
+            Some(Operand::U8(index)) => Some(usize::from(index)),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -258,6 +742,8 @@ fn method_argument_effects(
     view: &MethodView,
     calls_by_offset: &BTreeMap<usize, CallContract>,
     argument_count: usize,
+    argument_collection_facts: &[CollectionShapeFacts],
+    static_collection_facts: &BTreeMap<usize, CollectionShapeFacts>,
 ) -> Vec<CollectionArgumentEffect> {
     let unknown = vec![CollectionArgumentEffect::Unknown; argument_count];
     if argument_count == 0
@@ -266,22 +752,27 @@ fn method_argument_effects(
     {
         return unknown;
     }
-    let has_call = calls_by_offset
-        .keys()
-        .any(|offset| *offset >= view.method.offset && *offset < view.end)
-        || view.instructions.iter().any(|instruction| {
-            matches!(
-                instruction.opcode,
-                OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::CallT | OpCode::Syscall
-            )
-        });
+    let has_internal_or_indirect_call =
+        view.instructions
+            .iter()
+            .any(|instruction| match instruction.opcode {
+                OpCode::Call | OpCode::Call_L | OpCode::CallA => true,
+                OpCode::CallT => {
+                    !calls_by_offset
+                        .get(&instruction.offset)
+                        .is_some_and(|contract| {
+                            matches!(contract.target, SemanticCallTarget::MethodToken { .. })
+                        })
+                }
+                _ => false,
+            });
     let may_resize_collection = view.instructions.iter().any(|instruction| {
         matches!(
             instruction.opcode,
             OpCode::Append | OpCode::Remove | OpCode::Clearitems | OpCode::Popitem
         )
     });
-    if has_call || may_resize_collection {
+    if has_internal_or_indirect_call || may_resize_collection {
         return unknown;
     }
 
@@ -294,12 +785,14 @@ fn method_argument_effects(
             .first()
             .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
         calls_by_offset: calls_for_view(view, calls_by_offset),
+        argument_collection_facts: argument_collection_facts.to_vec(),
+        static_collection_facts: static_collection_facts.clone(),
         ..MethodContext::default()
     };
     let built = SsaBuilder::new(&view.cfg, &view.instructions)
         .with_method_context(&context)
         .build_with_report();
-    if built.fidelity.status != Fidelity::Exact {
+    if built.fidelity.status == Fidelity::Incomplete {
         return unknown;
     }
 
@@ -368,12 +861,12 @@ fn method_argument_effects(
                     }
                 }
                 SsaStmt::Assign { value, .. } => {
-                    collect_argument_origins(value, &origins, &mut unsafe_arguments);
+                    collect_escaping_argument_origins(value, &origins, &mut unsafe_arguments);
                 }
                 SsaStmt::Expr(SsaExpr::Call {
                     target:
                         SemanticCallTarget::Intrinsic(Intrinsic::Opcode(
-                            OpCode::Setitem | OpCode::Reverseitems | OpCode::Memcpy,
+                            opcode @ (OpCode::Setitem | OpCode::Reverseitems | OpCode::Memcpy),
                         )),
                     args,
                 }) => {
@@ -386,8 +879,10 @@ fn method_argument_effects(
                     } else if let Some(receiver) = args.first() {
                         collect_argument_origins(receiver, &origins, &mut unsafe_arguments);
                     }
-                    for argument in args.iter().skip(1) {
-                        collect_argument_origins(argument, &origins, &mut unsafe_arguments);
+                    if *opcode == OpCode::Setitem {
+                        if let Some(value) = args.get(2) {
+                            collect_argument_origins(value, &origins, &mut unsafe_arguments);
+                        }
                     }
                 }
                 SsaStmt::Expr(expression)
@@ -396,12 +891,7 @@ fn method_argument_effects(
                 | SsaStmt::Abort(Some(expression)) => {
                     collect_argument_origins(expression, &origins, &mut unsafe_arguments);
                 }
-                SsaStmt::Assert { condition, message } => {
-                    collect_argument_origins(condition, &origins, &mut unsafe_arguments);
-                    if let Some(message) = message {
-                        collect_argument_origins(message, &origins, &mut unsafe_arguments);
-                    }
-                }
+                SsaStmt::Assert { .. } => {}
                 SsaStmt::Return(None) | SsaStmt::Throw(None) | SsaStmt::Abort(None) => {}
                 SsaStmt::Phi(_) | SsaStmt::Other(_) => return unknown,
             }
@@ -412,11 +902,56 @@ fn method_argument_effects(
         .map(|index| {
             if shape_preserving_receivers.contains(&index) && !unsafe_arguments.contains(&index) {
                 CollectionArgumentEffect::PreservesShape
+            } else if !unsafe_arguments.contains(&index) {
+                CollectionArgumentEffect::ReadOnly
             } else {
                 CollectionArgumentEffect::Unknown
             }
         })
         .collect()
+}
+
+fn collect_escaping_argument_origins(
+    expression: &SsaExpr,
+    origins: &BTreeMap<SsaVariable, usize>,
+    found: &mut BTreeSet<usize>,
+) {
+    match expression {
+        SsaExpr::Call {
+            target: SemanticCallTarget::Intrinsic(_),
+            ..
+        } => {}
+        SsaExpr::Call { args, .. } | SsaExpr::Array(args) | SsaExpr::Struct(args) => {
+            for argument in args {
+                collect_argument_origins(argument, origins, found);
+            }
+        }
+        SsaExpr::Map(entries) => {
+            for (key, value) in entries {
+                collect_argument_origins(key, origins, found);
+                collect_argument_origins(value, origins, found);
+            }
+        }
+        SsaExpr::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_argument_origins(condition, origins, found);
+            collect_argument_origins(then_expr, origins, found);
+            collect_argument_origins(else_expr, origins, found);
+        }
+        SsaExpr::Literal(_)
+        | SsaExpr::Variable(_)
+        | SsaExpr::Binary { .. }
+        | SsaExpr::Unary { .. }
+        | SsaExpr::Index { .. }
+        | SsaExpr::Member { .. }
+        | SsaExpr::Cast { .. }
+        | SsaExpr::Convert { .. }
+        | SsaExpr::IsType { .. }
+        | SsaExpr::NewArray { .. } => {}
+    }
 }
 
 fn collect_argument_origins(
@@ -488,6 +1023,8 @@ fn method_return_shape(
             .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
         returns_value: Some(true),
         calls_by_offset: calls_for_view(view, calls_by_offset),
+        argument_collection_facts: Vec::new(),
+        static_collection_facts: BTreeMap::new(),
     };
     let non_returning_calls: BTreeSet<usize> = calls_by_offset
         .iter()
@@ -631,6 +1168,11 @@ fn build_call_contracts(
                         .map(|contract| contract.argument_effects.clone())
                         .unwrap_or_default(),
                 )
+                .with_argument_field_writes(
+                    method_contract
+                        .map(|contract| contract.argument_field_writes.clone())
+                        .unwrap_or_default(),
+                )
             }
             CallTarget::MethodToken {
                 hash_le,
@@ -659,17 +1201,21 @@ fn build_call_contracts(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
-    use crate::decompiler::analysis::call_graph::build_call_graph;
+    use crate::decompiler::analysis::call_graph::{
+        build_call_graph, CallEdge, CallGraph, CallTarget,
+    };
     use crate::decompiler::analysis::MethodRef;
     use crate::disassembler::Disassembler;
     use crate::manifest::ContractManifest;
     use crate::nef::{MethodToken, NefFile, NefHeader};
 
     use super::{
-        infer_method_contracts, CollectionArgumentEffect, CollectionShape, MethodContract,
-        MethodContracts, ReturnBehavior,
+        aggregate_private_argument_facts, infer_method_contracts, intersect_static_writes,
+        CollectionArgumentEffect, CollectionShape, CollectionShapeFacts, MethodCollectionAnalysis,
+        MethodContract, MethodContracts, ReturnBehavior, SsaCollectionAnalysis,
+        StaticCollectionWrite,
     };
 
     const PRIVATE_VOID_LEAF: &[u8] = &[
@@ -750,6 +1296,50 @@ mod tests {
     }
 
     #[test]
+    fn infers_nested_private_entry_facts_through_static_constructor_chain() {
+        let manifest = manifest(
+            r#"{
+                "name": "NestedStatic",
+                "abi": { "methods": [
+                    {"name":"main","parameters":[],"returntype":"Void","offset":0}
+                ] }
+            }"#,
+        );
+        let script = [
+            0x0B, 0x0B, 0x12, 0xC0, 0x4A, 0x34, 0x07, 0x60, 0x58, 0x34, 0x0E, 0x40, 0x57, 0x00,
+            0x01, 0x78, 0x10, 0x11, 0x11, 0x12, 0xC0, 0xD0, 0x40, 0x57, 0x00, 0x01, 0x78, 0x10,
+            0xCE, 0xC1, 0x45, 0x45, 0x45, 0x40,
+        ];
+
+        let contracts = analyze(&script, Some(&manifest));
+
+        assert_eq!(
+            contracts.static_collection_facts.get(&0),
+            Some(&CollectionShapeFacts {
+                shape: Some(CollectionShape::Array(2)),
+                indexed: BTreeMap::from([(0, CollectionShape::Array(2))]),
+            })
+        );
+        let constructor = contracts.get(12).expect("constructor contract");
+        assert_eq!(
+            constructor.argument_field_writes,
+            vec![BTreeMap::from([(0, CollectionShape::Array(2))])]
+        );
+        let consumer = contracts.get(23).expect("consumer contract");
+        assert_eq!(
+            consumer.argument_effects,
+            vec![CollectionArgumentEffect::ReadOnly]
+        );
+        assert_eq!(
+            consumer.argument_collection_facts,
+            vec![CollectionShapeFacts {
+                shape: Some(CollectionShape::Array(2)),
+                indexed: BTreeMap::from([(0, CollectionShape::Array(2))]),
+            }]
+        );
+    }
+
+    #[test]
     fn distinguishes_shape_preserving_and_resizing_argument_effects() {
         let manifest = standard_manifest();
         let shape_preserving = [
@@ -796,6 +1386,196 @@ mod tests {
                 .expect("identity helper contract")
                 .argument_effects,
             vec![CollectionArgumentEffect::Unknown]
+        );
+    }
+
+    #[test]
+    fn known_zero_argument_syscall_does_not_hide_shape_preserving_receiver() {
+        let manifest = standard_manifest();
+        let script = [
+            0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x41, 0x9B, 0xF6, 0x67, 0xCE, 0x45, 0x78,
+            0x10, 0x11, 0x11, 0x12, 0xC0, 0xD0, 0x40,
+        ];
+
+        let contracts = analyze(&script, Some(&manifest));
+
+        assert_eq!(
+            contracts
+                .get(4)
+                .expect("syscall constructor contract")
+                .argument_effects,
+            vec![CollectionArgumentEffect::PreservesShape]
+        );
+    }
+
+    #[test]
+    fn static_and_nested_argument_aliases_remain_unknown() {
+        let manifest = standard_manifest();
+        let static_escape = [0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x78, 0x60, 0x40];
+        let nested_alias = [
+            0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x78, 0x11, 0xC0, 0x45, 0x40,
+        ];
+
+        for script in [&static_escape[..], &nested_alias[..]] {
+            assert_eq!(
+                analyze(script, Some(&manifest))
+                    .get(4)
+                    .expect("escaping helper contract")
+                    .argument_effects,
+                vec![CollectionArgumentEffect::Unknown]
+            );
+        }
+    }
+
+    #[test]
+    fn static_fact_intersection_rejects_unknown_and_conflicting_writes() {
+        let array_two = CollectionShapeFacts {
+            shape: Some(CollectionShape::Array(2)),
+            indexed: BTreeMap::new(),
+        };
+        let known = StaticCollectionWrite {
+            index: 0,
+            facts: Some(array_two.clone()),
+            is_null: false,
+            provisional: false,
+        };
+        let null = StaticCollectionWrite {
+            index: 0,
+            facts: None,
+            is_null: true,
+            provisional: false,
+        };
+        assert_eq!(
+            intersect_static_writes(&[null, known.clone()]),
+            Some(array_two)
+        );
+        assert_eq!(
+            intersect_static_writes(&[
+                known.clone(),
+                StaticCollectionWrite {
+                    index: 0,
+                    facts: Some(CollectionShapeFacts {
+                        shape: Some(CollectionShape::Array(3)),
+                        indexed: BTreeMap::new(),
+                    }),
+                    is_null: false,
+                    provisional: false,
+                },
+            ]),
+            None
+        );
+        assert_eq!(
+            intersect_static_writes(&[
+                known,
+                StaticCollectionWrite {
+                    index: 0,
+                    facts: None,
+                    is_null: false,
+                    provisional: false,
+                },
+            ]),
+            None
+        );
+    }
+
+    #[test]
+    fn private_entry_facts_require_every_direct_incoming_call_and_exclude_public_entries() {
+        let target = MethodRef {
+            offset: 20,
+            name: "target".to_string(),
+        };
+        let graph = CallGraph {
+            methods: vec![target.clone()],
+            edges: vec![
+                CallEdge {
+                    caller: MethodRef {
+                        offset: 0,
+                        name: "left".to_string(),
+                    },
+                    call_offset: 5,
+                    opcode: "CALL".to_string(),
+                    target: CallTarget::Internal {
+                        method: target.clone(),
+                    },
+                },
+                CallEdge {
+                    caller: MethodRef {
+                        offset: 10,
+                        name: "right".to_string(),
+                    },
+                    call_offset: 15,
+                    opcode: "CALL_L".to_string(),
+                    target: CallTarget::Internal { method: target },
+                },
+            ],
+        };
+        let fact = CollectionShapeFacts {
+            shape: Some(CollectionShape::Array(2)),
+            indexed: BTreeMap::from([(0, CollectionShape::Struct(2))]),
+        };
+        let mut target_contract = contract(20, ReturnBehavior::Void);
+        target_contract.argument_count = 1;
+        target_contract.argument_collection_facts = vec![CollectionShapeFacts::default()];
+        target_contract.argument_field_writes = vec![BTreeMap::new()];
+        target_contract.argument_effects = vec![CollectionArgumentEffect::Unknown];
+        let contracts = BTreeMap::from([(20, target_contract)]);
+        let analysis = |call_offset| MethodCollectionAnalysis {
+            trustworthy: true,
+            analysis: SsaCollectionAnalysis {
+                call_argument_facts: BTreeMap::from([(call_offset, vec![fact.clone()])]),
+                ..SsaCollectionAnalysis::default()
+            },
+        };
+        let mut analyses = BTreeMap::from([(0, analysis(5)), (10, analysis(15))]);
+
+        assert_eq!(
+            aggregate_private_argument_facts(
+                &graph,
+                &contracts,
+                &analyses,
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+            )[&20],
+            vec![fact.clone()]
+        );
+
+        analyses
+            .get_mut(&10)
+            .expect("right analysis")
+            .analysis
+            .call_argument_facts
+            .insert(15, vec![CollectionShapeFacts::default()]);
+        assert_eq!(
+            aggregate_private_argument_facts(
+                &graph,
+                &contracts,
+                &analyses,
+                &BTreeSet::new(),
+                &BTreeSet::new(),
+            )[&20],
+            vec![CollectionShapeFacts::default()]
+        );
+
+        let excluded = BTreeSet::from([20]);
+        assert_eq!(
+            aggregate_private_argument_facts(
+                &graph,
+                &contracts,
+                &BTreeMap::from([(0, analysis(5)), (10, analysis(15))]),
+                &excluded,
+                &BTreeSet::new(),
+            )[&20],
+            vec![CollectionShapeFacts::default()]
+        );
+        assert_eq!(
+            aggregate_private_argument_facts(
+                &graph,
+                &contracts,
+                &BTreeMap::from([(0, analysis(5)), (10, analysis(15))]),
+                &BTreeSet::new(),
+                &excluded,
+            )[&20],
+            vec![CollectionShapeFacts::default()]
         );
     }
 
@@ -1005,6 +1785,7 @@ mod tests {
                 contract(1, ReturnBehavior::Void),
                 contract(2, ReturnBehavior::Unknown),
             ],
+            static_collection_facts: BTreeMap::new(),
         };
 
         let value = serde_json::to_value(contracts).expect("contracts serialize");
@@ -1066,6 +1847,7 @@ mod tests {
     fn get_returns_contract_at_requested_offset() {
         let contracts = MethodContracts {
             methods: vec![contract(2, ReturnBehavior::Unknown)],
+            static_collection_facts: BTreeMap::new(),
         };
 
         assert_eq!(contracts.get(2), contracts.methods.first());
@@ -1089,6 +1871,7 @@ mod tests {
                     ..contract(2, ReturnBehavior::Unknown)
                 },
             ],
+            static_collection_facts: BTreeMap::new(),
         };
 
         assert_eq!(
@@ -1112,6 +1895,8 @@ mod tests {
             may_return: true,
             return_shape: None,
             argument_effects: vec![CollectionArgumentEffect::Unknown; 0],
+            argument_collection_facts: Vec::new(),
+            argument_field_writes: Vec::new(),
         }
     }
 }
