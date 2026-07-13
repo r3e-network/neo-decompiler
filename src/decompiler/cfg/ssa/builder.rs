@@ -144,6 +144,7 @@ impl<'a> SsaBuilder<'a> {
     /// assembled [`SsaForm`] pieces.
     fn build_ssa_blocks(&self) -> SsaBuildResult {
         let block_ids: Vec<BlockId> = self.cfg.blocks().map(|b| b.id).collect();
+        let reachable_blocks = self.cfg.reachable_blocks();
 
         // Work space: per-block entry/exit symbolic stacks and slot states.
         // Exit-stack / exit-slot *identity* is canonical per def-site, so the
@@ -221,7 +222,9 @@ impl<'a> SsaBuilder<'a> {
             let (_, slot_phis) = self.compute_join_slots(bid, &exit_slots, &mut facts.versions);
             let exec = self.execute_block(bid, &entry, &slot_entry, &tainted_variables, &mut facts);
             covered_offsets.extend(exec.covered_offsets.iter().copied());
-            issues.extend(exec.issues.iter().cloned());
+            if reachable_blocks.contains(&bid) {
+                issues.extend(exec.issues.iter().cloned());
+            }
 
             let mut sb = SsaBlock::new();
             for phi in stack_phis.iter().chain(slot_phis.iter()) {
@@ -4051,6 +4054,23 @@ mod tests {
                 && issue.kind == LoweringIssueKind::MissingOperandMetadata
                 && issue.fidelity == Fidelity::Incomplete
         }));
+    }
+
+    #[test]
+    fn unreachable_underflow_is_covered_without_reducing_semantic_fidelity() {
+        let instructions = vec![instr(0, OpCode::Nop), instr(1, OpCode::Drop)];
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(BlockId(0), 0, 1, 0..1, Terminator::Return));
+        cfg.add_block(BasicBlock::new(BlockId(1), 1, 2, 1..2, Terminator::Return));
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert_eq!(built.fidelity.status, Fidelity::Exact);
+        assert_eq!(
+            built.fidelity.covered_offsets,
+            BTreeSet::from([0usize, 1usize])
+        );
+        assert!(built.fidelity.issues.is_empty());
     }
 
     #[test]
