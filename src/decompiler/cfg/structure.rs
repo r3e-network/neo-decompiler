@@ -30,7 +30,8 @@ mod cleanup;
 mod regions;
 
 use analysis::{
-    collect_structural_uses, compute_loop_headers, compute_postdominators, find_irreducible_region,
+    collect_leave_targets, collect_structural_uses, compute_loop_headers, compute_postdominators,
+    find_irreducible_region, resolve_leave_target_cfg,
 };
 use cleanup::simplify_unreachable_control;
 
@@ -79,38 +80,6 @@ pub(crate) fn structure_with_source_names(
         }
         None => IrBlock::new(),
     }
-}
-
-fn collect_leave_targets(cfg: &Cfg) -> BTreeSet<BlockId> {
-    cfg.blocks()
-        .filter_map(|block| match block.terminator {
-            Terminator::EndTry {
-                continuation,
-                nonlocal: true,
-            }
-            | Terminator::EndTryFinally {
-                continuation,
-                nonlocal: true,
-                ..
-            } => Some(resolve_leave_target_cfg(cfg, continuation)),
-            _ => None,
-        })
-        .collect()
-}
-
-fn resolve_leave_target_cfg(cfg: &Cfg, mut target: BlockId) -> BlockId {
-    let mut seen = BTreeSet::new();
-    while seen.insert(target) {
-        let Some(block) = cfg.block(target) else {
-            break;
-        };
-        match block.terminator {
-            Terminator::EndTry { continuation, .. }
-            | Terminator::EndTryFinally { continuation, .. } => target = continuation,
-            _ => break,
-        }
-    }
-    target
 }
 
 pub(super) struct StructCtx<'a> {

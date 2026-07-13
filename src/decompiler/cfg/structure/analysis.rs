@@ -1,5 +1,5 @@
 use crate::decompiler::cfg::ssa::{DominanceInfo, SsaExpr, SsaForm, SsaStmt, SsaVariable};
-use crate::decompiler::cfg::{BlockId, Cfg};
+use crate::decompiler::cfg::{BlockId, Cfg, Terminator};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 pub(super) fn compute_loop_headers(cfg: &Cfg, dominance: &DominanceInfo) -> HashSet<BlockId> {
     let mut headers = HashSet::new();
@@ -198,4 +198,36 @@ fn collect_expr_uses(expr: &SsaExpr, uses: &mut BTreeSet<SsaVariable>) {
         }
         SsaExpr::Literal(_) => {}
     }
+}
+
+pub(super) fn collect_leave_targets(cfg: &Cfg) -> BTreeSet<BlockId> {
+    cfg.blocks()
+        .filter_map(|block| match block.terminator {
+            Terminator::EndTry {
+                continuation,
+                nonlocal: true,
+            }
+            | Terminator::EndTryFinally {
+                continuation,
+                nonlocal: true,
+                ..
+            } => Some(resolve_leave_target_cfg(cfg, continuation)),
+            _ => None,
+        })
+        .collect()
+}
+
+pub(super) fn resolve_leave_target_cfg(cfg: &Cfg, mut target: BlockId) -> BlockId {
+    let mut seen = BTreeSet::new();
+    while seen.insert(target) {
+        let Some(block) = cfg.block(target) else {
+            break;
+        };
+        match block.terminator {
+            Terminator::EndTry { continuation, .. }
+            | Terminator::EndTryFinally { continuation, .. } => target = continuation,
+            _ => break,
+        }
+    }
+    target
 }
