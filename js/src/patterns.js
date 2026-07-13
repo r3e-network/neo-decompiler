@@ -37,6 +37,17 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     patterns.add("NEP-11");
     evidence.push({ source: "manifest.abi.methods", value: "ownerOf,tokensOf,transfer" });
   }
+  const hasOwnerAccessor = methodNames.has("owner") || methodNames.has("getowner");
+  const hasOwnershipOperation = ["verify", "setowner", "transferownership"].some((name) =>
+    methodNames.has(name),
+  );
+  if (hasOwnerAccessor && hasOwnershipOperation) {
+    patterns.add("ownership");
+    evidence.push({
+      source: "manifest.abi.methods",
+      value: "owner,verify/transferOwnership",
+    });
+  }
   const events = manifest?.abi?.events ?? [];
   if (events.length > 0) {
     patterns.add("events");

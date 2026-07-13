@@ -93,6 +93,24 @@ test("pattern analysis exposes ABI event behavior", () => {
   assert.ok(info.evidence.some((entry) => entry.source === "manifest.abi.events" && entry.value === "1"));
 });
 
+test("pattern analysis identifies ownership behavior from paired ABI methods", () => {
+  const info = identifyPatterns(
+    nef(),
+    [],
+    {
+      supportedStandards: [],
+      abi: {
+        methods: [
+          { name: "owner", parameters: [], returnType: "Hash160" },
+          { name: "transferOwnership", parameters: [], returnType: "Boolean" },
+        ],
+        events: [],
+      },
+    },
+  );
+  assert.deepEqual(info.patterns, ["ownership"]);
+});
+
 test("pattern analysis identifies external-call bytecode signals", () => {
   const info = identifyPatterns(
     { ...nef(), methodTokens: [{ method: "transfer" }] },

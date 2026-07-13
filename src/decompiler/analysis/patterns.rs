@@ -255,6 +255,17 @@ fn infer_abi_patterns(
             value: "ownerOf,tokensOf,transfer".to_string(),
         });
     }
+    let has_owner_accessor = names.contains("owner") || names.contains("getowner");
+    let has_ownership_operation = names.contains("verify")
+        || names.contains("setowner")
+        || names.contains("transferownership");
+    if has_owner_accessor && has_ownership_operation {
+        patterns.insert("ownership".to_string());
+        evidence.push(PatternEvidence {
+            source: "manifest.abi.methods".to_string(),
+            value: "owner,verify/transferOwnership".to_string(),
+        });
+    }
 }
 
 fn infer_language(compiler: &str) -> Option<&'static str> {
@@ -372,6 +383,16 @@ mod tests {
             .evidence
             .iter()
             .any(|entry| { entry.source == "manifest.abi.events" && entry.value == "1" }));
+    }
+
+    #[test]
+    fn owner_and_transfer_methods_report_ownership_pattern() {
+        let manifest: ContractManifest = serde_json::from_str(
+            r#"{"name":"C","abi":{"methods":[{"name":"owner","parameters":[],"returntype":"Hash160"},{"name":"transferOwnership","parameters":[],"returntype":"Boolean"}],"events":[]}}"#,
+        )
+        .expect("manifest fixture");
+        let info = identify_patterns(&nef("", ""), &[], Some(&manifest));
+        assert_eq!(info.patterns, vec!["ownership"]);
     }
 
     #[test]
