@@ -244,6 +244,23 @@ test("pattern analysis identifies native system-management contracts", () => {
   }
 });
 
+test("C# rendering widens direct nullable parameter aliases", () => {
+  const rendered = renderCSharpContract(
+    [
+      "contract NullableAlias {",
+      "    fn valueOrDefault(value: int) -> int {",
+      "        let local = value;",
+      "        if (local is null) {",
+      "            return 0;",
+      "        }",
+      "        return value;",
+      "    }",
+      "}",
+    ].join("\n"),
+  );
+  assert.match(rendered, /BigInteger valueOrDefault\(dynamic value\)/);
+});
+
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const source = [
     "contract Token {",

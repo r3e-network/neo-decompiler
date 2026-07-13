@@ -42,6 +42,10 @@ function escapeCSharpString(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function renderManifestAttributes(manifest) {
   if (!manifest || typeof manifest !== "object") return [];
   const lines = [];
@@ -79,7 +83,7 @@ function splitParameters(parameters) {
   return parts;
 }
 
-function renderParameters(parameters) {
+function renderParameters(parameters, nullableParameters = new Set()) {
   return splitParameters(parameters)
     .filter(Boolean)
     .map((parameter) => {
@@ -87,16 +91,43 @@ function renderParameters(parameters) {
       if (separator < 0) return `object ${csharpIdentifier(parameter)}`;
       const name = parameter.slice(0, separator).trim();
       const type = parameter.slice(separator + 1).trim();
-      return `${csharpType(type)} ${csharpIdentifier(name)}`;
+      return `${nullableParameters.has(name) ? "dynamic" : csharpType(type)} ${csharpIdentifier(name)}`;
     })
     .join(", ");
 }
 
-function renderSignature(line) {
+function renderSignature(line, nullableParameters = new Set()) {
   const match = line.match(/^(\s*)fn\s+([A-Za-z_][A-Za-z0-9_]*)\((.*?)\)(?:\s*->\s*([^\s{]+))?\s*\{$/);
   if (!match) return null;
   const [, indentation, name, parameters, returnType] = match;
-  return `${indentation}public static ${csharpType(returnType ?? "any")} ${csharpIdentifier(name)}(${renderParameters(parameters)}) {`;
+  return `${indentation}public static ${csharpType(returnType ?? "any")} ${csharpIdentifier(name)}(${renderParameters(parameters, nullableParameters)}) {`;
+}
+
+function nullableParametersForMethod(lines, signatureIndex) {
+  const signature = lines[signatureIndex].match(/^\s*fn\s+[^\(]+\((.*?)\)/);
+  if (!signature) return new Set();
+  const parameterNames = new Set(
+    splitParameters(signature[1])
+      .map((parameter) => parameter.split(":", 1)[0].trim())
+      .filter(Boolean),
+  );
+  const aliases = new Map();
+  const nullable = new Set();
+  let depth = (lines[signatureIndex].match(/\{/g) ?? []).length;
+  for (let index = signatureIndex + 1; index < lines.length && depth > 0; index++) {
+    const line = lines[index];
+    const assignment = line.match(/\b(?:let\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*;/);
+    if (assignment && parameterNames.has(assignment[2])) aliases.set(assignment[1], assignment[2]);
+    for (const [alias, parameter] of aliases) {
+      if (new RegExp(`\\b${escapeRegex(alias)}\\s+is\\s+null\\b`).test(line)) nullable.add(parameter);
+    }
+    for (const parameter of parameterNames) {
+      if (new RegExp(`\\b${escapeRegex(parameter)}\\s+is\\s+null\\b`).test(line)) nullable.add(parameter);
+    }
+    depth += (line.match(/\{/g) ?? []).length;
+    depth -= (line.match(/\}/g) ?? []).length;
+  }
+  return nullable;
 }
 
 function isSafeManifestMethod(name, manifest) {
@@ -374,7 +405,8 @@ export function renderCSharpContract(highLevel, manifest = null) {
     "",
   ];
   let classSeen = false;
-  for (const line of highLevel.split(/\r?\n/)) {
+  const sourceLines = highLevel.split(/\r?\n/);
+  for (const [lineIndex, line] of sourceLines.entries()) {
     const contract = line.match(/^contract\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{$/);
     if (contract) {
       for (const attribute of renderManifestAttributes(manifest)) output.push(attribute);
@@ -391,7 +423,7 @@ export function renderCSharpContract(highLevel, manifest = null) {
       output.push(event ?? `${line.match(/^\s*/)?.[0] ?? ""}// ${line.trim()}`);
       continue;
     }
-    const signature = renderSignature(line);
+    const signature = renderSignature(line, nullableParametersForMethod(sourceLines, lineIndex));
     if (signature) {
       const name = line.match(/^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
       const method = name ? manifestMethodForName(name, manifest) : null;
