@@ -232,7 +232,9 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["keys", (args) => args.length === 1 ? `${args[0]}.Keys` : null],
   ["values", (args) => args.length === 1 ? `${args[0]}.Values` : null],
   ["remove_item", (args) => args.length === 2 ? `${args[0]}.Remove(${args[1]})` : null],
-  ["append", (args) => args.length === 2 ? `${args[0]}.Add(${args[1]})` : null],
+  ["append", (args) => args.length === 2
+    ? `((Neo.SmartContract.Framework.List<object>)${args[0]}).Add(${args[1]})`
+    : null],
   ["has_key", (args) => args.length === 2 ? `${args[0]}.ContainsKey(${args[1]})` : null],
   ["convert_to_integer", (args) => args.length === 1 ? `(BigInteger)(${args[0]})` : null],
   ["convert_to_bool", (args) => args.length === 1 ? `(bool)(${args[0]})` : null],

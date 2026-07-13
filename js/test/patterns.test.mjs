@@ -422,7 +422,7 @@ test("C# rendering lowers unambiguous collection helpers", () => {
     "}",
   ].join("\n"));
   assert.match(csharp, /new object\[\(int\)\(2\)\]/);
-  assert.match(csharp, /items\.Add\(value\)/);
+  assert.match(csharp, /List<object>\)items\)\.Add\(value\)/);
   assert.match(csharp, /map\.ContainsKey\(key\)/);
 });
 
