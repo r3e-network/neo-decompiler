@@ -85,7 +85,6 @@ type DefinitionFacts = BTreeMap<SsaVariable, DefinitionFact>;
 struct BuildFacts {
     versions: BTreeMap<String, usize>,
     definitions: DefinitionFacts,
-    invalidated_collection_roots: BTreeSet<SsaVariable>,
 }
 
 /// Builder for stack-effect SSA form from a CFG and instructions.
@@ -153,6 +152,10 @@ impl<'a> SsaBuilder<'a> {
         let mut exit_stacks: BTreeMap<BlockId, Vec<SsaVariable>> = BTreeMap::new();
         let mut entry_slots: BTreeMap<BlockId, SlotState> = BTreeMap::new();
         let mut exit_slots: BTreeMap<BlockId, SlotState> = BTreeMap::new();
+        let mut entry_collection_invalidations: BTreeMap<BlockId, BTreeSet<SsaVariable>> =
+            BTreeMap::new();
+        let mut exit_collection_invalidations: BTreeMap<BlockId, BTreeSet<SsaVariable>> =
+            BTreeMap::new();
         let mut block_uses: BTreeMap<BlockId, Vec<(SsaVariable, usize)>> = BTreeMap::new();
         // Per-pass variable-version counter. Reset at the start of every pass so
         // the deterministic (block-id, instruction) def order yields identical
@@ -175,10 +178,13 @@ impl<'a> SsaBuilder<'a> {
                 let (new_entry, _new_phis) = self.compute_join_entry(bid, &exit_stacks);
                 let (new_slot_entry, _new_slot_phis) =
                     self.compute_join_slots(bid, &exit_slots, &mut facts.versions);
+                let new_collection_invalidations =
+                    self.compute_join_collection_invalidations(bid, &exit_collection_invalidations);
                 let exec = self.execute_block(
                     bid,
                     &new_entry,
                     &new_slot_entry,
+                    &new_collection_invalidations,
                     &no_tainted_variables,
                     &mut facts,
                 );
@@ -187,13 +193,25 @@ impl<'a> SsaBuilder<'a> {
                 let entry_changed = entry_stacks.get(&bid) != Some(&new_entry);
                 let slot_exit_changed = exit_slots.get(&bid) != Some(&exec.exit_slots);
                 let slot_entry_changed = entry_slots.get(&bid) != Some(&new_slot_entry);
-                if exit_changed || entry_changed || slot_exit_changed || slot_entry_changed {
+                let collection_exit_changed = exit_collection_invalidations.get(&bid)
+                    != Some(&exec.exit_collection_invalidations);
+                let collection_entry_changed =
+                    entry_collection_invalidations.get(&bid) != Some(&new_collection_invalidations);
+                if exit_changed
+                    || entry_changed
+                    || slot_exit_changed
+                    || slot_entry_changed
+                    || collection_exit_changed
+                    || collection_entry_changed
+                {
                     changed = true;
                 }
                 entry_stacks.insert(bid, new_entry);
                 exit_stacks.insert(bid, exec.exit_stack);
                 entry_slots.insert(bid, new_slot_entry);
                 exit_slots.insert(bid, exec.exit_slots);
+                entry_collection_invalidations.insert(bid, new_collection_invalidations);
+                exit_collection_invalidations.insert(bid, exec.exit_collection_invalidations);
                 block_uses.insert(bid, exec.uses);
             }
         }
@@ -218,9 +236,20 @@ impl<'a> SsaBuilder<'a> {
         for &bid in &block_ids {
             let entry = entry_stacks.get(&bid).cloned().unwrap_or_default();
             let slot_entry = entry_slots.get(&bid).cloned().unwrap_or_default();
+            let collection_invalidations = entry_collection_invalidations
+                .get(&bid)
+                .cloned()
+                .unwrap_or_default();
             let (_, stack_phis) = self.compute_join_entry(bid, &exit_stacks);
             let (_, slot_phis) = self.compute_join_slots(bid, &exit_slots, &mut facts.versions);
-            let exec = self.execute_block(bid, &entry, &slot_entry, &tainted_variables, &mut facts);
+            let exec = self.execute_block(
+                bid,
+                &entry,
+                &slot_entry,
+                &collection_invalidations,
+                &tainted_variables,
+                &mut facts,
+            );
             covered_offsets.extend(exec.covered_offsets.iter().copied());
             if reachable_blocks.contains(&bid) {
                 issues.extend(exec.issues.iter().cloned());
@@ -281,8 +310,14 @@ impl<'a> SsaBuilder<'a> {
             );
             let entry = entry_stacks.get(bid).cloned().unwrap_or_default();
             let slot_entry = entry_slots.get(bid).cloned().unwrap_or_default();
-            let _ =
-                self.execute_block(*bid, &entry, &slot_entry, &no_tainted_variables, &mut facts);
+            let _ = self.execute_block(
+                *bid,
+                &entry,
+                &slot_entry,
+                &BTreeSet::new(),
+                &no_tainted_variables,
+                &mut facts,
+            );
         }
         let mut tainted = BTreeSet::from([unknown_var()]);
 
@@ -487,6 +522,19 @@ impl<'a> SsaBuilder<'a> {
         (entry, phis)
     }
 
+    fn compute_join_collection_invalidations(
+        &self,
+        bid: BlockId,
+        exit_invalidations: &BTreeMap<BlockId, BTreeSet<SsaVariable>>,
+    ) -> BTreeSet<SsaVariable> {
+        self.cfg
+            .predecessors(bid)
+            .iter()
+            .filter_map(|predecessor| exit_invalidations.get(predecessor))
+            .flat_map(|invalidations| invalidations.iter().cloned())
+            .collect()
+    }
+
     fn initial_entry_stack(&self, bid: BlockId) -> Vec<SsaVariable> {
         let is_entry = self.cfg.entry_block().is_some_and(|entry| entry.id == bid);
         let Some(context) = self
@@ -519,6 +567,7 @@ impl<'a> SsaBuilder<'a> {
         bid: BlockId,
         entry: &[SsaVariable],
         entry_slots: &SlotState,
+        entry_collection_invalidations: &BTreeSet<SsaVariable>,
         tainted_variables: &BTreeSet<SsaVariable>,
         facts: &mut BuildFacts,
     ) -> BlockExec {
@@ -532,6 +581,7 @@ impl<'a> SsaBuilder<'a> {
         let mut terminator_condition = None;
         let mut covered_offsets = BTreeSet::new();
         let mut issues = Vec::new();
+        let mut collection_invalidations = entry_collection_invalidations.clone();
 
         {
             let mut state = BuildPassState {
@@ -539,7 +589,7 @@ impl<'a> SsaBuilder<'a> {
                 tainted_variables,
                 versions: &mut facts.versions,
                 definition_facts: &mut facts.definitions,
-                invalidated_collection_roots: &mut facts.invalidated_collection_roots,
+                invalidated_collection_roots: &mut collection_invalidations,
             };
             let mut idx = block.instruction_range.start;
             while idx < block.instruction_range.end {
@@ -613,6 +663,7 @@ impl<'a> SsaBuilder<'a> {
             terminator_condition,
             covered_offsets,
             issues,
+            exit_collection_invalidations: collection_invalidations,
         }
     }
 
@@ -1885,6 +1936,7 @@ fn fixed_reorder_arity(opcode: OpCode) -> Option<usize> {
 struct BlockExec {
     exit_stack: Vec<SsaVariable>,
     exit_slots: SlotState,
+    exit_collection_invalidations: BTreeSet<SsaVariable>,
     stmts: Vec<SsaStmt>,
     uses: Vec<(SsaVariable, usize)>,
     terminator_condition: Option<SsaVariable>,
@@ -2140,42 +2192,24 @@ fn collection_fact_root(
 
 fn invalidate_collection_aliases(
     receiver: &SsaVariable,
-    facts: &mut DefinitionFacts,
+    facts: &DefinitionFacts,
     invalidated_roots: &mut BTreeSet<SsaVariable>,
 ) {
     let Some(root) = collection_fact_root(receiver, facts, &mut BTreeSet::new()) else {
         return;
     };
-    invalidated_roots.insert(root.clone());
-    let aliases = facts
-        .keys()
-        .filter(|candidate| {
-            collection_fact_root(candidate, facts, &mut BTreeSet::new()).as_ref() == Some(&root)
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    for alias in aliases {
-        facts.remove(&alias);
-    }
+    invalidated_roots.insert(root);
 }
 
 fn invalidate_all_collection_facts(
-    facts: &mut DefinitionFacts,
+    facts: &DefinitionFacts,
     invalidated_roots: &mut BTreeSet<SsaVariable>,
 ) {
-    let collection_variables = facts
-        .keys()
-        .filter(|candidate| collection_fact_root(candidate, facts, &mut BTreeSet::new()).is_some())
-        .cloned()
-        .collect::<Vec<_>>();
     invalidated_roots.extend(
-        collection_variables
-            .iter()
+        facts
+            .keys()
             .filter_map(|variable| collection_fact_root(variable, facts, &mut BTreeSet::new())),
     );
-    for variable in collection_variables {
-        facts.remove(&variable);
-    }
 }
 
 fn resolve_nonnegative_literal(
@@ -3950,6 +3984,48 @@ mod tests {
 
         assert!(built.fidelity.issues.iter().any(|issue| {
             issue.offset == 7
+                && issue.opcode == OpCode::Unpack
+                && issue.kind == LoweringIssueKind::MissingProvenance
+        }));
+    }
+
+    #[test]
+    fn later_internal_call_does_not_retroactively_invalidate_collection_provenance() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Push1),
+            instr(2, OpCode::Pack),
+            instr(3, OpCode::Stloc0),
+            instr(4, OpCode::Ldloc0),
+            instr(5, OpCode::Unpack),
+            instr(6, OpCode::Drop),
+            instr(7, OpCode::Drop),
+            Instruction::new(8, OpCode::Call, Some(Operand::Jump(2))),
+            instr(10, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let mut context = MethodContext {
+            returns_value: Some(false),
+            ..MethodContext::default()
+        };
+        context.calls_by_offset.insert(
+            8,
+            CallContract::new(
+                SemanticCallTarget::Internal {
+                    offset: 10,
+                    name: "later_call".to_string(),
+                },
+                0,
+                false,
+            ),
+        );
+
+        let built = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build_with_report();
+
+        assert!(!built.fidelity.issues.iter().any(|issue| {
+            issue.offset == 5
                 && issue.opcode == OpCode::Unpack
                 && issue.kind == LoweringIssueKind::MissingProvenance
         }));
