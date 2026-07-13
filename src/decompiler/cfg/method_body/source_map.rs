@@ -64,7 +64,7 @@ fn collect_source_origins(
         let id = StatementId(*next_id);
         *next_id += 1;
         let mut names = BTreeSet::new();
-        super::collect_statement_names(statement, &mut names);
+        super::names::collect_statement_names(statement, &mut names);
         let mut statement_origins = BTreeSet::new();
         for name in names {
             if let Some(source) = variable_origins.get(&name) {
