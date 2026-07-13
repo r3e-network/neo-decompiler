@@ -15,7 +15,8 @@ use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::ContractManifest;
 use crate::nef::{NefFile, NefHeader};
 
-use super::expr::{known_syscall_is_classified, render_expr, ExprContext};
+use super::expr::{render_expr, ExprContext};
+use super::expr_syscalls::known_syscall_is_classified;
 use super::plan::{
     build_csharp_method_plans, plan_contract_symbols, plan_declarations, DeclarationKind,
 };
