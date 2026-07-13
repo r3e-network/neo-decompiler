@@ -111,6 +111,20 @@ test("pattern analysis identifies ownership behavior from paired ABI methods", (
   assert.deepEqual(info.patterns, ["ownership"]);
 });
 
+test("pattern analysis identifies the NEP-24 royalty method", () => {
+  const info = identifyPatterns(
+    nef(),
+    [],
+    {
+      supportedStandards: [],
+      abi: { methods: [{ name: "royaltyInfo" }], events: [] },
+    },
+  );
+  assert.deepEqual(info.standards, ["NEP-24"]);
+  assert.deepEqual(info.patterns, ["NEP-24", "royalties"]);
+  assert.ok(info.evidence.some((entry) => entry.value === "royaltyInfo"));
+});
+
 test("pattern analysis identifies external-call bytecode signals", () => {
   const info = identifyPatterns(
     { ...nef(), methodTokens: [{ method: "transfer" }] },

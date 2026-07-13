@@ -49,6 +49,12 @@ export function identifyPatterns(nef, instructions, manifest = null) {
       value: "owner,verify/transferOwnership",
     });
   }
+  if (methodNames.has("royaltyinfo")) {
+    standards.add("NEP-24");
+    patterns.add("NEP-24");
+    patterns.add("royalties");
+    evidence.push({ source: "manifest.abi.methods", value: "royaltyInfo" });
+  }
   const events = manifest?.abi?.events ?? [];
   if (events.length > 0) {
     patterns.add("events");

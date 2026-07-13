@@ -287,6 +287,15 @@ fn infer_abi_patterns(
             value: "owner,verify/transferOwnership".to_string(),
         });
     }
+    if names.contains("royaltyinfo") {
+        standards.insert("NEP-24".to_string());
+        patterns.insert("NEP-24".to_string());
+        patterns.insert("royalties".to_string());
+        evidence.push(PatternEvidence {
+            source: "manifest.abi.methods".to_string(),
+            value: "royaltyInfo".to_string(),
+        });
+    }
 }
 
 fn infer_language(compiler: &str) -> Option<&'static str> {
@@ -414,6 +423,20 @@ mod tests {
         .expect("manifest fixture");
         let info = identify_patterns(&nef("", ""), &[], Some(&manifest));
         assert_eq!(info.patterns, vec!["ownership"]);
+    }
+
+    #[test]
+    fn royalty_info_reports_nep24_and_royalties_patterns() {
+        let manifest: ContractManifest = serde_json::from_str(
+            r#"{"name":"Royalty","abi":{"methods":[{"name":"royaltyInfo","parameters":[],"returntype":"Array"}],"events":[]}}"#,
+        )
+        .expect("manifest fixture");
+        let info = identify_patterns(&nef("", ""), &[], Some(&manifest));
+        assert_eq!(info.standards, vec!["NEP-24"]);
+        assert_eq!(info.patterns, vec!["NEP-24", "royalties"]);
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "manifest.abi.methods" && entry.value == "royaltyInfo"
+        }));
     }
 
     #[test]
