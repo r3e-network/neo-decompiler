@@ -43,7 +43,7 @@ use crate::decompiler::helpers::{
 use crate::decompiler::ir::{BinOp, Intrinsic, Literal, SemanticCallTarget, UnaryOp};
 use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
 
-use super::context::MethodContext;
+use super::context::{CollectionShape, MethodContext};
 use super::dominance::{self, DominanceInfo};
 use super::effects;
 use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
@@ -56,6 +56,7 @@ type SsaBuildResult = (
     BTreeMap<SsaVariable, BTreeSet<UseSite>>,
     BTreeSet<usize>,
     Vec<LoweringIssue>,
+    Option<CollectionShape>,
 );
 
 /// SSA plus instruction-level semantic fidelity from the stabilized build.
@@ -63,6 +64,7 @@ type SsaBuildResult = (
 pub(crate) struct SsaBuildOutput {
     pub(crate) ssa: SsaForm,
     pub(crate) fidelity: FidelityReport,
+    pub(crate) return_shape: Option<CollectionShape>,
 }
 
 struct BuildPassState<'a> {
@@ -77,6 +79,7 @@ struct DefinitionFact {
     expression: SsaExpr,
     // PUSHA also lowers to Literal::Int, but it is not GetInteger-compatible.
     is_integer_literal: bool,
+    collection_shape: Option<CollectionShape>,
 }
 
 type DefinitionFacts = BTreeMap<SsaVariable, DefinitionFact>;
@@ -124,7 +127,8 @@ impl<'a> SsaBuilder<'a> {
     /// Build SSA and report any semantic fidelity loss at its source instruction.
     #[must_use]
     pub(crate) fn build_with_report(self) -> SsaBuildOutput {
-        let (blocks, definitions, uses, covered_offsets, issues) = self.build_ssa_blocks();
+        let (blocks, definitions, uses, covered_offsets, issues, return_shape) =
+            self.build_ssa_blocks();
         let ssa = SsaForm {
             cfg: self.cfg.clone(),
             dominance: self.dominance,
@@ -136,7 +140,11 @@ impl<'a> SsaBuilder<'a> {
         fidelity.covered_offsets = covered_offsets;
         fidelity.issues = issues;
         fidelity.finish();
-        SsaBuildOutput { ssa, fidelity }
+        SsaBuildOutput {
+            ssa,
+            fidelity,
+            return_shape,
+        }
     }
 
     /// Run the fixpoint that produces per-block φ nodes, exit stacks, and the
@@ -222,6 +230,7 @@ impl<'a> SsaBuilder<'a> {
         let mut uses: BTreeMap<SsaVariable, BTreeSet<UseSite>> = BTreeMap::new();
         let mut covered_offsets = BTreeSet::new();
         let mut issues = Vec::new();
+        let mut return_shapes = Vec::new();
         let tainted_variables = self.tainted_phi_targets(
             &block_ids,
             &entry_stacks,
@@ -253,6 +262,7 @@ impl<'a> SsaBuilder<'a> {
             covered_offsets.extend(exec.covered_offsets.iter().copied());
             if reachable_blocks.contains(&bid) {
                 issues.extend(exec.issues.iter().cloned());
+                return_shapes.extend(exec.return_shapes.iter().copied());
             }
 
             let mut sb = SsaBlock::new();
@@ -287,7 +297,15 @@ impl<'a> SsaBuilder<'a> {
             ssa_blocks.insert(bid, sb);
         }
 
-        (ssa_blocks, definitions, uses, covered_offsets, issues)
+        let return_shape = unanimous_collection_shape(&return_shapes);
+        (
+            ssa_blocks,
+            definitions,
+            uses,
+            covered_offsets,
+            issues,
+            return_shape,
+        )
     }
 
     fn tainted_phi_targets(
@@ -633,6 +651,7 @@ impl<'a> SsaBuilder<'a> {
                                 &stmts[statement_start..],
                                 packstruct.opcode,
                                 state.definition_facts,
+                                None,
                             );
                             idx += 2;
                             continue;
@@ -650,10 +669,27 @@ impl<'a> SsaBuilder<'a> {
                     &stmts[statement_start..],
                     instr.opcode,
                     state.definition_facts,
+                    self.method_context
+                        .and_then(|context| context.calls_by_offset.get(&instr.offset))
+                        .and_then(|contract| contract.return_shape),
                 );
                 idx += 1;
             }
         }
+
+        let return_shapes = stmts
+            .iter()
+            .filter_map(|statement| match statement {
+                SsaStmt::Return(value) => Some(value.as_ref().and_then(|value| {
+                    collection_shape_for_expression(
+                        value,
+                        &facts.definitions,
+                        &collection_invalidations,
+                    )
+                })),
+                _ => None,
+            })
+            .collect();
 
         BlockExec {
             exit_stack: stack,
@@ -664,6 +700,7 @@ impl<'a> SsaBuilder<'a> {
             covered_offsets,
             issues,
             exit_collection_invalidations: collection_invalidations,
+            return_shapes,
         }
     }
 
@@ -1550,7 +1587,17 @@ impl<'a> SsaBuilder<'a> {
                     }
                     _ => None,
                 };
-                let Some(elements) = elements else {
+                let shape = resolve_collection_shape(
+                    &item,
+                    state.definition_facts,
+                    state.invalidated_collection_roots,
+                    &mut BTreeSet::new(),
+                );
+                let element_count = elements
+                    .as_ref()
+                    .map(Vec::len)
+                    .or_else(|| shape.map(CollectionShape::len));
+                let Some(element_count) = element_count else {
                     record_incomplete_issue(
                         instr,
                         LoweringIssueKind::MissingProvenance,
@@ -1569,42 +1616,7 @@ impl<'a> SsaBuilder<'a> {
                     stack.push(target);
                     return;
                 };
-
-                let mut variables = Vec::with_capacity(elements.len());
-                for element in &elements {
-                    let SsaExpr::Variable(variable) = element else {
-                        record_incomplete_issue(
-                            instr,
-                            LoweringIssueKind::MissingProvenance,
-                            "UNPACK source elements no longer have direct SSA provenance",
-                            state.issues,
-                        );
-                        let target = fresh_var(state.versions, "t");
-                        stmts.push(SsaStmt::assign(
-                            target.clone(),
-                            SsaExpr::call(
-                                SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Unpack)),
-                                vec![SsaExpr::var(item.clone())],
-                            ),
-                        ));
-                        stack.clear();
-                        stack.push(target);
-                        return;
-                    };
-                    if is_unknown_or_tainted(variable, state.tainted_variables) {
-                        record_incomplete_issue(
-                            instr,
-                            LoweringIssueKind::LostStackValue,
-                            "UNPACK source contains an unknown stack value",
-                            state.issues,
-                        );
-                    }
-                    variables.push(variable.clone());
-                }
-                for variable in variables.into_iter().rev() {
-                    stack.push(variable);
-                }
-                let Ok(count) = i64::try_from(elements.len()) else {
+                let Ok(count) = i64::try_from(element_count) else {
                     record_incomplete_issue(
                         instr,
                         LoweringIssueKind::MissingProvenance,
@@ -1623,6 +1635,60 @@ impl<'a> SsaBuilder<'a> {
                     stack.push(target);
                     return;
                 };
+
+                let mut variables = Vec::with_capacity(element_count);
+                if let Some(elements) = elements {
+                    for element in &elements {
+                        let SsaExpr::Variable(variable) = element else {
+                            record_incomplete_issue(
+                                instr,
+                                LoweringIssueKind::MissingProvenance,
+                                "UNPACK source elements no longer have direct SSA provenance",
+                                state.issues,
+                            );
+                            let target = fresh_var(state.versions, "t");
+                            stmts.push(SsaStmt::assign(
+                                target.clone(),
+                                SsaExpr::call(
+                                    SemanticCallTarget::Intrinsic(Intrinsic::Opcode(
+                                        OpCode::Unpack,
+                                    )),
+                                    vec![SsaExpr::var(item.clone())],
+                                ),
+                            ));
+                            stack.clear();
+                            stack.push(target);
+                            return;
+                        };
+                        if is_unknown_or_tainted(variable, state.tainted_variables) {
+                            record_incomplete_issue(
+                                instr,
+                                LoweringIssueKind::LostStackValue,
+                                "UNPACK source contains an unknown stack value",
+                                state.issues,
+                            );
+                        }
+                        variables.push(variable.clone());
+                    }
+                } else {
+                    for index in 0..element_count {
+                        let target = fresh_var(state.versions, "t");
+                        stmts.push(SsaStmt::assign(
+                            target.clone(),
+                            SsaExpr::Index {
+                                base: Box::new(SsaExpr::var(item.clone())),
+                                index: Box::new(SsaExpr::lit(Literal::Int(
+                                    i64::try_from(index)
+                                        .expect("collection length already fits in i64"),
+                                ))),
+                            },
+                        ));
+                        variables.push(target);
+                    }
+                }
+                for variable in variables.into_iter().rev() {
+                    stack.push(variable);
+                }
                 let count_target = fresh_var(state.versions, "t");
                 stmts.push(SsaStmt::assign(
                     count_target.clone(),
@@ -1942,6 +2008,7 @@ struct BlockExec {
     terminator_condition: Option<SsaVariable>,
     covered_offsets: BTreeSet<usize>,
     issues: Vec<LoweringIssue>,
+    return_shapes: Vec<Option<CollectionShape>>,
 }
 
 /// Canonical SSA variable for the φ placed at `depth` in `block`.
@@ -2090,7 +2157,12 @@ fn is_unknown_or_tainted(
     is_unknown(variable) || tainted_variables.contains(variable)
 }
 
-fn record_definition_facts(statements: &[SsaStmt], opcode: OpCode, facts: &mut DefinitionFacts) {
+fn record_definition_facts(
+    statements: &[SsaStmt],
+    opcode: OpCode,
+    facts: &mut DefinitionFacts,
+    return_shape: Option<CollectionShape>,
+) {
     for statement in statements {
         let SsaStmt::Assign { target, value } = statement else {
             continue;
@@ -2104,11 +2176,19 @@ fn record_definition_facts(statements: &[SsaStmt], opcode: OpCode, facts: &mut D
                 .is_some_and(|fact| fact.is_integer_literal),
             _ => false,
         };
+        let collection_shape = match value {
+            SsaExpr::Array(elements) => Some(CollectionShape::Array(elements.len())),
+            SsaExpr::Struct(elements) => Some(CollectionShape::Struct(elements.len())),
+            SsaExpr::Variable(source) => facts.get(source).and_then(|fact| fact.collection_shape),
+            SsaExpr::Call { .. } => return_shape,
+            _ => None,
+        };
         facts.insert(
             target.clone(),
             DefinitionFact {
                 expression: value.clone(),
                 is_integer_literal,
+                collection_shape,
             },
         );
     }
@@ -2175,6 +2255,49 @@ fn resolve_collection_fact<'a>(
     }
 }
 
+fn resolve_collection_shape(
+    variable: &SsaVariable,
+    facts: &DefinitionFacts,
+    invalidated_roots: &BTreeSet<SsaVariable>,
+    visited: &mut BTreeSet<SsaVariable>,
+) -> Option<CollectionShape> {
+    if invalidated_roots.contains(variable) || !visited.insert(variable.clone()) {
+        return None;
+    }
+    let fact = facts.get(variable)?;
+    match &fact.expression {
+        SsaExpr::Variable(source) => {
+            resolve_collection_shape(source, facts, invalidated_roots, visited)
+        }
+        _ => fact.collection_shape,
+    }
+}
+
+fn collection_shape_for_expression(
+    expression: &SsaExpr,
+    facts: &DefinitionFacts,
+    invalidated_roots: &BTreeSet<SsaVariable>,
+) -> Option<CollectionShape> {
+    match expression {
+        SsaExpr::Array(elements) => Some(CollectionShape::Array(elements.len())),
+        SsaExpr::Struct(elements) => Some(CollectionShape::Struct(elements.len())),
+        SsaExpr::Variable(variable) => {
+            resolve_collection_shape(variable, facts, invalidated_roots, &mut BTreeSet::new())
+        }
+        _ => None,
+    }
+}
+
+fn unanimous_collection_shape(
+    return_shapes: &[Option<CollectionShape>],
+) -> Option<CollectionShape> {
+    let first = return_shapes.first().copied().flatten()?;
+    return_shapes
+        .iter()
+        .all(|shape| *shape == Some(first))
+        .then_some(first)
+}
+
 fn collection_fact_root(
     variable: &SsaVariable,
     facts: &DefinitionFacts,
@@ -2183,9 +2306,12 @@ fn collection_fact_root(
     if !visited.insert(variable.clone()) {
         return None;
     }
-    match &facts.get(variable)?.expression {
-        expression if is_collection_fact(expression) => Some(variable.clone()),
+    let fact = facts.get(variable)?;
+    match &fact.expression {
         SsaExpr::Variable(source) => collection_fact_root(source, facts, visited),
+        expression if is_collection_fact(expression) || fact.collection_shape.is_some() => {
+            Some(variable.clone())
+        }
         _ => None,
     }
 }
@@ -2791,6 +2917,61 @@ mod tests {
     }
 
     #[test]
+    fn reports_only_unanimous_unmodified_collection_return_shapes() {
+        let fixed = vec![
+            instr(0, OpCode::Push2),
+            instr(1, OpCode::Push1),
+            instr(2, OpCode::Push2),
+            instr(3, OpCode::Packstruct),
+            instr(4, OpCode::Ret),
+        ];
+        let fixed_cfg = CfgBuilder::new(&fixed).build();
+        assert_eq!(
+            SsaBuilder::new(&fixed_cfg, &fixed)
+                .build_with_report()
+                .return_shape,
+            Some(CollectionShape::Struct(2))
+        );
+
+        let mixed = vec![
+            instr(0, OpCode::Push1),
+            Instruction::new(1, OpCode::Jmpif, Some(Operand::Jump(6))),
+            instr(3, OpCode::Push1),
+            instr(4, OpCode::Push1),
+            instr(5, OpCode::Pack),
+            instr(6, OpCode::Ret),
+            instr(7, OpCode::Push2),
+            instr(8, OpCode::Push1),
+            instr(9, OpCode::Packstruct),
+            instr(10, OpCode::Ret),
+        ];
+        let mixed_cfg = CfgBuilder::new(&mixed).build();
+        assert_eq!(
+            SsaBuilder::new(&mixed_cfg, &mixed)
+                .build_with_report()
+                .return_shape,
+            None
+        );
+
+        let mutated = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Push1),
+            instr(2, OpCode::Pack),
+            instr(3, OpCode::Dup),
+            instr(4, OpCode::Push2),
+            instr(5, OpCode::Append),
+            instr(6, OpCode::Ret),
+        ];
+        let mutated_cfg = CfgBuilder::new(&mutated).build();
+        assert_eq!(
+            SsaBuilder::new(&mutated_cfg, &mutated)
+                .build_with_report()
+                .return_shape,
+            None
+        );
+    }
+
+    #[test]
     fn packmap_preserves_pairs_in_source_order() {
         let instructions = vec![
             instr(0, OpCode::Push4),
@@ -2845,6 +3026,119 @@ mod tests {
             optimized_return_expression(&instructions),
             SsaExpr::lit(Literal::Int(1))
         );
+    }
+
+    #[test]
+    fn unpack_shaped_call_result_uses_runtime_indexes_once_in_vm_order() {
+        let instructions = vec![
+            Instruction::new(0, OpCode::Call, Some(Operand::Jump(8))),
+            instr(2, OpCode::Unpack),
+            instr(3, OpCode::Drop),
+            instr(4, OpCode::Stloc0),
+            instr(5, OpCode::Stloc1),
+            instr(6, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let mut context = MethodContext {
+            returns_value: Some(false),
+            ..MethodContext::default()
+        };
+        context.calls_by_offset.insert(
+            0,
+            CallContract::new(
+                SemanticCallTarget::Internal {
+                    offset: 8,
+                    name: "pair".to_string(),
+                },
+                0,
+                true,
+            )
+            .with_return_shape(Some(CollectionShape::Struct(2))),
+        );
+
+        let built = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build_with_report();
+        assert_eq!(
+            built.fidelity.status,
+            Fidelity::Exact,
+            "{:#?}",
+            built.fidelity
+        );
+
+        let mut indexes = BTreeMap::new();
+        let mut slots = BTreeMap::new();
+        let mut calls = 0usize;
+        for statement in built.ssa.blocks_iter().flat_map(|(_, block)| &block.stmts) {
+            let SsaStmt::Assign { target, value } = statement else {
+                continue;
+            };
+            match value {
+                SsaExpr::Call {
+                    target: SemanticCallTarget::Internal { .. },
+                    ..
+                } => calls += 1,
+                SsaExpr::Index { index, .. } => {
+                    let SsaExpr::Literal(Literal::Int(index)) = index.as_ref() else {
+                        panic!("runtime collection index must be an integer literal");
+                    };
+                    indexes.insert(target.clone(), *index);
+                }
+                SsaExpr::Variable(source) if matches!(target.base.as_str(), "loc0" | "loc1") => {
+                    slots.insert(target.base.clone(), source.clone());
+                }
+                _ => {}
+            }
+        }
+
+        assert_eq!(calls, 1, "the shaped producer call must be evaluated once");
+        assert_eq!(
+            slots
+                .iter()
+                .map(|(slot, source)| (slot.as_str(), indexes.get(source).copied()))
+                .collect::<Vec<_>>(),
+            vec![("loc0", Some(0)), ("loc1", Some(1))]
+        );
+    }
+
+    #[test]
+    fn mutation_invalidates_shaped_call_result_before_unpack() {
+        let instructions = vec![
+            Instruction::new(0, OpCode::Call, Some(Operand::Jump(8))),
+            instr(2, OpCode::Dup),
+            instr(3, OpCode::Push1),
+            instr(4, OpCode::Append),
+            instr(5, OpCode::Unpack),
+            instr(6, OpCode::Drop),
+            instr(7, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let mut context = MethodContext {
+            returns_value: Some(false),
+            ..MethodContext::default()
+        };
+        context.calls_by_offset.insert(
+            0,
+            CallContract::new(
+                SemanticCallTarget::Internal {
+                    offset: 8,
+                    name: "pair".to_string(),
+                },
+                0,
+                true,
+            )
+            .with_return_shape(Some(CollectionShape::Struct(2))),
+        );
+
+        let built = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build_with_report();
+
+        assert!(built.fidelity.issues.iter().any(|issue| {
+            issue.offset == 5
+                && issue.opcode == OpCode::Unpack
+                && issue.kind == LoweringIssueKind::MissingProvenance
+        }));
     }
 
     #[test]

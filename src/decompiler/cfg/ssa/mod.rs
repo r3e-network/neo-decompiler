@@ -14,6 +14,7 @@ mod to_ir;
 mod variable;
 
 pub use builder::SsaBuilder;
+pub use context::CollectionShape;
 pub(crate) use context::{CallContract, MethodContext};
 pub use dominance::{compute, DominanceInfo};
 pub use form::{SsaBlock, SsaExpr, SsaForm, SsaStats, SsaStmt, UseSite};

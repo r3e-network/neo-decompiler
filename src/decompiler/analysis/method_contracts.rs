@@ -6,6 +6,7 @@ use serde::Serialize;
 
 use crate::decompiler::cfg::method_body::build_method_cfg_with_non_returning_calls;
 use crate::decompiler::cfg::method_view::{extract_method_cfgs, MethodView};
+pub use crate::decompiler::cfg::ssa::CollectionShape;
 use crate::decompiler::cfg::ssa::{CallContract, MethodContext, SsaBuilder, SsaStmt};
 use crate::decompiler::cfg::Terminator;
 use crate::decompiler::helpers::{
@@ -49,6 +50,8 @@ pub struct MethodContract {
     pub return_behavior: ReturnBehavior,
     /// Whether execution can return normally to a caller.
     pub may_return: bool,
+    /// Exact collection shape shared by every reachable normal return.
+    pub return_shape: Option<CollectionShape>,
 }
 
 /// Deterministic method-contract analysis for a script.
@@ -131,6 +134,7 @@ pub fn infer_method_contracts(
                     argument_count: argument_counts.get(&offset).copied().unwrap_or(0),
                     return_behavior,
                     may_return: true,
+                    return_shape: None,
                 },
             )
         })
@@ -202,9 +206,73 @@ pub fn infer_method_contracts(
         }
     }
 
+    let calls_by_offset = build_call_contracts(call_graph, &contracts);
+    let return_shapes = views_by_offset
+        .iter()
+        .filter_map(|(offset, view)| {
+            let contract = contracts.get(offset)?;
+            (contract.may_return && contract.return_behavior.returns_value()).then(|| {
+                (
+                    *offset,
+                    method_return_shape(view, &calls_by_offset, contract.argument_count),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    for (offset, return_shape) in return_shapes {
+        if let Some(contract) = contracts.get_mut(&offset) {
+            contract.return_shape = return_shape;
+        }
+    }
+
     MethodContracts {
         methods: contracts.into_values().collect(),
     }
+}
+
+fn method_return_shape(
+    view: &MethodView,
+    calls_by_offset: &BTreeMap<usize, CallContract>,
+    argument_count: usize,
+) -> Option<CollectionShape> {
+    if view.instructions.len() > crate::decompiler::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS {
+        return None;
+    }
+    let context = MethodContext {
+        argument_names: (0..argument_count)
+            .map(|index| format!("arg{index}"))
+            .collect(),
+        arguments_on_entry_stack: view
+            .instructions
+            .first()
+            .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
+        returns_value: Some(true),
+        calls_by_offset: calls_for_view(view, calls_by_offset),
+    };
+    let non_returning_calls: BTreeSet<usize> = calls_by_offset
+        .iter()
+        .filter_map(|(offset, contract)| {
+            (!contract.may_return && *offset >= view.method.offset && *offset < view.end)
+                .then_some(*offset)
+        })
+        .collect();
+    let rebuilt_cfg;
+    let cfg = if non_returning_calls.is_empty() {
+        &view.cfg
+    } else {
+        rebuilt_cfg = build_method_cfg_with_non_returning_calls(
+            &view.instructions,
+            view.method.offset,
+            view.end,
+            &non_returning_calls,
+        );
+        &rebuilt_cfg
+    };
+
+    SsaBuilder::new(cfg, &view.instructions)
+        .with_method_context(&context)
+        .build_with_report()
+        .return_shape
 }
 
 fn method_may_return(view: &MethodView, calls_by_offset: &BTreeMap<usize, CallContract>) -> bool {
@@ -317,6 +385,7 @@ fn build_call_contracts(
                     method_contract.is_none_or(|contract| contract.return_behavior.returns_value()),
                 )
                 .with_may_return(method_contract.is_none_or(|contract| contract.may_return))
+                .with_return_shape(method_contract.and_then(|contract| contract.return_shape))
             }
             CallTarget::MethodToken {
                 hash_le,
@@ -353,7 +422,9 @@ mod tests {
     use crate::manifest::ContractManifest;
     use crate::nef::{MethodToken, NefFile, NefHeader};
 
-    use super::{infer_method_contracts, MethodContract, MethodContracts, ReturnBehavior};
+    use super::{
+        infer_method_contracts, CollectionShape, MethodContract, MethodContracts, ReturnBehavior,
+    };
 
     const PRIVATE_VOID_LEAF: &[u8] = &[
         0x19, 0x11, 0x34, 0x05, 0x40, 0x21, 0x21, 0x57, 0x00, 0x01, 0x78, 0x45, 0x40,
@@ -409,6 +480,27 @@ mod tests {
 
         assert_eq!(helper.argument_count, 1);
         assert_eq!(helper.return_behavior, ReturnBehavior::Void);
+    }
+
+    #[test]
+    fn infers_fixed_struct_shape_from_all_reachable_returns() {
+        let manifest = manifest(
+            r#"{
+                "name": "StructReturn",
+                "abi": { "methods": [
+                    {"name":"main","parameters":[],"returntype":"Array","offset":0},
+                    {"name":"pair","parameters":[],"returntype":"Array","offset":4}
+                ] }
+            }"#,
+        );
+        let script = [0x34, 0x04, 0x40, 0x21, 0x11, 0x12, 0x12, 0xBF, 0x40];
+
+        let contracts = analyze(&script, Some(&manifest));
+
+        assert_eq!(
+            contracts.get(4).expect("pair contract").return_shape,
+            Some(CollectionShape::Struct(2))
+        );
     }
 
     #[test]
@@ -722,6 +814,7 @@ mod tests {
             argument_count: 0,
             return_behavior,
             may_return: true,
+            return_shape: None,
         }
     }
 }

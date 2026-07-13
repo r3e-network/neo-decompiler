@@ -26,7 +26,7 @@ pub mod web;
 
 pub use crate::decompiler::analysis::call_graph::{CallEdge, CallGraph, CallTarget};
 pub use crate::decompiler::analysis::method_contracts::{
-    MethodContract, MethodContracts, ReturnBehavior,
+    CollectionShape, MethodContract, MethodContracts, ReturnBehavior,
 };
 pub use crate::decompiler::analysis::types::{MethodTypes, TypeInfo, ValueType};
 pub use crate::decompiler::analysis::xrefs::{MethodXrefs, SlotKind, SlotXref, Xrefs};

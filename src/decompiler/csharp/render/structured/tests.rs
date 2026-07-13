@@ -35,6 +35,7 @@ fn method_contract(
         argument_count,
         return_behavior,
         may_return: true,
+        return_shape: None,
     }
 }
 

@@ -2,15 +2,15 @@
 status: investigating
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-13T12:19:00+08:00
+updated: 2026-07-13T12:43:00+08:00
 ---
 
 ## Current Focus
 
-hypothesis: A fixed return-shape summary for direct internal calls whose every normal return is the same literal PACK/PACKSTRUCT arity will recover Contract_Returns and Contract_Tuple without weakening collection invalidation or loop safety.
-test: Run the pinned Contract_Returns and Contract_Tuple disassembly plus structured IR to confirm producer return opcodes, call-site offsets, and the exact pre-fix UNPACK failures.
-expecting: div@0x006A returns literal PACKSTRUCT(2) before RET and getResult@0x0000 returns literal PACKSTRUCT(4); mix@0x0084 and t1@0x0007 receive those values through resolved internal calls but report missing UNPACK provenance.
-next_action: Use the CLI to disassemble and render structured IR for both pinned NEF/manifest pairs, then inspect only the relevant producer/caller spans.
+hypothesis: A per-argument internal-call effect that distinguishes fixed-arity content mutation from arity mutation can retain Struct(2) for Contract_Record without retaining stale element values.
+test: Infer a length-preserving effect only for helpers whose reachable operations mutate existing constant indexes without resize, escape, or unknown calls; then verify Record returns runtime index 0 while APPEND/POPITEM/CLEARITEMS negatives remain incomplete.
+expecting: Contract_Record@00E5 moves from incomplete to exact through fresh runtime indexes, while mutation summaries never preserve element identity and any arity-changing or escaping path invalidates shape.
+next_action: Inspect internal-call argument flow and SETITEM receiver provenance, then add focused method-effect and shaped-argument mutation tests before implementation.
 reasoning_checkpoint: null
 tdd_checkpoint: null
 
@@ -59,9 +59,24 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   found: Predecessor-unioned invalidation state preserves internal-call and loop-backedge mutation negatives while preventing a later acyclic call from poisoning an earlier UNPACK. The census moved from Exact 1103 / Conservative 67 / Incomplete 9 to Exact 1103 / Conservative 68 / Incomplete 8; Contract_NEP11@025D is no longer incomplete.
   implication: Persistent method-global invalidation was the confirmed NEP11 root cause. Flow-sensitive state is sound on the existing mutation regressions and is a prerequisite for call-return shape facts.
 
+- timestamp: 2026-07-13T12:21:00+08:00
+  checked: Pinned disassembly and structured IR for Contract_Returns and Contract_Tuple.
+  found: div@0x006A builds PACKSTRUCT(2) at 0x0082 on both normal branches and mix calls it at 0x0089 before UNPACK 0x008C; getResult@0x0000 builds PACKSTRUCT(4) at 0x0005 and t1 calls it at 0x001E before UNPACK 0x0021. Both callers currently emit unpack(call_result), unknown consumers, and the exact MissingProvenance/underflow warnings predicted by the hypothesis.
+  implication: The producer summaries are locally provable from runtime bytecode and the first divergence is precisely the absent call-result shape fact, not call-target resolution, pack decoding, or consumer inference.
+
+- timestamp: 2026-07-13T12:21:00+08:00
+  checked: Concurrent per-block invalidation diff and SSA optimizer handling of Call/Index definitions.
+  found: Invalidation sets now flow per block and union at joins; internal calls invalidate existing roots before defining their fresh result. The optimizer substitutes literals/copies and folded unary/binary expressions, but does not substitute Call or Index assignments.
+  implication: The call result must be registered as a new collection root after call-side invalidation. Later path mutations/calls can then invalidate it normally, backedges remain conservative, earlier calls do not poison it retroactively, and one retained call definition can safely feed multiple runtime indexes.
+
+- timestamp: 2026-07-13T12:43:00+08:00
+  checked: Fixed return-shape implementation against focused inference/order/mutation tests, full Rust gates, pinned fidelity census, generated C#, and Roslyn.
+  found: All reachable unmodified returns must agree on Array/Struct kind and length; resolved internal calls carry that optional fact into a fresh DefinitionFact; UNPACK emits one index per element in VM order without duplicating the call. Exact rose from 1103 to 1105 and Incomplete fell from 8 to 6 after the prior NEP11 slice. Contract_Returns.mix and Contract_Tuple.t1 now use runtime indexes, and Roslyn compiled all 103 pinned contracts. The oversized-method test initially exposed an 82-second regression; honoring the existing 16384-instruction lift cap restored it to 0.42 seconds.
+  implication: The return-shape hypothesis is confirmed and bounded by mutation, mixed-return, loop, and size-cap negatives. The remaining incomplete roots are Record, three Reentrancy UNPACK sites across two helpers, Foreach, and two Enum loop-stack methods.
+
 ## Resolution
 
-root_cause: null
-fix: null
-verification: null
-files_changed: []
+root_cause: The fixed-return-shape slice had no interprocedural contract: exact local PACK/PACKSTRUCT arity was discarded at MethodContract -> CallContract -> call-result DefinitionFact, so UNPACK could not distinguish a proven fixed-shape resolved internal result from an opaque call result.
+fix: Added unanimous reachable-return Array/Struct summaries, resolved-internal call propagation, flow-sensitive shaped DefinitionFacts, and runtime Index expansion with conservative invalidation and the existing method-size cap.
+verification: Focused positive and negative shape tests pass; full all-feature Rust and no-default library tests pass; both Clippy configurations pass with warnings denied; pinned census is Exact 1105 / Conservative 68 / Incomplete 6; pinned Roslyn is 103 passed / 0 failed / 0 errors; formatting and diff checks pass.
+files_changed: [src/decompiler/analysis/method_contracts.rs, src/decompiler/cfg/method_view.rs, src/decompiler/cfg/ssa/builder.rs, src/decompiler/cfg/ssa/context.rs, src/decompiler/cfg/ssa/mod.rs, src/decompiler/csharp/render/structured/plan.rs, src/decompiler/csharp/render/structured/tests.rs, src/lib.rs]

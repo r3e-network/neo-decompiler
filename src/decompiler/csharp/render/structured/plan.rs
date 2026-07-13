@@ -944,6 +944,11 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                                 .get(method.offset)
                                 .is_none_or(|contract| contract.may_return),
                         )
+                        .with_return_shape(
+                            method_contracts
+                                .get(method.offset)
+                                .and_then(|contract| contract.return_shape),
+                        )
                     }
                     candidates => {
                         let declaration_count = candidates.map_or(0, Vec::len);

@@ -269,6 +269,7 @@ fn build_call_contracts(
                     method_contract.is_none_or(|contract| contract.return_behavior.returns_value()),
                 )
                 .with_may_return(method_contract.is_none_or(|contract| contract.may_return))
+                .with_return_shape(method_contract.and_then(|contract| contract.return_shape))
             }
             CallTarget::MethodToken {
                 hash_le,
