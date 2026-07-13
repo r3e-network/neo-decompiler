@@ -728,6 +728,20 @@ neo-decompiler schema info --validate - --quiet < info.json
 
 ## Development
 
+### CFG structurer layout
+
+The CFG-to-IR structurer is split by responsibility:
+
+- `src/decompiler/cfg/structure.rs` owns orchestration and SSA-to-IR emission.
+- `structure/analysis.rs` owns graph facts such as postdominators,
+  irreducible regions, structural uses, and leave targets.
+- `structure/cleanup.rs` owns unreachable-label and terminal-statement cleanup.
+- `structure/regions.rs` owns reducible and irreducible region walking.
+- `structure/tests.rs` contains the focused structural recovery suite.
+
+New graph-only calculations belong in `analysis.rs`; output cleanup belongs in
+`cleanup.rs`; region walking belongs in `regions.rs`.
+
 ```bash
 cargo fmt
 cargo test
