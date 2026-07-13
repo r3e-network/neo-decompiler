@@ -37,7 +37,12 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     patterns.add("NEP-11");
     evidence.push({ source: "manifest.abi.methods", value: "ownerOf,tokensOf,transfer" });
   }
-  if ((manifest?.abi?.events ?? []).some((event) => event.name?.toLowerCase() === "transfer")) {
+  const events = manifest?.abi?.events ?? [];
+  if (events.length > 0) {
+    patterns.add("events");
+    evidence.push({ source: "manifest.abi.events", value: String(events.length) });
+  }
+  if (events.some((event) => event.name?.toLowerCase() === "transfer")) {
     evidence.push({ source: "manifest.abi.events", value: "Transfer" });
   }
   const permissions = manifest?.permissions ?? [];

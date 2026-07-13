@@ -80,6 +80,19 @@ test("pattern analysis identifies wildcard call permissions", () => {
   assert.equal(info.confidence, "medium");
 });
 
+test("pattern analysis exposes ABI event behavior", () => {
+  const info = identifyPatterns(
+    nef(),
+    [],
+    {
+      supportedStandards: [],
+      abi: { methods: [], events: [{ name: "Updated", parameters: [] }] },
+    },
+  );
+  assert.deepEqual(info.patterns, ["events"]);
+  assert.ok(info.evidence.some((entry) => entry.source === "manifest.abi.events" && entry.value === "1"));
+});
+
 test("pattern analysis identifies external-call bytecode signals", () => {
   const info = identifyPatterns(
     { ...nef(), methodTokens: [{ method: "transfer" }] },
