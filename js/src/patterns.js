@@ -215,6 +215,11 @@ function inferLanguageFromSource(source) {
   if (filename.endsWith(".go")) return "Go";
   if (filename.endsWith(".rs")) return "Rust";
   if (filename.endsWith(".java")) return "Java";
-  if (filename.endsWith(".ts") || filename.endsWith(".js")) return "TypeScript/JavaScript";
+  if (
+    filename.endsWith(".ts") ||
+    filename.endsWith(".tsx") ||
+    filename.endsWith(".js") ||
+    filename.endsWith(".jsx")
+  ) return "TypeScript/JavaScript";
   return null;
 }

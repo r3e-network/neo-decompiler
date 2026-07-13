@@ -398,7 +398,11 @@ fn infer_language_from_source(source: &str) -> Option<&'static str> {
         Some("Rust")
     } else if filename.ends_with(".java") {
         Some("Java")
-    } else if filename.ends_with(".ts") || filename.ends_with(".js") {
+    } else if filename.ends_with(".ts")
+        || filename.ends_with(".tsx")
+        || filename.ends_with(".js")
+        || filename.ends_with(".jsx")
+    {
         Some("TypeScript/JavaScript")
     } else {
         None
@@ -460,6 +464,8 @@ mod tests {
             ("src/token.go#source", "Go"),
             ("src/token.rs#source", "Rust"),
             ("src/token.java#source", "Java"),
+            ("src/token.tsx?source=embedded", "TypeScript/JavaScript"),
+            ("src/token.jsx#source", "TypeScript/JavaScript"),
         ] {
             let info = identify_patterns(&nef("", source), &[], None);
             assert_eq!(info.language.as_deref(), Some(expected));

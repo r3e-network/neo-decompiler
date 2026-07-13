@@ -78,6 +78,8 @@ test("pattern analysis normalizes source paths and URI suffixes", () => {
     ["src/token.go#source", "Go"],
     ["src/token.rs#source", "Rust"],
     ["src/token.java#source", "Java"],
+    ["src/token.tsx?source=embedded", "TypeScript/JavaScript"],
+    ["src/token.jsx#source", "TypeScript/JavaScript"],
   ]) {
     const info = identifyPatterns(nef("", source), [], null);
     assert.equal(info.language, expected);

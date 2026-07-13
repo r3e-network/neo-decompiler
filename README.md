@@ -550,7 +550,8 @@ verification, multisig, external calls, method tokens, native contract calls
 (including Oracle, governance, role management, policy/token management,
 ledger, notary, treasury, contract management, and upgradeability), and
 wildcard permissions. Explicit compiler/source hints also identify C#, Python,
-Go, Rust, Java, and TypeScript/JavaScript when metadata supports them.
+Go, Rust, Java, and TypeScript/JavaScript (including `.js`, `.jsx`, `.ts`, and
+`.tsx` sources) when metadata supports them.
 ABI method signatures can conservatively infer NEP-17, NEP-11, and NEP-24
 (royaltyInfo) when no standard is declared by the manifest.
 
