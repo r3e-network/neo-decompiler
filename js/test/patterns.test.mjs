@@ -59,6 +59,13 @@ test("pattern analysis keeps weak source metadata explainable", () => {
   assert.ok(info.evidence.some((entry) => entry.source === "nef.header.source"));
 });
 
+test("pattern analysis normalizes source paths and URI suffixes", () => {
+  for (const source of ["C:\\contracts\\Token.cs", "/contracts/Token.py?build=42", "src/token.go#source"]) {
+    const info = identifyPatterns(nef("", source), [], null);
+    assert.equal(info.language, source.endsWith(".cs") ? "C#" : source.includes(".py") ? "Python" : "Go");
+  }
+});
+
 test("pattern analysis identifies wildcard call permissions", () => {
   const info = identifyPatterns(
     nef(),

@@ -267,13 +267,15 @@ fn infer_language(compiler: &str) -> Option<&'static str> {
 
 fn infer_language_from_source(source: &str) -> Option<&'static str> {
     let source = source.to_ascii_lowercase();
-    if source.ends_with(".cs") {
+    let source = source.split(['?', '#']).next().unwrap_or_default();
+    let filename = source.rsplit(['/', '\\']).next().unwrap_or(source);
+    if filename.ends_with(".cs") {
         Some("C#")
-    } else if source.ends_with(".py") {
+    } else if filename.ends_with(".py") {
         Some("Python")
-    } else if source.ends_with(".go") {
+    } else if filename.ends_with(".go") {
         Some("Go")
-    } else if source.ends_with(".ts") || source.ends_with(".js") {
+    } else if filename.ends_with(".ts") || filename.ends_with(".js") {
         Some("TypeScript/JavaScript")
     } else {
         None
@@ -324,6 +326,18 @@ mod tests {
             .evidence
             .iter()
             .any(|entry| entry.source == "nef.header.source"));
+    }
+
+    #[test]
+    fn source_paths_and_uri_suffixes_still_infer_language() {
+        for (source, expected) in [
+            (r"C:\contracts\Token.cs", "C#"),
+            ("/contracts/Token.py?build=42", "Python"),
+            ("src/token.go#source", "Go"),
+        ] {
+            let info = identify_patterns(&nef("", source), &[], None);
+            assert_eq!(info.language.as_deref(), Some(expected));
+        }
     }
 
     #[test]

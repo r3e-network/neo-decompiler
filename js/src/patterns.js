@@ -121,9 +121,11 @@ function inferLanguage(compiler) {
 
 function inferLanguageFromSource(source) {
   const value = String(source ?? "").toLowerCase();
-  if (value.endsWith(".cs")) return "C#";
-  if (value.endsWith(".py")) return "Python";
-  if (value.endsWith(".go")) return "Go";
-  if (value.endsWith(".ts") || value.endsWith(".js")) return "TypeScript/JavaScript";
+  const withoutSuffix = value.split(/[?#]/, 1)[0];
+  const filename = withoutSuffix.split(/[\\/]/).at(-1) ?? withoutSuffix;
+  if (filename.endsWith(".cs")) return "C#";
+  if (filename.endsWith(".py")) return "Python";
+  if (filename.endsWith(".go")) return "Go";
+  if (filename.endsWith(".ts") || filename.endsWith(".js")) return "TypeScript/JavaScript";
   return null;
 }
