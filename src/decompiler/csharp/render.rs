@@ -136,8 +136,12 @@ pub(crate) fn render_csharp(
         &inferred_starts,
     );
     let method_symbols = method_plans.method_symbol_maps().iter().collect::<Vec<_>>();
-    let contract_symbols =
-        structured::plan::plan_contract_symbols(types, &method_symbols, opts.typed_declarations);
+    let contract_symbols = structured::plan::plan_contract_symbols(
+        types,
+        &method_symbols,
+        opts.typed_declarations,
+        method_plans.index_defined_statics(),
+    );
     let mut used_member_names =
         contract_member_names(&contract_name, manifest, &method_plans, &contract_symbols);
     let vm_exception_type = vm_exception_type_name(instructions, &mut used_member_names);

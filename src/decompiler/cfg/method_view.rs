@@ -270,6 +270,11 @@ fn build_call_contracts(
                 )
                 .with_may_return(method_contract.is_none_or(|contract| contract.may_return))
                 .with_return_shape(method_contract.and_then(|contract| contract.return_shape))
+                .with_argument_effects(
+                    method_contract
+                        .map(|contract| contract.argument_effects.clone())
+                        .unwrap_or_default(),
+                )
             }
             CallTarget::MethodToken {
                 hash_le,

@@ -43,7 +43,7 @@ use crate::decompiler::helpers::{
 use crate::decompiler::ir::{BinOp, Intrinsic, Literal, SemanticCallTarget, UnaryOp};
 use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
 
-use super::context::{CollectionShape, MethodContext};
+use super::context::{CollectionArgumentEffect, CollectionShape, MethodContext};
 use super::dominance::{self, DominanceInfo};
 use super::effects;
 use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
@@ -72,6 +72,7 @@ struct BuildPassState<'a> {
     tainted_variables: &'a BTreeSet<SsaVariable>,
     versions: &'a mut BTreeMap<String, usize>,
     definition_facts: &'a mut DefinitionFacts,
+    invalidated_collection_content_roots: &'a mut BTreeSet<SsaVariable>,
     invalidated_collection_roots: &'a mut BTreeSet<SsaVariable>,
 }
 
@@ -88,6 +89,12 @@ type DefinitionFacts = BTreeMap<SsaVariable, DefinitionFact>;
 struct BuildFacts {
     versions: BTreeMap<String, usize>,
     definitions: DefinitionFacts,
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+struct CollectionInvalidations {
+    contents: BTreeSet<SsaVariable>,
+    shapes: BTreeSet<SsaVariable>,
 }
 
 /// Builder for stack-effect SSA form from a CFG and instructions.
@@ -160,9 +167,9 @@ impl<'a> SsaBuilder<'a> {
         let mut exit_stacks: BTreeMap<BlockId, Vec<SsaVariable>> = BTreeMap::new();
         let mut entry_slots: BTreeMap<BlockId, SlotState> = BTreeMap::new();
         let mut exit_slots: BTreeMap<BlockId, SlotState> = BTreeMap::new();
-        let mut entry_collection_invalidations: BTreeMap<BlockId, BTreeSet<SsaVariable>> =
+        let mut entry_collection_invalidations: BTreeMap<BlockId, CollectionInvalidations> =
             BTreeMap::new();
-        let mut exit_collection_invalidations: BTreeMap<BlockId, BTreeSet<SsaVariable>> =
+        let mut exit_collection_invalidations: BTreeMap<BlockId, CollectionInvalidations> =
             BTreeMap::new();
         let mut block_uses: BTreeMap<BlockId, Vec<(SsaVariable, usize)>> = BTreeMap::new();
         // Per-pass variable-version counter. Reset at the start of every pass so
@@ -332,7 +339,7 @@ impl<'a> SsaBuilder<'a> {
                 *bid,
                 &entry,
                 &slot_entry,
-                &BTreeSet::new(),
+                &CollectionInvalidations::default(),
                 &no_tainted_variables,
                 &mut facts,
             );
@@ -543,14 +550,21 @@ impl<'a> SsaBuilder<'a> {
     fn compute_join_collection_invalidations(
         &self,
         bid: BlockId,
-        exit_invalidations: &BTreeMap<BlockId, BTreeSet<SsaVariable>>,
-    ) -> BTreeSet<SsaVariable> {
-        self.cfg
+        exit_invalidations: &BTreeMap<BlockId, CollectionInvalidations>,
+    ) -> CollectionInvalidations {
+        let mut joined = CollectionInvalidations::default();
+        for invalidations in self
+            .cfg
             .predecessors(bid)
             .iter()
             .filter_map(|predecessor| exit_invalidations.get(predecessor))
-            .flat_map(|invalidations| invalidations.iter().cloned())
-            .collect()
+        {
+            joined
+                .contents
+                .extend(invalidations.contents.iter().cloned());
+            joined.shapes.extend(invalidations.shapes.iter().cloned());
+        }
+        joined
     }
 
     fn initial_entry_stack(&self, bid: BlockId) -> Vec<SsaVariable> {
@@ -585,7 +599,7 @@ impl<'a> SsaBuilder<'a> {
         bid: BlockId,
         entry: &[SsaVariable],
         entry_slots: &SlotState,
-        entry_collection_invalidations: &BTreeSet<SsaVariable>,
+        entry_collection_invalidations: &CollectionInvalidations,
         tainted_variables: &BTreeSet<SsaVariable>,
         facts: &mut BuildFacts,
     ) -> BlockExec {
@@ -607,7 +621,8 @@ impl<'a> SsaBuilder<'a> {
                 tainted_variables,
                 versions: &mut facts.versions,
                 definition_facts: &mut facts.definitions,
-                invalidated_collection_roots: &mut collection_invalidations,
+                invalidated_collection_content_roots: &mut collection_invalidations.contents,
+                invalidated_collection_roots: &mut collection_invalidations.shapes,
             };
             let mut idx = block.instruction_range.start;
             while idx < block.instruction_range.end {
@@ -684,7 +699,7 @@ impl<'a> SsaBuilder<'a> {
                     collection_shape_for_expression(
                         value,
                         &facts.definitions,
-                        &collection_invalidations,
+                        &collection_invalidations.shapes,
                     )
                 })),
                 _ => None,
@@ -986,11 +1001,20 @@ impl<'a> SsaBuilder<'a> {
 
         if is_collection_mutation(op) {
             if let Some(receiver) = popped.first() {
-                invalidate_collection_aliases(
-                    receiver,
-                    state.definition_facts,
-                    state.invalidated_collection_roots,
-                );
+                if is_shape_preserving_collection_mutation(op) {
+                    invalidate_collection_contents(
+                        receiver,
+                        state.definition_facts,
+                        state.invalidated_collection_content_roots,
+                    );
+                } else {
+                    invalidate_collection_aliases(
+                        receiver,
+                        state.definition_facts,
+                        state.invalidated_collection_content_roots,
+                        state.invalidated_collection_roots,
+                    );
+                }
             }
         }
 
@@ -1093,7 +1117,11 @@ impl<'a> SsaBuilder<'a> {
         // This call site has no resolved contract metadata. Keeping deeper
         // values would let consumed arguments resurface after a dropped result,
         // so invalidate the unknown pre-call stack conservatively.
-        invalidate_all_collection_facts(state.definition_facts, state.invalidated_collection_roots);
+        invalidate_all_collection_facts(
+            state.definition_facts,
+            state.invalidated_collection_content_roots,
+            state.invalidated_collection_roots,
+        );
         stack.clear();
 
         let value = SsaExpr::call(
@@ -1141,7 +1169,8 @@ impl<'a> SsaBuilder<'a> {
         }
 
         let mut args = Vec::with_capacity(contract.argument_count);
-        for _ in 0..contract.argument_count {
+        let mut shape_preserving_roots = BTreeSet::new();
+        for argument_index in 0..contract.argument_count {
             let argument = stack.pop().unwrap_or_else(unknown_var);
             if is_unknown_or_tainted(&argument, state.tainted_variables) {
                 consumed_unknown = true;
@@ -1149,17 +1178,36 @@ impl<'a> SsaBuilder<'a> {
             if !is_unknown(&argument) {
                 uses.push((argument.clone(), stmts.len()));
             }
-            invalidate_collection_aliases(
-                &argument,
-                state.definition_facts,
-                state.invalidated_collection_roots,
-            );
+            match contract
+                .argument_effects
+                .get(argument_index)
+                .copied()
+                .unwrap_or_default()
+            {
+                CollectionArgumentEffect::PreservesShape => {
+                    if let Some(root) = invalidate_collection_contents(
+                        &argument,
+                        state.definition_facts,
+                        state.invalidated_collection_content_roots,
+                    ) {
+                        shape_preserving_roots.insert(root);
+                    }
+                }
+                CollectionArgumentEffect::Unknown => invalidate_collection_aliases(
+                    &argument,
+                    state.definition_facts,
+                    state.invalidated_collection_content_roots,
+                    state.invalidated_collection_roots,
+                ),
+            }
             args.push(SsaExpr::var(argument));
         }
         if matches!(&contract.target, SemanticCallTarget::Internal { .. }) {
-            invalidate_all_collection_facts(
+            invalidate_all_collection_facts_except(
                 state.definition_facts,
+                state.invalidated_collection_content_roots,
                 state.invalidated_collection_roots,
+                &shape_preserving_roots,
             );
         }
         if !underflowed && consumed_unknown {
@@ -1203,7 +1251,8 @@ impl<'a> SsaBuilder<'a> {
 
         let mut consumed_unknown = false;
         let mut args = Vec::with_capacity(contract.argument_count);
-        for _ in 0..contract.argument_count {
+        let mut shape_preserving_roots = BTreeSet::new();
+        for argument_index in 0..contract.argument_count {
             let argument = stack.pop().unwrap_or_else(unknown_var);
             if is_unknown_or_tainted(&argument, state.tainted_variables) {
                 consumed_unknown = true;
@@ -1211,17 +1260,36 @@ impl<'a> SsaBuilder<'a> {
             if !is_unknown(&argument) {
                 uses.push((argument.clone(), stmts.len()));
             }
-            invalidate_collection_aliases(
-                &argument,
-                state.definition_facts,
-                state.invalidated_collection_roots,
-            );
+            match contract
+                .argument_effects
+                .get(argument_index)
+                .copied()
+                .unwrap_or_default()
+            {
+                CollectionArgumentEffect::PreservesShape => {
+                    if let Some(root) = invalidate_collection_contents(
+                        &argument,
+                        state.definition_facts,
+                        state.invalidated_collection_content_roots,
+                    ) {
+                        shape_preserving_roots.insert(root);
+                    }
+                }
+                CollectionArgumentEffect::Unknown => invalidate_collection_aliases(
+                    &argument,
+                    state.definition_facts,
+                    state.invalidated_collection_content_roots,
+                    state.invalidated_collection_roots,
+                ),
+            }
             args.push(SsaExpr::var(argument));
         }
         if matches!(&contract.target, SemanticCallTarget::Internal { .. }) {
-            invalidate_all_collection_facts(
+            invalidate_all_collection_facts_except(
                 state.definition_facts,
+                state.invalidated_collection_content_roots,
                 state.invalidated_collection_roots,
+                &shape_preserving_roots,
             );
         }
         if !underflowed && consumed_unknown {
@@ -1579,6 +1647,7 @@ impl<'a> SsaBuilder<'a> {
                 let elements = match resolve_collection_fact(
                     &item,
                     state.definition_facts,
+                    state.invalidated_collection_content_roots,
                     state.invalidated_collection_roots,
                     &mut BTreeSet::new(),
                 ) {
@@ -1727,6 +1796,7 @@ impl<'a> SsaBuilder<'a> {
             };
             invalidate_all_collection_facts(
                 state.definition_facts,
+                state.invalidated_collection_content_roots,
                 state.invalidated_collection_roots,
             );
             stack.clear();
@@ -1764,6 +1834,7 @@ impl<'a> SsaBuilder<'a> {
             invalidate_collection_aliases(
                 &argument,
                 state.definition_facts,
+                state.invalidated_collection_content_roots,
                 state.invalidated_collection_roots,
             );
             args.push(SsaExpr::var(argument));
@@ -2002,7 +2073,7 @@ fn fixed_reorder_arity(opcode: OpCode) -> Option<usize> {
 struct BlockExec {
     exit_stack: Vec<SsaVariable>,
     exit_slots: SlotState,
-    exit_collection_invalidations: BTreeSet<SsaVariable>,
+    exit_collection_invalidations: CollectionInvalidations,
     stmts: Vec<SsaStmt>,
     uses: Vec<(SsaVariable, usize)>,
     terminator_condition: Option<SsaVariable>,
@@ -2236,10 +2307,11 @@ fn is_collection_fact(expression: &SsaExpr) -> bool {
 fn resolve_collection_fact<'a>(
     variable: &SsaVariable,
     facts: &'a DefinitionFacts,
+    invalidated_content_roots: &BTreeSet<SsaVariable>,
     invalidated_roots: &BTreeSet<SsaVariable>,
     visited: &mut BTreeSet<SsaVariable>,
 ) -> Option<&'a SsaExpr> {
-    if invalidated_roots.contains(variable) {
+    if invalidated_content_roots.contains(variable) || invalidated_roots.contains(variable) {
         return None;
     }
     if !visited.insert(variable.clone()) {
@@ -2248,9 +2320,13 @@ fn resolve_collection_fact<'a>(
     let expression = &facts.get(variable)?.expression;
     match expression {
         expression if is_collection_fact(expression) => Some(expression),
-        SsaExpr::Variable(source) => {
-            resolve_collection_fact(source, facts, invalidated_roots, visited)
-        }
+        SsaExpr::Variable(source) => resolve_collection_fact(
+            source,
+            facts,
+            invalidated_content_roots,
+            invalidated_roots,
+            visited,
+        ),
         _ => None,
     }
 }
@@ -2319,22 +2395,54 @@ fn collection_fact_root(
 fn invalidate_collection_aliases(
     receiver: &SsaVariable,
     facts: &DefinitionFacts,
+    invalidated_content_roots: &mut BTreeSet<SsaVariable>,
     invalidated_roots: &mut BTreeSet<SsaVariable>,
 ) {
     let Some(root) = collection_fact_root(receiver, facts, &mut BTreeSet::new()) else {
         return;
     };
+    invalidated_content_roots.insert(root.clone());
     invalidated_roots.insert(root);
+}
+
+fn invalidate_collection_contents(
+    receiver: &SsaVariable,
+    facts: &DefinitionFacts,
+    invalidated_content_roots: &mut BTreeSet<SsaVariable>,
+) -> Option<SsaVariable> {
+    let root = collection_fact_root(receiver, facts, &mut BTreeSet::new())?;
+    invalidated_content_roots.insert(root.clone());
+    Some(root)
 }
 
 fn invalidate_all_collection_facts(
     facts: &DefinitionFacts,
+    invalidated_content_roots: &mut BTreeSet<SsaVariable>,
     invalidated_roots: &mut BTreeSet<SsaVariable>,
 ) {
+    invalidate_all_collection_facts_except(
+        facts,
+        invalidated_content_roots,
+        invalidated_roots,
+        &BTreeSet::new(),
+    );
+}
+
+fn invalidate_all_collection_facts_except(
+    facts: &DefinitionFacts,
+    invalidated_content_roots: &mut BTreeSet<SsaVariable>,
+    invalidated_roots: &mut BTreeSet<SsaVariable>,
+    shape_preserving_roots: &BTreeSet<SsaVariable>,
+) {
+    let roots = facts
+        .keys()
+        .filter_map(|variable| collection_fact_root(variable, facts, &mut BTreeSet::new()))
+        .collect::<BTreeSet<_>>();
+    invalidated_content_roots.extend(roots.iter().cloned());
     invalidated_roots.extend(
-        facts
-            .keys()
-            .filter_map(|variable| collection_fact_root(variable, facts, &mut BTreeSet::new())),
+        roots
+            .into_iter()
+            .filter(|root| !shape_preserving_roots.contains(root)),
     );
 }
 
@@ -2493,6 +2601,10 @@ fn is_effectful_collection(op: OpCode) -> bool {
 
 fn is_collection_mutation(op: OpCode) -> bool {
     is_effectful_collection(op) || op == OpCode::Popitem
+}
+
+fn is_shape_preserving_collection_mutation(op: OpCode) -> bool {
+    matches!(op, OpCode::Setitem | OpCode::Reverseitems | OpCode::Memcpy)
 }
 
 /// Map a unary compute opcode to its IR operator, if applicable.
@@ -4110,6 +4222,50 @@ mod tests {
     }
 
     #[test]
+    fn setitem_invalidates_contents_but_preserves_collection_shape() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Push1),
+            instr(2, OpCode::Packstruct),
+            instr(3, OpCode::Dup),
+            instr(4, OpCode::Push0),
+            instr(5, OpCode::Push2),
+            instr(6, OpCode::Setitem),
+            instr(7, OpCode::Unpack),
+            instr(8, OpCode::Drop),
+            instr(9, OpCode::Drop),
+            instr(10, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let context = MethodContext {
+            returns_value: Some(false),
+            ..MethodContext::default()
+        };
+
+        let built = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build_with_report();
+
+        assert_eq!(
+            built.fidelity.status,
+            Fidelity::Exact,
+            "{:#?}",
+            built.fidelity
+        );
+        assert!(built
+            .ssa
+            .blocks_iter()
+            .flat_map(|(_, block)| &block.stmts)
+            .any(|statement| matches!(
+                statement,
+                SsaStmt::Assign {
+                    value: SsaExpr::Index { .. },
+                    ..
+                }
+            )));
+    }
+
+    #[test]
     fn value_returning_collection_mutation_invalidates_all_alias_provenance() {
         let instructions = vec![
             instr(0, OpCode::Push1),
@@ -4180,6 +4336,60 @@ mod tests {
                 && issue.opcode == OpCode::Unpack
                 && issue.kind == LoweringIssueKind::MissingProvenance
         }));
+    }
+
+    #[test]
+    fn shape_preserving_internal_call_discards_contents_but_retains_arity() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Push1),
+            instr(2, OpCode::Packstruct),
+            instr(3, OpCode::Dup),
+            Instruction::new(4, OpCode::Call, Some(Operand::Jump(6))),
+            instr(6, OpCode::Unpack),
+            instr(7, OpCode::Drop),
+            instr(8, OpCode::Drop),
+            instr(9, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+        let mut context = MethodContext {
+            returns_value: Some(false),
+            ..MethodContext::default()
+        };
+        context.calls_by_offset.insert(
+            4,
+            CallContract::new(
+                SemanticCallTarget::Internal {
+                    offset: 10,
+                    name: "set_fields".to_string(),
+                },
+                1,
+                false,
+            )
+            .with_argument_effects(vec![CollectionArgumentEffect::PreservesShape]),
+        );
+
+        let built = SsaBuilder::new(&cfg, &instructions)
+            .with_method_context(&context)
+            .build_with_report();
+
+        assert_eq!(
+            built.fidelity.status,
+            Fidelity::Exact,
+            "{:#?}",
+            built.fidelity
+        );
+        assert!(built
+            .ssa
+            .blocks_iter()
+            .flat_map(|(_, block)| &block.stmts)
+            .any(|statement| matches!(
+                statement,
+                SsaStmt::Assign {
+                    value: SsaExpr::Index { .. },
+                    ..
+                }
+            )));
     }
 
     #[test]

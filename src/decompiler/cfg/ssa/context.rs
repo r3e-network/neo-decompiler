@@ -24,6 +24,18 @@ impl CollectionShape {
     }
 }
 
+/// Effect of one call argument on fixed collection shape.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum CollectionArgumentEffect {
+    /// The callee may change the argument's collection length.
+    #[default]
+    Unknown,
+    /// The callee may change contents but preserves collection length.
+    PreservesShape,
+}
+
 /// Stack contract for one resolved call site.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CallContract {
@@ -32,11 +44,12 @@ pub(crate) struct CallContract {
     pub(crate) returns_value: bool,
     pub(crate) may_return: bool,
     pub(crate) return_shape: Option<CollectionShape>,
+    pub(crate) argument_effects: Vec<CollectionArgumentEffect>,
 }
 
 impl CallContract {
     #[must_use]
-    pub(crate) const fn new(
+    pub(crate) fn new(
         target: SemanticCallTarget,
         argument_count: usize,
         returns_value: bool,
@@ -47,18 +60,28 @@ impl CallContract {
             returns_value,
             may_return: true,
             return_shape: None,
+            argument_effects: vec![CollectionArgumentEffect::Unknown; argument_count],
         }
     }
 
     #[must_use]
-    pub(crate) const fn with_may_return(mut self, may_return: bool) -> Self {
+    pub(crate) fn with_may_return(mut self, may_return: bool) -> Self {
         self.may_return = may_return;
         self
     }
 
     #[must_use]
-    pub(crate) const fn with_return_shape(mut self, return_shape: Option<CollectionShape>) -> Self {
+    pub(crate) fn with_return_shape(mut self, return_shape: Option<CollectionShape>) -> Self {
         self.return_shape = return_shape;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_argument_effects(
+        mut self,
+        argument_effects: Vec<CollectionArgumentEffect>,
+    ) -> Self {
+        self.argument_effects = argument_effects;
         self
     }
 }

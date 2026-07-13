@@ -126,6 +126,7 @@ pub(in crate::decompiler::csharp::render) struct DeclarationPlan {
     pub(in crate::decompiler::csharp::render) declarations: BTreeMap<String, PlannedDeclaration>,
     pub(in crate::decompiler::csharp::render) issues: Vec<LoweringIssue>,
     pub(in crate::decompiler::csharp::render) typed: bool,
+    pub(in crate::decompiler::csharp::render) index_defined_symbols: HashSet<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,6 +160,8 @@ struct ActivityCollector {
     activity: BTreeMap<String, SymbolActivity>,
     concrete_definition_types: BTreeMap<String, String>,
     non_concrete_definitions: HashSet<String>,
+    direct_index_definitions: HashSet<String>,
+    copy_definitions: Vec<(String, String)>,
     implicit_declarations: HashSet<String>,
     stack_placeholders: BTreeSet<usize>,
     next_order: usize,
@@ -172,6 +175,8 @@ impl ActivityCollector {
             activity: BTreeMap::new(),
             concrete_definition_types: BTreeMap::new(),
             non_concrete_definitions: HashSet::new(),
+            direct_index_definitions: HashSet::new(),
+            copy_definitions: Vec::new(),
             implicit_declarations: HashSet::new(),
             stack_placeholders: BTreeSet::new(),
             next_order: 0,
@@ -185,6 +190,14 @@ impl ActivityCollector {
             .or_default()
             .definitions
             .push(occurrence);
+
+        if matches!(value, Expr::Index { .. }) {
+            self.direct_index_definitions.insert(name.to_string());
+        }
+        if let Expr::Variable(source) = value {
+            self.copy_definitions
+                .push((name.to_string(), source.clone()));
+        }
 
         let Some(candidate) = concrete_definition_type(value) else {
             self.concrete_definition_types.remove(name);
@@ -223,6 +236,26 @@ impl ActivityCollector {
         };
         self.next_order += 1;
         occurrence
+    }
+
+    fn index_defined_symbols(&self) -> HashSet<String> {
+        let mut symbols = self.direct_index_definitions.clone();
+        self.propagate_copy_definitions(&mut symbols);
+        symbols
+    }
+
+    fn propagate_copy_definitions(&self, symbols: &mut HashSet<String>) {
+        loop {
+            let mut changed = false;
+            for (target, source) in &self.copy_definitions {
+                if symbols.contains(source) {
+                    changed |= symbols.insert(target.clone());
+                }
+            }
+            if !changed {
+                return;
+            }
+        }
     }
 
     fn visit_block(&mut self, block: &Block, scope: ScopeId) {
@@ -399,6 +432,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
     let mut collector = ActivityCollector::new();
     let root = collector.scopes.root();
     collector.visit_block(body, root);
+    let index_defined_symbols = collector.index_defined_symbols();
 
     let mut declarations = BTreeMap::new();
     let mut issues = collector
@@ -470,12 +504,16 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
                     DeclarationKind::HoistedAssignment
                 },
                 emitted_name: sanitize_csharp_identifier(name),
-                csharp_type: collector
-                    .concrete_definition_types
-                    .get(name)
-                    .filter(|_| typed && activity.definitions.len() == 1)
-                    .cloned()
-                    .unwrap_or_else(|| csharp_type(symbol.value_type, typed).to_string()),
+                csharp_type: if typed && index_defined_symbols.contains(name) {
+                    "dynamic".to_string()
+                } else {
+                    collector
+                        .concrete_definition_types
+                        .get(name)
+                        .filter(|_| typed && activity.definitions.len() == 1)
+                        .cloned()
+                        .unwrap_or_else(|| csharp_type(symbol.value_type, typed).to_string())
+                },
                 initialize_to_default: !inline && symbol.origin == SymbolOrigin::Phi,
             },
         );
@@ -489,7 +527,15 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
         declarations,
         issues,
         typed,
+        index_defined_symbols,
     }
+}
+
+fn collect_index_defined_symbols(body: &Block) -> HashSet<String> {
+    let mut collector = ActivityCollector::new();
+    let root = collector.scopes.root();
+    collector.visit_block(body, root);
+    collector.index_defined_symbols()
 }
 
 fn concrete_definition_type(expression: &Expr) -> Option<String> {
@@ -518,6 +564,7 @@ pub(in crate::decompiler::csharp::render) fn plan_contract_symbols(
     types: &TypeInfo,
     method_symbols: &[&BTreeMap<String, SymbolInfo>],
     typed: bool,
+    index_defined_statics: &BTreeSet<usize>,
 ) -> CSharpContractSymbols {
     let mut statics: BTreeMap<usize, ValueType> =
         types.statics.iter().copied().enumerate().collect();
@@ -532,13 +579,20 @@ pub(in crate::decompiler::csharp::render) fn plan_contract_symbols(
                 .or_insert(symbol.value_type);
         }
     }
+    for index in index_defined_statics {
+        statics.entry(*index).or_insert(ValueType::Unknown);
+    }
 
     CSharpContractSymbols {
         static_fields: statics
             .into_iter()
             .map(|(index, value_type)| CSharpStaticField {
                 name: format!("static{index}"),
-                csharp_type: csharp_type(value_type, typed).to_string(),
+                csharp_type: if typed && index_defined_statics.contains(&index) {
+                    "dynamic".to_string()
+                } else {
+                    csharp_type(value_type, typed).to_string()
+                },
             })
             .collect(),
     }
@@ -615,6 +669,7 @@ pub(in crate::decompiler::csharp::render) struct CSharpMethodPlans {
     method_labels_by_offset: BTreeMap<usize, String>,
     method_arg_counts_by_offset: BTreeMap<usize, usize>,
     method_return_types_by_offset: BTreeMap<usize, String>,
+    index_defined_statics: BTreeSet<usize>,
 }
 
 impl CSharpMethodPlans {
@@ -674,6 +729,10 @@ impl CSharpMethodPlans {
         &self,
     ) -> &[BTreeMap<String, SymbolInfo>] {
         &self.method_symbol_maps
+    }
+
+    pub(in crate::decompiler::csharp::render) fn index_defined_statics(&self) -> &BTreeSet<usize> {
+        &self.index_defined_statics
     }
 }
 
@@ -872,11 +931,12 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
         })
         .collect::<Vec<_>>();
     let method_symbols = method_symbol_maps.iter().collect::<Vec<_>>();
-    let reserved_member_names = plan_contract_symbols(types, &method_symbols, false)
-        .static_fields
-        .into_iter()
-        .map(|field| field.name)
-        .collect();
+    let reserved_member_names =
+        plan_contract_symbols(types, &method_symbols, false, &BTreeSet::new())
+            .static_fields
+            .into_iter()
+            .map(|field| field.name)
+            .collect();
     let mut used_signatures = HashSet::new();
     let mut base_occurrences = HashMap::new();
     let mut plans = drafts
@@ -948,6 +1008,12 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                             method_contracts
                                 .get(method.offset)
                                 .and_then(|contract| contract.return_shape),
+                        )
+                        .with_argument_effects(
+                            method_contracts
+                                .get(method.offset)
+                                .map(|contract| contract.argument_effects.clone())
+                                .unwrap_or_default(),
                         )
                     }
                     candidates => {
@@ -1050,6 +1116,88 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
         plan.planning_issues = planning_issues;
     }
 
+    let mut parameter_index_definitions: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
+    let mut index_defined_statics = BTreeSet::new();
+    for (plan_index, plan) in plans.iter().enumerate() {
+        if plan.end <= plan.start {
+            continue;
+        }
+        let lowered = lower_method_body(MethodIrRequest {
+            start: plan.start,
+            end: plan.end,
+            instructions,
+            context: plan.method_context.clone(),
+            symbol_types: plan.symbol_types.clone(),
+        });
+        for name in collect_index_defined_symbols(&lowered.body) {
+            match lowered.symbols.get(&name).map(|symbol| &symbol.origin) {
+                Some(SymbolOrigin::Parameter(index)) => {
+                    parameter_index_definitions
+                        .entry(plan_index)
+                        .or_default()
+                        .insert(*index);
+                }
+                Some(SymbolOrigin::Static(index)) => {
+                    index_defined_statics.insert(*index);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    let mut parameter_types_changed = false;
+    for (plan_index, indices) in parameter_index_definitions {
+        let plan = &mut plans[plan_index];
+        for index in indices {
+            if let Some(parameter) = plan.parameters.get_mut(index) {
+                parameter_types_changed |= parameter.ty != "dynamic";
+                parameter.ty = "dynamic".to_string();
+            }
+            if let Some(value_type) = plan.symbol_types.parameters.get_mut(index) {
+                *value_type = ValueType::Unknown;
+            }
+        }
+    }
+    for plan in &mut plans {
+        if let Some(last_index) = index_defined_statics.last().copied() {
+            plan.symbol_types
+                .statics
+                .resize(last_index + 1, ValueType::Unknown);
+        }
+        for index in &index_defined_statics {
+            plan.symbol_types.statics[*index] = ValueType::Unknown;
+        }
+    }
+
+    if parameter_types_changed {
+        let mut used_signatures = HashSet::new();
+        let mut base_occurrences = HashMap::new();
+        for plan in &mut plans {
+            plan.emitted_name = make_unique_method_name(
+                sanitize_csharp_identifier(&plan.raw_name),
+                &parameter_type_signature(&plan.parameters),
+                &mut used_signatures,
+                &mut base_occurrences,
+                &reserved_member_names,
+            );
+        }
+        let emitted_names_by_offset = plans_by_offset
+            .iter()
+            .filter(|(_, candidates)| candidates.len() == 1)
+            .map(|(offset, candidates)| (*offset, plans[candidates[0]].emitted_name.clone()))
+            .collect::<BTreeMap<_, _>>();
+        for plan in &mut plans {
+            for contract in plan.method_context.calls_by_offset.values_mut() {
+                let SemanticCallTarget::Internal { offset, name } = &mut contract.target else {
+                    continue;
+                };
+                if let Some(emitted_name) = emitted_names_by_offset.get(offset) {
+                    *name = emitted_name.clone();
+                }
+            }
+        }
+    }
+
     let mut method_labels_by_offset = BTreeMap::new();
     let mut method_arg_counts_by_offset = BTreeMap::new();
     let mut method_return_types_by_offset = BTreeMap::new();
@@ -1073,6 +1221,7 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
         method_labels_by_offset,
         method_arg_counts_by_offset,
         method_return_types_by_offset,
+        index_defined_statics,
     }
 }
 

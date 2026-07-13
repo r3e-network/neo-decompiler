@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::analysis::call_graph::{CallEdge, CallGraph, CallTarget};
 use crate::decompiler::analysis::method_contracts::{
@@ -36,6 +36,10 @@ fn method_contract(
         return_behavior,
         may_return: true,
         return_shape: None,
+        argument_effects: vec![
+            crate::decompiler::cfg::ssa::CollectionArgumentEffect::Unknown;
+            argument_count
+        ],
     }
 }
 
@@ -424,7 +428,7 @@ fn plans_declarations() {
         statics: vec![ValueType::Unknown, ValueType::Integer],
         ..TypeInfo::default()
     };
-    let contract = plan_contract_symbols(&types, &[&symbols], true);
+    let contract = plan_contract_symbols(&types, &[&symbols], true, &BTreeSet::new());
     assert_eq!(contract.static_fields[1].name, "static1");
     assert_eq!(contract.static_fields[1].csharp_type, "BigInteger");
     let static3 = contract
@@ -2157,6 +2161,139 @@ fn typed_ambient_assignments_render_boundary_conversions() {
         render_block(&body, &dynamic, &symbols, ReturnBehavior::Void, false),
         "static0 = (dynamic)null;"
     );
+}
+
+#[test]
+fn typed_index_definitions_ignore_stale_slot_collection_types() {
+    let body = Block::from(vec![
+        Stmt::assign("t0", Expr::index(Expr::var("items"), Expr::int(0))),
+        Stmt::assign("loc0", Expr::var("t0")),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "items".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(0),
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "t0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "loc0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(0),
+                value_type: ValueType::Struct,
+            },
+        ),
+    ]);
+    let plan = plan_declarations(&body, &symbols, true);
+    let rendered = render_block(&body, &plan, &symbols, ReturnBehavior::Void, false);
+
+    assert!(rendered.contains("dynamic t0 = "), "{rendered}");
+    assert!(rendered.contains("dynamic loc0 = t0;"), "{rendered}");
+    assert!(!rendered.contains("object[]"), "{rendered}");
+}
+
+#[test]
+fn typed_index_copy_provenance_converges_independently_of_statement_order() {
+    let body = Block::from(vec![
+        Stmt::assign("loc0", Expr::var("t0")),
+        Stmt::assign("t0", Expr::index(Expr::var("items"), Expr::int(0))),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "items".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(0),
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "t0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "loc0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(0),
+                value_type: ValueType::Struct,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["t0"].csharp_type, "dynamic");
+    assert_eq!(plan.declarations["loc0"].csharp_type, "dynamic");
+}
+
+#[test]
+fn typed_index_assignments_dynamicize_parameter_and_static_storage() {
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "IndexStorage",
+            "abi": { "methods": [{
+                "name": "store",
+                "parameters": [
+                    { "name": "target", "type": "Array" },
+                    { "name": "items", "type": "Array" }
+                ],
+                "returntype": "Array",
+                "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+    let instructions = vec![
+        Instruction::new(0, OpCode::Initslot, Some(Operand::Bytes(vec![0, 2]))),
+        Instruction::new(3, OpCode::Push1, None),
+        Instruction::new(4, OpCode::Push2, None),
+        Instruction::new(5, OpCode::Push2, None),
+        Instruction::new(6, OpCode::Packstruct, None),
+        Instruction::new(7, OpCode::Dup, None),
+        Instruction::new(8, OpCode::Push0, None),
+        Instruction::new(9, OpCode::Ldarg1, None),
+        Instruction::new(10, OpCode::Setitem, None),
+        Instruction::new(11, OpCode::Unpack, None),
+        Instruction::new(12, OpCode::Drop, None),
+        Instruction::new(13, OpCode::Drop, None),
+        Instruction::new(14, OpCode::Dup, None),
+        Instruction::new(15, OpCode::Starg0, None),
+        Instruction::new(16, OpCode::Stsfld0, None),
+        Instruction::new(17, OpCode::Ldarg0, None),
+        Instruction::new(18, OpCode::Ret, None),
+    ];
+    let types = TypeInfo {
+        statics: vec![ValueType::Struct],
+        ..TypeInfo::default()
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        Some(&manifest),
+        &CallGraph::default(),
+        &MethodContracts::default(),
+        &types,
+        &[0],
+    );
+    let contract = plan_contract_symbols(
+        &types,
+        &plans.method_symbol_maps().iter().collect::<Vec<_>>(),
+        true,
+        plans.index_defined_statics(),
+    );
+
+    assert_eq!(plans.manifest_method(0).parameters[0].ty, "dynamic");
+    assert_eq!(contract.static_fields[0].csharp_type, "dynamic");
 }
 
 #[test]

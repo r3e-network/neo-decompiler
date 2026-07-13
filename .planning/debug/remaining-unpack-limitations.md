@@ -2,15 +2,15 @@
 status: investigating
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-13T12:43:00+08:00
+updated: 2026-07-13T15:52:45+08:00
 ---
 
 ## Current Focus
 
-hypothesis: A per-argument internal-call effect that distinguishes fixed-arity content mutation from arity mutation can retain Struct(2) for Contract_Record without retaining stale element values.
-test: Infer a length-preserving effect only for helpers whose reachable operations mutate existing constant indexes without resize, escape, or unknown calls; then verify Record returns runtime index 0 while APPEND/POPITEM/CLEARITEMS negatives remain incomplete.
-expecting: Contract_Record@00E5 moves from incomplete to exact through fresh runtime indexes, while mutation summaries never preserve element identity and any arity-changing or escaping path invalidates shape.
-next_action: Inspect internal-call argument flow and SETITEM receiver provenance, then add focused method-effect and shaped-argument mutation tests before implementation.
+hypothesis: One-level constant-index field postconditions plus unanimous private-entry/static facts can carry Array(2) from Reentrancy constructor arg0[0] through static0 into all three remaining fixed-shape UNPACK sites without inferring arity from consumers.
+test: Infer only non-escaping per-argument indexed writes, intersect every non-null static writer and resolved incoming call, then seed PICKITEM results while preserving null/runtime faults and invalidating conflicting, dynamic-index, resizing, or opaque paths.
+expecting: Contract_Reentrancy@0272 and @02AE move from incomplete to conservative, yielding Exact 1106 / Conservative 70 / Incomplete 3; Foreach and both Enum methods remain fail-closed until their separate models are addressed.
+next_action: Add bounded indexed-shape facts and negative tests for conflicting writes, dynamic indexes, partial paths, static conflicts, alias escape, and unknown callsites before wiring the Reentrancy fixed point.
 reasoning_checkpoint: null
 tdd_checkpoint: null
 
@@ -74,9 +74,19 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   found: All reachable unmodified returns must agree on Array/Struct kind and length; resolved internal calls carry that optional fact into a fresh DefinitionFact; UNPACK emits one index per element in VM order without duplicating the call. Exact rose from 1103 to 1105 and Incomplete fell from 8 to 6 after the prior NEP11 slice. Contract_Returns.mix and Contract_Tuple.t1 now use runtime indexes, and Roslyn compiled all 103 pinned contracts. The oversized-method test initially exposed an 82-second regression; honoring the existing 16384-instruction lift cap restored it to 0.42 seconds.
   implication: The return-shape hypothesis is confirmed and bounded by mutation, mixed-return, loop, and size-cap negatives. The remaining incomplete roots are Record, three Reentrancy UNPACK sites across two helpers, Foreach, and two Enum loop-stack methods.
 
+- timestamp: 2026-07-13T15:52:45+08:00
+  checked: Shape-preserving internal-call argument effects, typed index provenance, focused escape negatives, pinned Record output, and the fidelity census.
+  found: Effects are granted per argument only when SSA proves that argument is a non-escaping SETITEM/REVERSEITEMS/MEMCPY receiver; returned, static-stored, nested, called, or resized aliases remain Unknown. SETITEM discards exact contents but retains arity, so Contract_Record.test_DeconstructRecord emits runtime loc0[0]/loc0[1] indexes and returns field zero. Index-derived declaration safety now reaches copy chains by fixed point and dynamicizes live parameter/static storage. The census is Exact 1106 / Conservative 68 / Incomplete 5.
+  implication: Record is recovered without preserving stale elements or trusting escaped aliases. The remaining fixed-shape work is exclusively the three nested Reentrancy UNPACK sites.
+
+- timestamp: 2026-07-13T15:52:45+08:00
+  checked: Independent soundness review plus full all-target feature/no-feature Rust tests, both Clippy configurations, generated typed C#, and pinned net10 Roslyn.
+  found: Review caught an initially unsound all-arguments preservation rule and traversal-order/static/parameter typed hazards before commit. A broad external-symbol seed then caused Contract_FieldKeyword CS0266 errors; narrowing provenance to actual runtime Index definitions restored required casts. Final gates pass: 715 library tests passed / 1 ignored, all integration targets pass with and without default features, both Clippy runs pass with warnings denied, Contract_Record has no stale object[] casts, and Roslyn is 103 passed / 0 failed / 0 errors.
+  implication: The Record slice is ready to checkpoint; the observed Roslyn regression is eliminated rather than accepted as a known limitation.
+
 ## Resolution
 
-root_cause: The fixed-return-shape slice had no interprocedural contract: exact local PACK/PACKSTRUCT arity was discarded at MethodContract -> CallContract -> call-result DefinitionFact, so UNPACK could not distinguish a proven fixed-shape resolved internal result from an opaque call result.
-fix: Added unanimous reachable-return Array/Struct summaries, resolved-internal call propagation, flow-sensitive shaped DefinitionFacts, and runtime Index expansion with conservative invalidation and the existing method-size cap.
-verification: Focused positive and negative shape tests pass; full all-feature Rust and no-default library tests pass; both Clippy configurations pass with warnings denied; pinned census is Exact 1105 / Conservative 68 / Incomplete 6; pinned Roslyn is 103 passed / 0 failed / 0 errors; formatting and diff checks pass.
-files_changed: [src/decompiler/analysis/method_contracts.rs, src/decompiler/cfg/method_view.rs, src/decompiler/cfg/ssa/builder.rs, src/decompiler/cfg/ssa/context.rs, src/decompiler/cfg/ssa/mod.rs, src/decompiler/csharp/render/structured/plan.rs, src/decompiler/csharp/render/structured/tests.rs, src/lib.rs]
+root_cause: Fixed collection shape was lost both across resolved call returns and across content-only argument mutation; method-global invalidation also let later calls poison earlier facts. Record additionally exposed stale typed declarations for runtime index values.
+fix: Added flow-sensitive content-versus-shape invalidation, unanimous Array/Struct return summaries, escape-aware per-argument shape-preserving effects, runtime Index expansion, and fixed-point typed-index safety for locals plus live parameter/static storage.
+verification: Focused positive/negative shape and escape tests pass; full all-target Rust tests pass with all and no default features; both Clippy configurations pass with warnings denied; pinned census is Exact 1106 / Conservative 68 / Incomplete 5; pinned Roslyn is 103 passed / 0 failed / 0 errors; formatting and diff checks pass.
+files_changed: [src/decompiler/analysis/method_contracts.rs, src/decompiler/cfg/method_view.rs, src/decompiler/cfg/ssa/builder.rs, src/decompiler/cfg/ssa/context.rs, src/decompiler/cfg/ssa/mod.rs, src/decompiler/csharp/render.rs, src/decompiler/csharp/render/structured/plan.rs, src/decompiler/csharp/render/structured/stmt.rs, src/decompiler/csharp/render/structured/tests.rs, src/lib.rs]

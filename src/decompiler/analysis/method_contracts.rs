@@ -4,15 +4,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use crate::decompiler::cfg::method_body::build_method_cfg_with_non_returning_calls;
+use crate::decompiler::cfg::method_body::{build_method_cfg_with_non_returning_calls, Fidelity};
 use crate::decompiler::cfg::method_view::{extract_method_cfgs, MethodView};
-pub use crate::decompiler::cfg::ssa::CollectionShape;
-use crate::decompiler::cfg::ssa::{CallContract, MethodContext, SsaBuilder, SsaStmt};
+use crate::decompiler::cfg::ssa::{
+    CallContract, MethodContext, SsaBuilder, SsaExpr, SsaStmt, SsaVariable,
+};
+pub use crate::decompiler::cfg::ssa::{CollectionArgumentEffect, CollectionShape};
 use crate::decompiler::cfg::Terminator;
 use crate::decompiler::helpers::{
     build_method_arg_counts_by_offset, build_method_returns_value_by_offset,
 };
-use crate::decompiler::ir::SemanticCallTarget;
+use crate::decompiler::ir::{Intrinsic, SemanticCallTarget};
 use crate::instruction::{Instruction, OpCode};
 use crate::manifest::ContractManifest;
 
@@ -52,6 +54,8 @@ pub struct MethodContract {
     pub may_return: bool,
     /// Exact collection shape shared by every reachable normal return.
     pub return_shape: Option<CollectionShape>,
+    /// Per-argument effects on fixed collection shape.
+    pub argument_effects: Vec<CollectionArgumentEffect>,
 }
 
 /// Deterministic method-contract analysis for a script.
@@ -135,6 +139,10 @@ pub fn infer_method_contracts(
                     return_behavior,
                     may_return: true,
                     return_shape: None,
+                    argument_effects: vec![
+                        CollectionArgumentEffect::Unknown;
+                        argument_counts.get(&offset).copied().unwrap_or(0)
+                    ],
                 },
             )
         })
@@ -207,6 +215,22 @@ pub fn infer_method_contracts(
     }
 
     let calls_by_offset = build_call_contracts(call_graph, &contracts);
+    let argument_effects = views_by_offset
+        .iter()
+        .filter_map(|(offset, view)| {
+            let contract = contracts.get(offset)?;
+            Some((
+                *offset,
+                method_argument_effects(view, &calls_by_offset, contract.argument_count),
+            ))
+        })
+        .collect::<Vec<_>>();
+    for (offset, effects) in argument_effects {
+        if let Some(contract) = contracts.get_mut(&offset) {
+            contract.argument_effects = effects;
+        }
+    }
+    let calls_by_offset = build_call_contracts(call_graph, &contracts);
     let return_shapes = views_by_offset
         .iter()
         .filter_map(|(offset, view)| {
@@ -227,6 +251,222 @@ pub fn infer_method_contracts(
 
     MethodContracts {
         methods: contracts.into_values().collect(),
+    }
+}
+
+fn method_argument_effects(
+    view: &MethodView,
+    calls_by_offset: &BTreeMap<usize, CallContract>,
+    argument_count: usize,
+) -> Vec<CollectionArgumentEffect> {
+    let unknown = vec![CollectionArgumentEffect::Unknown; argument_count];
+    if argument_count == 0
+        || view.instructions.len()
+            > crate::decompiler::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS
+    {
+        return unknown;
+    }
+    let has_call = calls_by_offset
+        .keys()
+        .any(|offset| *offset >= view.method.offset && *offset < view.end)
+        || view.instructions.iter().any(|instruction| {
+            matches!(
+                instruction.opcode,
+                OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::CallT | OpCode::Syscall
+            )
+        });
+    let may_resize_collection = view.instructions.iter().any(|instruction| {
+        matches!(
+            instruction.opcode,
+            OpCode::Append | OpCode::Remove | OpCode::Clearitems | OpCode::Popitem
+        )
+    });
+    if has_call || may_resize_collection {
+        return unknown;
+    }
+
+    let context = MethodContext {
+        argument_names: (0..argument_count)
+            .map(|index| format!("arg{index}"))
+            .collect(),
+        arguments_on_entry_stack: view
+            .instructions
+            .first()
+            .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
+        calls_by_offset: calls_for_view(view, calls_by_offset),
+        ..MethodContext::default()
+    };
+    let built = SsaBuilder::new(&view.cfg, &view.instructions)
+        .with_method_context(&context)
+        .build_with_report();
+    if built.fidelity.status != Fidelity::Exact {
+        return unknown;
+    }
+
+    let mut origins = (0..argument_count)
+        .map(|index| (SsaVariable::initial(format!("arg{index}")), index))
+        .collect::<BTreeMap<_, _>>();
+    loop {
+        let mut changed = false;
+        for (_, block) in built.ssa.blocks_iter() {
+            for phi in &block.phi_nodes {
+                let mut operand_origins = phi
+                    .operands
+                    .values()
+                    .filter_map(|operand| origins.get(operand).copied());
+                let Some(first) = operand_origins.next() else {
+                    continue;
+                };
+                if phi
+                    .operands
+                    .values()
+                    .all(|operand| origins.get(operand) == Some(&first))
+                {
+                    changed |= origins.insert(phi.target.clone(), first).is_none();
+                }
+            }
+            for statement in &block.stmts {
+                let SsaStmt::Assign {
+                    target,
+                    value: SsaExpr::Variable(source),
+                } = statement
+                else {
+                    continue;
+                };
+                if let Some(origin) = origins.get(source).copied() {
+                    changed |= origins.insert(target.clone(), origin).is_none();
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    let mut unsafe_arguments = BTreeSet::new();
+    let mut shape_preserving_receivers = BTreeSet::new();
+    for (_, block) in built.ssa.blocks_iter() {
+        for phi in &block.phi_nodes {
+            if !origins.contains_key(&phi.target) {
+                for operand in phi.operands.values() {
+                    if let Some(origin) = origins.get(operand) {
+                        unsafe_arguments.insert(*origin);
+                    }
+                }
+            }
+        }
+        for statement in &block.stmts {
+            match statement {
+                SsaStmt::Assign {
+                    target,
+                    value: SsaExpr::Variable(source),
+                } => {
+                    if target.base.starts_with("static") {
+                        if let Some(origin) = origins.get(source) {
+                            unsafe_arguments.insert(*origin);
+                        }
+                    }
+                }
+                SsaStmt::Assign { value, .. } => {
+                    collect_argument_origins(value, &origins, &mut unsafe_arguments);
+                }
+                SsaStmt::Expr(SsaExpr::Call {
+                    target:
+                        SemanticCallTarget::Intrinsic(Intrinsic::Opcode(
+                            OpCode::Setitem | OpCode::Reverseitems | OpCode::Memcpy,
+                        )),
+                    args,
+                }) => {
+                    let receiver_origin = args.first().and_then(|receiver| match receiver {
+                        SsaExpr::Variable(variable) => origins.get(variable).copied(),
+                        _ => None,
+                    });
+                    if let Some(origin) = receiver_origin {
+                        shape_preserving_receivers.insert(origin);
+                    } else if let Some(receiver) = args.first() {
+                        collect_argument_origins(receiver, &origins, &mut unsafe_arguments);
+                    }
+                    for argument in args.iter().skip(1) {
+                        collect_argument_origins(argument, &origins, &mut unsafe_arguments);
+                    }
+                }
+                SsaStmt::Expr(expression)
+                | SsaStmt::Return(Some(expression))
+                | SsaStmt::Throw(Some(expression))
+                | SsaStmt::Abort(Some(expression)) => {
+                    collect_argument_origins(expression, &origins, &mut unsafe_arguments);
+                }
+                SsaStmt::Assert { condition, message } => {
+                    collect_argument_origins(condition, &origins, &mut unsafe_arguments);
+                    if let Some(message) = message {
+                        collect_argument_origins(message, &origins, &mut unsafe_arguments);
+                    }
+                }
+                SsaStmt::Return(None) | SsaStmt::Throw(None) | SsaStmt::Abort(None) => {}
+                SsaStmt::Phi(_) | SsaStmt::Other(_) => return unknown,
+            }
+        }
+    }
+
+    (0..argument_count)
+        .map(|index| {
+            if shape_preserving_receivers.contains(&index) && !unsafe_arguments.contains(&index) {
+                CollectionArgumentEffect::PreservesShape
+            } else {
+                CollectionArgumentEffect::Unknown
+            }
+        })
+        .collect()
+}
+
+fn collect_argument_origins(
+    expression: &SsaExpr,
+    origins: &BTreeMap<SsaVariable, usize>,
+    found: &mut BTreeSet<usize>,
+) {
+    match expression {
+        SsaExpr::Variable(variable) => {
+            if let Some(origin) = origins.get(variable) {
+                found.insert(*origin);
+            }
+        }
+        SsaExpr::Literal(_) => {}
+        SsaExpr::Binary { left, right, .. } => {
+            collect_argument_origins(left, origins, found);
+            collect_argument_origins(right, origins, found);
+        }
+        SsaExpr::Unary { operand, .. }
+        | SsaExpr::Member { base: operand, .. }
+        | SsaExpr::Cast { expr: operand, .. }
+        | SsaExpr::Convert { value: operand, .. }
+        | SsaExpr::IsType { value: operand, .. }
+        | SsaExpr::NewArray {
+            length: operand, ..
+        } => collect_argument_origins(operand, origins, found),
+        SsaExpr::Call { args, .. } | SsaExpr::Array(args) | SsaExpr::Struct(args) => {
+            for argument in args {
+                collect_argument_origins(argument, origins, found);
+            }
+        }
+        SsaExpr::Index { base, index } => {
+            collect_argument_origins(base, origins, found);
+            collect_argument_origins(index, origins, found);
+        }
+        SsaExpr::Map(entries) => {
+            for (key, value) in entries {
+                collect_argument_origins(key, origins, found);
+                collect_argument_origins(value, origins, found);
+            }
+        }
+        SsaExpr::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            collect_argument_origins(condition, origins, found);
+            collect_argument_origins(then_expr, origins, found);
+            collect_argument_origins(else_expr, origins, found);
+        }
     }
 }
 
@@ -386,6 +626,11 @@ fn build_call_contracts(
                 )
                 .with_may_return(method_contract.is_none_or(|contract| contract.may_return))
                 .with_return_shape(method_contract.and_then(|contract| contract.return_shape))
+                .with_argument_effects(
+                    method_contract
+                        .map(|contract| contract.argument_effects.clone())
+                        .unwrap_or_default(),
+                )
             }
             CallTarget::MethodToken {
                 hash_le,
@@ -423,7 +668,8 @@ mod tests {
     use crate::nef::{MethodToken, NefFile, NefHeader};
 
     use super::{
-        infer_method_contracts, CollectionShape, MethodContract, MethodContracts, ReturnBehavior,
+        infer_method_contracts, CollectionArgumentEffect, CollectionShape, MethodContract,
+        MethodContracts, ReturnBehavior,
     };
 
     const PRIVATE_VOID_LEAF: &[u8] = &[
@@ -500,6 +746,56 @@ mod tests {
         assert_eq!(
             contracts.get(4).expect("pair contract").return_shape,
             Some(CollectionShape::Struct(2))
+        );
+    }
+
+    #[test]
+    fn distinguishes_shape_preserving_and_resizing_argument_effects() {
+        let manifest = standard_manifest();
+        let shape_preserving = [
+            0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x03, 0x79, 0x78, 0x10, 0x51, 0xD0, 0x7A, 0x78,
+            0x11, 0x51, 0xD0, 0x40,
+        ];
+        let resizing = [
+            0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x78, 0x11, 0xCF, 0x40,
+        ];
+
+        let preserving_contracts = analyze(&shape_preserving, Some(&manifest));
+        let resizing_contracts = analyze(&resizing, Some(&manifest));
+
+        assert_eq!(
+            preserving_contracts
+                .get(4)
+                .expect("SETITEM helper contract")
+                .argument_effects,
+            vec![
+                CollectionArgumentEffect::PreservesShape,
+                CollectionArgumentEffect::Unknown,
+                CollectionArgumentEffect::Unknown,
+            ]
+        );
+        assert_eq!(
+            resizing_contracts
+                .get(4)
+                .expect("APPEND helper contract")
+                .argument_effects,
+            vec![CollectionArgumentEffect::Unknown]
+        );
+    }
+
+    #[test]
+    fn returned_argument_alias_does_not_preserve_collection_shape() {
+        let manifest = standard_manifest();
+        let identity = [0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x78, 0x40];
+
+        let contracts = analyze(&identity, Some(&manifest));
+
+        assert_eq!(
+            contracts
+                .get(4)
+                .expect("identity helper contract")
+                .argument_effects,
+            vec![CollectionArgumentEffect::Unknown]
         );
     }
 
@@ -815,6 +1111,7 @@ mod tests {
             return_behavior,
             may_return: true,
             return_shape: None,
+            argument_effects: vec![CollectionArgumentEffect::Unknown; 0],
         }
     }
 }
