@@ -40,6 +40,17 @@ pub(in crate::decompiler::csharp::render) struct CSharpMethodPlans {
     index_defined_statics: BTreeSet<usize>,
 }
 
+pub(super) struct MethodPlanDraft {
+    pub(super) start: usize,
+    pub(super) end: usize,
+    pub(super) raw_name: String,
+    pub(super) parameters: Vec<CSharpParameter>,
+    pub(super) return_type: String,
+    pub(super) return_behavior: ReturnBehavior,
+    pub(super) arguments_on_entry_stack: bool,
+    pub(super) addressable_offset: Option<usize>,
+}
+
 impl CSharpMethodPlans {
     pub(in crate::decompiler::csharp::render) fn emitted_names(
         &self,
@@ -114,4 +125,6 @@ impl Index<usize> for CSharpMethodPlans {
 
 #[path = "plan_methods.rs"]
 mod methods;
+#[path = "plan_helpers.rs"]
+mod plan_helpers;
 pub(in crate::decompiler::csharp::render) use methods::build_csharp_method_plans;

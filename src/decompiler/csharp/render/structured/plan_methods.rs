@@ -4,57 +4,26 @@ use crate::decompiler::analysis::call_graph::{CallGraph, CallTarget};
 use crate::decompiler::analysis::method_contracts::{MethodContracts, ReturnBehavior};
 use crate::decompiler::analysis::types::{TypeInfo, ValueType};
 use crate::decompiler::cfg::method_body::{
-    lower_method_body, Fidelity, LoweringIssue, LoweringIssueKind, MethodIrRequest,
-    MethodSymbolTypes, SymbolOrigin,
+    lower_method_body, Fidelity, LoweringIssue, LoweringIssueKind, MethodIrRequest, SymbolOrigin,
 };
-use crate::decompiler::cfg::ssa::{CallContract, MethodContext};
+use crate::decompiler::cfg::ssa::CallContract;
 use crate::decompiler::helpers::{
-    build_method_arg_counts_by_offset, find_manifest_entry_method, initslot_argument_count_at,
-    next_inferred_method_offset, offset_as_usize,
+    build_method_arg_counts_by_offset, find_manifest_entry_method, offset_as_usize,
 };
 use crate::decompiler::ir::SemanticCallTarget;
-use crate::instruction::{Instruction, OpCode, Operand};
-use crate::manifest::{ContractManifest, ManifestMethod};
+use crate::instruction::{Instruction, OpCode};
+use crate::manifest::ContractManifest;
 
 use super::{
     collect_index_defined_symbols, plan_contract_symbols, CSharpMethodPlan, CSharpMethodPlans,
 };
-use crate::decompiler::csharp::helpers::{
-    collect_csharp_parameters, format_manifest_type_csharp, sanitize_csharp_identifier,
-    CSharpParameter,
+use crate::decompiler::csharp::helpers::{sanitize_csharp_identifier, CSharpParameter};
+
+use super::plan_helpers::{
+    cross_range_tail_target, draft_method_context, make_unique_method_name, manifest_method_draft,
+    method_end, method_symbol_types, parameter_type_signature, synthetic_entry_draft,
 };
-
-struct MethodPlanDraft {
-    start: usize,
-    end: usize,
-    raw_name: String,
-    parameters: Vec<CSharpParameter>,
-    return_type: String,
-    return_behavior: ReturnBehavior,
-    arguments_on_entry_stack: bool,
-    addressable_offset: Option<usize>,
-}
-
-fn draft_method_context(
-    draft: &MethodPlanDraft,
-    method_contracts: &MethodContracts,
-) -> MethodContext {
-    let method_contract = method_contracts.get(draft.start);
-    MethodContext {
-        argument_names: draft
-            .parameters
-            .iter()
-            .map(|parameter| parameter.name.clone())
-            .collect(),
-        arguments_on_entry_stack: draft.arguments_on_entry_stack,
-        returns_value: return_value_option(draft.return_behavior),
-        calls_by_offset: BTreeMap::new(),
-        argument_collection_facts: method_contract
-            .map(|contract| contract.argument_collection_facts.clone())
-            .unwrap_or_default(),
-        static_collection_facts: method_contracts.static_collection_facts.clone(),
-    }
-}
+use super::MethodPlanDraft;
 
 pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
     instructions: &[Instruction],
@@ -530,150 +499,5 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
         method_arg_counts_by_offset,
         method_return_types_by_offset,
         index_defined_statics,
-    }
-}
-
-fn cross_range_tail_target(
-    instruction: &Instruction,
-    method_start: usize,
-    method_end: usize,
-) -> Option<usize> {
-    if !matches!(instruction.opcode, OpCode::Jmp | OpCode::Jmp_L) {
-        return None;
-    }
-    let target = match instruction.operand {
-        Some(Operand::Jump(delta)) => instruction.offset.checked_add_signed(delta as isize),
-        Some(Operand::Jump32(delta)) => instruction.offset.checked_add_signed(delta as isize),
-        _ => None,
-    }?;
-    (!(method_start..method_end).contains(&target)).then_some(target)
-}
-
-fn synthetic_entry_draft(
-    instructions: &[Instruction],
-    inferred_method_starts: &[usize],
-    entry_offset: usize,
-    script_end: usize,
-) -> MethodPlanDraft {
-    let argument_count = initslot_argument_count_at(instructions, entry_offset).unwrap_or(0);
-    MethodPlanDraft {
-        start: entry_offset,
-        end: method_end(inferred_method_starts, entry_offset, script_end),
-        raw_name: "ScriptEntry".to_string(),
-        parameters: (0..argument_count)
-            .map(|index| CSharpParameter {
-                name: format!("arg{index}"),
-                ty: "object".to_string(),
-            })
-            .collect(),
-        return_type: "object".to_string(),
-        return_behavior: ReturnBehavior::Unknown,
-        arguments_on_entry_stack: instructions
-            .iter()
-            .find(|instruction| instruction.offset == entry_offset)
-            .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
-        addressable_offset: Some(entry_offset),
-    }
-}
-
-fn manifest_method_draft(
-    method: &ManifestMethod,
-    start: usize,
-    end: usize,
-    addressable_offset: Option<usize>,
-    instructions: &[Instruction],
-) -> MethodPlanDraft {
-    let return_type = format_manifest_type_csharp(&method.return_type, true);
-    MethodPlanDraft {
-        start,
-        end,
-        raw_name: method.name.clone(),
-        parameters: collect_csharp_parameters(&method.parameters),
-        return_behavior: if return_type == "void" {
-            ReturnBehavior::Void
-        } else {
-            ReturnBehavior::Value
-        },
-        return_type,
-        arguments_on_entry_stack: instructions
-            .iter()
-            .find(|instruction| instruction.offset == start)
-            .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
-        addressable_offset,
-    }
-}
-
-fn method_end(inferred_method_starts: &[usize], start: usize, script_end: usize) -> usize {
-    next_inferred_method_offset(inferred_method_starts, start).unwrap_or(script_end)
-}
-
-fn parameter_type_signature(parameters: &[CSharpParameter]) -> String {
-    parameters
-        .iter()
-        .map(|parameter| parameter.ty.as_str())
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-fn make_unique_method_name(
-    base: String,
-    signature: &str,
-    used: &mut HashSet<(String, String)>,
-    base_occurrences: &mut HashMap<String, usize>,
-    reserved_member_names: &HashSet<String>,
-) -> String {
-    let occurrence = base_occurrences.entry(base.clone()).or_default();
-    let mut suffix = *occurrence;
-    *occurrence += 1;
-
-    if !reserved_member_names.contains(&base) && used.insert((base.clone(), signature.to_string()))
-    {
-        return base;
-    }
-
-    suffix = suffix.max(1);
-    loop {
-        let candidate = format!("{base}_{suffix}");
-        if !reserved_member_names.contains(&candidate)
-            && used.insert((candidate.clone(), signature.to_string()))
-        {
-            return candidate;
-        }
-        suffix += 1;
-    }
-}
-
-fn return_value_option(return_behavior: ReturnBehavior) -> Option<bool> {
-    match return_behavior {
-        ReturnBehavior::Value => Some(true),
-        ReturnBehavior::Void => Some(false),
-        ReturnBehavior::Unknown => None,
-    }
-}
-
-fn method_symbol_types(
-    types: &TypeInfo,
-    start: usize,
-    csharp_parameters: &[CSharpParameter],
-) -> MethodSymbolTypes {
-    let inferred = types
-        .methods
-        .iter()
-        .find(|method| method.method.offset == start);
-    let mut parameters = inferred
-        .map(|method| method.arguments.clone())
-        .unwrap_or_default();
-    parameters.resize(csharp_parameters.len(), ValueType::Unknown);
-    for (value_type, parameter) in parameters.iter_mut().zip(csharp_parameters) {
-        if *value_type == ValueType::Unknown && parameter.ty == "object" {
-            *value_type = ValueType::Any;
-        }
-    }
-    MethodSymbolTypes {
-        parameters,
-        locals: inferred
-            .map(|method| method.locals.clone())
-            .unwrap_or_default(),
-        statics: types.statics.clone(),
     }
 }
