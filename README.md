@@ -77,7 +77,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 | --------------- | ------ | ---------------------------------------------------------- |
 | Pseudocode      | ✅     | Linear instruction listing with resolved operands          |
 | High-Level View | ✅     | Structured code with control flow and expressions          |
-| C# Skeleton     | ✅     | Compilable stub with attributes, events, method signatures |
+| C# Contract     | ✅     | Manifest-aware contract with attributes, events, signatures, and structured lifted bodies |
 | JSON Reports    | ✅     | Machine-readable output with JSON Schema validation        |
 | Text Reports    | ✅     | Human-readable formatted output                            |
 
@@ -545,10 +545,12 @@ Pattern analysis is deliberately conservative: manifest standards are treated
 as authoritative, while ABI names, events, syscalls, permissions, and NEF
 compiler/source metadata are retained as explainable evidence with lower
 confidence. Behavior signals currently include storage, notifications, events,
-ownership, royalties, external calls, method tokens, native contract calls
+ownership, royalties, minting, burning, pausable controls, signature
+verification, multisig, external calls, method tokens, native contract calls
 (including Oracle, governance, role management, policy/token management,
 ledger, notary, treasury, contract management, and upgradeability), and
-wildcard permissions.
+wildcard permissions. Explicit compiler/source hints also identify C#, Python,
+Go, Rust, and TypeScript/JavaScript when metadata supports them.
 ABI method signatures can conservatively infer NEP-17, NEP-11, and NEP-24
 (royaltyInfo) when no standard is declared by the manifest.
 
