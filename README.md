@@ -259,6 +259,10 @@ cargo build --release
 # result as source rather than tracing it back to raw bytecode.
 ./target/release/neo-decompiler decompile path/to/contract.nef
 
+# Use inferred C# types for body-local declarations where the analysis is
+# confident (for example, `BigInteger loc0` instead of `dynamic loc0`).
+./target/release/neo-decompiler decompile --typed-declarations path/to/contract.nef
+
 # Re-enable the per-instruction `// XXXX: OPCODE` trace comments above each
 # lifted statement (useful when cross-referencing the high-level view against
 # the raw disassembly).
