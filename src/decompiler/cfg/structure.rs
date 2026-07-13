@@ -15,10 +15,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use crate::decompiler::cfg::{BasicBlock, BlockId, Cfg, EdgeKind, Terminator};
-use crate::decompiler::ir::{
-    BinOp, Block as IrBlock, ControlFlow, Expr, Intrinsic, SemanticCallTarget, Stmt,
-};
-use crate::instruction::OpCode;
+use crate::decompiler::ir::{BinOp, Block as IrBlock, ControlFlow, Expr, Stmt};
 
 use super::phi_lowering::PhiLowering;
 use super::ssa::{
@@ -28,6 +25,7 @@ use super::ssa::{
 mod analysis;
 mod cleanup;
 mod regions;
+mod switches;
 mod try_regions;
 
 #[cfg(test)]
@@ -596,126 +594,6 @@ impl<'a> StructCtx<'a> {
         ))));
     }
 
-    /// Try to recognise a `switch` equality-cascade starting at `bid`.
-    ///
-    /// A Neo C# `switch` lowers to a cascade of `if (scrut == const)` branches
-    /// sharing one scrutinee, terminated by a default tail. Each case body is
-    /// the branch's then-target; the else-chain either continues the cascade or
-    /// reaches the default. Requires at least two equality cases on the same
-    /// scrutinee; otherwise returns `None` (caller falls back to if/else).
-    fn try_switch(
-        &self,
-        bid: BlockId,
-        then_target: BlockId,
-        else_target: BlockId,
-        visited: &mut HashSet<BlockId>,
-    ) -> Option<SwitchResult> {
-        // The first comparison must be `scrut == const` (or `const == scrut`).
-        let first = self.condition_expression(bid)?;
-        let (scrutinee, first_val) = extract_eq_cond(&first)?;
-        let scrut_base = scrutinee.base.clone();
-
-        // Collect the cascade along the else-chain.
-        let mut cases: Vec<(Expr, BlockId, BlockId)> = vec![(
-            ssa_expr_to_ir_with_source_names(&first_val, self.source_names),
-            bid,
-            then_target,
-        )];
-        let mut cur = else_target;
-        let mut default_from = bid;
-        let default_entry;
-        loop {
-            // Stop if `cur` has multiple predecessors (a join / merge): the
-            // cascade has reconverged, so what follows is shared code, not a
-            // case comparison.
-            if self.cfg.predecessors(cur).len() >= 2 {
-                default_entry = cur;
-                break;
-            }
-            match self.terminator(cur) {
-                Terminator::Branch {
-                    then_target,
-                    else_target,
-                } => {
-                    if !self.can_promote_switch_comparison(cur, &scrut_base) {
-                        default_entry = cur;
-                        break;
-                    }
-                    let cond = self.condition_expression(cur);
-                    match cond.and_then(|c| extract_eq_cond(&c)) {
-                        Some((variable, val)) if variable.base == scrut_base => {
-                            cases.push((
-                                ssa_expr_to_ir_with_source_names(&val, self.source_names),
-                                cur,
-                                then_target,
-                            ));
-                            default_from = cur;
-                            cur = else_target;
-                        }
-                        _ => {
-                            default_entry = cur;
-                            break;
-                        }
-                    }
-                }
-                _ => {
-                    default_entry = cur;
-                    break;
-                }
-            }
-        }
-
-        // Need at least two real equality cases to be worth a switch.
-        if cases.len() < 2 {
-            return None;
-        }
-
-        // The merge: where the case bodies and default reconverge. Use the join
-        // of the first case body and the default tail.
-        let merge = self.find_merge(cases[0].2, default_entry);
-
-        let mut case_blocks: Vec<(Expr, IrBlock)> = Vec::with_capacity(cases.len());
-        for (val, comparison_block, body_entry) in &cases {
-            let body = self.structure_edge_region(*comparison_block, *body_entry, merge, visited);
-            case_blocks.push((val.clone(), body));
-        }
-        let default_body = self.structure_edge_region(default_from, default_entry, merge, visited);
-        let default = if default_body.is_empty() {
-            None
-        } else {
-            Some(default_body)
-        };
-
-        Some(SwitchResult {
-            scrutinee: ssa_expr_to_ir_with_source_names(
-                &SsaExpr::var(scrutinee),
-                self.source_names,
-            ),
-            cases: case_blocks,
-            default,
-            merge,
-        })
-    }
-
-    fn can_promote_switch_comparison(&self, bid: BlockId, scrutinee: &str) -> bool {
-        let Some(condition) = self.condition_variable_for_block(bid) else {
-            return false;
-        };
-        if !self.can_inline_condition(bid, condition) {
-            return false;
-        }
-        self.ssa.block(bid).is_some_and(|block| {
-            block.phi_nodes.is_empty()
-                && block.stmts.iter().all(|stmt| match stmt {
-                    SsaStmt::Assign { target, .. } if target == condition => true,
-                    SsaStmt::Assign { target, value } => {
-                        target.base == scrutinee && is_slot_load(value)
-                    }
-                    _ => false,
-                })
-        })
-    }
-
     /// Find the merge of two branch arms: the closest real join that
     /// post-dominates both entries. Reachability alone is insufficient because
     /// one arm may be able to bypass a nearer join.
@@ -1226,70 +1104,4 @@ impl<'a> StructCtx<'a> {
             .map(|b| b.terminator.clone())
             .unwrap_or(Terminator::Unknown)
     }
-}
-
-/// Result of recognising a switch cascade: scrutinee, cases, optional default,
-/// and the merge block to continue from.
-struct SwitchResult {
-    scrutinee: Expr,
-    cases: Vec<(Expr, IrBlock)>,
-    default: Option<IrBlock>,
-    merge: Option<BlockId>,
-}
-
-/// If `expr` is an equality comparison `scrut == literal` (either order), return
-/// the scrutinee's base variable name and the literal operand. Used to recognise
-/// switch-case comparisons; the base name lets cases match across SSA versions.
-fn extract_eq_cond(expr: &SsaExpr) -> Option<(SsaVariable, SsaExpr)> {
-    use crate::decompiler::ir::BinOp;
-    let SsaExpr::Binary { op, left, right } = expr else {
-        return None;
-    };
-    if !matches!(*op, BinOp::Eq) {
-        return None;
-    }
-    match (left.as_ref(), right.as_ref()) {
-        (SsaExpr::Variable(v), lit) if is_literal(lit) => Some((v.clone(), lit.clone())),
-        (lit, SsaExpr::Variable(v)) if is_literal(lit) => Some((v.clone(), lit.clone())),
-        _ => None,
-    }
-}
-
-fn is_literal(e: &SsaExpr) -> bool {
-    matches!(e, SsaExpr::Literal(_))
-}
-
-fn is_slot_load(expr: &SsaExpr) -> bool {
-    matches!(
-        expr,
-        SsaExpr::Call {
-            target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(
-                OpCode::Ldloc0
-                    | OpCode::Ldloc1
-                    | OpCode::Ldloc2
-                    | OpCode::Ldloc3
-                    | OpCode::Ldloc4
-                    | OpCode::Ldloc5
-                    | OpCode::Ldloc6
-                    | OpCode::Ldloc
-                    | OpCode::Ldarg0
-                    | OpCode::Ldarg1
-                    | OpCode::Ldarg2
-                    | OpCode::Ldarg3
-                    | OpCode::Ldarg4
-                    | OpCode::Ldarg5
-                    | OpCode::Ldarg6
-                    | OpCode::Ldarg
-                    | OpCode::Ldsfld0
-                    | OpCode::Ldsfld1
-                    | OpCode::Ldsfld2
-                    | OpCode::Ldsfld3
-                    | OpCode::Ldsfld4
-                    | OpCode::Ldsfld5
-                    | OpCode::Ldsfld6
-                    | OpCode::Ldsfld
-            )),
-            args,
-        } if args.is_empty()
-    )
 }
