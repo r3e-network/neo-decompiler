@@ -299,6 +299,22 @@ export interface TypeInfo {
   statics: string[];
 }
 
+export type PatternConfidence = "high" | "medium" | "low" | "unknown";
+
+export interface PatternEvidence {
+  source: string;
+  value: string;
+}
+
+export interface PatternInfo {
+  standards: string[];
+  patterns: string[];
+  language: string | null;
+  compiler: string | null;
+  confidence: PatternConfidence;
+  evidence: PatternEvidence[];
+}
+
 // ─── Options ───────────────────────────────────────────────────────────────
 
 export interface DisassemblyOptions {
@@ -344,6 +360,8 @@ export interface DecompileWithManifestResult extends DecompileResult {
 export interface HighLevelResult extends DecompileResult {
   methodGroups: MethodGroup[];
   methodContracts: MethodContracts;
+  /** Conservative standard, behavior-pattern, and language identification. */
+  patterns: PatternInfo;
   highLevel: string;
   /** Readable C#-style rendering of the high-level surface. */
   csharp: string;
@@ -361,6 +379,7 @@ export interface AnalyzeResult extends DecompileResult {
   methodContracts: MethodContracts;
   xrefs: Xrefs;
   types: TypeInfo;
+  patterns: PatternInfo;
 }
 
 // ─── Public API functions ──────────────────────────────────────────────────
@@ -428,6 +447,12 @@ export function inferTypes(
   methodGroups: MethodGroup[],
   manifest?: ContractManifest | null,
 ): TypeInfo;
+
+export function identifyPatterns(
+  nef: NefFile,
+  instructions: Instruction[],
+  manifest?: ContractManifest | null,
+): PatternInfo;
 
 export function renderPseudocode(instructions: Instruction[]): string;
 

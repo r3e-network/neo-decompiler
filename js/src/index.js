@@ -8,6 +8,7 @@ import { renderGroupedPseudocode } from "./grouped-pseudocode.js";
 import { renderHighLevelMethodGroups } from "./high-level.js";
 import { classifyPermissionContract, parseManifest } from "./manifest.js";
 import { inferMethodContracts } from "./method-contracts.js";
+import { identifyPatterns } from "./patterns.js";
 import { buildMethodGroups } from "./methods.js";
 import { describeMethodToken } from "./native-contracts.js";
 import { renderPseudocode } from "./pseudocode.js";
@@ -20,6 +21,7 @@ export {
   buildXrefs,
   classifyPermissionContract,
   inferTypes,
+  identifyPatterns,
   parseManifest,
   parseNef,
   disassembleScript,
@@ -91,6 +93,7 @@ export function analyzeBytes(bytes, manifestInput = null, options = {}) {
     methodGroups,
     callGraph,
     methodContracts: context.methodContracts,
+    patterns: identifyPatterns(result.nef, result.instructions, manifest),
     xrefs: buildXrefs(result.instructions, analysisGroups),
     types: inferTypes(result.instructions, analysisGroups, manifest),
   };
@@ -154,6 +157,7 @@ export function decompileHighLevelBytes(bytes, options = {}) {
     warnings: [...result.warnings, ...context.highLevelWarnings],
     methodGroups,
     methodContracts: context.methodContracts,
+    patterns: identifyPatterns(result.nef, result.instructions, null),
     highLevel,
     csharp: renderCSharpContract(highLevel),
   };
@@ -190,6 +194,7 @@ export function decompileHighLevelBytesWithManifest(bytes, manifestInput, option
     manifest,
     methodGroups,
     methodContracts: context.methodContracts,
+    patterns: identifyPatterns(result.nef, result.instructions, manifest),
     highLevel,
     csharp: renderCSharpContract(highLevel, manifest),
     groupedPseudocode: renderGroupedPseudocode(methodGroups, manifest),

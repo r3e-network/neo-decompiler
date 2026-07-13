@@ -4,7 +4,8 @@ use super::instructions::InstructionReport;
 use super::manifest::ManifestSummary;
 use super::method_tokens::MethodTokenReport;
 use crate::decompiler::analysis::{
-    call_graph::CallGraph, method_contracts::MethodContracts, types::TypeInfo, xrefs::Xrefs,
+    call_graph::CallGraph, method_contracts::MethodContracts, patterns::PatternInfo,
+    types::TypeInfo, xrefs::Xrefs,
 };
 
 #[derive(Serialize)]
@@ -64,4 +65,5 @@ pub(in crate::cli) struct AnalysisReport {
     pub(in crate::cli) method_contracts: MethodContracts,
     pub(in crate::cli) xrefs: Xrefs,
     pub(in crate::cli) types: TypeInfo,
+    pub(in crate::cli) patterns: PatternInfo,
 }

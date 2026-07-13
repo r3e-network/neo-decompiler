@@ -49,6 +49,7 @@ console.log(analysis.callGraph);
 console.log(analysis.methodContracts);
 console.log(analysis.xrefs);
 console.log(analysis.types);
+console.log(analysis.patterns);
 
 // Step by step
 const nef = parseNef(nefBytes);
@@ -74,7 +75,7 @@ Parse and disassemble. Returns simple pseudocode listing.
 
 Parse, disassemble, and group methods using manifest ABI info. Returns grouped pseudocode.
 
-### `decompileHighLevelBytes(bytes, options?) → { ..., highLevel, csharp, methodContracts }`
+### `decompileHighLevelBytes(bytes, options?) → { ..., highLevel, csharp, methodContracts, patterns }`
 
 Full decompilation to structured pseudocode (if/else, loops, etc.).
 
@@ -91,7 +92,7 @@ Full decompilation to structured pseudocode (if/else, loops, etc.).
 - `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
   for opcodes the disassembler does not recognise.
 
-### `decompileHighLevelBytesWithManifest(bytes, manifest, options?) → { ..., highLevel, csharp, methodContracts }`
+### `decompileHighLevelBytesWithManifest(bytes, manifest, options?) → { ..., highLevel, csharp, methodContracts, patterns }`
 
 Same as above but with manifest-driven method signatures. Accepts the
 same `options` object.
@@ -100,13 +101,18 @@ same `options` object.
 expressions remain visible when they do not have a direct C# translation; the
 field is source-oriented and is not a guarantee of framework compilation.
 
-### `analyzeBytes(bytes, manifest?) → { ..., callGraph, methodContracts, xrefs, types, methodGroups }`
+### `analyzeBytes(bytes, manifest?) → { ..., callGraph, methodContracts, xrefs, types, patterns, methodGroups }`
 
 Full analysis with call graph, deterministic method stack-call contracts,
 cross-references, and type inference. Each method contract reports
 `argumentCount` and a tri-state `returnBehavior` (`value`, `void`, or
 `unknown`); unknown methods remain conservatively value-producing while
 lifting calls.
+
+`patterns` reports declared or inferred standards, behavior patterns such as
+`storage` and `notifications`, compiler/language hints, an aggregate confidence,
+and the evidence signals behind each result. Manifest standards are high
+confidence; bytecode-only hints remain conservative.
 
 ### `parseManifest(json) → { name, abi, ... }`
 

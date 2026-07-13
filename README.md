@@ -528,10 +528,18 @@ under the top-level `analysis` key:
   "analysis": {
     "call_graph": { "methods": [], "edges": [] },
     "xrefs": { "methods": [] },
-    "types": { "methods": [], "statics": [] }
+    "types": { "methods": [], "statics": [] },
+    "patterns": {
+      "standards": [], "patterns": [], "language": null,
+      "compiler": null, "confidence": "unknown", "evidence": []
+    }
   }
 }
 ```
+
+Pattern analysis is deliberately conservative: manifest standards are treated
+as authoritative, while ABI names, syscalls, and NEF compiler/source metadata
+are retained as explainable evidence with lower confidence.
 
 `contract.type` is `Hash` for explicit script hashes, `Group` for public-key groups,
 and `Wildcard` when `*` is specified. `methods.type` mirrors the same wildcard vs list

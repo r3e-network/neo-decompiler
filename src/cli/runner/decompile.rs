@@ -101,6 +101,7 @@ impl Cli {
                     instructions,
                     call_graph,
                     method_contracts,
+                    patterns,
                     xrefs,
                     types,
                     pseudocode,
@@ -138,6 +139,7 @@ impl Cli {
                     analysis: AnalysisReport {
                         call_graph,
                         method_contracts,
+                        patterns,
                         xrefs,
                         types,
                     },

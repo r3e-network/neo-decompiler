@@ -4,7 +4,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::decompiler::analysis::{
-    call_graph::CallGraph, method_contracts::MethodContracts, types::TypeInfo, xrefs::Xrefs,
+    call_graph::CallGraph, method_contracts::MethodContracts, patterns::PatternInfo,
+    types::TypeInfo, xrefs::Xrefs,
 };
 use crate::decompiler::Decompilation;
 use crate::disassembler::DisassemblyOutput;
@@ -101,6 +102,7 @@ pub(super) fn build_decompile_report(result: Decompilation) -> WebDecompileRepor
         instructions,
         call_graph,
         method_contracts,
+        patterns,
         xrefs,
         types,
         pseudocode,
@@ -139,6 +141,7 @@ pub(super) fn build_decompile_report(result: Decompilation) -> WebDecompileRepor
         analysis: AnalysisReport {
             call_graph,
             method_contracts,
+            patterns,
             xrefs,
             types,
         },
@@ -152,6 +155,7 @@ struct AnalysisReport {
     method_contracts: MethodContracts,
     xrefs: Xrefs,
     types: TypeInfo,
+    patterns: PatternInfo,
 }
 
 #[derive(Debug, Clone, Serialize)]

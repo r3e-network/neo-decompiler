@@ -43,6 +43,7 @@ mod methods;
 
 pub mod call_graph;
 pub mod method_contracts;
+pub mod patterns;
 pub mod types;
 pub mod xrefs;
 

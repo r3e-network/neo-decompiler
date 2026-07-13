@@ -155,6 +155,8 @@ impl Decompiler {
             manifest.as_ref(),
             &call_graph,
         );
+        let patterns =
+            analysis::patterns::identify_patterns(&nef, &instructions, manifest.as_ref());
         let xrefs = analysis::xrefs::build_xrefs(&instructions, manifest.as_ref());
         let types = analysis::types::infer_types(&instructions, manifest.as_ref());
 
@@ -205,6 +207,7 @@ impl Decompiler {
             cfg,
             call_graph,
             method_contracts,
+            patterns,
             xrefs,
             types,
             pseudocode,

@@ -28,6 +28,7 @@ pub use crate::decompiler::analysis::call_graph::{CallEdge, CallGraph, CallTarge
 pub use crate::decompiler::analysis::method_contracts::{
     CollectionArgumentEffect, CollectionShape, MethodContract, MethodContracts, ReturnBehavior,
 };
+pub use crate::decompiler::analysis::patterns::{PatternConfidence, PatternEvidence, PatternInfo};
 pub use crate::decompiler::analysis::types::{MethodTypes, TypeInfo, ValueType};
 pub use crate::decompiler::analysis::xrefs::{MethodXrefs, SlotKind, SlotXref, Xrefs};
 pub use crate::decompiler::analysis::MethodRef;
