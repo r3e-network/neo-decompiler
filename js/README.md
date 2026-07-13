@@ -110,9 +110,9 @@ cross-references, and type inference. Each method contract reports
 lifting calls.
 
 `patterns` reports declared or inferred standards, behavior patterns such as
-`storage` and `notifications`, compiler/language hints, an aggregate confidence,
-and the evidence signals behind each result. Manifest standards are high
-confidence; bytecode-only hints remain conservative.
+`storage`, `notifications`, `events`, and `ownership`, compiler/language hints,
+an aggregate confidence, and the evidence signals behind each result. Manifest
+standards are high confidence; bytecode-only hints remain conservative.
 
 ### `parseManifest(json) → { name, abi, ... }`
 
