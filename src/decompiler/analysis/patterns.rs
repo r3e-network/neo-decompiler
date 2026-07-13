@@ -11,6 +11,7 @@ use serde::Serialize;
 use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::ContractManifest;
 use crate::manifest::{ManifestPermissionContract, ManifestPermissionMethods};
+use crate::native_contracts;
 use crate::nef::NefFile;
 
 /// Confidence assigned to an identified pattern or language hint.
@@ -150,6 +151,20 @@ pub fn identify_patterns(
             source: "nef.method_tokens".to_string(),
             value: nef.method_tokens.len().to_string(),
         });
+    }
+    for token in &nef.method_tokens {
+        if let Some(hint) = native_contracts::describe_method_token(&token.hash, &token.method)
+            .filter(|hint| hint.has_exact_method())
+        {
+            patterns.insert("native_contract_calls".to_string());
+            evidence.push(PatternEvidence {
+                source: "nef.method_tokens.native".to_string(),
+                value: hint.formatted_label(&token.method),
+            });
+            if hint.contract == "OracleContract" {
+                patterns.insert("oracle".to_string());
+            }
+        }
     }
     if instructions.iter().any(|instruction| {
         matches!(instruction.opcode, OpCode::CallA | OpCode::CallT)
@@ -414,5 +429,31 @@ mod tests {
         );
         assert_eq!(info.patterns, vec!["external_calls", "method_tokens"]);
         assert!(info.standards.is_empty());
+    }
+
+    #[test]
+    fn native_oracle_method_tokens_report_oracle_behavior() {
+        let nef = NefFile {
+            method_tokens: vec![crate::nef::MethodToken {
+                hash: [
+                    0x58, 0x87, 0x17, 0x11, 0x7E, 0x0A, 0xA8, 0x10, 0x72, 0xAF, 0xAB, 0x71, 0xD2,
+                    0xDD, 0x89, 0xFE, 0x7C, 0x4B, 0x92, 0xFE,
+                ],
+                method: "Request".to_string(),
+                parameters_count: 0,
+                has_return_value: true,
+                call_flags: 0x0F,
+            }],
+            ..nef("", "")
+        };
+        let info = identify_patterns(&nef, &[], None);
+        assert_eq!(
+            info.patterns,
+            vec!["method_tokens", "native_contract_calls", "oracle"]
+        );
+        assert!(info
+            .evidence
+            .iter()
+            .any(|entry| entry.value == "OracleContract::Request"));
     }
 }

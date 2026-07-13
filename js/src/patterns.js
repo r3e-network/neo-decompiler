@@ -1,4 +1,5 @@
 import { SYSCALLS } from "./generated/syscalls.js";
+import { describeMethodToken } from "./native-contracts.js";
 
 /**
  * Conservative contract-standard and source-language pattern identification.
@@ -77,6 +78,18 @@ export function identifyPatterns(nef, instructions, manifest = null) {
   if ((nef?.methodTokens ?? []).length > 0) {
     patterns.add("method_tokens");
     evidence.push({ source: "nef.method_tokens", value: String(nef.methodTokens.length) });
+  }
+  for (const token of nef?.methodTokens ?? []) {
+    if (!(token.hash instanceof Uint8Array)) continue;
+    const hint = describeMethodToken(token.hash, token.method);
+    if (hint?.hasExactMethod()) {
+      patterns.add("native_contract_calls");
+      evidence.push({
+        source: "nef.method_tokens.native",
+        value: hint.formattedLabel(token.method),
+      });
+      if (hint.contract === "OracleContract") patterns.add("oracle");
+    }
   }
   if ((instructions ?? []).some((instruction) =>
     instruction.opcode?.mnemonic === "CALLA" ||

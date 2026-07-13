@@ -127,6 +127,25 @@ test("pattern analysis identifies external-call bytecode signals", () => {
   );
 });
 
+test("pattern analysis identifies native oracle calls from method tokens", () => {
+  const info = identifyPatterns(
+    {
+      ...nef(),
+      methodTokens: [{
+        hash: Uint8Array.from([
+          0x58, 0x87, 0x17, 0x11, 0x7E, 0x0A, 0xA8, 0x10, 0x72, 0xAF, 0xAB,
+          0x71, 0xD2, 0xDD, 0x89, 0xFE, 0x7C, 0x4B, 0x92, 0xFE,
+        ],),
+        method: "Request",
+      }],
+    },
+    [],
+    null,
+  );
+  assert.deepEqual(info.patterns, ["method_tokens", "native_contract_calls", "oracle"]);
+  assert.ok(info.evidence.some((entry) => entry.value === "OracleContract::Request"));
+});
+
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const source = [
     "contract Token {",
