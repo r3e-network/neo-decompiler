@@ -8,7 +8,9 @@
 //! - Consecutive standalone `if` blocks comparing the same variable (minimum 3 cases)
 
 use super::super::HighLevelEmitter;
-use super::util::{extract_any_if_condition, is_else_if_open, is_else_open, is_if_open};
+use super::util::{extract_any_if_condition, is_else_open, is_if_open};
+
+mod chain;
 
 impl HighLevelEmitter {
     /// Rewrite eligible `if` / `else if` chains into `switch` blocks.
@@ -20,7 +22,7 @@ impl HighLevelEmitter {
                 index += 1;
                 continue;
             }
-            if let Some((replacement, end)) = try_build_switch(statements, index) {
+            if let Some((replacement, end)) = chain::try_build_switch(statements, index) {
                 statements.splice(index..=end, replacement);
                 index += 1;
                 continue;
@@ -195,166 +197,6 @@ fn try_build_guarded_goto_switch(
     output.push("}".into());
 
     Some((output, rewrite_end))
-}
-
-fn try_build_switch(statements: &[String], start: usize) -> Option<(Vec<String>, usize)> {
-    let header = statements.get(start)?.trim();
-    if !is_if_open(header) {
-        return None;
-    }
-
-    let mut cases: Vec<(String, Vec<String>)> = Vec::new();
-    let mut default_body: Option<Vec<String>> = None;
-    let mut overall_end = start;
-    let mut has_else_link = false;
-
-    let mut current_header = start;
-    let mut scrutinee: Option<String> = None;
-
-    loop {
-        let header_line = statements.get(current_header)?.trim();
-        let condition = extract_any_if_condition(header_line)?;
-        let resolved = resolve_condition_expression(statements, current_header, condition)?;
-        let (next_scrutinee, case_token) = parse_case_sides(resolved.as_str())?;
-
-        let case_value = resolve_case_value(statements, current_header, case_token)?;
-        if !is_literal(case_value.as_str()) {
-            return None;
-        }
-
-        if let Some(existing) = &scrutinee {
-            if existing != &next_scrutinee {
-                return None;
-            }
-        } else {
-            scrutinee = Some(next_scrutinee);
-        }
-
-        let (body, if_end) = extract_block_body(statements, current_header)?;
-        overall_end = overall_end.max(if_end);
-        cases.push((case_value, body));
-
-        let (trivia, next_header) = collect_trivia(statements, if_end + 1);
-        if next_header >= statements.len() {
-            break;
-        }
-
-        let next_line = statements[next_header].trim();
-        if is_else_if_open(next_line) {
-            has_else_link = true;
-            if let Some((_, last_body)) = cases.last_mut() {
-                last_body.extend(trivia);
-            }
-            current_header = next_header;
-            continue;
-        }
-
-        if is_else_open(next_line) {
-            has_else_link = true;
-            let else_end = HighLevelEmitter::find_block_end(statements, next_header)?;
-            overall_end = overall_end.max(else_end);
-
-            // Try to flatten an `else { <if-chain> }` into an `else if`.
-            if let Some(inner_start) = find_first_if_in_range(statements, next_header + 1, else_end)
-            {
-                let inner_chain_end = end_of_if_chain(statements, inner_start)?;
-                if inner_chain_end < else_end {
-                    let (inner_trivia, after_inner) =
-                        collect_trivia(statements, inner_chain_end + 1);
-                    let only_trivia_left = after_inner == else_end;
-                    if only_trivia_left {
-                        if let Some((_, last_body)) = cases.last_mut() {
-                            last_body.extend(trivia);
-                            last_body.extend(inner_trivia);
-                        }
-                        current_header = inner_start;
-                        overall_end = overall_end.max(else_end);
-                        continue;
-                    }
-                }
-            }
-
-            if let Some((_, last_body)) = cases.last_mut() {
-                last_body.extend(trivia);
-            }
-
-            default_body = Some(
-                statements
-                    .get(next_header + 1..else_end)
-                    .unwrap_or_default()
-                    .to_vec(),
-            );
-            break;
-        }
-
-        // Consecutive standalone `if` comparing the same scrutinee.
-        if let Some(next_if_header) = find_next_if_after_case_prelude(statements, if_end + 1) {
-            let next_if_line = statements[next_if_header].trim();
-            if let Some(cond) = extract_any_if_condition(next_if_line) {
-                if let Some(resolved) =
-                    resolve_condition_expression(statements, next_if_header, cond)
-                {
-                    if let Some((peek_scrutinee, _)) = parse_case_sides(resolved.as_str()) {
-                        if scrutinee.as_deref() == Some(peek_scrutinee.as_str()) {
-                            current_header = next_if_header;
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-
-        break;
-    }
-
-    let scrutinee = scrutinee?;
-
-    // Require at least 2 cases for `if/else if` chains (unambiguous pattern)
-    // and at least 3 for consecutive standalone `if` blocks (conservative).
-    let min_cases = if has_else_link { 2 } else { 3 };
-    if cases.len() < min_cases {
-        return None;
-    }
-
-    // Ensure case values are unique for readability.
-    {
-        let mut seen = std::collections::BTreeSet::new();
-        if !cases.iter().all(|(value, _)| seen.insert(value.clone())) {
-            return None;
-        }
-    }
-
-    // Consecutive standalone `if` blocks (no `else` links) are only
-    // equivalent to a `switch` when at most one case can run. The original
-    // bytecode executes each `if x == k { ... }` in sequence, so if a case
-    // body reassigns the scrutinee a later comparison can also fire — a
-    // common state-machine step pattern. A `switch` would assert exactly one
-    // case runs, changing program semantics. Require every case body to be
-    // provably exclusive (ends in a terminator, or never reassigns the
-    // scrutinee) before rewriting; otherwise leave the if-chain intact.
-    if !has_else_link
-        && !cases
-            .iter()
-            .all(|(_, body)| case_body_is_switch_safe(body, &scrutinee))
-    {
-        return None;
-    }
-
-    let mut output = Vec::new();
-    output.push(format!("switch {scrutinee} {{"));
-    for (value, body) in &cases {
-        output.push(format!("case {value} {{"));
-        output.extend(body.iter().cloned());
-        output.push("}".into());
-    }
-    if let Some(body) = default_body {
-        output.push("default {".into());
-        output.extend(body);
-        output.push("}".into());
-    }
-    output.push("}".into());
-
-    Some((output, overall_end))
 }
 
 fn extract_block_body(statements: &[String], header_index: usize) -> Option<(Vec<String>, usize)> {
