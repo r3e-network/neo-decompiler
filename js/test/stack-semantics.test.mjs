@@ -121,6 +121,20 @@ test("postprocess: a negated single-temp loop/if condition inlines as !(expr)", 
   assert.deepEqual(whileBare.filter((s) => s !== ""), ["while loc0 > 3 {", "}"]);
 });
 
+test("postprocess: strips VM swap comments like the Rust cleanup pass", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "let t0 = 1;",
+    "// swapped top two stack values",
+    "return t0;",
+  ];
+  postprocess(statements, {});
+  assert.ok(
+    !statements.some((line) => line.includes("swapped top")),
+    `VM swap comment should be removed: ${statements}`,
+  );
+});
+
 test("stack-semantics: unary NEGATE/INVERT/NOT preserve precedence over a compound operand", () => {
   // PUSH2 ; PUSH3 ; ADD ; NEGATE ; RET — the negation applies to the whole
   // sum. A bare `-2 + 3` would parse as `(-2) + 3` (= 1), not `-(2 + 3)`

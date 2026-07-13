@@ -112,6 +112,7 @@ function stripStackComments(statements) {
     if (
       trimmed.startsWith("// drop ") ||
       trimmed.startsWith("// remove second") ||
+      trimmed.startsWith("// swapped top") ||
       // `// xdrop stack[N] (removed X)` and the dynamic-index variant
       // are accurate but read as VM-internal noise — Rust strips them
       // already; mirror that so the two ports stay byte-identical on
