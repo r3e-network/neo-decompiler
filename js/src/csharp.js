@@ -105,6 +105,12 @@ function isSafeManifestMethod(name, manifest) {
   );
 }
 
+function manifestMethodForName(name, manifest) {
+  return (manifest?.abi?.methods ?? []).find(
+    (method) => sanitizeIdentifier(method.name) === name,
+  ) ?? null;
+}
+
 function renderBodyLine(line) {
   const indentation = line.match(/^\s*/)?.[0] ?? "";
   const trimmed = line.trim();
@@ -300,8 +306,13 @@ export function renderCSharpContract(highLevel, manifest = null) {
     const signature = renderSignature(line);
     if (signature) {
       const name = line.match(/^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
+      const method = name ? manifestMethodForName(name, manifest) : null;
+      const indentation = line.match(/^\s*/)?.[0] ?? "";
+      if (method && sanitizeIdentifier(method.name) !== method.name) {
+        output.push(`${indentation}[DisplayName("${escapeCSharpString(method.name)}")]`);
+      }
       if (name && isSafeManifestMethod(name, manifest)) {
-        output.push(`${line.match(/^\s*/)?.[0] ?? ""}[Safe]`);
+        output.push(`${indentation}[Safe]`);
       }
       output.push(signature);
       continue;

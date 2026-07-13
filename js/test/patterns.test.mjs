@@ -127,3 +127,17 @@ test("C# rendering preserves safe ABI methods", () => {
   );
   assert.match(csharp, /\[Safe\]\npublic static BigInteger balanceOf\(UInt160 account\)/);
 });
+
+test("C# rendering preserves raw names for sanitized ABI methods", () => {
+  const csharp = renderCSharpContract(
+    "contract Token {\nfn balance_of(UInt160 account) -> int {\n}\n}",
+    {
+      supportedStandards: [],
+      abi: {
+        methods: [{ name: "balance-of", safe: true, parameters: [], returnType: "Integer" }],
+        events: [],
+      },
+    },
+  );
+  assert.match(csharp, /\[DisplayName\("balance-of"\)\]/);
+});
