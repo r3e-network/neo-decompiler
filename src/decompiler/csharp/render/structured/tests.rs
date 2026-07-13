@@ -324,6 +324,40 @@ fn null_checked_value_parameters_use_dynamic_csharp_signatures() {
 }
 
 #[test]
+fn null_checked_local_aliases_use_dynamic_csharp_signatures() {
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "NullableAlias",
+            "abi": { "methods": [{
+                "name": "valueOrDefault",
+                "parameters": [{ "name": "value", "type": "Integer" }],
+                "returntype": "Integer",
+                "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+    let instructions = vec![
+        Instruction::new(0, OpCode::Initslot, Some(Operand::Bytes(vec![1, 1]))),
+        Instruction::new(3, OpCode::Ldarg0, None),
+        Instruction::new(4, OpCode::Stloc0, None),
+        Instruction::new(5, OpCode::Ldloc0, None),
+        Instruction::new(6, OpCode::Isnull, None),
+        Instruction::new(7, OpCode::Ret, None),
+    ];
+    let plans = build_csharp_method_plans(
+        &instructions,
+        Some(&manifest),
+        &CallGraph::default(),
+        &MethodContracts::default(),
+        &TypeInfo::default(),
+        &[0],
+    );
+
+    assert_eq!(plans.manifest_method(0).parameters[0].ty, "dynamic");
+}
+
+#[test]
 fn plans_declarations() {
     let body = Block::with_stmts(vec![
         Stmt::assign("t_0", Expr::int(1)),
