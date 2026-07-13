@@ -156,3 +156,17 @@ test("C# rendering lowers unambiguous collection helpers", () => {
   assert.match(csharp, /items\.Add\(value\)/);
   assert.match(csharp, /map\.ContainsKey\(key\)/);
 });
+
+test("C# rendering preserves typed buffer allocations", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn build() -> any {",
+    '    let a = new_array_t(size, "buffer");',
+    "    let b = new_buffer(size);",
+    "    return a;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /new byte\[\(int\)\(size\)\]/);
+  assert.equal((csharp.match(/new byte\[\(int\)\(size\)\]/g) ?? []).length, 2);
+});

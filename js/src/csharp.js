@@ -134,7 +134,12 @@ function renderBodyLine(line) {
 
 const CSHARP_COLLECTION_HELPERS = new Map([
   ["new_array", (args) => `new object[(int)(${args[0] ?? "???"})]`],
-  ["new_array_t", (args) => `new object[(int)(${args[0] ?? "???"})]`],
+  ["new_buffer", (args) => `new byte[(int)(${args[0] ?? "???"})]`],
+  ["new_array_t", (args) => {
+    const type = String(args[1] ?? "").replace(/^"|"$/g, "").toLowerCase();
+    const element = type === "buffer" ? "byte" : "object";
+    return `new ${element}[(int)(${args[0] ?? "???"})]`;
+  }],
   ["Map", (args) => args.length === 0 ? "new Map<object, object>()" : null],
   ["Struct", (args) => args.length === 0 ? "new Struct()" : null],
   ["is_null", (args) => args.length === 1 ? `(${args[0]} is null)` : null],
@@ -153,7 +158,7 @@ const CSHARP_COLLECTION_HELPERS = new Map([
 function rewriteKnownHelpers(line) {
   let output = line;
   for (let pass = 0; pass < 32; pass += 1) {
-    const match = output.match(/\b(new_array_t|new_array|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct)\s*\(/);
+    const match = output.match(/\b(new_array_t|new_array|new_buffer|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct)\s*\(/);
     if (!match) break;
     const open = output.indexOf("(", match.index);
     const close = findCallClose(output, open);
