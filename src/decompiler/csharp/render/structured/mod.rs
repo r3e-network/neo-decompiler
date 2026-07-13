@@ -1,4 +1,5 @@
 pub(super) mod expr;
+pub(super) mod expr_inline;
 pub(super) mod plan;
 pub(super) mod stmt;
 
