@@ -96,6 +96,11 @@ test("pattern analysis infers Java from compiler metadata", () => {
   assert.equal(info.confidence, "medium");
 });
 
+test("pattern analysis keeps JavaScript ahead of the Java substring", () => {
+  const info = identifyPatterns(nef("neo-javascript-compiler 1"), [], null);
+  assert.equal(info.language, "TypeScript/JavaScript");
+});
+
 test("pattern analysis identifies signature and multisig syscalls", () => {
   const info = identifyPatterns(
     nef(),

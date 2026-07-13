@@ -192,8 +192,8 @@ function inferLanguage(compiler) {
   if (value.includes("boa") || value.includes("python")) return "Python";
   if (value.includes("neogo") || value.includes("neo-go")) return "Go";
   if (value.includes("rust")) return "Rust";
-  if (value.includes("java")) return "Java";
   if (value.includes("typescript") || value.includes("javascript")) return "TypeScript/JavaScript";
+  if (value.includes("java")) return "Java";
   return null;
 }
 

@@ -363,10 +363,10 @@ fn infer_language(compiler: &str) -> Option<&'static str> {
         Some("Go")
     } else if compiler.contains("rust") {
         Some("Rust")
-    } else if compiler.contains("java") {
-        Some("Java")
     } else if compiler.contains("typescript") || compiler.contains("javascript") {
         Some("TypeScript/JavaScript")
+    } else if compiler.contains("java") {
+        Some("Java")
     } else {
         None
     }
@@ -466,6 +466,12 @@ mod tests {
         let info = identify_patterns(&nef("neo-java-compiler 1", ""), &[], None);
         assert_eq!(info.language.as_deref(), Some("Java"));
         assert_eq!(info.confidence, PatternConfidence::Medium);
+    }
+
+    #[test]
+    fn javascript_compiler_metadata_precedes_java_substring() {
+        let info = identify_patterns(&nef("neo-javascript-compiler 1", ""), &[], None);
+        assert_eq!(info.language.as_deref(), Some("TypeScript/JavaScript"));
     }
 
     #[test]
