@@ -1,6 +1,19 @@
 use super::*;
 
 #[test]
+fn strip_stack_comments_removes_swap_annotations() {
+    let mut statements = vec![
+        "// swapped top two stack values".to_string(),
+        "return 1;".to_string(),
+    ];
+
+    HighLevelEmitter::strip_stack_comments(&mut statements);
+
+    assert!(statements[0].is_empty());
+    assert_eq!(statements[1], "return 1;");
+}
+
+#[test]
 fn reduce_double_parens_collapses_nested_pairs() {
     // The single-use-temp inliner unconditionally wraps multi-token
     // substitutions in parens. When the substitution lands inside a
