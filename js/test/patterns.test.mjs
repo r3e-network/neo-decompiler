@@ -27,3 +27,17 @@ test("pattern analysis keeps weak source metadata explainable", () => {
   assert.equal(info.language, "Python");
   assert.equal(info.confidence, "medium");
 });
+
+test("pattern analysis identifies wildcard call permissions", () => {
+  const info = identifyPatterns(
+    nef(),
+    [],
+    {
+      supportedStandards: [],
+      permissions: [{ contract: "*", methods: "*" }],
+      abi: { methods: [], events: [] },
+    },
+  );
+  assert.deepEqual(info.patterns, ["call_permissions", "wildcard_permissions"]);
+  assert.equal(info.confidence, "medium");
+});

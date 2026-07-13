@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::ContractManifest;
+use crate::manifest::{ManifestPermissionContract, ManifestPermissionMethods};
 use crate::nef::NefFile;
 
 /// Confidence assigned to an identified pattern or language hint.
@@ -102,6 +103,26 @@ pub fn identify_patterns(
             evidence.push(PatternEvidence {
                 source: "manifest.abi.events".to_string(),
                 value: "Transfer".to_string(),
+            });
+        }
+
+        if !manifest.permissions.is_empty() {
+            patterns.insert("call_permissions".to_string());
+            evidence.push(PatternEvidence {
+                source: "manifest.permissions".to_string(),
+                value: manifest.permissions.len().to_string(),
+            });
+        }
+        if manifest.permissions.iter().any(|permission| {
+            matches!(
+                &permission.contract,
+                ManifestPermissionContract::Wildcard(_)
+            ) || matches!(&permission.methods, ManifestPermissionMethods::Wildcard(_))
+        }) {
+            patterns.insert("wildcard_permissions".to_string());
+            evidence.push(PatternEvidence {
+                source: "manifest.permissions".to_string(),
+                value: "wildcard".to_string(),
             });
         }
     }
@@ -252,5 +273,18 @@ mod tests {
         assert!(info.standards.is_empty());
         assert_eq!(info.language.as_deref(), Some("Python"));
         assert_eq!(info.confidence, PatternConfidence::Medium);
+    }
+
+    #[test]
+    fn wildcard_permissions_are_reported_as_behavior_evidence() {
+        let manifest: ContractManifest = serde_json::from_str(
+            r#"{"name":"C","abi":{"methods":[],"events":[]},"permissions":[{"contract":"*","methods":"*"}]}"#,
+        )
+        .expect("manifest fixture");
+        let info = identify_patterns(&nef("", ""), &[], Some(&manifest));
+        assert_eq!(
+            info.patterns,
+            vec!["call_permissions", "wildcard_permissions"]
+        );
     }
 }

@@ -40,6 +40,17 @@ export function identifyPatterns(nef, instructions, manifest = null) {
   if ((manifest?.abi?.events ?? []).some((event) => event.name?.toLowerCase() === "transfer")) {
     evidence.push({ source: "manifest.abi.events", value: "Transfer" });
   }
+  const permissions = manifest?.permissions ?? [];
+  if (permissions.length > 0) {
+    patterns.add("call_permissions");
+    evidence.push({ source: "manifest.permissions", value: String(permissions.length) });
+  }
+  if (permissions.some((permission) =>
+    permission.contract === "*" || permission.methods === "*"
+  )) {
+    patterns.add("wildcard_permissions");
+    evidence.push({ source: "manifest.permissions", value: "wildcard" });
+  }
 
   const syscallNames = new Set();
   for (const instruction of instructions ?? []) {
