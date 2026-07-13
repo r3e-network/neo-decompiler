@@ -262,14 +262,30 @@ pub(super) fn render_intrinsic(
                 )
             }
         }
-        OpCode::Append => RenderedExpr::new(
-            format!(
-                "((Neo.SmartContract.Framework.List<object>){}).Add({})",
-                arg(0, expanding),
-                arg(1, expanding)
-            ),
-            PREC_PRIMARY,
-        ),
+        OpCode::Append => {
+            let receiver_type = args
+                .first()
+                .map_or(ValueType::Unknown, |value| context.value_type(value));
+            if matches!(
+                receiver_type,
+                ValueType::Boolean
+                    | ValueType::Integer
+                    | ValueType::ByteString
+                    | ValueType::Buffer
+                    | ValueType::Map
+                    | ValueType::Null
+            ) {
+                return render_low_level_opcode(opcode, args, context, expanding);
+            }
+            RenderedExpr::new(
+                format!(
+                    "((Neo.SmartContract.Framework.List<object>){}).Add({})",
+                    arg(0, expanding),
+                    arg(1, expanding)
+                ),
+                PREC_PRIMARY,
+            )
+        }
         OpCode::Remove => {
             let receiver_type = args
                 .first()
@@ -317,13 +333,29 @@ pub(super) fn render_intrinsic(
             format!("Helper.Reverse({})", arg(0, expanding)),
             PREC_PRIMARY,
         ),
-        OpCode::Popitem => RenderedExpr::new(
-            format!(
-                "((Neo.SmartContract.Framework.List<object>){}).PopItem()",
-                arg(0, expanding)
-            ),
-            PREC_PRIMARY,
-        ),
+        OpCode::Popitem => {
+            let receiver_type = args
+                .first()
+                .map_or(ValueType::Unknown, |value| context.value_type(value));
+            if matches!(
+                receiver_type,
+                ValueType::Boolean
+                    | ValueType::Integer
+                    | ValueType::ByteString
+                    | ValueType::Buffer
+                    | ValueType::Map
+                    | ValueType::Null
+            ) {
+                return render_low_level_opcode(opcode, args, context, expanding);
+            }
+            RenderedExpr::new(
+                format!(
+                    "((Neo.SmartContract.Framework.List<object>){}).PopItem()",
+                    arg(0, expanding)
+                ),
+                PREC_PRIMARY,
+            )
+        }
         OpCode::Memcpy => render_memcpy(args, context, expanding),
         OpCode::Convert => {
             RenderedExpr::new(format!("(object)({})", arg(0, expanding)), PREC_UNARY)

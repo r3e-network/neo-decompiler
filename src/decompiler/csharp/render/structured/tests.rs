@@ -1728,6 +1728,20 @@ fn map_intrinsics_guard_known_non_map_receivers() {
     );
     assert!(has_key.contains("Runtime.LoadScript"), "{has_key}");
     assert!(!has_key.contains(".HasKey"), "{has_key}");
+
+    let append = render_expr(
+        &intrinsic(OpCode::Append, vec![Expr::var("map"), Expr::var("flag")]),
+        &context,
+    );
+    assert!(append.contains("Runtime.LoadScript"), "{append}");
+    assert!(!append.contains("List<object>"), "{append}");
+
+    let popitem = render_expr(
+        &intrinsic(OpCode::Popitem, vec![Expr::var("map")]),
+        &context,
+    );
+    assert!(popitem.contains("Runtime.LoadScript"), "{popitem}");
+    assert!(!popitem.contains("List<object>"), "{popitem}");
 }
 
 #[test]
