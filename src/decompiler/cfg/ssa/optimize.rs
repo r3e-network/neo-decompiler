@@ -15,11 +15,14 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
 use crate::decompiler::cfg::BlockId;
 use crate::decompiler::ir::{BinOp, Literal, UnaryOp};
 
 use super::form::{SsaExpr, SsaForm, SsaStmt, UseSite};
 use super::variable::SsaVariable;
+
+mod indexes;
 
 /// Optimize `ssa` in place by running the SSA optimization passes to a fixed
 /// point. Returns how many rewrite rounds were applied (0 = already optimal).
@@ -153,7 +156,7 @@ fn one_round(ssa: &mut SsaForm) -> usize {
 
     if subst.is_empty() {
         if rewrites > 0 {
-            rebuild_indexes(ssa);
+            indexes::rebuild_indexes(ssa);
         }
         return rewrites;
     }
@@ -330,7 +333,7 @@ fn one_round(ssa: &mut SsaForm) -> usize {
 
     // Rebuild the definitions/uses indexes so downstream consumers stay correct.
     if rewrites > 0 {
-        rebuild_indexes(ssa);
+        indexes::rebuild_indexes(ssa);
     }
     rewrites
 }
@@ -613,75 +616,6 @@ fn collect_expr_vars(expr: &SsaExpr) -> Vec<SsaVariable> {
     out
 }
 
-/// Recompute the `definitions` and `uses` indexes from the current blocks.
-fn rebuild_indexes(ssa: &mut SsaForm) {
-    let terminator_uses: Vec<_> = ssa
-        .uses
-        .iter()
-        .flat_map(|(variable, sites)| {
-            sites
-                .iter()
-                .filter(|site| site.is_terminator())
-                .cloned()
-                .map(|site| (variable.clone(), site))
-        })
-        .collect();
-    let mut definitions: BTreeMap<SsaVariable, BlockId> = BTreeMap::new();
-    let mut uses: BTreeMap<SsaVariable, BTreeSet<UseSite>> = BTreeMap::new();
-    for (bid, block) in ssa.blocks.iter() {
-        for phi in &block.phi_nodes {
-            definitions.insert(phi.target.clone(), *bid);
-            for v in phi.operands.values() {
-                uses.entry(v.clone())
-                    .or_default()
-                    .insert(UseSite::new(*bid, 0));
-            }
-        }
-        for (i, stmt) in block.stmts.iter().enumerate() {
-            match stmt {
-                SsaStmt::Assign { target, value } => {
-                    definitions.insert(target.clone(), *bid);
-                    for v in collect_expr_vars(value) {
-                        uses.entry(v).or_default().insert(UseSite::new(*bid, i));
-                    }
-                }
-                SsaStmt::Return(Some(value))
-                | SsaStmt::Throw(Some(value))
-                | SsaStmt::Abort(Some(value)) => {
-                    for v in collect_expr_vars(value) {
-                        uses.entry(v).or_default().insert(UseSite::new(*bid, i));
-                    }
-                }
-                SsaStmt::Expr(value) => {
-                    for v in collect_expr_vars(value) {
-                        uses.entry(v).or_default().insert(UseSite::new(*bid, i));
-                    }
-                }
-                SsaStmt::Assert { condition, message } => {
-                    for v in collect_expr_vars(condition) {
-                        uses.entry(v).or_default().insert(UseSite::new(*bid, i));
-                    }
-                    if let Some(message) = message {
-                        for v in collect_expr_vars(message) {
-                            uses.entry(v).or_default().insert(UseSite::new(*bid, i));
-                        }
-                    }
-                }
-                SsaStmt::Return(None)
-                | SsaStmt::Throw(None)
-                | SsaStmt::Abort(None)
-                | SsaStmt::Phi(_)
-                | SsaStmt::Other(_) => {}
-            }
-        }
-    }
-    for (variable, site) in terminator_uses {
-        uses.entry(variable).or_default().insert(site);
-    }
-    ssa.definitions = definitions;
-    ssa.uses = uses;
-}
-
 // Rebuild a fresh SsaForm (used only by tests to assemble hand-built forms).
 #[cfg(test)]
 fn rebuild_test_form(
@@ -700,7 +634,7 @@ fn rebuild_test_form(
         definitions: BTreeMap::new(),
         uses: BTreeMap::new(),
     };
-    rebuild_indexes(&mut tmp);
+    indexes::rebuild_indexes(&mut tmp);
     tmp
 }
 
