@@ -15,6 +15,45 @@ fn method_block<'a>(text: &'a str, start_marker: &str, next_marker: &str) -> &'a
 }
 
 #[test]
+fn edgecase_csharp_output_stays_high_level() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("TestingArtifacts/edgecases");
+    let artifacts = [
+        ("LoopIf.nef", "LoopIf.manifest.json"),
+        ("events/Events.nef", "events/Events.manifest.json"),
+        ("multi/MultiMethod.nef", "multi/MultiMethod.manifest.json"),
+        (
+            "permissions/Permissions.nef",
+            "permissions/Permissions.manifest.json",
+        ),
+    ];
+
+    for (nef_name, manifest_name) in artifacts {
+        let nef_path = root.join(nef_name);
+        let manifest_path = root.join(manifest_name);
+        if !nef_path.is_file() || !manifest_path.is_file() {
+            eprintln!("Skipping missing edgecase artifact {}", nef_path.display());
+            continue;
+        }
+        let nef = fs::read(&nef_path).expect("read edgecase NEF");
+        let manifest = ContractManifest::from_json_str(
+            &fs::read_to_string(&manifest_path).expect("read edgecase manifest"),
+        )
+        .expect("parse edgecase manifest");
+        let result = Decompiler::new()
+            .with_inline_single_use_temps(true)
+            .with_trace_comments(false)
+            .decompile_bytes_with_manifest(&nef, Some(manifest), OutputFormat::CSharp)
+            .expect("edgecase C# decompilation succeeds");
+        let csharp = result.csharp.as_deref().expect("C# output");
+        assert!(
+            !csharp.contains("Runtime.LoadScript") && !csharp.contains("var t"),
+            "{} regressed to VM-shaped C# output:\n{csharp}",
+            nef_path.display()
+        );
+    }
+}
+
+#[test]
 fn delegate_manifest_methods_do_not_swallow_private_initslot_bodies() {
     let artifacts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("TestingArtifacts/devpack");
     if !artifacts_dir.is_dir() {
