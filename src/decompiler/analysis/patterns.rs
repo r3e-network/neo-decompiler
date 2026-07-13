@@ -211,6 +211,11 @@ pub fn identify_patterns(
     info.language = language.map(str::to_string);
     info.compiler = compiler;
     info.confidence = confidence;
+    evidence.sort_by(|left, right| {
+        left.source
+            .cmp(&right.source)
+            .then_with(|| left.value.cmp(&right.value))
+    });
     info.evidence = evidence;
     info
 }

@@ -81,6 +81,12 @@ test("pattern analysis identifies external-call bytecode signals", () => {
   );
   assert.deepEqual(info.patterns, ["external_calls", "method_tokens"]);
   assert.ok(info.evidence.some((entry) => entry.source === "bytecode.calls"));
+  assert.deepEqual(
+    info.evidence,
+    [...info.evidence].sort((left, right) =>
+      left.source.localeCompare(right.source) || left.value.localeCompare(right.value),
+    ),
+  );
 });
 
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {

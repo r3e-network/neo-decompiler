@@ -96,6 +96,9 @@ export function identifyPatterns(nef, instructions, manifest = null) {
       : evidence.length > 0
         ? "low"
         : "unknown";
+  evidence.sort((left, right) =>
+    left.source.localeCompare(right.source) || left.value.localeCompare(right.value),
+  );
   return {
     standards: [...standards].sort(),
     patterns: [...patterns].sort(),
