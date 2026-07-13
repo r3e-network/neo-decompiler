@@ -464,20 +464,20 @@ fn fold_binary(op: BinOp, a: &Literal, b: &Literal) -> Option<Literal> {
     };
     let (x, y) = (*x, *y);
     Some(match op {
-        BinOp::Add => Literal::Int(x.wrapping_add(y)),
-        BinOp::Sub => Literal::Int(x.wrapping_sub(y)),
-        BinOp::Mul => Literal::Int(x.wrapping_mul(y)),
+        BinOp::Add => Literal::Int(x.checked_add(y)?),
+        BinOp::Sub => Literal::Int(x.checked_sub(y)?),
+        BinOp::Mul => Literal::Int(x.checked_mul(y)?),
         BinOp::Div => {
             if y == 0 {
                 return None;
             }
-            Literal::Int(x.wrapping_div(y))
+            Literal::Int(x.checked_div(y)?)
         }
         BinOp::Mod => {
             if y == 0 {
                 return None;
             }
-            Literal::Int(x.wrapping_rem(y))
+            Literal::Int(x.checked_rem(y)?)
         }
         BinOp::Pow => {
             // Neo's integer exponentiation is not represented by the i64
@@ -494,8 +494,14 @@ fn fold_binary(op: BinOp, a: &Literal, b: &Literal) -> Option<Literal> {
         BinOp::And => Literal::Int(x & y),
         BinOp::Or => Literal::Int(x | y),
         BinOp::Xor => Literal::Int(x ^ y),
-        BinOp::Shl => Literal::Int(x.wrapping_shl((y & 63) as u32)),
-        BinOp::Shr => Literal::Int(x.wrapping_shr((y & 63) as u32)),
+        BinOp::Shl => {
+            let shift = u32::try_from(y).ok().filter(|shift| *shift < 64)?;
+            Literal::Int(x.checked_shl(shift)?)
+        }
+        BinOp::Shr => {
+            let shift = u32::try_from(y).ok().filter(|shift| *shift < 64)?;
+            Literal::Int(x.checked_shr(shift)?)
+        }
         BinOp::Eq => Literal::Bool(x == y),
         BinOp::Ne => Literal::Bool(x != y),
         BinOp::Lt => Literal::Bool(x < y),
@@ -513,11 +519,11 @@ fn fold_unary(op: UnaryOp, a: &Literal) -> Option<Literal> {
         return None;
     };
     Some(match op {
-        UnaryOp::Neg => Literal::Int(x.wrapping_neg()),
+        UnaryOp::Neg => Literal::Int(x.checked_neg()?),
         UnaryOp::Not => Literal::Int(!x),
-        UnaryOp::Abs => Literal::Int(x.wrapping_abs()),
-        UnaryOp::Inc => Literal::Int(x.wrapping_add(1)),
-        UnaryOp::Dec => Literal::Int(x.wrapping_sub(1)),
+        UnaryOp::Abs => Literal::Int(x.checked_abs()?),
+        UnaryOp::Inc => Literal::Int(x.checked_add(1)?),
+        UnaryOp::Dec => Literal::Int(x.checked_sub(1)?),
         UnaryOp::Sign => Literal::Int(x.signum()),
         UnaryOp::LogicalNot => Literal::Bool(*x == 0),
     })
@@ -781,6 +787,19 @@ mod tests {
     fn does_not_fold_negative_integer_exponents() {
         assert_eq!(
             fold_binary(BinOp::Pow, &Literal::Int(2), &Literal::Int(-1)),
+            None
+        );
+    }
+
+    #[test]
+    fn does_not_fold_i64_overflow_as_wrapping_vm_arithmetic() {
+        assert_eq!(
+            fold_binary(BinOp::Add, &Literal::Int(i64::MAX), &Literal::Int(1)),
+            None
+        );
+        assert_eq!(fold_unary(UnaryOp::Neg, &Literal::Int(i64::MIN)), None);
+        assert_eq!(
+            fold_binary(BinOp::Shl, &Literal::Int(1), &Literal::Int(64)),
             None
         );
     }
