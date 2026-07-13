@@ -45,8 +45,21 @@ fn edgecase_csharp_output_stays_high_level() {
             .decompile_bytes_with_manifest(&nef, Some(manifest), OutputFormat::CSharp)
             .expect("edgecase C# decompilation succeeds");
         let csharp = result.csharp.as_deref().expect("C# output");
+        let has_temp_declaration = csharp.lines().any(|line| {
+            let statement = line.trim_start();
+            [
+                "var t",
+                "dynamic t",
+                "BigInteger t",
+                "ByteString t",
+                "object t",
+                "bool t",
+            ]
+            .iter()
+            .any(|prefix| statement.starts_with(prefix))
+        });
         assert!(
-            !csharp.contains("Runtime.LoadScript") && !csharp.contains("var t"),
+            !csharp.contains("Runtime.LoadScript") && !has_temp_declaration,
             "{} regressed to VM-shaped C# output:\n{csharp}",
             nef_path.display()
         );
