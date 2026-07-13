@@ -1,5 +1,7 @@
 use super::super::HighLevelEmitter;
 
+mod temps;
+
 impl HighLevelEmitter {
     /// Collapses `if true { ... }` blocks into their body.
     pub(crate) fn collapse_if_true(statements: &mut Vec<String>) {
@@ -241,43 +243,6 @@ impl HighLevelEmitter {
                     index = next + 1;
                     continue;
                 }
-            }
-            index += 1;
-        }
-    }
-
-    /// Removes `let tN = <pure_value>;` lines whose lhs is never referenced.
-    /// Pure values are literals (numbers, booleans, null), simple identifiers,
-    /// or string/byte literals — anything without a side-effecting call.
-    /// This catches the common `let tN = 0; return;` leftover where the lifted
-    /// stack push has no consumer in the lifted form.
-    pub(crate) fn eliminate_dead_temps(statements: &mut [String]) {
-        let mut index = 0;
-        while index < statements.len() {
-            let trimmed = statements[index].trim();
-            if !trimmed.starts_with("let ") {
-                index += 1;
-                continue;
-            }
-            let Some(assign) = Self::parse_assignment(trimmed) else {
-                index += 1;
-                continue;
-            };
-            if !Self::is_temp_ident(&assign.lhs) {
-                index += 1;
-                continue;
-            }
-            if !Self::is_pure_rhs(&assign.rhs) {
-                index += 1;
-                continue;
-            }
-            let lhs = &assign.lhs;
-            let used_anywhere = statements
-                .iter()
-                .enumerate()
-                .any(|(i, stmt)| i != index && Self::contains_identifier(stmt, lhs));
-            if !used_anywhere {
-                statements[index].clear();
             }
             index += 1;
         }
