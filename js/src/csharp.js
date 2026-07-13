@@ -1,4 +1,5 @@
 import { sanitizeIdentifier } from "./manifest.js";
+import { nullableParametersForMethod } from "./csharp/nullability.js";
 
 const TYPE_MAP = new Map([
   ["void", "void"],
@@ -40,10 +41,6 @@ function csharpType(type) {
 
 function escapeCSharpString(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-function escapeRegex(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function renderManifestAttributes(manifest) {
@@ -101,33 +98,6 @@ function renderSignature(line, nullableParameters = new Set()) {
   if (!match) return null;
   const [, indentation, name, parameters, returnType] = match;
   return `${indentation}public static ${csharpType(returnType ?? "any")} ${csharpIdentifier(name)}(${renderParameters(parameters, nullableParameters)}) {`;
-}
-
-function nullableParametersForMethod(lines, signatureIndex) {
-  const signature = lines[signatureIndex].match(/^\s*fn\s+[^\(]+\((.*?)\)/);
-  if (!signature) return new Set();
-  const parameterNames = new Set(
-    splitParameters(signature[1])
-      .map((parameter) => parameter.split(":", 1)[0].trim())
-      .filter(Boolean),
-  );
-  const aliases = new Map();
-  const nullable = new Set();
-  let depth = (lines[signatureIndex].match(/\{/g) ?? []).length;
-  for (let index = signatureIndex + 1; index < lines.length && depth > 0; index++) {
-    const line = lines[index];
-    const assignment = line.match(/\b(?:let\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*;/);
-    if (assignment && parameterNames.has(assignment[2])) aliases.set(assignment[1], assignment[2]);
-    for (const [alias, parameter] of aliases) {
-      if (new RegExp(`\\b${escapeRegex(alias)}\\s+is\\s+null\\b`).test(line)) nullable.add(parameter);
-    }
-    for (const parameter of parameterNames) {
-      if (new RegExp(`\\b${escapeRegex(parameter)}\\s+is\\s+null\\b`).test(line)) nullable.add(parameter);
-    }
-    depth += (line.match(/\{/g) ?? []).length;
-    depth -= (line.match(/\}/g) ?? []).length;
-  }
-  return nullable;
 }
 
 function isSafeManifestMethod(name, manifest) {
