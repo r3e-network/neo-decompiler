@@ -155,6 +155,18 @@ pub fn identify_patterns(
     }
 
     let compiler = (!nef.header.compiler.trim().is_empty()).then(|| nef.header.compiler.clone());
+    if let Some(compiler) = compiler.as_deref() {
+        evidence.push(PatternEvidence {
+            source: "nef.header.compiler".to_string(),
+            value: compiler.to_string(),
+        });
+    }
+    if !nef.header.source.trim().is_empty() {
+        evidence.push(PatternEvidence {
+            source: "nef.header.source".to_string(),
+            value: nef.header.source.clone(),
+        });
+    }
     let language = compiler
         .as_deref()
         .and_then(infer_language)
@@ -265,6 +277,10 @@ mod tests {
         assert_eq!(info.standards, vec!["NEP-17"]);
         assert_eq!(info.language.as_deref(), Some("C#"));
         assert_eq!(info.confidence, PatternConfidence::High);
+        assert!(info
+            .evidence
+            .iter()
+            .any(|entry| entry.source == "nef.header.compiler"));
     }
 
     #[test]
@@ -273,6 +289,10 @@ mod tests {
         assert!(info.standards.is_empty());
         assert_eq!(info.language.as_deref(), Some("Python"));
         assert_eq!(info.confidence, PatternConfidence::Medium);
+        assert!(info
+            .evidence
+            .iter()
+            .any(|entry| entry.source == "nef.header.source"));
     }
 
     #[test]

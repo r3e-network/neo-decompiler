@@ -70,6 +70,10 @@ export function identifyPatterns(nef, instructions, manifest = null) {
   }
 
   const compiler = nef?.header?.compiler?.trim() || null;
+  if (compiler) evidence.push({ source: "nef.header.compiler", value: compiler });
+  if (nef?.header?.source?.trim()) {
+    evidence.push({ source: "nef.header.source", value: nef.header.source });
+  }
   const language = inferLanguage(compiler) ?? inferLanguageFromSource(nef?.header?.source);
   const confidence = declaredStandard
     ? "high"

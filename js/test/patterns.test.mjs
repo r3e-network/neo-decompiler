@@ -36,6 +36,7 @@ test("pattern analysis treats declared NEP standards as authoritative", () => {
   assert.deepEqual(info.standards, ["NEP-17"]);
   assert.equal(info.language, "C#");
   assert.equal(info.confidence, "high");
+  assert.ok(info.evidence.some((entry) => entry.source === "nef.header.compiler"));
 });
 
 test("basic JS decompile APIs expose the same pattern summary", () => {
@@ -55,6 +56,7 @@ test("pattern analysis keeps weak source metadata explainable", () => {
   assert.deepEqual(info.standards, []);
   assert.equal(info.language, "Python");
   assert.equal(info.confidence, "medium");
+  assert.ok(info.evidence.some((entry) => entry.source === "nef.header.source"));
 });
 
 test("pattern analysis identifies wildcard call permissions", () => {
