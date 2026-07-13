@@ -112,6 +112,7 @@ lifting calls.
 `patterns` reports declared or inferred standards, behavior patterns such as
 `storage`, `notifications`, `events`, `ownership`, `royalties`, and native
 contract calls (including `oracle`, `governance`, `role_management`,
+`policy_management`, `token_management`, `ledger`, `notary`, `treasury`,
 `contract_management`, and `upgradeable`),
 compiler/language hints,
 an aggregate confidence, and the evidence signals behind each result. Manifest

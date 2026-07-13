@@ -226,6 +226,24 @@ test("pattern analysis identifies native role management calls", () => {
   assert.deepEqual(info.patterns, ["method_tokens", "native_contract_calls", "role_management"]);
 });
 
+test("pattern analysis identifies native system-management contracts", () => {
+  const cases = [
+    ["7bc681c0a1f71d543457b68bba8d5f9fdd4e5ecc", "BlockAccount", "policy_management"],
+    ["9f040ea4a8448f015af645659b0fb2ae7dc500ae", "BalanceOf", "token_management"],
+    ["bef2043140362a77c15099c7e64c12f700b665da", "CurrentHash", "ledger"],
+    ["3bec3531119bbad76dd044920b0de6c3194fe1c1", "BalanceOf", "notary"],
+    ["c13a56c98353a7ea6a324d9a835d1b5bf2266315", "OnNEP11Payment", "treasury"],
+  ];
+  for (const [hex, method, pattern] of cases) {
+    const info = identifyPatterns(
+      { ...nef(), methodTokens: [{ hash: Uint8Array.from(Buffer.from(hex, "hex")), method }] },
+      [],
+      null,
+    );
+    assert.ok(info.patterns.includes(pattern), `${method} should identify ${pattern}`);
+  }
+});
+
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const source = [
     "contract Token {",

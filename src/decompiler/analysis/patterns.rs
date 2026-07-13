@@ -176,6 +176,24 @@ pub fn identify_patterns(
             if hint.contract == "RoleManagement" {
                 patterns.insert("role_management".to_string());
             }
+            match hint.contract {
+                "PolicyContract" => {
+                    patterns.insert("policy_management".to_string());
+                }
+                "TokenManagement" => {
+                    patterns.insert("token_management".to_string());
+                }
+                "LedgerContract" => {
+                    patterns.insert("ledger".to_string());
+                }
+                "Notary" => {
+                    patterns.insert("notary".to_string());
+                }
+                "Treasury" => {
+                    patterns.insert("treasury".to_string());
+                }
+                _ => {}
+            }
         }
     }
     if instructions.iter().any(|instruction| {
@@ -539,5 +557,24 @@ mod tests {
             info.patterns,
             vec!["method_tokens", "native_contract_calls", "role_management"]
         );
+    }
+
+    #[test]
+    fn native_policy_method_tokens_report_policy_management() {
+        let nef = NefFile {
+            method_tokens: vec![crate::nef::MethodToken {
+                hash: [
+                    0x7B, 0xC6, 0x81, 0xC0, 0xA1, 0xF7, 0x1D, 0x54, 0x34, 0x57, 0xB6, 0x8B, 0xBA,
+                    0x8D, 0x5F, 0x9F, 0xDD, 0x4E, 0x5E, 0xCC,
+                ],
+                method: "BlockAccount".to_string(),
+                parameters_count: 0,
+                has_return_value: false,
+                call_flags: 0x0F,
+            }],
+            ..nef("", "")
+        };
+        let info = identify_patterns(&nef, &[], None);
+        assert!(info.patterns.contains(&"policy_management".to_string()));
     }
 }

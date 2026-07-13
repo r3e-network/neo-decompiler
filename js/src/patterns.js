@@ -114,6 +114,11 @@ export function identifyPatterns(nef, instructions, manifest = null) {
       }
       if (hint.contract === "Governance") patterns.add("governance");
       if (hint.contract === "RoleManagement") patterns.add("role_management");
+      if (hint.contract === "PolicyContract") patterns.add("policy_management");
+      if (hint.contract === "TokenManagement") patterns.add("token_management");
+      if (hint.contract === "LedgerContract") patterns.add("ledger");
+      if (hint.contract === "Notary") patterns.add("notary");
+      if (hint.contract === "Treasury") patterns.add("treasury");
     }
   }
   if ((instructions ?? []).some((instruction) =>
