@@ -17,10 +17,13 @@ use crate::instruction::{Instruction, OpCode, Operand};
 mod names;
 mod opcode;
 mod source_map;
+#[path = "method_body_types.rs"]
+mod types;
 mod validation;
 
 use names::collect_block_names;
 pub(crate) use opcode::{classify_opcode, OpcodeFidelity};
+use types::{intrinsic_result_type, merge_value_types};
 
 pub(crate) struct MethodIrRequest<'a> {
     pub(crate) start: usize,
@@ -767,35 +770,6 @@ fn structured_expr_type(expression: &Expr, symbols: &BTreeMap<String, SymbolInfo
         | Expr::Member { .. }
         | Expr::Cast { .. }
         | Expr::StackTemp(_) => ValueType::Unknown,
-    }
-}
-
-fn intrinsic_result_type(opcode: OpCode) -> ValueType {
-    match opcode {
-        OpCode::Newarray0
-        | OpCode::Newarray
-        | OpCode::NewarrayT
-        | OpCode::Keys
-        | OpCode::Values => ValueType::Array,
-        OpCode::Newstruct0 | OpCode::Newstruct => ValueType::Struct,
-        OpCode::Newmap => ValueType::Map,
-        OpCode::Newbuffer => ValueType::Buffer,
-        OpCode::Size | OpCode::Sqrt | OpCode::Min | OpCode::Max => ValueType::Integer,
-        OpCode::Haskey | OpCode::Isnull | OpCode::Istype | OpCode::Nz => ValueType::Boolean,
-        _ => ValueType::Unknown,
-    }
-}
-
-fn merge_value_types(left: ValueType, right: ValueType) -> ValueType {
-    use ValueType::{Any, Null, Unknown};
-
-    if left == right {
-        return left;
-    }
-    match (left, right) {
-        (Unknown, value) | (value, Unknown) => value,
-        (Null, _) | (_, Null) => Any,
-        _ => Any,
     }
 }
 
