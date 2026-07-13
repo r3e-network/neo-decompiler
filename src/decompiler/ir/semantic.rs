@@ -5,6 +5,7 @@ use crate::instruction::OpCode;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Intrinsic {
     Opcode(OpCode),
+    UnpackPackStruct,
 }
 
 impl Intrinsic {
@@ -18,6 +19,7 @@ impl Intrinsic {
                 OpCode::Reverseitems => "reverse_items".to_string(),
                 _ => format!("{opcode:?}").to_lowercase(),
             },
+            Self::UnpackPackStruct => "unpack_pack_struct".to_string(),
         }
     }
 }

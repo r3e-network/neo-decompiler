@@ -106,6 +106,8 @@ pub(super) struct TaggedOpcodeHelper {
     pub(super) name: String,
 }
 
+const UNPACK_PACKSTRUCT_HELPER: &str = "__NeoDecompilerUnpackPackStruct";
+
 /// Render a C# skeleton with lifted bodies when possible.
 pub(crate) fn render_csharp(
     nef: &NefFile,
@@ -143,6 +145,11 @@ pub(crate) fn render_csharp(
     let assert_message_helper_call = assert_message_helper
         .as_ref()
         .map(|helper| format!("global::NeoDecompiler.Generated.{contract_name}.{helper}"));
+    let unpack_packstruct_helper =
+        unpack_packstruct_helper_name(instructions, &mut used_member_names);
+    let unpack_packstruct_helper_call = unpack_packstruct_helper
+        .as_ref()
+        .map(|helper| format!("global::NeoDecompiler.Generated.{contract_name}.{helper}"));
     let tagged_opcode_helpers = tagged_opcode_helpers(instructions, &mut used_member_names);
     let tagged_opcode_helper_calls = tagged_opcode_helpers
         .iter()
@@ -171,6 +178,7 @@ pub(crate) fn render_csharp(
         typed_declarations: opts.typed_declarations,
         vm_exception_type: vm_exception_type_ref,
         assert_message_helper_call: assert_message_helper_call.as_deref(),
+        unpack_packstruct_helper_call: unpack_packstruct_helper_call.as_deref(),
         tagged_opcode_helper_calls: &tagged_opcode_helper_calls,
     };
     let methods_context = methods::MethodsContext {
@@ -184,6 +192,7 @@ pub(crate) fn render_csharp(
     header::write_static_fields(&mut output, &contract_symbols);
     header::write_vm_exception_type(&mut output, vm_exception_type.as_deref());
     header::write_assert_message_helper(&mut output, assert_message_helper.as_deref());
+    header::write_unpack_packstruct_helper(&mut output, unpack_packstruct_helper.as_deref());
     header::write_tagged_opcode_helpers(&mut output, &tagged_opcode_helpers);
     if call_graph.edges.iter().any(|edge| {
         matches!(
@@ -287,6 +296,16 @@ fn assert_message_helper_name(
         VM_ASSERT_MESSAGE_HELPER.to_string(),
         used_names,
     ))
+}
+
+fn unpack_packstruct_helper_name(
+    instructions: &[Instruction],
+    used_names: &mut HashSet<String>,
+) -> Option<String> {
+    instructions
+        .windows(2)
+        .any(|pair| pair[0].opcode == OpCode::Unpack && pair[1].opcode == OpCode::Packstruct)
+        .then(|| make_unique_identifier(UNPACK_PACKSTRUCT_HELPER.to_string(), used_names))
 }
 
 fn tagged_opcode_helpers(

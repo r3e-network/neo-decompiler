@@ -32,6 +32,7 @@ pub(in crate::decompiler::csharp::render) fn render_block(
         inline_single_use_temps,
         VM_ASSERT_MESSAGE_HELPER,
         VM_EXCEPTION_TYPE,
+        None,
         &BTreeMap::new(),
         &BTreeMap::new(),
         None,
@@ -49,6 +50,7 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
     inline_single_use_temps: bool,
     assert_message_helper: &str,
     vm_exception_type: &str,
+    unpack_packstruct_helper_call: Option<&str>,
     tagged_opcode_helper_calls: &BTreeMap<(u8, u8), String>,
     internal_call_return_types: &BTreeMap<usize, String>,
     return_type: Option<&str>,
@@ -70,6 +72,7 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
                     .map(|(name, declaration)| (name.clone(), declaration.emitted_name.clone()))
                     .collect(),
             )
+            .with_unpack_packstruct_helper_call(unpack_packstruct_helper_call)
             .with_tagged_opcode_helper_calls(tagged_opcode_helper_calls)
             .with_internal_call_return_types(internal_call_return_types),
         return_behavior,
@@ -511,6 +514,10 @@ impl StatementRenderer<'_> {
                     | OpCode::Remove
                     | OpCode::Clearitems
             ),
+            Expr::Call {
+                target: SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
+                ..
+            } => false,
             _ => false,
         };
 

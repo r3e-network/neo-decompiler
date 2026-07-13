@@ -41,6 +41,7 @@ pub(super) struct LiftedBodyContext<'a> {
     /// Inferred C# slot types keyed by method start offset. Assertion rendering
     /// uses these even when typed local declarations are disabled.
     pub(super) assert_message_helper_call: Option<&'a str>,
+    pub(super) unpack_packstruct_helper_call: Option<&'a str>,
     pub(super) tagged_opcode_helper_calls: &'a BTreeMap<(u8, u8), String>,
 }
 
@@ -113,6 +114,7 @@ pub(super) fn render_method_body(
             .assert_message_helper_call
             .unwrap_or(VM_ASSERT_MESSAGE_HELPER),
         context.vm_exception_type,
+        context.unpack_packstruct_helper_call,
         context.tagged_opcode_helper_calls,
         context.method_return_types_by_offset,
         Some(&method_plan.return_type),
@@ -225,6 +227,7 @@ fn recovered_result(
                 .assert_message_helper_call
                 .unwrap_or(VM_ASSERT_MESSAGE_HELPER),
             context.vm_exception_type,
+            context.unpack_packstruct_helper_call,
             context.tagged_opcode_helper_calls,
             context.method_return_types_by_offset,
             Some(&method_plan.return_type),

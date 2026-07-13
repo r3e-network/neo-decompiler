@@ -538,10 +538,36 @@ impl<'a> SsaBuilder<'a> {
                 definition_facts: &mut facts.definitions,
                 invalidated_collection_roots: &mut facts.invalidated_collection_roots,
             };
-            for idx in block.instruction_range.clone() {
+            let mut idx = block.instruction_range.start;
+            while idx < block.instruction_range.end {
                 let Some(instr) = self.instructions.get(idx) else {
+                    idx += 1;
                     continue;
                 };
+                if instr.opcode == OpCode::Unpack {
+                    let next_idx = idx + 1;
+                    if next_idx < block.instruction_range.end {
+                        if let Some(packstruct) = self
+                            .instructions
+                            .get(next_idx)
+                            .filter(|next| next.opcode == OpCode::Packstruct)
+                        {
+                            covered_offsets.insert(instr.offset);
+                            covered_offsets.insert(packstruct.offset);
+                            let statement_start = stmts.len();
+                            self.apply_unpack_packstruct(
+                                instr, packstruct, &mut stack, &mut stmts, &mut uses, &mut state,
+                            );
+                            record_definition_facts(
+                                &stmts[statement_start..],
+                                packstruct.opcode,
+                                state.definition_facts,
+                            );
+                            idx += 2;
+                            continue;
+                        }
+                    }
+                }
                 covered_offsets.insert(instr.offset);
                 let statement_start = stmts.len();
                 if let Some(condition) = self.apply_instruction(
@@ -554,6 +580,7 @@ impl<'a> SsaBuilder<'a> {
                     instr.opcode,
                     state.definition_facts,
                 );
+                idx += 1;
             }
         }
 
@@ -566,6 +593,48 @@ impl<'a> SsaBuilder<'a> {
             covered_offsets,
             issues,
         }
+    }
+
+    fn apply_unpack_packstruct(
+        &self,
+        unpack: &Instruction,
+        packstruct: &Instruction,
+        stack: &mut Vec<SsaVariable>,
+        stmts: &mut Vec<SsaStmt>,
+        uses: &mut Vec<(SsaVariable, usize)>,
+        state: &mut BuildPassState<'_>,
+    ) {
+        record_instruction_ceiling(unpack, state.issues);
+        record_missing_operand_metadata(unpack, state.issues);
+        record_instruction_ceiling(packstruct, state.issues);
+        record_missing_operand_metadata(packstruct, state.issues);
+
+        let underflowed = stack.is_empty();
+        if underflowed {
+            record_stack_underflow(unpack, 1, 0, state.issues);
+        }
+        let source = stack.pop().unwrap_or_else(unknown_var);
+        if !underflowed && is_unknown_or_tainted(&source, state.tainted_variables) {
+            record_incomplete_issue(
+                unpack,
+                LoweringIssueKind::LostStackValue,
+                "UNPACK/PACKSTRUCT clone consumes an unknown stack value",
+                state.issues,
+            );
+        }
+        if !is_unknown(&source) {
+            uses.push((source.clone(), stmts.len()));
+        }
+
+        let target = fresh_var(state.versions, "t");
+        stmts.push(SsaStmt::assign(
+            target.clone(),
+            SsaExpr::call(
+                SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
+                vec![SsaExpr::var(source)],
+            ),
+        ));
+        stack.push(target);
     }
 
     /// Apply a single instruction's stack effect / transformation.
@@ -2461,6 +2530,23 @@ mod tests {
         collection
     }
 
+    fn has_unpack_packstruct_intrinsic(form: &SsaForm) -> bool {
+        form.blocks_iter()
+            .flat_map(|(_, block)| &block.stmts)
+            .any(|statement| {
+                matches!(
+                    statement,
+                    SsaStmt::Assign {
+                        value: SsaExpr::Call {
+                            target: SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
+                            ..
+                        },
+                        ..
+                    }
+                )
+            })
+    }
+
     #[test]
     fn convert_consumes_one_value() {
         let instructions = vec![
@@ -2670,6 +2756,144 @@ mod tests {
             optimized_return_expression(&instructions),
             SsaExpr::lit(Literal::Int(1))
         );
+    }
+
+    #[test]
+    fn adjacent_unpack_packstruct_becomes_exact_clone_intrinsic() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Unpack),
+            instr(2, OpCode::Packstruct),
+            instr(3, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert_eq!(
+            built.fidelity.status,
+            Fidelity::Exact,
+            "{:#?}",
+            built.fidelity
+        );
+        assert!(has_unpack_packstruct_intrinsic(&built.ssa));
+        let call = built
+            .ssa
+            .blocks_iter()
+            .flat_map(|(_, block)| &block.stmts)
+            .find_map(|statement| match statement {
+                SsaStmt::Assign {
+                    value:
+                        SsaExpr::Call {
+                            target: SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
+                            args,
+                        },
+                    ..
+                } => Some(args),
+                _ => None,
+            })
+            .expect("adjacent pair must emit the clone intrinsic");
+        assert_eq!(
+            call.len(),
+            1,
+            "the clone must consume only its source value"
+        );
+    }
+
+    #[test]
+    fn unpack_packstruct_fusion_preserves_ambient_stack_values() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Push2),
+            instr(2, OpCode::Unpack),
+            instr(3, OpCode::Packstruct),
+            instr(4, OpCode::Drop),
+            instr(5, OpCode::Ret),
+        ];
+
+        assert_eq!(
+            optimized_return_expression(&instructions),
+            SsaExpr::lit(Literal::Int(1))
+        );
+    }
+
+    #[test]
+    fn non_adjacent_unpack_packstruct_is_not_fused() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Unpack),
+            instr(2, OpCode::Nop),
+            instr(3, OpCode::Packstruct),
+            instr(4, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert!(!has_unpack_packstruct_intrinsic(&built.ssa));
+    }
+
+    #[test]
+    fn unpack_packstruct_is_not_fused_across_basic_block_boundary() {
+        let instructions = vec![
+            instr(0, OpCode::Push1),
+            instr(1, OpCode::Unpack),
+            instr(2, OpCode::Packstruct),
+            instr(3, OpCode::Ret),
+        ];
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId(0),
+            0,
+            2,
+            0..2,
+            Terminator::Jump { target: BlockId(1) },
+        ));
+        cfg.add_block(BasicBlock::new(BlockId(1), 2, 4, 2..4, Terminator::Return));
+        cfg.add_edge(BlockId(0), BlockId(1), EdgeKind::Unconditional);
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert!(!has_unpack_packstruct_intrinsic(&built.ssa));
+    }
+
+    #[test]
+    fn unpack_packstruct_fusion_preserves_source_underflow_diagnostic() {
+        let instructions = vec![
+            instr(0, OpCode::Unpack),
+            instr(1, OpCode::Packstruct),
+            instr(2, OpCode::Ret),
+        ];
+        let cfg = CfgBuilder::new(&instructions).build();
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert!(built.fidelity.issues.iter().any(|issue| {
+            issue.offset == 0
+                && issue.opcode == OpCode::Unpack
+                && issue.kind == LoweringIssueKind::LostStackValue
+                && issue.detail.contains("requires 1 stack values")
+        }));
+    }
+
+    #[test]
+    fn unpack_packstruct_fusion_preserves_unknown_source_diagnostic() {
+        let (instructions, cfg) = uneven_stack_merge(vec![
+            instr(3, OpCode::Unpack),
+            instr(4, OpCode::Packstruct),
+            instr(5, OpCode::Ret),
+        ]);
+
+        let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+        assert!(built.fidelity.issues.iter().any(|issue| {
+            issue.offset == 3
+                && issue.opcode == OpCode::Unpack
+                && issue.kind == LoweringIssueKind::LostStackValue
+                && issue
+                    .detail
+                    .contains("clone consumes an unknown stack value")
+        }));
     }
 
     #[test]

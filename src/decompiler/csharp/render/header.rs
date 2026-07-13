@@ -179,6 +179,28 @@ pub(super) fn write_assert_message_helper(output: &mut String, helper_name: Opti
     writeln!(output).unwrap();
 }
 
+pub(super) fn write_unpack_packstruct_helper(output: &mut String, helper_name: Option<&str>) {
+    let Some(helper_name) = helper_name else {
+        return;
+    };
+    writeln!(
+        output,
+        "        [global::Neo.SmartContract.Framework.Attributes.OpCode(global::Neo.SmartContract.Framework.OpCode.UNPACK)]"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        [global::Neo.SmartContract.Framework.Attributes.OpCode(global::Neo.SmartContract.Framework.OpCode.PACKSTRUCT)]"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "        private static extern object[] {helper_name}(object value);"
+    )
+    .unwrap();
+    writeln!(output).unwrap();
+}
+
 pub(super) fn write_tagged_opcode_helpers(output: &mut String, helpers: &[TaggedOpcodeHelper]) {
     for helper in helpers {
         let tag = crate::decompiler::helpers::stack_item_type_tag(helper.target)

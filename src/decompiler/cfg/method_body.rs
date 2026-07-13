@@ -888,6 +888,10 @@ fn structured_expr_type(expression: &Expr, symbols: &BTreeMap<String, SymbolInfo
             target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(opcode)),
             ..
         } => intrinsic_result_type(*opcode),
+        Expr::Call {
+            target: SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
+            ..
+        } => ValueType::Struct,
         Expr::Call { .. }
         | Expr::Index { .. }
         | Expr::Member { .. }

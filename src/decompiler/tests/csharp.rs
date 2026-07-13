@@ -935,6 +935,45 @@ fn csharp_type_tag_helper_avoids_contract_member_collisions() {
 }
 
 #[test]
+fn csharp_unpack_packstruct_helper_preserves_opcode_order_and_avoids_collisions() {
+    let script = [
+        crate::instruction::OpCode::Push1.byte(),
+        crate::instruction::OpCode::Unpack.byte(),
+        crate::instruction::OpCode::Packstruct.byte(),
+        crate::instruction::OpCode::Ret.byte(),
+    ];
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "UnpackPackStructCollision",
+            "abi": { "methods": [{
+                "name": "__NeoDecompilerUnpackPackStruct",
+                "parameters": [],
+                "returntype": "Any",
+                "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+
+    let rendered =
+        render_csharp_with_coverage(&build_nef(&script), Some(manifest), true, false, true);
+
+    let helper = "[global::Neo.SmartContract.Framework.Attributes.OpCode(global::Neo.SmartContract.Framework.OpCode.UNPACK)]\n        [global::Neo.SmartContract.Framework.Attributes.OpCode(global::Neo.SmartContract.Framework.OpCode.PACKSTRUCT)]\n        private static extern object[] __NeoDecompilerUnpackPackStruct_1(object value);";
+    assert!(
+        rendered.source.contains(helper),
+        "clone helper must preserve opcode order and avoid ABI member names:\n{}",
+        rendered.source
+    );
+    assert!(
+        rendered.source.contains(
+            "global::NeoDecompiler.Generated.UnpackPackStructCollision.__NeoDecompilerUnpackPackStruct_1(1)"
+        ),
+        "clone call must use the collision-safe declaration name:\n{}",
+        rendered.source
+    );
+}
+
+#[test]
 fn csharp_type_tags_preserve_bytestring_and_struct_identity() {
     let cases = [
         (

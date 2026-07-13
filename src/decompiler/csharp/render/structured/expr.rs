@@ -28,6 +28,7 @@ pub(super) struct ExprContext {
     inline_values: BTreeMap<String, Expr>,
     value_types: BTreeMap<String, ValueType>,
     emitted_names: BTreeMap<String, String>,
+    unpack_packstruct_helper_call: Option<String>,
     tagged_opcode_helper_calls: BTreeMap<(u8, u8), String>,
     internal_call_return_types: BTreeMap<usize, String>,
 }
@@ -48,6 +49,7 @@ impl ExprContext {
                 inline_values: BTreeMap::new(),
                 value_types,
                 emitted_names: BTreeMap::new(),
+                unpack_packstruct_helper_call: None,
                 tagged_opcode_helper_calls: BTreeMap::new(),
                 internal_call_return_types: BTreeMap::new(),
             };
@@ -95,6 +97,7 @@ impl ExprContext {
             inline_values,
             value_types,
             emitted_names: BTreeMap::new(),
+            unpack_packstruct_helper_call: None,
             tagged_opcode_helper_calls: BTreeMap::new(),
             internal_call_return_types: BTreeMap::new(),
         }
@@ -110,6 +113,11 @@ impl ExprContext {
         calls: &BTreeMap<(u8, u8), String>,
     ) -> Self {
         self.tagged_opcode_helper_calls.clone_from(calls);
+        self
+    }
+
+    pub(super) fn with_unpack_packstruct_helper_call(mut self, call: Option<&str>) -> Self {
+        self.unpack_packstruct_helper_call = call.map(str::to_string);
         self
     }
 
@@ -192,6 +200,10 @@ impl ExprContext {
                     .map_or(ValueType::Unknown, |left| self.value_type(left)),
                 _ => ValueType::Unknown,
             },
+            Expr::Call {
+                target: SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
+                ..
+            } => ValueType::Struct,
             _ => ValueType::Unknown,
         }
     }
@@ -956,6 +968,16 @@ fn render_call(
         SemanticCallTarget::Syscall { hash, .. } => render_syscall(*hash, args, context, expanding),
         SemanticCallTarget::Intrinsic(Intrinsic::Opcode(opcode)) => {
             render_intrinsic(*opcode, args, context, expanding)
+        }
+        SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct) => {
+            let helper = context
+                .unpack_packstruct_helper_call
+                .as_deref()
+                .unwrap_or(super::super::UNPACK_PACKSTRUCT_HELPER);
+            RenderedExpr::new(
+                format!("{helper}({})", render_expr_list(args, context, expanding)),
+                PREC_PRIMARY,
+            )
         }
     }
 }
