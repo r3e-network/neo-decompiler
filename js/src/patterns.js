@@ -192,6 +192,7 @@ function inferLanguage(compiler) {
   if (value.includes("boa") || value.includes("python")) return "Python";
   if (value.includes("neogo") || value.includes("neo-go")) return "Go";
   if (value.includes("rust")) return "Rust";
+  if (value.includes("java")) return "Java";
   if (value.includes("typescript") || value.includes("javascript")) return "TypeScript/JavaScript";
   return null;
 }
@@ -204,6 +205,7 @@ function inferLanguageFromSource(source) {
   if (filename.endsWith(".py")) return "Python";
   if (filename.endsWith(".go")) return "Go";
   if (filename.endsWith(".rs")) return "Rust";
+  if (filename.endsWith(".java")) return "Java";
   if (filename.endsWith(".ts") || filename.endsWith(".js")) return "TypeScript/JavaScript";
   return null;
 }

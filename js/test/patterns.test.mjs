@@ -77,6 +77,7 @@ test("pattern analysis normalizes source paths and URI suffixes", () => {
     ["/contracts/Token.py?build=42", "Python"],
     ["src/token.go#source", "Go"],
     ["src/token.rs#source", "Rust"],
+    ["src/token.java#source", "Java"],
   ]) {
     const info = identifyPatterns(nef("", source), [], null);
     assert.equal(info.language, expected);
@@ -86,6 +87,12 @@ test("pattern analysis normalizes source paths and URI suffixes", () => {
 test("pattern analysis infers Rust from compiler metadata", () => {
   const info = identifyPatterns(nef("neo-rustc 1"), [], null);
   assert.equal(info.language, "Rust");
+  assert.equal(info.confidence, "medium");
+});
+
+test("pattern analysis infers Java from compiler metadata", () => {
+  const info = identifyPatterns(nef("neo-java-compiler 1"), [], null);
+  assert.equal(info.language, "Java");
   assert.equal(info.confidence, "medium");
 });
 
