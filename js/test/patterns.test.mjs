@@ -89,6 +89,20 @@ test("pattern analysis infers Rust from compiler metadata", () => {
   assert.equal(info.confidence, "medium");
 });
 
+test("pattern analysis identifies signature and multisig syscalls", () => {
+  const info = identifyPatterns(
+    nef(),
+    [{ opcode: { mnemonic: "SYSCALL" }, operand: { value: 0x3ADCD09E } }],
+    null,
+  );
+  assert.deepEqual(info.patterns, ["multisig", "signature_verification"]);
+  assert.ok(
+    info.evidence.some(
+      (entry) => entry.source === "syscall" && entry.value === "System.Crypto.CheckMultisig",
+    ),
+  );
+});
+
 test("pattern analysis identifies wildcard call permissions", () => {
   const info = identifyPatterns(
     nef(),

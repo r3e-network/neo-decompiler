@@ -150,6 +150,11 @@ export function identifyPatterns(nef, instructions, manifest = null) {
       patterns.add("notifications");
       evidence.push({ source: "syscall", value: name });
     }
+    if (name === "System.Crypto.CheckSig" || name === "System.Crypto.CheckMultisig") {
+      patterns.add("signature_verification");
+      if (name === "System.Crypto.CheckMultisig") patterns.add("multisig");
+      evidence.push({ source: "syscall", value: name });
+    }
   }
 
   const compiler = nef?.header?.compiler?.trim() || null;

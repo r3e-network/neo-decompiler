@@ -226,6 +226,16 @@ pub fn identify_patterns(
                 value: name.to_string(),
             });
         }
+        if name == "System.Crypto.CheckSig" || name == "System.Crypto.CheckMultisig" {
+            patterns.insert("signature_verification".to_string());
+            if name == "System.Crypto.CheckMultisig" {
+                patterns.insert("multisig".to_string());
+            }
+            evidence.push(PatternEvidence {
+                source: "syscall".to_string(),
+                value: name.to_string(),
+            });
+        }
     }
 
     let compiler = (!nef.header.compiler.trim().is_empty()).then(|| nef.header.compiler.clone());
@@ -444,6 +454,23 @@ mod tests {
         let info = identify_patterns(&nef("neo-rustc 1", ""), &[], None);
         assert_eq!(info.language.as_deref(), Some("Rust"));
         assert_eq!(info.confidence, PatternConfidence::Medium);
+    }
+
+    #[test]
+    fn crypto_syscalls_report_signature_and_multisig_patterns() {
+        let info = identify_patterns(
+            &nef("", ""),
+            &[Instruction::new(
+                0,
+                OpCode::Syscall,
+                Some(Operand::Syscall(0x3ADCD09E)),
+            )],
+            None,
+        );
+        assert_eq!(info.patterns, vec!["multisig", "signature_verification"]);
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "syscall" && entry.value == "System.Crypto.CheckMultisig"
+        }));
     }
 
     #[test]
