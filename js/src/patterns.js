@@ -113,6 +113,7 @@ export function identifyPatterns(nef, instructions, manifest = null) {
         if (hint.canonicalMethod === "Update") patterns.add("upgradeable");
       }
       if (hint.contract === "Governance") patterns.add("governance");
+      if (hint.contract === "RoleManagement") patterns.add("role_management");
     }
   }
   if ((instructions ?? []).some((instruction) =>

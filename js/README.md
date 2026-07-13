@@ -111,7 +111,8 @@ lifting calls.
 
 `patterns` reports declared or inferred standards, behavior patterns such as
 `storage`, `notifications`, `events`, `ownership`, `royalties`, and native
-contract calls (including `oracle`, `governance`, and `upgradeable`),
+contract calls (including `oracle`, `governance`, `role_management`,
+`contract_management`, and `upgradeable`),
 compiler/language hints,
 an aggregate confidence, and the evidence signals behind each result. Manifest
 standards are high confidence; bytecode-only hints remain conservative. ABI

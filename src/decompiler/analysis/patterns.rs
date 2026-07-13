@@ -173,6 +173,9 @@ pub fn identify_patterns(
             if hint.contract == "Governance" {
                 patterns.insert("governance".to_string());
             }
+            if hint.contract == "RoleManagement" {
+                patterns.insert("role_management".to_string());
+            }
         }
     }
     if instructions.iter().any(|instruction| {
@@ -513,6 +516,28 @@ mod tests {
                 "native_contract_calls",
                 "upgradeable"
             ]
+        );
+    }
+
+    #[test]
+    fn native_role_management_method_tokens_report_role_management() {
+        let nef = NefFile {
+            method_tokens: vec![crate::nef::MethodToken {
+                hash: [
+                    0xE2, 0x95, 0xE3, 0x91, 0x54, 0x4C, 0x17, 0x8A, 0xD9, 0x4F, 0x03, 0xEC, 0x4D,
+                    0xCD, 0xFF, 0x78, 0x53, 0x4E, 0xCF, 0x49,
+                ],
+                method: "DesignateAsRole".to_string(),
+                parameters_count: 0,
+                has_return_value: false,
+                call_flags: 0x0F,
+            }],
+            ..nef("", "")
+        };
+        let info = identify_patterns(&nef, &[], None);
+        assert_eq!(
+            info.patterns,
+            vec!["method_tokens", "native_contract_calls", "role_management"]
         );
     }
 }

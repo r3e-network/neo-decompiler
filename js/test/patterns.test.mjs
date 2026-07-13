@@ -208,6 +208,24 @@ test("pattern analysis identifies upgradeable native contracts", () => {
   ]);
 });
 
+test("pattern analysis identifies native role management calls", () => {
+  const info = identifyPatterns(
+    {
+      ...nef(),
+      methodTokens: [{
+        hash: Uint8Array.from([
+          0xE2, 0x95, 0xE3, 0x91, 0x54, 0x4C, 0x17, 0x8A, 0xD9, 0x4F,
+          0x03, 0xEC, 0x4D, 0xCD, 0xFF, 0x78, 0x53, 0x4E, 0xCF, 0x49,
+        ]),
+        method: "DesignateAsRole",
+      }],
+    },
+    [],
+    null,
+  );
+  assert.deepEqual(info.patterns, ["method_tokens", "native_contract_calls", "role_management"]);
+});
+
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const source = [
     "contract Token {",
