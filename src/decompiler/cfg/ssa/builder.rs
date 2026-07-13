@@ -52,6 +52,7 @@ use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
 use super::variable::SsaVariable;
 
 mod collection;
+mod expr;
 mod helpers;
 mod instructions;
 
@@ -899,94 +900,6 @@ impl<'a> SsaBuilder<'a> {
             static_collection_writes,
             call_argument_facts,
         }
-    }
-
-    /// Build the [`SsaExpr`] for a compute opcode given its already-popped
-    /// operands (`popped`, ordered deep-to-top). Compute opcodes get a real
-    /// binary/unary/literal tree; everything else surfaces as a `Call` placeholder
-    /// that still preserves data-flow (the popped vars appear as arguments).
-    fn build_expr(&self, op: OpCode, instr: &Instruction, popped: &[SsaVariable]) -> SsaExpr {
-        // Push immediates → literals.
-        if let Some(lit) = literal_for_push(op, instr) {
-            return SsaExpr::lit(lit);
-        }
-
-        // Binary compute.
-        if let Some(bin) = binary_op_for(op) {
-            let mut it = popped.iter();
-            let left = it.next().cloned().unwrap_or_else(unknown_var);
-            let right = it.next().cloned().unwrap_or_else(unknown_var);
-            return SsaExpr::binary(bin, SsaExpr::var(left), SsaExpr::var(right));
-        }
-        if op == OpCode::Convert {
-            let value = popped.first().cloned().unwrap_or_else(unknown_var);
-            let target = instr
-                .operand
-                .as_ref()
-                .and_then(value_type_from_operand)
-                .unwrap_or(ValueType::Unknown);
-            return SsaExpr::Convert {
-                value: Box::new(SsaExpr::var(value)),
-                target,
-            };
-        }
-        if op == OpCode::Istype {
-            let value = popped.first().cloned().unwrap_or_else(unknown_var);
-            let target = instr
-                .operand
-                .as_ref()
-                .and_then(value_type_from_operand)
-                .unwrap_or(ValueType::Unknown);
-            return SsaExpr::IsType {
-                value: Box::new(SsaExpr::var(value)),
-                target,
-            };
-        }
-        if matches!(op, OpCode::Newarray | OpCode::NewarrayT) {
-            let length = popped.first().cloned().unwrap_or_else(unknown_var);
-            let element_type = (op == OpCode::NewarrayT)
-                .then(|| instr.operand.as_ref().and_then(value_type_from_operand))
-                .flatten();
-            return SsaExpr::NewArray {
-                length: Box::new(SsaExpr::var(length)),
-                element_type,
-            };
-        }
-        // Ternary compute (Within/Substr/Modmul/Modpow): render as a call.
-        if matches!(
-            op,
-            OpCode::Within | OpCode::Substr | OpCode::Modmul | OpCode::Modpow
-        ) {
-            return SsaExpr::call(
-                SemanticCallTarget::Intrinsic(Intrinsic::Opcode(op)),
-                popped.iter().cloned().map(SsaExpr::var).collect(),
-            );
-        }
-        // Unary compute.
-        if let Some(un) = unary_op_for(op) {
-            let operand = popped.first().cloned().unwrap_or_else(unknown_var);
-            return SsaExpr::unary(un, SsaExpr::var(operand));
-        }
-        // Unary compute with no dedicated UnaryOp → render as a call.
-        if matches!(
-            op,
-            OpCode::Sqrt
-                | OpCode::Nz
-                | OpCode::Size
-                | OpCode::Keys
-                | OpCode::Values
-                | OpCode::Isnull
-        ) {
-            return SsaExpr::call(
-                SemanticCallTarget::Intrinsic(Intrinsic::Opcode(op)),
-                popped.iter().cloned().map(SsaExpr::var).collect(),
-            );
-        }
-        // Collection constructors / byte ops without a dedicated expr.
-        SsaExpr::call(
-            SemanticCallTarget::Intrinsic(Intrinsic::Opcode(op)),
-            popped.iter().cloned().map(SsaExpr::var).collect(),
-        )
     }
 }
 
