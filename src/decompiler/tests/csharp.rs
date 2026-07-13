@@ -56,6 +56,29 @@ fn csharp_multimethod_uses_structured_constant_fold() {
 }
 
 #[test]
+fn csharp_typed_declarations_preserve_loop_counter_type() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let nef = fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).expect("LoopIf NEF");
+    let manifest = fs::read_to_string(root.join("TestingArtifacts/edgecases/LoopIf.manifest.json"))
+        .expect("LoopIf manifest");
+    let manifest = ContractManifest::from_json_str(&manifest).expect("manifest parsed");
+
+    let untyped = render_csharp_with_coverage(&nef, Some(manifest.clone()), true, false, false);
+    assert!(
+        untyped.source.contains("dynamic loc0;"),
+        "{}",
+        untyped.source
+    );
+
+    let typed = render_csharp_with_coverage(&nef, Some(manifest), true, false, true);
+    assert!(
+        typed.source.contains("BigInteger loc0;"),
+        "{}",
+        typed.source
+    );
+}
+
+#[test]
 fn csharp_loopif_deversions_local_slot() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let nef = fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).expect("LoopIf NEF");
