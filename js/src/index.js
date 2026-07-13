@@ -1,4 +1,5 @@
 import { buildCallGraph } from "./call-graph.js";
+import { renderCSharpContract } from "./csharp.js";
 import { NeoDecompilerError, NefParseError, DisassemblyError, ManifestParseError } from "./errors.js";
 import { parseNef } from "./nef.js";
 import { disassembleScript } from "./disassembler.js";
@@ -23,6 +24,7 @@ export {
   parseNef,
   disassembleScript,
   renderGroupedPseudocode,
+  renderCSharpContract,
   renderPseudocode,
   renderHighLevelMethodGroups,
   NeoDecompilerError,
@@ -153,6 +155,7 @@ export function decompileHighLevelBytes(bytes, options = {}) {
     methodGroups,
     methodContracts: context.methodContracts,
     highLevel,
+    csharp: renderCSharpContract(highLevel),
   };
 }
 
@@ -188,6 +191,7 @@ export function decompileHighLevelBytesWithManifest(bytes, manifestInput, option
     methodGroups,
     methodContracts: context.methodContracts,
     highLevel,
+    csharp: renderCSharpContract(highLevel, manifest),
     groupedPseudocode: renderGroupedPseudocode(methodGroups, manifest),
   };
 }

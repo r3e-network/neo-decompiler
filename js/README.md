@@ -13,6 +13,7 @@ npm install neo-decompiler-js
 - **NEF parsing** — validate magic, checksum, method tokens
 - **Disassembly** — full Neo VM opcode coverage
 - **High-level decompilation** — structured pseudocode with if/else, loops, try/catch, switch
+- **C#-style rendering** — manifest-aware signatures and readable C# source-oriented output
 - **Post-processing** — 18 optimization passes (else-if chains, compound assignments, for-loops, indexing syntax, overflow collapse, and more)
 - **Call graph** — internal calls, CALLT tokens, SYSCALL, indirect CALLA
 - **Cross-references** — slot read/write tracking
@@ -73,7 +74,7 @@ Parse and disassemble. Returns simple pseudocode listing.
 
 Parse, disassemble, and group methods using manifest ABI info. Returns grouped pseudocode.
 
-### `decompileHighLevelBytes(bytes, options?) → { ..., highLevel, methodContracts }`
+### `decompileHighLevelBytes(bytes, options?) → { ..., highLevel, csharp, methodContracts }`
 
 Full decompilation to structured pseudocode (if/else, loops, etc.).
 
@@ -90,10 +91,14 @@ Full decompilation to structured pseudocode (if/else, loops, etc.).
 - `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
   for opcodes the disassembler does not recognise.
 
-### `decompileHighLevelBytesWithManifest(bytes, manifest, options?) → { ..., highLevel, methodContracts }`
+### `decompileHighLevelBytesWithManifest(bytes, manifest, options?) → { ..., highLevel, csharp, methodContracts }`
 
 Same as above but with manifest-driven method signatures. Accepts the
 same `options` object.
+
+`csharp` is a readable C#-style view of the lifted body. VM-specific
+expressions remain visible when they do not have a direct C# translation; the
+field is source-oriented and is not a guarantee of framework compilation.
 
 ### `analyzeBytes(bytes, manifest?) → { ..., callGraph, methodContracts, xrefs, types, methodGroups }`
 

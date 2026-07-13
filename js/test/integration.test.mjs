@@ -13,6 +13,7 @@ import {
   decompileBytes,
   decompileHighLevelBytes,
   decompileHighLevelBytesWithManifest,
+  renderCSharpContract,
   analyzeBytes,
   parseManifest,
 } from "../src/index.js";
@@ -113,6 +114,32 @@ test("integration: complete workflow from bytes to analysis output", () => {
   assert.ok(hlResult.highLevel, "should produce high-level output");
   assert.match(hlResult.highLevel, /contract/, "should have contract declaration");
   assert.match(hlResult.highLevel, /fn/, "should have function declaration");
+  assert.match(hlResult.csharp, /public class NeoContract/, "should expose C# rendering");
+});
+
+test("integration: C# rendering translates manifest signatures and preserves body structure", () => {
+  const manifest = JSON.stringify({
+    name: "SampleToken",
+    abi: {
+      methods: [{
+        name: "transfer",
+        parameters: [{ name: "from", type: "Hash160" }],
+        returntype: "Boolean",
+        offset: 0,
+      }],
+      events: [],
+    },
+    permissions: [],
+    trusts: "*",
+  });
+  const result = decompileHighLevelBytesWithManifest(
+    buildNef({ script: [0x78, 0x40] }),
+    manifest,
+  );
+  assert.match(result.csharp, /public class SampleToken : SmartContract/);
+  assert.match(result.csharp, /public static bool transfer\(UInt160 from\)/);
+  assert.match(result.csharp, /return/);
+  assert.equal(renderCSharpContract(result.highLevel), result.csharp);
 });
 
 test("integration: rejects call flags outside the 0x0F allowed mask", () => {

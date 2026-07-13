@@ -348,6 +348,7 @@ Current JS scope:
 - Parse manifests and group output by ABI method offsets
 - Lift straight-line bytecode into conservative high-level method bodies
 - Render sanitized manifest signatures with pseudo-types such as `int`, `hash160`, and `string`
+- Expose a C#-style rendering surface from the high-level JS API, preserving VM-specific expressions when they have no direct C# translation
 - Reconstruct basic forward-branch `if` / `if-else` shapes
 - Reconstruct `while` and `do-while` loop shapes with `break` / `continue`
 - Emit label-style `goto` / `leave` fallbacks for unstructured jumps and `ENDTRY`

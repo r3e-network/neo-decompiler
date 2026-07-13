@@ -345,6 +345,8 @@ export interface HighLevelResult extends DecompileResult {
   methodGroups: MethodGroup[];
   methodContracts: MethodContracts;
   highLevel: string;
+  /** Readable C#-style rendering of the high-level surface. */
+  csharp: string;
 }
 
 export interface HighLevelWithManifestResult extends HighLevelResult {
@@ -374,6 +376,8 @@ export function parseManifest(
   json: string | Record<string, unknown>,
   options?: { strict?: boolean },
 ): ContractManifest;
+
+export function renderCSharpContract(highLevel: string, manifest?: ContractManifest | null): string;
 
 export function decompileBytes(
   bytes: Uint8Array | ArrayBuffer | number[],
