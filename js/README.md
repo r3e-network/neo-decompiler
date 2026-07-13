@@ -114,9 +114,10 @@ lifting calls.
 contract calls (including `oracle`, `governance`, `role_management`,
 `policy_management`, `token_management`, `ledger`, `notary`, `treasury`,
 `contract_management`, and `upgradeable`),
-compiler/language hints,
-an aggregate confidence, and the evidence signals behind each result. Manifest
-standards are high confidence; bytecode-only hints remain conservative. ABI
+compiler/source metadata hints,
+an aggregate confidence, and the evidence signals behind each result. Generated
+source output is intentionally focused on readable Neo C# contracts; language
+metadata is secondary analysis only. Manifest standards are high confidence; bytecode-only hints remain conservative. ABI
 method signatures can infer NEP-17, NEP-11, and NEP-24 (`royaltyInfo`) when
 the manifest does not declare a standard.
 
