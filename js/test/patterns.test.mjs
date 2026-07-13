@@ -84,3 +84,17 @@ test("C# rendering emits manifest class attributes", () => {
   assert.match(csharp, /\[ManifestExtra\("Version", "2"\)\]/);
   assert.doesNotMatch(csharp, /Nested/);
 });
+
+test("C# rendering preserves safe ABI methods", () => {
+  const csharp = renderCSharpContract(
+    "contract Token {\nfn balanceOf(account: hash160) -> int {\n}\n}",
+    {
+      supportedStandards: [],
+      abi: {
+        methods: [{ name: "balanceOf", safe: true, parameters: [], returnType: "Integer" }],
+        events: [],
+      },
+    },
+  );
+  assert.match(csharp, /\[Safe\]\npublic static BigInteger balanceOf\(UInt160 account\)/);
+});

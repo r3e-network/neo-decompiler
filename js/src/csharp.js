@@ -1,3 +1,5 @@
+import { sanitizeIdentifier } from "./manifest.js";
+
 const TYPE_MAP = new Map([
   ["void", "void"],
   ["bool", "bool"],
@@ -95,6 +97,12 @@ function renderSignature(line) {
   if (!match) return null;
   const [, indentation, name, parameters, returnType] = match;
   return `${indentation}public static ${csharpType(returnType ?? "any")} ${csharpIdentifier(name)}(${renderParameters(parameters)}) {`;
+}
+
+function isSafeManifestMethod(name, manifest) {
+  return (manifest?.abi?.methods ?? []).some(
+    (method) => method.safe === true && sanitizeIdentifier(method.name) === name,
+  );
 }
 
 function renderBodyLine(line) {
@@ -291,6 +299,10 @@ export function renderCSharpContract(highLevel, manifest = null) {
     }
     const signature = renderSignature(line);
     if (signature) {
+      const name = line.match(/^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
+      if (name && isSafeManifestMethod(name, manifest)) {
+        output.push(`${line.match(/^\s*/)?.[0] ?? ""}[Safe]`);
+      }
       output.push(signature);
       continue;
     }
