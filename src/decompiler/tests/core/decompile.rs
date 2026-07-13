@@ -149,6 +149,34 @@ fn decompile_uses_method_token_signature_for_callt_arguments_and_returns() {
 }
 
 #[test]
+fn restricted_native_callt_does_not_emit_a_qualified_label() {
+    let stdlib_hash = [
+        0xC0, 0xEF, 0x39, 0xCE, 0xE0, 0xE4, 0xE9, 0x25, 0xC6, 0xC2, 0xA0, 0x6A, 0x79, 0xE1, 0x44,
+        0x0D, 0xD8, 0x6F, 0xCE, 0xAC,
+    ];
+    let nef_bytes = build_nef_with_single_token(
+        &[0x11, 0x37, 0x00, 0x00, 0x40],
+        stdlib_hash,
+        "Serialize",
+        1,
+        true,
+        0x01,
+    );
+    let decompilation = Decompiler::new()
+        .decompile_bytes(&nef_bytes)
+        .expect("decompile succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        !high_level.contains("return StdLib::Serialize"),
+        "{high_level}"
+    );
+    assert!(high_level.contains("Serialize(t0);"), "{high_level}");
+}
+
+#[test]
 fn decompile_lifts_relative_calls_without_control_flow_warning() {
     // Script: CALL +2, CALL_L +5, RET
     let nef_bytes = build_nef(&[0x34, 0x02, 0x35, 0x05, 0x00, 0x00, 0x00, 0x40]);

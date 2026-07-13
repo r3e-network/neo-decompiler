@@ -47,12 +47,14 @@ pub(crate) fn render_high_level(
         .method_tokens
         .iter()
         .map(|token| {
-            if let Some(hint) = native_contracts::describe_method_token(&token.hash, &token.method)
-            {
-                hint.formatted_label(&token.method)
-            } else {
-                token.method.clone()
+            if token.call_flags == 0x0F {
+                if let Some(hint) =
+                    native_contracts::describe_method_token(&token.hash, &token.method)
+                {
+                    return hint.formatted_label(&token.method);
+                }
             }
+            token.method.clone()
         })
         .collect();
     let callt_param_counts: Vec<usize> = nef

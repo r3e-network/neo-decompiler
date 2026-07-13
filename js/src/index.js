@@ -229,7 +229,9 @@ function buildHighLevelContext(
     // `formatted_label`). Falls back to the raw method name when the
     // hash isn't in the native-contract table.
     calltLabels: nef.methodTokens.map((token) => {
-      const hint = describeMethodToken(token.hash, token.method);
+      const hint = token.callFlags === 0x0F
+        ? describeMethodToken(token.hash, token.method)
+        : null;
       return hint ? hint.formattedLabel(token.method) : token.method;
     }),
     calltParamCounts: nef.methodTokens.map((token) => token.parametersCount),

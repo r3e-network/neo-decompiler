@@ -1387,6 +1387,23 @@ test("uses method token metadata to lift CALLT arguments and void returns", () =
   assert.match(result.highLevel, /return;/);
 });
 
+test("keeps restricted native CALLT labels unqualified", () => {
+  const nef = buildNefWithSingleToken(
+    new Uint8Array([0x11, 0x37, 0x00, 0x00, 0x40]),
+    Uint8Array.from([
+      0xC0, 0xEF, 0x39, 0xCE, 0xE0, 0xE4, 0xE9, 0x25, 0xC6, 0xC2,
+      0xA0, 0x6A, 0x79, 0xE1, 0x44, 0x0D, 0xD8, 0x6F, 0xCE, 0xAC,
+    ]),
+    "Serialize",
+    1,
+    true,
+    0x01,
+  );
+  const result = decompileHighLevelBytes(nef);
+  assert.doesNotMatch(result.highLevel, /return StdLib::Serialize/);
+  assert.match(result.highLevel, /Serialize\(1\)/);
+});
+
 test("uses call-graph-resolved CALLA targets across method arguments", () => {
   // main passes &helper into invoke; invoke loads that argument and CALLA uses
   // it. Method-local pointer maps cannot recover this provenance, but the call
