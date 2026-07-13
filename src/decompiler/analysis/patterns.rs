@@ -14,6 +14,9 @@ use crate::manifest::{ManifestPermissionContract, ManifestPermissionMethods};
 use crate::native_contracts;
 use crate::nef::NefFile;
 
+mod abi;
+mod language;
+
 /// Confidence assigned to an identified pattern or language hint.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -93,7 +96,7 @@ pub fn identify_patterns(
             .iter()
             .map(|method| method.name.to_ascii_lowercase())
             .collect();
-        infer_abi_patterns(&names, &mut standards, &mut patterns, &mut evidence);
+        abi::infer_abi_patterns(&names, &mut standards, &mut patterns, &mut evidence);
 
         if !manifest.abi.events.is_empty() {
             patterns.insert("events".to_string());
@@ -258,8 +261,9 @@ pub fn identify_patterns(
             value: nef.header.source.clone(),
         });
     }
-    let compiler_language = compiler.as_deref().and_then(infer_language);
-    let language = compiler_language.or_else(|| infer_language_from_source(&nef.header.source));
+    let compiler_language = compiler.as_deref().and_then(language::infer_language);
+    let language =
+        compiler_language.or_else(|| language::infer_language_from_source(&nef.header.source));
 
     let confidence = if strong_standard {
         PatternConfidence::High
@@ -287,133 +291,6 @@ pub fn identify_patterns(
     });
     info.evidence = evidence;
     info
-}
-
-fn infer_abi_patterns(
-    names: &BTreeSet<String>,
-    standards: &mut BTreeSet<String>,
-    patterns: &mut BTreeSet<String>,
-    evidence: &mut Vec<PatternEvidence>,
-) {
-    let nep17 = ["symbol", "decimals", "totalSupply", "balanceOf", "transfer"]
-        .iter()
-        .all(|name| names.contains(&name.to_ascii_lowercase()));
-    let nep11 = ["ownerOf", "tokensOf", "transfer"]
-        .iter()
-        .all(|name| names.contains(&name.to_ascii_lowercase()));
-    if nep17 {
-        standards.insert("NEP-17".to_string());
-        patterns.insert("NEP-17".to_string());
-        evidence.push(PatternEvidence {
-            source: "manifest.abi.methods".to_string(),
-            value: "symbol,decimals,totalSupply,balanceOf,transfer".to_string(),
-        });
-    }
-    if nep11 {
-        standards.insert("NEP-11".to_string());
-        patterns.insert("NEP-11".to_string());
-        evidence.push(PatternEvidence {
-            source: "manifest.abi.methods".to_string(),
-            value: "ownerOf,tokensOf,transfer".to_string(),
-        });
-    }
-    let has_owner_accessor = names.contains("owner") || names.contains("getowner");
-    let has_ownership_operation = names.contains("verify")
-        || names.contains("setowner")
-        || names.contains("transferownership");
-    if has_owner_accessor && has_ownership_operation {
-        patterns.insert("ownership".to_string());
-        evidence.push(PatternEvidence {
-            source: "manifest.abi.methods".to_string(),
-            value: "owner,verify/transferOwnership".to_string(),
-        });
-    }
-    if names.contains("mint") {
-        patterns.insert("minting".to_string());
-        evidence.push(PatternEvidence {
-            source: "manifest.abi.methods".to_string(),
-            value: "mint".to_string(),
-        });
-    }
-    if names.contains("burn") {
-        patterns.insert("burning".to_string());
-        evidence.push(PatternEvidence {
-            source: "manifest.abi.methods".to_string(),
-            value: "burn".to_string(),
-        });
-    }
-    if names.contains("pause") && names.contains("unpause") {
-        patterns.insert("pausable".to_string());
-        evidence.push(PatternEvidence {
-            source: "manifest.abi.methods".to_string(),
-            value: "pause,unpause".to_string(),
-        });
-    }
-    if names.contains("royaltyinfo") {
-        standards.insert("NEP-24".to_string());
-        patterns.insert("NEP-24".to_string());
-        patterns.insert("royalties".to_string());
-        evidence.push(PatternEvidence {
-            source: "manifest.abi.methods".to_string(),
-            value: "royaltyInfo".to_string(),
-        });
-    }
-    for (name, label) in [
-        ("onnep17payment", "onNEP17Payment"),
-        ("onnep11payment", "onNEP11Payment"),
-    ] {
-        if names.contains(name) {
-            patterns.insert("token_receiver".to_string());
-            evidence.push(PatternEvidence {
-                source: "manifest.abi.methods".to_string(),
-                value: label.to_string(),
-            });
-        }
-    }
-}
-
-fn infer_language(compiler: &str) -> Option<&'static str> {
-    let compiler = compiler.to_ascii_lowercase();
-    if compiler.contains("csharp") || compiler.contains("neo.compiler") {
-        Some("C#")
-    } else if compiler.contains("boa") || compiler.contains("python") {
-        Some("Python")
-    } else if compiler.contains("neogo") || compiler.contains("neo-go") {
-        Some("Go")
-    } else if compiler.contains("rust") {
-        Some("Rust")
-    } else if compiler.contains("typescript") || compiler.contains("javascript") {
-        Some("TypeScript/JavaScript")
-    } else if compiler.contains("java") {
-        Some("Java")
-    } else {
-        None
-    }
-}
-
-fn infer_language_from_source(source: &str) -> Option<&'static str> {
-    let source = source.to_ascii_lowercase();
-    let source = source.split(['?', '#']).next().unwrap_or_default();
-    let filename = source.rsplit(['/', '\\']).next().unwrap_or(source);
-    if filename.ends_with(".cs") || filename.ends_with(".csproj") {
-        Some("C#")
-    } else if filename.ends_with(".py") {
-        Some("Python")
-    } else if filename.ends_with(".go") {
-        Some("Go")
-    } else if filename.ends_with(".rs") {
-        Some("Rust")
-    } else if filename.ends_with(".java") {
-        Some("Java")
-    } else if filename.ends_with(".ts")
-        || filename.ends_with(".tsx")
-        || filename.ends_with(".js")
-        || filename.ends_with(".jsx")
-    {
-        Some("TypeScript/JavaScript")
-    } else {
-        None
-    }
 }
 
 #[cfg(test)]
