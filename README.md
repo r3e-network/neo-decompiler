@@ -221,7 +221,9 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 - A simple pseudocode view mirroring the decoded instruction stream
 - A C# contract skeleton view (`--format csharp`) that mirrors the manifest
   entry point, emits stubs for additional ABI methods, declares ABI events,
-  and adds `[DisplayName]`/`[Safe]` attributes when available
+  and adds `[DisplayName]`/`[Safe]` attributes when available; its header also
+  records inferred standards, behavior patterns, source language, and
+  confidence for readers who only have the generated contract
 - Label-based control-transfer placeholders use `label_0xNNNN` targets in the high-level view and C# when the target is method-scoped; unrecoverable C# transfers are retained as explicit comments (high-level may emit `leave label_...` for exceptional flow)
 - A single binary (`neo-decompiler`) and a reusable library (`neo_decompiler`)
 

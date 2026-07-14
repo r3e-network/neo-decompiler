@@ -6,6 +6,7 @@
 
 use super::super::analysis::call_graph::CallGraph;
 use super::super::analysis::method_contracts::MethodContracts;
+use super::super::analysis::patterns::identify_patterns;
 use super::super::analysis::types::{TypeInfo, ValueType};
 use crate::decompiler::output_format::RenderOptions;
 use crate::instruction::Instruction;
@@ -119,6 +120,7 @@ pub(crate) fn render_csharp(
     types: &TypeInfo,
     opts: &RenderOptions,
 ) -> CSharpRender {
+    let patterns = identify_patterns(nef, instructions, manifest);
     let mut output = String::new();
     let mut warnings = Vec::new();
     let mut coverage = CSharpCoverage::default();
@@ -205,6 +207,7 @@ pub(crate) fn render_csharp(
     };
 
     header::write_contract_open(&mut output, &contract_name, nef, manifest);
+    header::write_pattern_comments(&mut output, &patterns);
     header::write_static_fields(&mut output, &contract_symbols);
     header::write_vm_exception_type(&mut output, vm_exception_type.as_deref());
     header::write_assert_message_helper(&mut output, assert_message_helper.as_deref());

@@ -3055,6 +3055,42 @@ fn header_surfaces_nef_compiler_and_source_fields() {
 }
 
 #[test]
+fn csharp_header_surfaces_inferred_patterns_and_language() {
+    let mut nef_bytes = sample_nef();
+    let compiler = b"Neo.Compiler.CSharp 3";
+    nef_bytes[4..4 + compiler.len()].copy_from_slice(compiler);
+    let checksum_offset = nef_bytes.len() - std::mem::size_of::<u32>();
+    let checksum = NefParser::calculate_checksum(&nef_bytes[..checksum_offset]);
+    nef_bytes[checksum_offset..].copy_from_slice(&checksum.to_le_bytes());
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "Token",
+            "supportedstandards": ["NEP-17"],
+            "abi": {
+                "methods": [
+                    {"name":"symbol","parameters":[],"returntype":"String","offset":0},
+                    {"name":"decimals","parameters":[],"returntype":"Integer","offset":1},
+                    {"name":"totalSupply","parameters":[],"returntype":"Integer","offset":2},
+                    {"name":"balanceOf","parameters":[],"returntype":"Integer","offset":3},
+                    {"name":"transfer","parameters":[],"returntype":"Boolean","offset":4}
+                ],
+                "events": []
+            }
+        }"#,
+    )
+    .expect("manifest parsed");
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+
+    assert!(csharp.contains("        // inferred standards: NEP-17"));
+    assert!(csharp.contains("        // inferred patterns: NEP-17"));
+    assert!(csharp.contains("        // inferred language: C#"));
+    assert!(csharp.contains("        // pattern confidence: high"));
+}
+
+#[test]
 fn csharp_header_renders_method_tokens_block() {
     // The high-level renderer surfaces `// method tokens declared in
     // NEF` so a reader can cross-reference each CALLT call against

@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use crate::decompiler::analysis::patterns::{PatternConfidence, PatternInfo};
 use crate::manifest::ContractManifest;
 use crate::native_contracts;
 use crate::nef::{describe_call_flags, NefFile};
@@ -141,6 +142,63 @@ pub(super) fn write_contract_open(
     write_method_tokens_comment(output, nef);
 
     writeln!(output).unwrap();
+}
+
+/// Render the inferred contract standards, behavior patterns, and source
+/// language as comments so a generated C# file remains self-describing even
+/// when it is viewed without the JSON analysis report.
+pub(super) fn write_pattern_comments(output: &mut String, info: &PatternInfo) {
+    let mut wrote = false;
+    if !info.standards.is_empty() {
+        let standards = info
+            .standards
+            .iter()
+            .map(|value| escape_csharp_string(value))
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(output, "        // inferred standards: {standards}").unwrap();
+        wrote = true;
+    }
+    if !info.patterns.is_empty() {
+        let patterns = info
+            .patterns
+            .iter()
+            .map(|value| escape_csharp_string(value))
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(output, "        // inferred patterns: {patterns}").unwrap();
+        wrote = true;
+    }
+    if let Some(language) = info.language.as_deref() {
+        writeln!(
+            output,
+            "        // inferred language: {}",
+            escape_csharp_string(language)
+        )
+        .unwrap();
+        wrote = true;
+    }
+    if info.confidence != PatternConfidence::Unknown {
+        writeln!(
+            output,
+            "        // pattern confidence: {}",
+            pattern_confidence_label(info.confidence)
+        )
+        .unwrap();
+        wrote = true;
+    }
+    if wrote {
+        writeln!(output).unwrap();
+    }
+}
+
+fn pattern_confidence_label(confidence: PatternConfidence) -> &'static str {
+    match confidence {
+        PatternConfidence::High => "high",
+        PatternConfidence::Medium => "medium",
+        PatternConfidence::Low => "low",
+        PatternConfidence::Unknown => "unknown",
+    }
 }
 
 pub(super) fn write_static_fields(output: &mut String, symbols: &CSharpContractSymbols) {
