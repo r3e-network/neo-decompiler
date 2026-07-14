@@ -538,7 +538,7 @@ test("C# rendering lowers unambiguous collection helpers", () => {
   assert.match(csharp, /map\.ContainsKey\(key\)/);
 });
 
-test("C# rendering casts CLEARITEMS receivers through the Neo list type", () => {
+test("C# rendering keeps CLEARITEMS compatible with array and map receivers", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
     "fn clear() {",
@@ -546,7 +546,7 @@ test("C# rendering casts CLEARITEMS receivers through the Neo list type", () => 
     "}",
     "}",
   ].join("\n"));
-  assert.match(csharp, /\(\(Neo\.SmartContract\.Framework\.List<object>\)items\)\.Clear\(\);/);
+  assert.match(csharp, /\(\(dynamic\)items\)\.Clear\(\);/);
 });
 
 test("C# rendering lowers an empty VM struct to a framework-compatible array", () => {
