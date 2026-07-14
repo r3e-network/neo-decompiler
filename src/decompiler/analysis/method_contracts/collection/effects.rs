@@ -80,11 +80,10 @@ pub(crate) fn method_argument_effects(
                 }
             }
             for statement in &block.stmts {
-                let SsaStmt::Assign {
-                    target,
-                    value: SsaExpr::Variable(source),
-                } = statement
-                else {
+                let SsaStmt::Assign { target, value } = statement else {
+                    continue;
+                };
+                let Some(source) = possible_alias_source(value) else {
                     continue;
                 };
                 if let Some(origin) = origins.get(source).copied() {
@@ -203,19 +202,27 @@ fn collect_escaping_argument_origins(
             collect_argument_origins(then_expr, origins, found);
             collect_argument_origins(else_expr, origins, found);
         }
-        // CONVERT and CAST can preserve the underlying VM object. Treat their
-        // operand as escaping so a later alias cannot retain a stale shape.
-        SsaExpr::Convert { value, .. } | SsaExpr::Cast { expr: value, .. } => {
-            collect_argument_origins(value, origins, found);
-        }
         SsaExpr::Literal(_)
         | SsaExpr::Variable(_)
         | SsaExpr::Binary { .. }
         | SsaExpr::Unary { .. }
         | SsaExpr::Index { .. }
         | SsaExpr::Member { .. }
+        | SsaExpr::Cast { .. }
+        | SsaExpr::Convert { .. }
         | SsaExpr::IsType { .. }
         | SsaExpr::NewArray { .. } => {}
+    }
+}
+
+fn possible_alias_source(expression: &SsaExpr) -> Option<&SsaVariable> {
+    match expression {
+        SsaExpr::Variable(variable) => Some(variable),
+        // Reference-type casts and same-type VM conversions may retain object
+        // identity, so an alias must remain tainted until a sink is observed.
+        SsaExpr::Cast { expr, .. } => possible_alias_source(expr),
+        SsaExpr::Convert { value, .. } => possible_alias_source(value),
+        _ => None,
     }
 }
 
