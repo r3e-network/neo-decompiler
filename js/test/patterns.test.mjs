@@ -443,6 +443,25 @@ test("C# rendering recognizes additional Neo runtime and crypto syscalls", () =>
   assert.match(csharp, /return Contract\.GetCallFlags\(\);/);
 });
 
+test("C# rendering lowers iterator and local storage syscalls", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn read(iterator, context, key) -> any {",
+    '    let next = syscall("System.Iterator.Next", iterator);',
+    '    let value = syscall("System.Iterator.Value", iterator);',
+    '    let read = syscall("System.Storage.Local.Get", key);',
+    '    let readonly = syscall("System.Storage.AsReadOnly", context);',
+    '    return syscall("System.Storage.Local.Put", key, value);',
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /iterator\.Next\(\)/);
+  assert.match(csharp, /iterator\.Value/);
+  assert.match(csharp, /Storage\.Get\(key\)/);
+  assert.match(csharp, /context\.AsReadOnly/);
+  assert.match(csharp, /Storage\.Put\(key, value\)/);
+});
+
 test("C# rendering preserves ABI events as framework events", () => {
   const source = [
     "contract Token {",

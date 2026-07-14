@@ -226,13 +226,20 @@ function rewriteKnownSyscalls(line) {
     const open = line.indexOf("(", match.index);
     const close = findCallClose(line, open);
     if (open < 0 || close < 0) continue;
-    const api = CSHARP_SYSCALLS.get(match[1]);
-    if (!api) continue;
     const argsText = line
       .slice(open + 1, close)
       .replace(/^\s*"[^"]*"\s*(?:,\s*)?/, "")
       .trim();
     const args = splitCallArguments(argsText);
+    const specialized = rewriteSpecialSyscall(match[1], args);
+    if (specialized) {
+      output += line.slice(cursor, match.index) + specialized;
+      cursor = close + 1;
+      marker.lastIndex = cursor;
+      continue;
+    }
+    const api = CSHARP_SYSCALLS.get(match[1]);
+    if (!api) continue;
     const replacement = api.includes(".") && args.length === 0 && isStaticSyscall(match[1])
       ? api
       : `${api}(${args.join(", ")})`;
@@ -241,6 +248,19 @@ function rewriteKnownSyscalls(line) {
     marker.lastIndex = cursor;
   }
   return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function rewriteSpecialSyscall(name, args) {
+  if (name === "System.Iterator.Next" && args.length === 1) return `${args[0]}.Next()`;
+  if (name === "System.Iterator.Value" && args.length === 1) return `${args[0]}.Value`;
+  if (name === "System.Storage.AsReadOnly" && args.length === 1) return `${args[0]}.AsReadOnly`;
+  const localStorage = {
+    "System.Storage.Local.Get": "Get",
+    "System.Storage.Local.Put": "Put",
+    "System.Storage.Local.Delete": "Delete",
+    "System.Storage.Local.Find": "Find",
+  }[name];
+  return localStorage ? `Storage.${localStorage}(${args.join(", ")})` : null;
 }
 
 function nextOutsideMatch(text, pattern) {
