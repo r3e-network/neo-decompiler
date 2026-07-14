@@ -43,8 +43,12 @@ const CSHARP_COLLECTION_HELPERS = new Map([
         ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).Clear()`
         : `((dynamic)${args[0]}).Clear()`;
   }],
-  ["keys", (args) => args.length === 1 ? `${args[0]}.Keys` : null],
-  ["values", (args) => args.length === 1 ? `${args[0]}.Values` : null],
+  ["keys", (args, types) => args.length === 1
+    ? collectionKind(args[0], types) === "map" ? `${args[0]}.Keys` : `((dynamic)${args[0]}).Keys`
+    : null],
+  ["values", (args, types) => args.length === 1
+    ? collectionKind(args[0], types) === "map" ? `${args[0]}.Values` : `((dynamic)${args[0]}).Values`
+    : null],
   ["remove_item", (args, types) => {
     if (args.length !== 2) return null;
     const kind = collectionKind(args[0], types);
@@ -57,7 +61,11 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["append", (args, types) => args.length === 2
     ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).Add(${args[1]})`
     : null],
-  ["has_key", (args) => args.length === 2 ? `${args[0]}.HasKey(${args[1]})` : null],
+  ["has_key", (args, types) => args.length === 2
+    ? collectionKind(args[0], types) === "map"
+      ? `${args[0]}.HasKey(${args[1]})`
+      : `((dynamic)${args[0]}).HasKey(${args[1]})`
+    : null],
   ["convert_to_integer", (args) => args.length === 1 ? `(BigInteger)(${args[0]})` : null],
   ["convert_to_bool", (args) => args.length === 1 ? `(bool)(${args[0]})` : null],
   ["convert_to_bytestring", (args) => args.length === 1 ? `(ByteString)(${args[0]})` : null],
