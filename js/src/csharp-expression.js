@@ -52,10 +52,17 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["sqrt", (args) => args.length === 1 ? `Helper.Sqrt(${args[0]})` : null],
   ["modmul", (args) => args.length === 3 ? `Helper.ModMultiply(${args.join(", ")})` : null],
   ["modpow", (args) => args.length === 3 ? `BigInteger.ModPow(${args.join(", ")})` : null],
+  ["pow", (args) => args.length === 2 ? `BigInteger.Pow(${args.join(", ")})` : null],
   ["within", (args) => args.length === 3 ? `Helper.Within(${args.join(", ")})` : null],
   ["substr", (args) => args.length === 3 ? `Helper.Range(${args.join(", ")})` : null],
   ["left", (args) => args.length === 2 ? `Helper.Take(${args.join(", ")})` : null],
   ["right", (args) => args.length === 2 ? `Helper.Last(${args.join(", ")})` : null],
+  ["pop_item", (args, types) => {
+    if (args.length !== 1) return null;
+    return collectionKind(args[0], types) === "list"
+      ? `((Neo.SmartContract.Framework.List<object>)${args[0]}).PopItem()`
+      : `((dynamic)${args[0]}).PopItem()`;
+  }],
 ]);
 
 const CSHARP_SYSCALLS = new Map([
@@ -133,7 +140,7 @@ function rewriteKnownHelpers(line, types) {
   for (let pass = 0; pass < 32; pass += 1) {
     const match = nextOutsideMatch(
       output,
-      /\b(new_array_t|new_array|new_buffer|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|within|substr|left|right)\s*\(/g,
+      /\b(new_array_t|new_array|new_buffer|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item)\s*\(/g,
     );
     if (!match) break;
     const open = output.indexOf("(", match.index);

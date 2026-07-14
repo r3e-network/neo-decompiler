@@ -588,6 +588,21 @@ test("C# rendering lowers common Neo math and byte helpers", () => {
   assert.doesNotMatch(csharp, /\b(?:abs|min|modmul|substr|within)\(/);
 });
 
+test("C# rendering lowers power and inferred list pop helpers", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn math(a, b) -> any {",
+    "    let items = new_array(2);",
+    "    let value = pow(a, b);",
+    "    return pop_item(items);",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+  assert.match(csharp, /BigInteger\.Pow\(a, b\)/);
+  assert.match(csharp, /List<object>\)items\)\.PopItem\(\)/);
+  assert.doesNotMatch(csharp, /\b(?:pow|pop_item)\(/);
+});
+
 test("C# rendering lowers an empty VM struct to a framework-compatible array", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
