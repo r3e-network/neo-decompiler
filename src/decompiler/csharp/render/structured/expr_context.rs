@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::cfg::method_body::{SymbolInfo, SymbolOrigin};
 use crate::decompiler::ir::{BinOp, Block, Expr, Intrinsic, Literal, SemanticCallTarget, UnaryOp};
+use crate::decompiler::native_method_types;
 use crate::instruction::OpCode;
 
 use super::expr_inline::{is_inline_pure, InlineCollector};
@@ -115,16 +116,27 @@ impl ExprContext {
     }
 
     pub(super) fn exact_csharp_type(&self, expression: &Expr) -> Option<&str> {
-        let Expr::Call {
-            target: SemanticCallTarget::Internal { offset, .. },
-            ..
-        } = expression
-        else {
-            return None;
-        };
-        self.internal_call_return_types
-            .get(offset)
-            .map(String::as_str)
+        match expression {
+            Expr::Call {
+                target: SemanticCallTarget::Internal { offset, .. },
+                ..
+            } => self
+                .internal_call_return_types
+                .get(offset)
+                .map(String::as_str),
+            Expr::Call {
+                target:
+                    SemanticCallTarget::MethodToken {
+                        name,
+                        hash_le,
+                        call_flags,
+                        ..
+                    },
+                ..
+            } => native_method_types::lookup(hash_le.as_deref(), name, *call_flags)
+                .map(|return_type| return_type.csharp_type),
+            _ => None,
+        }
     }
 
     fn exact_internal_call_value_type(&self, expression: &Expr) -> ValueType {
@@ -214,6 +226,13 @@ impl ExprContext {
                 target: SemanticCallTarget::Internal { .. },
                 ..
             } => self.exact_internal_call_value_type(expression),
+            Expr::Call {
+                target: SemanticCallTarget::MethodToken { .. },
+                ..
+            } => self
+                .exact_csharp_type(expression)
+                .and_then(csharp_type_value_type)
+                .unwrap_or(ValueType::Unknown),
             _ => ValueType::Unknown,
         }
     }
@@ -223,6 +242,7 @@ fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {
     match csharp_type {
         "BigInteger" => Some(ValueType::Integer),
         "bool" => Some(ValueType::Boolean),
+        "string" => Some(ValueType::ByteString),
         "ByteString" => Some(ValueType::ByteString),
         "byte[]" => Some(ValueType::Buffer),
         "object[]" => Some(ValueType::Array),

@@ -5,6 +5,7 @@ use crate::decompiler::cfg::method_body::{
     Fidelity, LoweringIssue, LoweringIssueKind, SymbolInfo, SymbolOrigin,
 };
 use crate::decompiler::ir::{Block, Expr};
+use crate::decompiler::native_method_types;
 use crate::instruction::OpCode;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -247,6 +248,23 @@ pub(in crate::decompiler::csharp::render) fn collect_index_defined_symbols(
 pub(in crate::decompiler::csharp::render) fn concrete_definition_type(
     expression: &Expr,
 ) -> Option<String> {
+    if let Expr::Call {
+        target:
+            crate::decompiler::ir::SemanticCallTarget::MethodToken {
+                name,
+                hash_le,
+                call_flags,
+                ..
+            },
+        ..
+    } = expression
+    {
+        if let Some(return_type) =
+            native_method_types::lookup(hash_le.as_deref(), name, *call_flags)
+        {
+            return Some(return_type.csharp_type.to_string());
+        }
+    }
     let Expr::NewArray {
         element_type: Some(element_type),
         ..

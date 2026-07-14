@@ -8,6 +8,7 @@ use crate::decompiler::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS;
 use crate::decompiler::ir::{
     BinOp, Block, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt, UnaryOp,
 };
+use crate::decompiler::native_method_types;
 use crate::instruction::{Instruction, OpCode};
 
 mod cfg;
@@ -567,6 +568,17 @@ fn structured_expr_type(
             .get(offset)
             .copied()
             .unwrap_or(ValueType::Unknown),
+        Expr::Call {
+            target:
+                SemanticCallTarget::MethodToken {
+                    name,
+                    hash_le,
+                    call_flags,
+                    ..
+                },
+            ..
+        } => native_method_types::lookup(hash_le.as_deref(), name, *call_flags)
+            .map_or(ValueType::Unknown, |return_type| return_type.value_type),
         Expr::Call { .. } | Expr::Member { .. } | Expr::Cast { .. } | Expr::StackTemp(_) => {
             ValueType::Unknown
         }

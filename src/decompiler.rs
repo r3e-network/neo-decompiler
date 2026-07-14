@@ -11,6 +11,7 @@ mod decompilation;
 mod helpers;
 mod high_level;
 pub mod ir;
+pub(crate) mod native_method_types;
 mod output_format;
 mod pipeline;
 mod pseudocode;

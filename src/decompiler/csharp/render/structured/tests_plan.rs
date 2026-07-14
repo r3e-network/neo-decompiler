@@ -235,6 +235,70 @@ fn infers_concrete_return_type_for_private_literal_helper() {
 }
 
 #[test]
+fn infers_exact_string_return_type_for_private_native_helper() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Call, Some(Operand::Jump(4))),
+        Instruction::new(2, OpCode::Ret, None),
+        Instruction::new(4, OpCode::CallT, Some(Operand::U16(0))),
+        Instruction::new(7, OpCode::Ret, None),
+    ];
+    let entry = MethodRef {
+        offset: 0,
+        name: "sub_0x0000".to_string(),
+    };
+    let helper = MethodRef {
+        offset: 4,
+        name: "sub_0x0004".to_string(),
+    };
+    let token = CallTarget::MethodToken {
+        index: 0,
+        hash_le: "C0EF39CEE0E4E925C6C2A06A79E1440DD86FCEAC".to_string(),
+        hash_be: "ACCE6FD80D44E1796AA0C2C625E9E4E0CE39EFC0".to_string(),
+        method: "base58CheckEncode".to_string(),
+        parameters_count: 1,
+        has_return_value: true,
+        call_flags: 0x0F,
+    };
+    let call_graph = CallGraph {
+        methods: vec![entry.clone(), helper.clone()],
+        edges: vec![
+            CallEdge {
+                caller: entry,
+                call_offset: 0,
+                opcode: "CALL".to_string(),
+                target: CallTarget::Internal {
+                    method: helper.clone(),
+                },
+            },
+            CallEdge {
+                caller: helper,
+                call_offset: 4,
+                opcode: "CALLT".to_string(),
+                target: token,
+            },
+        ],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "sub_0x0000", 0, ReturnBehavior::Unknown),
+            method_contract(4, "sub_0x0004", 1, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        None,
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 4],
+    );
+
+    assert_eq!(plans.inferred_method(4).unwrap().return_type, "string");
+}
+
+#[test]
 fn unresolved_private_call_keeps_helper_return_dynamic() {
     let instructions = vec![
         Instruction::new(0, OpCode::Call, Some(Operand::Jump(4))),

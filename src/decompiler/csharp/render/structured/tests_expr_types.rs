@@ -54,6 +54,42 @@ fn resolved_boolean_internal_call_avoids_dynamic_truthiness_cast() {
 }
 
 #[test]
+fn known_native_method_tokens_drive_exact_csharp_expression_types() {
+    let context = ExprContext::default();
+    let call = |name: &str| {
+        Expr::call(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: name.to_string(),
+                hash_le: Some("C0EF39CEE0E4E925C6C2A06A79E1440DD86FCEAC".to_string()),
+                call_flags: Some(0x0F),
+            },
+            Vec::new(),
+        )
+    };
+
+    let string = call("base58CheckEncode");
+    assert_eq!(context.exact_csharp_type(&string), Some("string"));
+    assert_eq!(context.value_type(&string), ValueType::ByteString);
+
+    let integer = call("strLen");
+    assert_eq!(context.exact_csharp_type(&integer), Some("BigInteger"));
+    assert_eq!(context.value_type(&integer), ValueType::Integer);
+
+    let restricted = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 0,
+            name: "strLen".to_string(),
+            hash_le: Some("C0EF39CEE0E4E925C6C2A06A79E1440DD86FCEAC".to_string()),
+            call_flags: Some(0x01),
+        },
+        Vec::new(),
+    );
+    assert_eq!(context.exact_csharp_type(&restricted), None);
+    assert_eq!(context.value_type(&restricted), ValueType::Unknown);
+}
+
+#[test]
 fn proven_expression_shapes_keep_concrete_value_types() {
     let context = ExprContext::default();
     let typed_array = Expr::NewArray {

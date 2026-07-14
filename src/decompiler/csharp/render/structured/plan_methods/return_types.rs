@@ -52,15 +52,12 @@ pub(super) fn infer_private_return_types(
                 context: plan.method_context.clone(),
                 symbol_types: plan.symbol_types.clone(),
             });
-            let Some(value_type) = inferred_return_value_type(
+            let Some(return_type) = inferred_return_type(
                 &lowered.body,
                 &lowered.symbols,
                 &csharp_return_types,
                 &lowered.fidelity,
             ) else {
-                continue;
-            };
-            let Some(return_type) = csharp_return_type(value_type) else {
                 continue;
             };
             updates.push((*plan_index, return_type));
@@ -107,6 +104,7 @@ fn csharp_return_value_type(return_type: &str) -> Option<ValueType> {
     match return_type {
         "BigInteger" => Some(ValueType::Integer),
         "bool" => Some(ValueType::Boolean),
+        "string" => Some(ValueType::ByteString),
         "ByteString" => Some(ValueType::ByteString),
         "byte[]" => Some(ValueType::Buffer),
         "object[]" => Some(ValueType::Array),
@@ -131,12 +129,12 @@ fn csharp_return_type(value_type: ValueType) -> Option<&'static str> {
     }
 }
 
-fn inferred_return_value_type(
+fn inferred_return_type(
     body: &Block,
     symbols: &BTreeMap<String, SymbolInfo>,
     internal_call_return_types: &BTreeMap<usize, String>,
     fidelity: &FidelityReport,
-) -> Option<ValueType> {
+) -> Option<String> {
     if fidelity.status == Fidelity::Incomplete
         || fidelity
             .issues
@@ -148,10 +146,10 @@ fn inferred_return_value_type(
     }
     let context = ExprContext::for_block(body, symbols, false)
         .with_internal_call_return_types(internal_call_return_types);
-    collect_return_value_type(body, &context).ok().flatten()
+    collect_return_type(body, &context).ok().flatten()
 }
 
-fn collect_return_value_type(body: &Block, context: &ExprContext) -> Result<Option<ValueType>, ()> {
+fn collect_return_type(body: &Block, context: &ExprContext) -> Result<Option<String>, ()> {
     let mut candidate = None;
     for statement in &body.stmts {
         merge_return_type(
@@ -165,12 +163,15 @@ fn collect_return_value_type(body: &Block, context: &ExprContext) -> Result<Opti
 fn collect_statement_return_type(
     statement: &Stmt,
     context: &ExprContext,
-) -> Result<Option<ValueType>, ()> {
+) -> Result<Option<String>, ()> {
     match statement {
         Stmt::Return(Some(value)) => {
-            let value_type = context.value_type(value);
-            csharp_return_type(value_type).ok_or(())?;
-            Ok(Some(value_type))
+            let return_type = context
+                .exact_csharp_type(value)
+                .map(str::to_string)
+                .or_else(|| csharp_return_type(context.value_type(value)).map(str::to_string))
+                .ok_or(())?;
+            Ok(Some(return_type))
         }
         Stmt::Return(None) => Err(()),
         Stmt::ControlFlow(control) => collect_control_return_type(control, context),
@@ -179,26 +180,29 @@ fn collect_statement_return_type(
 }
 
 fn merge_return_type(
-    candidate: &mut Option<ValueType>,
-    value_type: Option<ValueType>,
+    candidate: &mut Option<String>,
+    return_type: Option<String>,
 ) -> Result<(), ()> {
-    let Some(value_type) = value_type else {
+    let Some(return_type) = return_type else {
         return Ok(());
     };
-    if candidate.is_some_and(|existing| existing != value_type) {
+    if candidate
+        .as_ref()
+        .is_some_and(|existing| existing != &return_type)
+    {
         return Err(());
     }
-    *candidate = Some(value_type);
+    *candidate = Some(return_type);
     Ok(())
 }
 
 fn collect_control_return_type(
     control: &ControlFlow,
     context: &ExprContext,
-) -> Result<Option<ValueType>, ()> {
+) -> Result<Option<String>, ()> {
     let mut candidate = None;
-    let collect = |candidate: &mut Option<ValueType>, block: &Block| -> Result<(), ()> {
-        merge_return_type(candidate, collect_return_value_type(block, context)?)
+    let collect = |candidate: &mut Option<String>, block: &Block| -> Result<(), ()> {
+        merge_return_type(candidate, collect_return_type(block, context)?)
     };
     match control {
         ControlFlow::If {
