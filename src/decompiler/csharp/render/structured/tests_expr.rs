@@ -927,6 +927,23 @@ fn syscall_rendering_uses_hash_identity_and_drops_display_metadata() {
 }
 
 #[test]
+fn typed_syscall_fallbacks_preserve_catalog_return_types() {
+    let context = expr_context_with_types(&[("storage", ValueType::InteropInterface)]);
+    let expression = Expr::call(
+        SemanticCallTarget::Syscall {
+            hash: 0x31E8_5D92,
+            name: Some("System.Storage.Get".to_string()),
+        },
+        vec![Expr::var("storage"), Expr::var("dynamic_key")],
+    );
+
+    assert_eq!(
+        render_expr(&expression, &context),
+        "(ByteString)Runtime.LoadScript((ByteString)new byte[] { 0x41, 0x92, 0x5D, 0xE8, 0x31 }, CallFlags.All, new object[] { storage, dynamic_key })"
+    );
+}
+
+#[test]
 fn check_witness_requires_explicit_framework_overload_evidence() {
     let context = expr_context_with_types(&[
         ("account_bytes", ValueType::ByteString),

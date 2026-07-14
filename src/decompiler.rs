@@ -15,6 +15,7 @@ pub(crate) mod native_method_types;
 mod output_format;
 mod pipeline;
 mod pseudocode;
+pub(crate) mod syscall_types;
 
 pub use decompilation::Decompilation;
 pub(crate) use high_level::write_contract_header;

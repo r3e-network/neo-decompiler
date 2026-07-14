@@ -90,6 +90,28 @@ fn known_native_method_tokens_drive_exact_csharp_expression_types() {
 }
 
 #[test]
+fn known_syscalls_drive_exact_csharp_expression_types() {
+    let context = ExprContext::default();
+    let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());
+
+    let time = syscall(0x0388_C3B7);
+    assert_eq!(context.exact_csharp_type(&time), Some("BigInteger"));
+    assert_eq!(context.value_type(&time), ValueType::Integer);
+
+    let storage = syscall(0x31E8_5D92);
+    assert_eq!(context.exact_csharp_type(&storage), Some("ByteString"));
+    assert_eq!(context.value_type(&storage), ValueType::ByteString);
+
+    let iterator = syscall(0x9AB8_30DF);
+    assert_eq!(context.exact_csharp_type(&iterator), Some("Iterator"));
+    assert_eq!(context.value_type(&iterator), ValueType::InteropInterface);
+
+    let unknown = syscall(0xDEAD_BEEF);
+    assert_eq!(context.exact_csharp_type(&unknown), None);
+    assert_eq!(context.value_type(&unknown), ValueType::Unknown);
+}
+
+#[test]
 fn proven_expression_shapes_keep_concrete_value_types() {
     let context = ExprContext::default();
     let typed_array = Expr::NewArray {

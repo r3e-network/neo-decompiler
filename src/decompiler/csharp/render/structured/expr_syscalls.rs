@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::ir::{Expr, Literal};
+use crate::decompiler::syscall_types;
 use crate::instruction::OpCode;
 
 use super::expr::{
@@ -55,8 +56,11 @@ pub(super) fn render_syscall(
     }
 
     let rendered = render_low_level_syscall(hash, args, context, expanding);
-    if hash == 0x8CEC_27F8 {
-        RenderedExpr::new(format!("(bool){}", rendered.source), PREC_UNARY)
+    if let Some(return_type) = syscall_types::lookup(hash) {
+        RenderedExpr::new(
+            format!("({}){}", return_type.csharp_type, rendered.source),
+            PREC_UNARY,
+        )
     } else {
         rendered
     }

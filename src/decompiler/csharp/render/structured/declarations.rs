@@ -265,6 +265,15 @@ pub(in crate::decompiler::csharp::render) fn concrete_definition_type(
             return Some(return_type.csharp_type.to_string());
         }
     }
+    if let Expr::Call {
+        target: crate::decompiler::ir::SemanticCallTarget::Syscall { hash, .. },
+        ..
+    } = expression
+    {
+        if let Some(return_type) = crate::decompiler::syscall_types::lookup(*hash) {
+            return Some(return_type.csharp_type.to_string());
+        }
+    }
     let Expr::NewArray {
         element_type: Some(element_type),
         ..

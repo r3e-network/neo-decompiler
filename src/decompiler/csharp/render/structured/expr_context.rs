@@ -4,6 +4,7 @@ use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::cfg::method_body::{SymbolInfo, SymbolOrigin};
 use crate::decompiler::ir::{BinOp, Block, Expr, Intrinsic, Literal, SemanticCallTarget, UnaryOp};
 use crate::decompiler::native_method_types;
+use crate::decompiler::syscall_types;
 use crate::instruction::OpCode;
 
 use super::expr_inline::{is_inline_pure, InlineCollector};
@@ -135,6 +136,10 @@ impl ExprContext {
                 ..
             } => native_method_types::lookup(hash_le.as_deref(), name, *call_flags)
                 .map(|return_type| return_type.csharp_type),
+            Expr::Call {
+                target: SemanticCallTarget::Syscall { hash, .. },
+                ..
+            } => syscall_types::lookup(*hash).map(|return_type| return_type.csharp_type),
             _ => None,
         }
     }
@@ -233,6 +238,13 @@ impl ExprContext {
                 .exact_csharp_type(expression)
                 .and_then(csharp_type_value_type)
                 .unwrap_or(ValueType::Unknown),
+            Expr::Call {
+                target: SemanticCallTarget::Syscall { .. },
+                ..
+            } => self
+                .exact_csharp_type(expression)
+                .and_then(csharp_type_value_type)
+                .unwrap_or(ValueType::Unknown),
             _ => ValueType::Unknown,
         }
     }
@@ -247,6 +259,8 @@ fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {
         "byte[]" => Some(ValueType::Buffer),
         "object[]" => Some(ValueType::Array),
         "Map<object, object>" => Some(ValueType::Map),
+        "UInt160" | "UInt256" | "ECPoint" => Some(ValueType::ByteString),
+        "StorageContext" | "Iterator" | "Transaction" => Some(ValueType::InteropInterface),
         _ => None,
     }
 }

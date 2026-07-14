@@ -109,6 +109,8 @@ fn csharp_return_value_type(return_type: &str) -> Option<ValueType> {
         "byte[]" => Some(ValueType::Buffer),
         "object[]" => Some(ValueType::Array),
         "Map<object, object>" => Some(ValueType::Map),
+        "UInt160" | "UInt256" | "ECPoint" => Some(ValueType::ByteString),
+        "StorageContext" | "Iterator" | "Transaction" => Some(ValueType::InteropInterface),
         _ => None,
     }
 }

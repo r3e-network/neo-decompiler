@@ -9,6 +9,7 @@ use crate::decompiler::ir::{
     BinOp, Block, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt, UnaryOp,
 };
 use crate::decompiler::native_method_types;
+use crate::decompiler::syscall_types;
 use crate::instruction::{Instruction, OpCode};
 
 mod cfg;
@@ -578,6 +579,11 @@ fn structured_expr_type(
                 },
             ..
         } => native_method_types::lookup(hash_le.as_deref(), name, *call_flags)
+            .map_or(ValueType::Unknown, |return_type| return_type.value_type),
+        Expr::Call {
+            target: SemanticCallTarget::Syscall { hash, .. },
+            ..
+        } => syscall_types::lookup(*hash)
             .map_or(ValueType::Unknown, |return_type| return_type.value_type),
         Expr::Call { .. } | Expr::Member { .. } | Expr::Cast { .. } | Expr::StackTemp(_) => {
             ValueType::Unknown
