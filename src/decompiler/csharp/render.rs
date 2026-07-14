@@ -121,7 +121,6 @@ pub(crate) fn render_csharp(
     opts: &RenderOptions,
 ) -> CSharpRender {
     let patterns = identify_patterns(nef, instructions, manifest);
-    let event_signatures = manifest.map(events::event_signatures).unwrap_or_default();
     let mut output = String::new();
     let mut warnings = Vec::new();
     let mut coverage = CSharpCoverage::default();
@@ -150,8 +149,23 @@ pub(crate) fn render_csharp(
         .iter()
         .map(|field| (field.name.clone(), field.csharp_type.clone()))
         .collect::<BTreeMap<_, _>>();
-    let mut used_member_names =
-        contract_member_names(&contract_name, manifest, &method_plans, &contract_symbols);
+    let mut reserved_event_names = HashSet::from([contract_name.clone()]);
+    reserved_event_names.extend(method_plans.emitted_names().map(str::to_string));
+    reserved_event_names.extend(
+        contract_symbols
+            .static_fields
+            .iter()
+            .map(|field| field.name.clone()),
+    );
+    let event_signatures = manifest
+        .map(|manifest| events::event_signatures(manifest, &reserved_event_names))
+        .unwrap_or_default();
+    let mut used_member_names = contract_member_names(
+        &contract_name,
+        &method_plans,
+        &contract_symbols,
+        &event_signatures,
+    );
     let vm_exception_type = vm_exception_type_name(instructions, &mut used_member_names);
     let vm_exception_type_ref = vm_exception_type.as_deref().unwrap_or(VM_EXCEPTION_TYPE);
     let assert_message_helper = assert_message_helper_name(instructions, &mut used_member_names);
@@ -227,7 +241,7 @@ pub(crate) fn render_csharp(
     }
 
     if let Some(manifest) = manifest {
-        events::write_events(&mut output, manifest);
+        events::write_events(&mut output, manifest, &event_signatures);
         methods::write_manifest_methods(
             &mut output,
             manifest,
@@ -278,9 +292,9 @@ fn vm_exception_type_name(
 
 fn contract_member_names(
     contract_name: &str,
-    manifest: Option<&ContractManifest>,
     method_plans: &structured::plan::CSharpMethodPlans,
     contract_symbols: &structured::plan::CSharpContractSymbols,
+    event_signatures: &events::EventSignatures,
 ) -> HashSet<String> {
     let mut used_names = HashSet::from([contract_name.to_string()]);
     used_names.extend(method_plans.emitted_names().map(str::to_string));
@@ -291,14 +305,7 @@ fn contract_member_names(
             .map(|field| field.name.clone()),
     );
 
-    if let Some(manifest) = manifest {
-        let mut event_names = HashSet::new();
-        for event in &manifest.abi.events {
-            let emitted =
-                make_unique_identifier(sanitize_csharp_identifier(&event.name), &mut event_names);
-            used_names.insert(emitted);
-        }
-    }
+    used_names.extend(event_signatures.values().map(|(name, _)| name.clone()));
 
     used_names
 }

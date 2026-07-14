@@ -553,6 +553,38 @@ fn csharp_includes_manifest_events() {
 }
 
 #[test]
+fn csharp_disambiguates_events_against_contract_members() {
+    let nef_bytes = sample_nef();
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "Events",
+                "abi": {
+                    "methods": [
+                        { "name": "main", "parameters": [], "returntype": "Void", "offset": 0 }
+                    ],
+                    "events": [
+                        { "name": "main", "parameters": [] }
+                    ]
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    let csharp = decompilation.csharp.as_deref().expect("csharp output");
+    assert!(csharp.contains("[DisplayName(\"main\")]"));
+    assert!(csharp.contains("public static event Action main_1;"));
+    assert!(csharp.contains("public static void main()"));
+}
+
+#[test]
 fn csharp_escapes_reserved_keywords() {
     let nef_bytes = sample_nef();
     let manifest = ContractManifest::from_json_str(

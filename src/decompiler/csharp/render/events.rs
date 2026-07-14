@@ -10,8 +10,11 @@ use super::super::helpers::{
 
 pub(crate) type EventSignatures = BTreeMap<String, (String, Vec<String>)>;
 
-pub(crate) fn event_signatures(manifest: &ContractManifest) -> EventSignatures {
-    let mut used_names = HashSet::new();
+pub(crate) fn event_signatures(
+    manifest: &ContractManifest,
+    reserved_names: &HashSet<String>,
+) -> EventSignatures {
+    let mut used_names = reserved_names.clone();
     manifest
         .abi
         .events
@@ -29,13 +32,16 @@ pub(crate) fn event_signatures(manifest: &ContractManifest) -> EventSignatures {
         .collect()
 }
 
-pub(super) fn write_events(output: &mut String, manifest: &ContractManifest) {
+pub(super) fn write_events(
+    output: &mut String,
+    manifest: &ContractManifest,
+    signatures: &EventSignatures,
+) {
     if manifest.abi.events.is_empty() {
         return;
     }
 
     writeln!(output, "        // Events").unwrap();
-    let signatures = event_signatures(manifest);
     for event in &manifest.abi.events {
         let (event_name, param_types) = signatures
             .get(&event.name)
