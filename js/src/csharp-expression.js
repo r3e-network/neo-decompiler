@@ -61,6 +61,7 @@ const CSHARP_SYSCALLS = new Map([
   ["System.Runtime.CheckWitness", "Runtime.CheckWitness"],
   ["System.Runtime.GetNotifications", "Runtime.GetNotifications"],
   ["System.Runtime.BurnGas", "Runtime.BurnGas"],
+  ["System.Runtime.LoadScript", "Runtime.LoadScript"],
   ["System.Contract.Call", "Contract.Call"],
   ["System.Contract.CallNative", "Contract.CallNative"],
   ["System.Contract.CallLegacy", "Contract.CallLegacy"],

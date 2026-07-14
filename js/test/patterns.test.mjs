@@ -430,6 +430,7 @@ test("C# rendering recognizes additional Neo runtime and crypto syscalls", () =>
     '    let signers = syscall("System.Runtime.CurrentSigners");',
     '    let random = syscall("System.Runtime.GetRandom");',
     '    let valid = syscall("System.Crypto.CheckSig", key, signature);',
+    '    let loaded = syscall("System.Runtime.LoadScript", script, flags, args);',
     '    return syscall("System.Contract.GetCallFlags");',
     "}",
     "}",
@@ -438,6 +439,7 @@ test("C# rendering recognizes additional Neo runtime and crypto syscalls", () =>
   assert.match(csharp, /Runtime\.CurrentSigners\(\)/);
   assert.match(csharp, /Runtime\.GetRandom\(\)/);
   assert.match(csharp, /Crypto\.CheckSig\(key, signature\)/);
+  assert.match(csharp, /Runtime\.LoadScript\(script, flags, args\)/);
   assert.match(csharp, /return Contract\.GetCallFlags\(\);/);
 });
 
