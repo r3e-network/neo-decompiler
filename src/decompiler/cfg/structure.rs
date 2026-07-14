@@ -25,6 +25,7 @@ use super::ssa::{
 mod analysis;
 mod branches;
 mod cleanup;
+mod for_loops;
 mod graph;
 mod loops;
 mod regions;
