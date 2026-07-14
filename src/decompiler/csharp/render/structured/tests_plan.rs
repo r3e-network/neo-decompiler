@@ -152,6 +152,46 @@ fn unknown_pickitem_provenance_remains_dynamic() {
 }
 
 #[test]
+fn repeated_concrete_definitions_keep_their_shared_csharp_type() {
+    let body = Block::from(vec![
+        Stmt::assign("value", Expr::int(1)),
+        Stmt::assign("value", Expr::int(2)),
+    ]);
+    let symbols = BTreeMap::from([(
+        "value".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Temporary,
+            // A join can leave the neutral SSA value type unknown even when
+            // every reachable definition has the same concrete expression type.
+            value_type: ValueType::Unknown,
+        },
+    )]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["value"].csharp_type, "BigInteger");
+}
+
+#[test]
+fn repeated_conflicting_definitions_remain_dynamic() {
+    let body = Block::from(vec![
+        Stmt::assign("value", Expr::int(1)),
+        Stmt::assign("value", Expr::Literal(Literal::Bool(true))),
+    ]);
+    let symbols = BTreeMap::from([(
+        "value".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Temporary,
+            value_type: ValueType::Unknown,
+        },
+    )]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["value"].csharp_type, "dynamic");
+}
+
+#[test]
 fn plans_overloads_and_calls_together() {
     let manifest = ContractManifest::from_json_str(
         r#"{

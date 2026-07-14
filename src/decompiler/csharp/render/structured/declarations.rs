@@ -215,9 +215,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
             .concrete_definition_types
             .get(name)
             .filter(|candidate| {
-                typed
-                    && activity.definitions.len() == 1
-                    && concrete_type_matches_value_type(candidate, symbol.value_type)
+                typed && concrete_type_matches_value_type(candidate, symbol.value_type)
             })
             .cloned();
         declarations.insert(
