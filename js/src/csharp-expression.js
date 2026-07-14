@@ -17,7 +17,9 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["Map", (args) => args.length === 0 ? "new Map<object, object>()" : null],
   ["Struct", (args) => args.length === 0 ? "new object[] { }" : null],
   ["is_null", (args) => args.length === 1 ? `(${args[0]} is null)` : null],
-  ["clear_items", (args) => args.length === 1 ? `${args[0]}.Clear()` : null],
+  ["clear_items", (args) => args.length === 1
+    ? `((Neo.SmartContract.Framework.List<object>)${args[0]}).Clear()`
+    : null],
   ["keys", (args) => args.length === 1 ? `${args[0]}.Keys` : null],
   ["values", (args) => args.length === 1 ? `${args[0]}.Values` : null],
   ["remove_item", (args) => args.length === 2 ? `${args[0]}.Remove(${args[1]})` : null],
