@@ -927,6 +927,55 @@ fn syscall_rendering_uses_hash_identity_and_drops_display_metadata() {
 }
 
 #[test]
+fn compiler_debug_notify_lowers_only_proven_singleton_string_states() {
+    let debug_call = |state| {
+        Expr::call(
+            SemanticCallTarget::Syscall {
+                hash: 0x616F_0195,
+                name: Some("System.Runtime.Notify".to_string()),
+            },
+            vec![Expr::Literal(Literal::String("Debug".to_string())), state],
+        )
+    };
+    let direct = debug_call(Expr::Array(vec![Expr::Literal(Literal::String(
+        "message".to_string(),
+    ))]));
+    assert_eq!(
+        render_expr(&direct, &ExprContext::default()),
+        "Runtime.Debug(\"message\")"
+    );
+
+    let body = Block::from(vec![
+        Stmt::assign(
+            "state",
+            Expr::Array(vec![Expr::Literal(Literal::String(
+                "aliased message".to_string(),
+            ))]),
+        ),
+        Stmt::expr(debug_call(Expr::var("state"))),
+    ]);
+    let symbols = BTreeMap::from([(
+        "state".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Temporary,
+            value_type: ValueType::Array,
+        },
+    )]);
+    let context = ExprContext::for_block(&body, &symbols, true);
+    assert!(context.is_debug_singleton_array_target("state"));
+    assert_eq!(
+        render_expr(&debug_call(Expr::var("state")), &context),
+        "Runtime.Debug(\"aliased message\")"
+    );
+
+    let multi_state = debug_call(Expr::Array(vec![
+        Expr::Literal(Literal::String("first".to_string())),
+        Expr::Literal(Literal::String("second".to_string())),
+    ]));
+    assert!(render_expr(&multi_state, &ExprContext::default()).starts_with("Runtime.LoadScript("));
+}
+
+#[test]
 fn typed_syscall_fallbacks_preserve_catalog_return_types() {
     let context = expr_context_with_types(&[("storage", ValueType::InteropInterface)]);
     let expression = Expr::call(

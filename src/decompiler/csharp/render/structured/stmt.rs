@@ -6,7 +6,7 @@ use crate::decompiler::cfg::method_body::{SourceMap, StatementId, SymbolInfo};
 use crate::decompiler::csharp::helpers::{
     format_vm_assertion, VM_ASSERT_MESSAGE_HELPER, VM_EXCEPTION_TYPE,
 };
-use crate::decompiler::ir::{Block, ControlFlow, Stmt};
+use crate::decompiler::ir::{Block, ControlFlow, Expr, Stmt};
 
 use super::expr::{render_expr, render_vm_condition, ExprContext};
 use super::plan::{DeclarationPlan, ScopeId, ScopeTree};
@@ -231,6 +231,12 @@ impl StatementRenderer<'_> {
             if omitted_void_return == Some(index) {
                 continue;
             }
+            if self.should_omit_statement(statement) {
+                // Keep source-map statement IDs aligned when a compiler-
+                // generated Debug notification array is removed.
+                self.next_statement_id += 1;
+                continue;
+            }
             self.render_trace_comments(indent, &mut lines);
             self.render_statement(statement, scope, indent, &mut lines, &facts);
             update_definition_facts(&mut facts, statement);
@@ -322,6 +328,19 @@ impl StatementRenderer<'_> {
                 self.render_control_flow(control, scope, indent, lines, facts);
             }
         }
+    }
+
+    fn should_omit_statement(&self, statement: &Stmt) -> bool {
+        matches!(
+            statement,
+            Stmt::Assign {
+                target,
+                value: Expr::Array(elements),
+            } if elements.len() == 1
+                && self
+                    .expressions
+                    .is_debug_singleton_array_target(target)
+        )
     }
 }
 

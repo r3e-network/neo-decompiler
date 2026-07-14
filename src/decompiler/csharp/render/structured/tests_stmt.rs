@@ -397,6 +397,39 @@ fn typed_static_field_boundaries_use_contract_field_types() {
 }
 
 #[test]
+fn compiler_debug_notify_omits_the_packed_state_temp() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "state",
+            Expr::Array(vec![Expr::Literal(Literal::String("message".to_string()))]),
+        ),
+        Stmt::expr(Expr::call(
+            SemanticCallTarget::Syscall {
+                hash: 0x616F_0195,
+                name: Some("System.Runtime.Notify".to_string()),
+            },
+            vec![
+                Expr::Literal(Literal::String("Debug".to_string())),
+                Expr::var("state"),
+            ],
+        )),
+    ]);
+    let symbols = BTreeMap::from([(
+        "state".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Temporary,
+            value_type: ValueType::Array,
+        },
+    )]);
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(
+        render_block(&body, &plan, &symbols, ReturnBehavior::Void, true),
+        "Runtime.Debug(\"message\");"
+    );
+}
+
+#[test]
 fn typed_index_definitions_ignore_stale_slot_collection_types() {
     let body = Block::from(vec![
         Stmt::assign("t0", Expr::index(Expr::var("items"), Expr::int(0))),

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::cfg::method_body::{SymbolInfo, SymbolOrigin};
@@ -8,11 +8,16 @@ use crate::decompiler::syscall_types;
 use crate::instruction::OpCode;
 
 use super::expr_inline::{is_inline_pure, InlineCollector};
+#[path = "expr_context_patterns.rs"]
+mod patterns;
+use patterns::collect_debug_state_names;
 
 #[derive(Debug, Default)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) struct ExprContext {
     pub(super) inline_values: BTreeMap<String, Expr>,
+    singleton_array_values: BTreeMap<String, Expr>,
+    debug_singleton_array_targets: BTreeSet<String>,
     value_types: BTreeMap<String, ValueType>,
     pub(super) emitted_names: BTreeMap<String, String>,
     pub(super) unpack_packstruct_helper_call: Option<String>,
@@ -31,9 +36,20 @@ impl ExprContext {
             .iter()
             .map(|(name, symbol)| (name.clone(), symbol.value_type))
             .collect();
+        let mut collector = InlineCollector::default();
+        collector.visit_block(block, 0);
+        let singleton_array_values = collect_singleton_array_values(&collector);
+        let debug_state_names = collect_debug_state_names(block);
+        let debug_singleton_array_targets = singleton_array_values
+            .keys()
+            .filter(|name| debug_state_names.contains(*name))
+            .cloned()
+            .collect();
         if !inline_single_use_temps {
             return Self {
                 inline_values: BTreeMap::new(),
+                singleton_array_values,
+                debug_singleton_array_targets,
                 value_types,
                 emitted_names: BTreeMap::new(),
                 unpack_packstruct_helper_call: None,
@@ -42,8 +58,6 @@ impl ExprContext {
             };
         }
 
-        let mut collector = InlineCollector::default();
-        collector.visit_block(block, 0);
         let inline_values = collector
             .definitions
             .iter()
@@ -82,6 +96,8 @@ impl ExprContext {
             .collect();
         Self {
             inline_values,
+            singleton_array_values,
+            debug_singleton_array_targets,
             value_types,
             emitted_names: BTreeMap::new(),
             unpack_packstruct_helper_call: None,
@@ -152,6 +168,18 @@ impl ExprContext {
 
     pub(super) fn is_inlined(&self, name: &str) -> bool {
         self.inline_values.contains_key(name)
+    }
+
+    pub(super) fn singleton_array_element<'a>(&'a self, expression: &'a Expr) -> Option<&'a Expr> {
+        match expression {
+            Expr::Array(elements) => elements.as_slice().first().filter(|_| elements.len() == 1),
+            Expr::Variable(name) => self.singleton_array_values.get(name),
+            _ => None,
+        }
+    }
+
+    pub(super) fn is_debug_singleton_array_target(&self, name: &str) -> bool {
+        self.debug_singleton_array_targets.contains(name)
     }
 
     pub(super) fn value_type(&self, expression: &Expr) -> ValueType {
@@ -289,6 +317,29 @@ impl ExprContext {
             _ => ValueType::Unknown,
         }
     }
+}
+
+fn collect_singleton_array_values(collector: &InlineCollector) -> BTreeMap<String, Expr> {
+    collector
+        .definitions
+        .iter()
+        .filter_map(|(name, definitions)| {
+            let [definition] = definitions.as_slice() else {
+                return None;
+            };
+            let Expr::Array(elements) = &definition.value else {
+                return None;
+            };
+            let [element] = elements.as_slice() else {
+                return None;
+            };
+            let [usage] = collector.uses.get(name)?.as_slice() else {
+                return None;
+            };
+            (definition.scope == usage.scope && definition.order < usage.order)
+                .then(|| (name.clone(), element.clone()))
+        })
+        .collect()
 }
 
 fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {

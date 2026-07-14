@@ -16,6 +16,24 @@ pub(super) fn render_syscall(
     expanding: &mut BTreeSet<String>,
 ) -> RenderedExpr {
     let args = syscall_arguments(hash, args);
+    if hash == 0x616F_0195 {
+        if let [Expr::Literal(Literal::String(label)), state] = args {
+            if label == "Debug" {
+                if let Some(message) = context
+                    .singleton_array_element(state)
+                    .filter(|message| context.value_type(message) == ValueType::ByteString)
+                {
+                    return RenderedExpr::new(
+                        format!(
+                            "Runtime.Debug({})",
+                            render_expr_prec(message, 0, context, expanding)
+                        ),
+                        PREC_PRIMARY,
+                    );
+                }
+            }
+        }
+    }
     match known_syscall_api(hash) {
         Some(SyscallApi::StaticMethod { api, arguments }) => {
             if let Some(arguments) = render_syscall_arguments(args, arguments, context, expanding) {
