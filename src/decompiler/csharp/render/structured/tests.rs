@@ -72,3 +72,5 @@ mod expr_types;
 mod plan;
 #[path = "tests_stmt.rs"]
 mod stmt;
+#[path = "tests_stmt_foreach.rs"]
+mod stmt_foreach;
