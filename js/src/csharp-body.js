@@ -22,8 +22,9 @@ function inferExpressionType(expression) {
     }[type] ?? "object[]";
   }
   if (/^(?:new_array|pack)\s*\(/i.test(value)) return "object[]";
+  if (/^\[.*\]$/s.test(value)) return "object[]";
   if (/^Map\s*\(/i.test(value)) return "Map<object, object>";
-  if (/^(?:is_null|is_type|has_key|within|equals|not_equals|not|is_valid)\s*\(/i.test(value)) {
+  if (/^(?:is_null|is_type(?:_[A-Za-z0-9_]+)?|has_key|within|equals|not_equals|not|is_valid)\s*\(/i.test(value)) {
     return "bool";
   }
   if (/^(?:len|size|abs|sqrt|min|max|sign|convert_to_integer)\s*\(/i.test(value)) {
@@ -69,7 +70,7 @@ export function renderBodyLine(line, declarationTypes = null) {
   const assertExpression = trimmed.match(/^assert\((.*)\);$/);
   if (assertExpression) {
     const args = splitCallArguments(assertExpression[1]);
-    const condition = renderCSharpAssertionCondition(args[0] ?? "null");
+    const condition = renderCSharpAssertionCondition(args[0] ?? "null", declarationTypes);
     if (args.length > 1) {
       const message = rewriteCSharpExpression(args.slice(1).join(", ").trim(), declarationTypes);
       return `${indentation}if (!${condition}) throw new InvalidOperationException(Convert.ToString(${message}));`;
@@ -94,10 +95,10 @@ export function renderBodyLine(line, declarationTypes = null) {
   return rewriteCSharpExpression(line, declarationTypes).replace(/\bunknown\b/g, "default");
 }
 
-function renderCSharpAssertionCondition(expression) {
+function renderCSharpAssertionCondition(expression, declarationTypes) {
   const source = expression.trim();
   if (source === "null") return "false";
   if (source === "true" || source === "false") return source;
   if (/^-?\d+$/.test(source)) return `${source} != 0`;
-  return `(bool)(object)(${rewriteCSharpExpression(source)})`;
+  return `(bool)(object)(${rewriteCSharpExpression(source, declarationTypes)})`;
 }

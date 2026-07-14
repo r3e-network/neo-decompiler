@@ -111,7 +111,10 @@ export function renderSignature(line, nullableParameters = new Set()) {
   const match = line.match(/^(\s*)fn\s+([A-Za-z_][A-Za-z0-9_]*)\((.*?)\)(?:\s*->\s*([^\s{]+))?\s*\{$/);
   if (!match) return null;
   const [, indentation, name, parameters, returnType] = match;
-  return `${indentation}public static ${csharpType(returnType ?? "any")} ${csharpIdentifier(name)}(${renderParameters(parameters, nullableParameters)}) {`;
+  // High-level method bodies omit `-> void` for idiomatic readability. A
+  // missing return annotation therefore represents a void method, while
+  // value-producing methods carry an explicit type (usually `any`).
+  return `${indentation}public static ${csharpType(returnType ?? "void")} ${csharpIdentifier(name)}(${renderParameters(parameters, nullableParameters)}) {`;
 }
 
 export function isSafeManifestMethod(name, manifest) {

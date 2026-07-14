@@ -1,3 +1,5 @@
+import { renderCSharpSyscall } from "./csharp-syscalls.js";
+
 const CSHARP_COLLECTION_HELPERS = new Map([
   ["new_array", (args) => `new object[(int)(${args[0] ?? "???"})]`],
   ["new_buffer", (args) => `new byte[(int)(${args[0] ?? "???"})]`],
@@ -58,9 +60,12 @@ const CSHARP_COLLECTION_HELPERS = new Map([
         ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).RemoveAt((int)(${args[1]}))`
         : `((dynamic)${args[0]}).Remove(${args[1]})`;
   }],
-  ["append", (args, types) => args.length === 2
-    ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).Add(${args[1]})`
-    : null],
+  ["append", (args, types) => {
+    if (args.length !== 2) return null;
+    return collectionKind(args[0], types) === "list"
+      ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).Add(${args[1]})`
+      : `((dynamic)${args[0]}).Add(${args[1]})`;
+  }],
   ["has_key", (args, types) => args.length === 2
     ? collectionKind(args[0], types) === "map"
       ? `${args[0]}.HasKey(${args[1]})`
@@ -69,6 +74,12 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["convert_to_integer", (args) => args.length === 1 ? `(BigInteger)(${args[0]})` : null],
   ["convert_to_bool", (args) => args.length === 1 ? `(bool)(${args[0]})` : null],
   ["convert_to_bytestring", (args) => args.length === 1 ? `(ByteString)(${args[0]})` : null],
+  ["convert", (args) => args.length === 1 ? `(object)(${args[0]})` : null],
+  ["len", (args, types) => args.length === 1 ? collectionLength(args[0], types) : null],
+  ["size", (args, types) => args.length === 1 ? collectionLength(args[0], types) : null],
+  ["memcpy", (args) => args.length === 5
+    ? `Array.Copy(${args[2]}, (int)(${args[3]}), ${args[0]}, (int)(${args[1]}), (int)(${args[4]}))`
+    : null],
   ["pack", (args) => `new object[] { ${args.join(", ")} }`],
   ["abs", (args) => args.length === 1 ? `BigInteger.Abs(${args[0]})` : null],
   ["sign", (args) => args.length === 1 ? `(${args[0]}).Sign` : null],
@@ -101,46 +112,28 @@ const CSHARP_COLLECTION_HELPERS = new Map([
     : null],
 ]);
 
-const CSHARP_SYSCALLS = new Map([
-  ["System.Contract.CreateStandardAccount", "Contract.CreateStandardAccount"],
-  ["System.Contract.CreateMultisigAccount", "Contract.CreateMultisigAccount"],
-  ["System.Storage.GetContext", "Storage.CurrentContext"],
-  ["System.Storage.GetReadOnlyContext", "Storage.CurrentReadOnlyContext"],
-  ["System.Runtime.GetTime", "Runtime.Time"],
-  ["System.Runtime.GetRandom", "Runtime.GetRandom"],
-  ["System.Runtime.GetScriptContainer", "Runtime.Transaction"],
-  ["System.Runtime.GetCallingScriptHash", "Runtime.CallingScriptHash"],
-  ["System.Runtime.GetEntryScriptHash", "Runtime.EntryScriptHash"],
-  ["System.Runtime.GetExecutingScriptHash", "Runtime.ExecutingScriptHash"],
-  ["System.Runtime.GetInvocationCounter", "Runtime.InvocationCounter"],
-  ["System.Contract.GetCallFlags", "Contract.GetCallFlags"],
-  ["System.Runtime.GetNetwork", "Runtime.GetNetwork"],
-  ["System.Runtime.GetTrigger", "Runtime.Trigger"],
-  ["System.Runtime.CurrentSigners", "Runtime.CurrentSigners"],
-  ["System.Runtime.GasLeft", "Runtime.GasLeft"],
-  ["System.Runtime.GetAddressVersion", "Runtime.AddressVersion"],
-  ["System.Runtime.Platform", "Runtime.Platform"],
-  ["System.Crypto.CheckSig", "Crypto.CheckSig"],
-  ["System.Crypto.CheckMultisig", "Crypto.CheckMultisig"],
-  ["System.Storage.Get", "Storage.Get"],
-  ["System.Storage.Put", "Storage.Put"],
-  ["System.Storage.Delete", "Storage.Delete"],
-  ["System.Storage.Find", "Storage.Find"],
-  ["System.Runtime.Notify", "Runtime.Notify"],
-  ["System.Runtime.Log", "Runtime.Log"],
-  ["System.Runtime.CheckWitness", "Runtime.CheckWitness"],
-  ["System.Runtime.GetNotifications", "Runtime.GetNotifications"],
-  ["System.Runtime.BurnGas", "Runtime.BurnGas"],
-  ["System.Runtime.LoadScript", "Runtime.LoadScript"],
-  ["System.Contract.Call", "Contract.Call"],
-  ["System.Contract.CallNative", "Contract.CallNative"],
-  ["System.Contract.CallLegacy", "Contract.CallLegacy"],
-]);
-
 export function rewriteCSharpExpression(line, types = null) {
-  return rewriteConcatenation(
-    rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(line, types))),
+  return rewriteEmptyArrayLiterals(
+    rewriteConcatenation(
+      rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(line, types))),
+    ),
   );
+}
+
+function rewriteEmptyArrayLiterals(line) {
+  const pattern = /\[\]/g;
+  let output = "";
+  let cursor = 0;
+  let match;
+  while ((match = nextOutsideMatch(line, pattern)) !== null) {
+    let previous = match.index - 1;
+    while (previous >= 0 && /\s/.test(line[previous])) previous -= 1;
+    const isTypeSuffix = previous >= 0 && /[A-Za-z0-9_>\]]/.test(line[previous]);
+    output += line.slice(cursor, match.index);
+    output += isTypeSuffix ? "[]" : "new object[] { }";
+    cursor = match.index + 2;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
 }
 
 function rewriteConcatenation(line) {
@@ -176,7 +169,7 @@ function rewriteKnownHelpers(line, types) {
   for (let pass = 0; pass < 32; pass += 1) {
     const match = nextOutsideMatch(
       output,
-      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item|reverse_items)\s*\(/g,
+      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|convert|len|size|memcpy|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item|reverse_items|is_type_[A-Za-z0-9_]+)\s*\(/g,
     );
     if (!match) break;
     const open = output.indexOf("(", match.index);
@@ -184,7 +177,9 @@ function rewriteKnownHelpers(line, types) {
     if (close < 0) break;
     const args = splitCallArguments(output.slice(open + 1, close));
     const renderer = CSHARP_COLLECTION_HELPERS.get(match[1]);
-    const replacement = renderer?.(args, types);
+    const replacement = match[1].startsWith("is_type_")
+      ? renderCSharpTypeTest(match[1], args)
+      : renderer?.(args, types);
     if (!replacement) break;
     output = `${output.slice(0, match.index)}${replacement}${output.slice(close + 1)}`;
   }
@@ -198,6 +193,43 @@ function collectionKind(expression, types) {
   if (/^Map<|\bMap\b/.test(type)) return "map";
   if (/\[\]$/.test(type) || /\bList</.test(type)) return "list";
   return "unknown";
+}
+
+function collectionLength(expression, types) {
+  const source = expression.trim();
+  const type = inferredType(source, types);
+  if (/^Map(?:<|\b)/.test(type)) return `${source}.Count`;
+  if (/\bList</.test(type)) return `${source}.Count`;
+  if (/\[\]$/.test(type) || /^(?:ByteString|string)$/.test(type)) {
+    return `${source}.Length`;
+  }
+  if (/^\"(?:[^\"\\]|\\.)*\"$/.test(source)) return `${source}.Length`;
+  return `((dynamic)${source}).Count`;
+}
+
+function inferredType(expression, types) {
+  if (!types) return "";
+  const name = expression.trim().replace(/^@/, "");
+  return types.get(name) ?? types.get(expression.trim()) ?? "";
+}
+
+function renderCSharpTypeTest(name, args) {
+  if (args.length !== 1) return null;
+  const kind = name.slice("is_type_".length).toLowerCase();
+  if (kind === "any") return "true";
+  const type = {
+    bool: "bool",
+    boolean: "bool",
+    integer: "BigInteger",
+    bytestring: "ByteString",
+    buffer: "byte[]",
+    array: "object[]",
+    struct: "object[]",
+    map: "Map<object, object>",
+    interopinterface: "object",
+    pointer: "System.IntPtr",
+  }[kind] ?? null;
+  return type ? `((object)(${args[0]})) is ${type}` : null;
 }
 
 function listElementType(expression, types) {
@@ -239,36 +271,13 @@ function rewriteKnownSyscalls(line) {
       .replace(/^\s*"[^"]*"\s*(?:,\s*)?/, "")
       .trim();
     const args = splitCallArguments(argsText);
-    const specialized = rewriteSpecialSyscall(match[1], args);
-    if (specialized) {
-      output += line.slice(cursor, match.index) + specialized;
-      cursor = close + 1;
-      marker.lastIndex = cursor;
-      continue;
-    }
-    const api = CSHARP_SYSCALLS.get(match[1]);
-    if (!api) continue;
-    const replacement = api.includes(".") && args.length === 0 && isStaticSyscall(match[1])
-      ? api
-      : `${api}(${args.join(", ")})`;
+    const replacement = renderCSharpSyscall(match[1], args);
+    if (!replacement) continue;
     output += line.slice(cursor, match.index) + replacement;
     cursor = close + 1;
     marker.lastIndex = cursor;
   }
   return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function rewriteSpecialSyscall(name, args) {
-  if (name === "System.Iterator.Next" && args.length === 1) return `${args[0]}.Next()`;
-  if (name === "System.Iterator.Value" && args.length === 1) return `${args[0]}.Value`;
-  if (name === "System.Storage.AsReadOnly" && args.length === 1) return `${args[0]}.AsReadOnly`;
-  const localStorage = {
-    "System.Storage.Local.Get": "Get",
-    "System.Storage.Local.Put": "Put",
-    "System.Storage.Local.Delete": "Delete",
-    "System.Storage.Local.Find": "Find",
-  }[name];
-  return localStorage ? `Storage.${localStorage}(${args.join(", ")})` : null;
 }
 
 function nextOutsideMatch(text, pattern) {
@@ -291,21 +300,6 @@ function isInsideQuotedString(text, end) {
     }
   }
   return quote !== null;
-}
-
-function isStaticSyscall(name) {
-  return name === "System.Storage.GetContext" ||
-    name === "System.Storage.GetReadOnlyContext" ||
-    name === "System.Runtime.GetTime" ||
-    name === "System.Runtime.GetCallingScriptHash" ||
-    name === "System.Runtime.GetEntryScriptHash" ||
-    name === "System.Runtime.GetExecutingScriptHash" ||
-    name === "System.Runtime.GetInvocationCounter" ||
-    name === "System.Runtime.GetTrigger" ||
-    name === "System.Runtime.GetScriptContainer" ||
-    name === "System.Runtime.GasLeft" ||
-    name === "System.Runtime.GetAddressVersion" ||
-    name === "System.Runtime.Platform";
 }
 
 function findCallClose(text, open) {

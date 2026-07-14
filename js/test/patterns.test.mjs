@@ -553,8 +553,48 @@ test("C# rendering lowers unambiguous collection helpers", () => {
     "}",
   ].join("\n"));
   assert.match(csharp, /new object\[\(int\)\(2\)\]/);
-  assert.match(csharp, /List<object>\)items\)\.Add\(value\)/);
+  assert.match(csharp, /\(\(dynamic\)items\)\.Add\(value\)/);
   assert.match(csharp, /\(\(dynamic\)map\)\.HasKey\(key\)/);
+});
+
+test("C# rendering lowers VM array, type-test, and memory helpers", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn helpers(size, value) -> any {",
+    "    let items = [];",
+    "    let count = len(items);",
+    "    let isArray = is_type_array(items);",
+    "    memcpy(items, 0, items, 0, count);",
+    "    return convert(value);",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+  assert.match(csharp, /object\[\] items = new object\[\] \{ \};/);
+  assert.match(csharp, /BigInteger count = items\.Length;/);
+  assert.match(csharp, /bool isArray = \(\(object\)\(items\)\) is object\[\];/);
+  assert.match(csharp, /Array\.Copy\(items, \(int\)\(0\), items, \(int\)\(0\), \(int\)\(count\)\);/);
+  assert.match(csharp, /return \(object\)\(value\);/);
+  assert.doesNotMatch(csharp, /\b(?:len|is_type_array|memcpy|convert)\(/);
+});
+
+test("C# rendering replays framework-internal syscalls through Runtime.LoadScript", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn native(version: int) -> any {",
+    '    return syscall("System.Contract.CallNative", version);',
+    "}",
+    "fn lifecycle() {",
+    '    syscall("System.Contract.NativeOnPersist");',
+    '    syscall("System.Contract.NativePostPersist");',
+    '    syscall("System.Runtime.Notify", "event", state);',
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /Runtime\.LoadScript\(\(ByteString\)new byte\[\] \{ 0x41, 0x1A, 0xF7, 0x7B, 0x67 \}, CallFlags\.All, new object\[\] \{ version \}\)/);
+  assert.match(csharp, /Runtime\.LoadScript\(\(ByteString\)new byte\[\] \{ 0x41, 0x2E, 0xDB, 0xBC, 0x93 \}/);
+  assert.match(csharp, /Runtime\.LoadScript\(\(ByteString\)new byte\[\] \{ 0x41, 0x44, 0xA1, 0x5D, 0x16 \}/);
+  assert.match(csharp, /Runtime\.LoadScript\(\(ByteString\)new byte\[\] \{ 0x41, 0x95, 0x01, 0x6F, 0x61 \}, CallFlags\.All, new object\[\] \{ "event", state \}\)/);
+  assert.doesNotMatch(csharp, /Contract\.CallNative|Runtime\.Notify|syscall\("System\.Contract\.Native/);
 });
 
 test("C# rendering keeps CLEARITEMS compatible with array and map receivers", () => {
