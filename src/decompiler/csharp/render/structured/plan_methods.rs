@@ -270,6 +270,11 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                                 .get(method.offset)
                                 .and_then(|contract| contract.return_shape),
                         )
+                        .with_return_facts(
+                            method_contracts
+                                .get(method.offset)
+                                .and_then(|contract| contract.return_collection_facts.clone()),
+                        )
                         .with_argument_effects(
                             method_contracts
                                 .get(method.offset)
@@ -359,6 +364,10 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                     plan.return_behavior.returns_value(),
                 )
                 .with_may_return(true)
+                .with_return_shape(target_contract.and_then(|contract| contract.return_shape))
+                .with_return_facts(
+                    target_contract.and_then(|contract| contract.return_collection_facts.clone()),
+                )
                 .with_argument_effects(
                     target_contract
                         .map(|contract| contract.argument_effects.clone())

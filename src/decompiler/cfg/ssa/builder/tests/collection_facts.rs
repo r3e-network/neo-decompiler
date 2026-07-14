@@ -125,6 +125,100 @@ fn setitem_invalidates_contents_but_preserves_collection_shape() {
         )));
 }
 
+#[test]
+fn dynamic_pickitem_uses_a_uniform_nested_collection_shape() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Initslot, Some(Operand::Bytes(vec![0, 1]))),
+        instr(3, OpCode::Push1),
+        instr(4, OpCode::Push1),
+        instr(5, OpCode::Push2),
+        instr(6, OpCode::Packstruct),
+        instr(7, OpCode::Push1),
+        instr(8, OpCode::Push1),
+        instr(9, OpCode::Push2),
+        instr(10, OpCode::Packstruct),
+        instr(11, OpCode::Push2),
+        instr(12, OpCode::Pack),
+        instr(13, OpCode::Stloc0),
+        instr(14, OpCode::Ldloc0),
+        instr(15, OpCode::Ldarg0),
+        instr(16, OpCode::Pickitem),
+        instr(17, OpCode::Unpack),
+        instr(18, OpCode::Drop),
+        instr(19, OpCode::Drop),
+        instr(20, OpCode::Drop),
+        instr(21, OpCode::Ret),
+    ];
+    let cfg = CfgBuilder::new(&instructions).build();
+    let context = MethodContext {
+        argument_names: vec!["arg0".to_string()],
+        returns_value: Some(false),
+        ..MethodContext::default()
+    };
+
+    let built = SsaBuilder::new(&cfg, &instructions)
+        .with_method_context(&context)
+        .build_with_report();
+
+    assert_eq!(
+        built.fidelity.status,
+        Fidelity::Exact,
+        "{:#?}",
+        built.fidelity
+    );
+}
+
+#[test]
+fn internal_call_return_facts_reach_dynamic_pickitem_unpack() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Initslot, Some(Operand::Bytes(vec![0, 1]))),
+        Instruction::new(3, OpCode::Call, Some(Operand::Jump(97))),
+        instr(5, OpCode::Ldarg0),
+        instr(6, OpCode::Pickitem),
+        instr(7, OpCode::Unpack),
+        instr(8, OpCode::Drop),
+        instr(9, OpCode::Drop),
+        instr(10, OpCode::Drop),
+        instr(11, OpCode::Ret),
+    ];
+    let cfg = CfgBuilder::new(&instructions).build();
+    let return_facts = CollectionShapeFacts {
+        shape: Some(CollectionShape::Array(2)),
+        indexed: BTreeMap::from([
+            (0, CollectionShape::Struct(2)),
+            (1, CollectionShape::Struct(2)),
+        ]),
+    };
+    let mut context = MethodContext {
+        argument_names: vec!["arg0".to_string()],
+        returns_value: Some(false),
+        ..MethodContext::default()
+    };
+    context.calls_by_offset.insert(
+        3,
+        CallContract::new(
+            SemanticCallTarget::Internal {
+                offset: 100,
+                name: "tupleFactory".to_string(),
+            },
+            0,
+            true,
+        )
+        .with_return_facts(Some(return_facts)),
+    );
+
+    let built = SsaBuilder::new(&cfg, &instructions)
+        .with_method_context(&context)
+        .build_with_report();
+
+    assert_eq!(
+        built.fidelity.status,
+        Fidelity::Exact,
+        "{:#?}",
+        built.fidelity
+    );
+}
+
 fn argument_field_writes(
     instructions: Vec<Instruction>,
     argument_count: usize,

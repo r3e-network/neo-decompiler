@@ -37,6 +37,7 @@ fn method_contract(
         return_behavior,
         may_return: true,
         return_shape: None,
+        return_collection_facts: None,
         argument_effects: vec![
             crate::decompiler::cfg::ssa::CollectionArgumentEffect::Unknown;
             argument_count

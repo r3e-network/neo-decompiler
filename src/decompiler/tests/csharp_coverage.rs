@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -41,8 +42,9 @@ struct ExpectedInvalid {
 
 fn load_expected_invalid(root: &Path) -> Vec<ExpectedInvalid> {
     let path = root.join("expected_invalid.txt");
-    let contents = fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return Vec::new();
+    };
     contents
         .lines()
         .filter_map(|line| {
@@ -118,7 +120,10 @@ fn csharp_renderer_has_no_legacy_body_dependencies() {
 
 #[test]
 fn csharp_corpus_has_zero_structured_fallback() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("TestingArtifacts");
+    let root = env::var_os("NEO_CSHARP_CORPUS_DIR").map_or_else(
+        || PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("TestingArtifacts"),
+        PathBuf::from,
+    );
     let mut files = Vec::new();
     collect_nef_files(&root, &mut files)
         .unwrap_or_else(|error| panic!("failed to collect {}: {error}", root.display()));

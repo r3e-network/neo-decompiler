@@ -743,6 +743,7 @@ fn contract(offset: usize, return_behavior: ReturnBehavior) -> MethodContract {
         return_behavior,
         may_return: true,
         return_shape: None,
+        return_collection_facts: None,
         argument_effects: vec![CollectionArgumentEffect::Unknown; 0],
         argument_collection_facts: Vec::new(),
         argument_field_writes: Vec::new(),

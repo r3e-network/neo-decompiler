@@ -7,18 +7,18 @@ updated: 2026-07-14T15:11:45+08:00
 
 ## Current Focus
 
-hypothesis: The remaining Contract_Foreach method has a genuinely runtime-variable UNPACK source; its arity cannot be recovered soundly from downstream consumers.
-test: Keep dynamic UNPACK provenance fail-closed while verifying the compiler-generated DUP/slot-load/conditional join pattern against focused SSA coverage and the pinned corpus census.
-expecting: Contract_Foreach@04AC remains the only incomplete method; generated C# must still compile across all 103 pinned contracts.
-next_action: Treat Foreach@04AC as an explicit known limitation unless a first-class runtime-variable stack-state model is designed.
+hypothesis: Contract_Foreach@04AC calls a no-INITSLOT helper that requires four entry-stack values, but the caller supplies none; the subsequent dynamic `PICKITEM; UNPACK` cannot prove tuple element shape.
+test: Preserve the proven indexed-return path for uniform nested collections, while keeping unresolved call arity and dynamic UNPACK provenance fail-closed in the pinned corpus.
+expecting: Contract_Foreach@04AC remains the only incomplete method; generated C# still compiles across all 103 pinned contracts.
+next_action: Keep this bytecode path explicit as a known limitation unless a VM-validated call-entry model can prove the helper's hidden arguments.
 reasoning_checkpoint: null
 tdd_checkpoint: null
 
 ## Symptoms
 
-expected: Every pinned v3.10.0 contract whose runtime collection arity is statically provable should decompile exactly, while genuinely variable UNPACK sources remain fail-closed.
-actual: The corpus now has one incomplete method: Foreach@04AC has a genuinely variable UNPACK source. The two Enum loop-stack methods are exact after the targeted join recovery.
-errors: Foreach reports MissingProvenance at UNPACK plus downstream stack loss; no Enum join underflow remains.
+expected: Every pinned v3.10.0 contract whose collection shape and call-entry stack are statically provable should decompile exactly, while unresolved call arity and dynamic UNPACK sources remain fail-closed.
+actual: The corpus now has one incomplete method: Foreach@04AC has a four-value CALL underflow followed by a dynamic tuple UNPACK. The two Enum loop-stack methods are exact after the targeted join recovery.
+errors: Foreach reports LostStackValue at CALL/STLOC3/STLOC4 and MissingProvenance at UNPACK; no Enum join underflow remains.
 reproduction: Run the pinned v3.10.0 Roslyn corpus census with /tmp/devpack-artifacts-v3.10.0 and inspect Contract_Returns.mix, Contract_Tuple.t1, Contract_NEP11.transfer, Contract_Record.test_DeconstructRecord, Contract_Reentrancy helpers, Contract_Foreach, and the two Contract_Enum parse-ignore-case methods.
 started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858d850.
 
@@ -100,12 +100,12 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
 
 - timestamp: 2026-07-14T15:11:45+08:00
   checked: Targeted DUP-join recovery, native C# API lowering, focused renderer tests, and the pinned v3.10.0 Roslyn census.
-  found: The fidelity census is Exact 1108 / Conservative 70 / Incomplete 1; the only incomplete method is Contract_Foreach@0x04AC. Native properties (`NeoToken.Symbol`, `GasToken.Symbol`, `LedgerContract.CurrentHash`, and `CurrentIndex`) now render as properties, signature-sensitive casts cover `MemorySearch` and `RoleManagement.GetDesignatedByRole`, and Roslyn compiles 103/103 contracts with 0 errors.
-  implication: Enum loop joins and all known C# framework API-shape failures are resolved. Foreach remains intentionally fail-closed because runtime-variable UNPACK arity is not statically provable.
+  found: The current env-enabled Rust fidelity gate reports 103 contracts with Exact 1101 / Conservative 70 / Incomplete 1. The only incomplete method is Contract_Foreach@0x04AC: CALL consumes four unproven entry-stack values while its caller supplies none, then UNPACK and two local stores lose provenance. Native properties (`NeoToken.Symbol`, `GasToken.Symbol`, `LedgerContract.CurrentHash`, and `CurrentIndex`) render as properties, signature-sensitive casts cover `MemorySearch` and `RoleManagement.GetDesignatedByRole`, and Roslyn compiles 103/103 contracts with 0 errors.
+  implication: Enum loop joins and all known C# framework API-shape failures are resolved. The generic indexed-return fact path is verified, while Foreach remains intentionally fail-closed because the private helper's first tuple element is not proven and the dynamic UNPACK cannot be reconstructed soundly.
 
 ## Resolution
 
 root_cause: Fixed collection shape was lost across resolved call returns, content-only argument mutation, constructor field writes, static storage, and private method entry. Method-global invalidation also let later calls poison earlier facts, while Record exposed stale typed declarations for runtime index values.
 fix: Added flow-sensitive content-versus-shape invalidation, unanimous Array/Struct return summaries, escape-aware read-only/shape-preserving effects, bounded constant-index postconditions, unanimous static/private-entry fixed points, flow-sensitive static alias invalidation, runtime Index expansion, and fixed-point typed-index safety for locals plus live parameter/static storage.
-verification: Focused positive/negative shape, escape, field, static, entry, mutation, and DUP-join tests pass; native C# renderer tests pass; pinned census is Exact 1108 / Conservative 70 / Incomplete 1; pinned Roslyn is 103 passed / 0 failed / 0 errors. Foreach@0x04AC remains fail-closed by design because its UNPACK count is runtime-variable.
+verification: Focused positive/negative shape, escape, field, static, entry, mutation, DUP-join, direct uniform-element, and interprocedural return-fact tests pass; native C# renderer tests pass; the env-enabled pinned census is Exact 1101 / Conservative 70 / Incomplete 1; pinned Roslyn is 103 passed / 0 failed / 0 errors. Foreach@0x04AC remains fail-closed by design because its call entry values and tuple element shape are not statically proven.
 files_changed: [src/decompiler/analysis/method_contracts.rs, src/decompiler/cfg/method_view.rs, src/decompiler/cfg/ssa/builder.rs, src/decompiler/cfg/ssa/context.rs, src/decompiler/cfg/ssa/mod.rs, src/decompiler/csharp/render.rs, src/decompiler/csharp/render/structured/plan.rs, src/decompiler/csharp/render/structured/stmt.rs, src/decompiler/csharp/render/structured/tests.rs, src/lib.rs]

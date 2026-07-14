@@ -70,6 +70,7 @@ type SsaBuildResult = (
     BTreeSet<usize>,
     Vec<LoweringIssue>,
     Option<CollectionShape>,
+    Option<CollectionShapeFacts>,
     SsaCollectionAnalysis,
 );
 
@@ -78,7 +79,9 @@ type SsaBuildResult = (
 pub(crate) struct SsaBuildOutput {
     pub(crate) ssa: SsaForm,
     pub(crate) fidelity: FidelityReport,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) return_shape: Option<CollectionShape>,
+    pub(crate) return_facts: Option<CollectionShapeFacts>,
     pub(crate) collection_analysis: SsaCollectionAnalysis,
 }
 
@@ -173,8 +176,16 @@ impl<'a> SsaBuilder<'a> {
     /// Build SSA and report any semantic fidelity loss at its source instruction.
     #[must_use]
     pub(crate) fn build_with_report(self) -> SsaBuildOutput {
-        let (blocks, definitions, uses, covered_offsets, issues, return_shape, collection_analysis) =
-            self.build_ssa_blocks();
+        let (
+            blocks,
+            definitions,
+            uses,
+            covered_offsets,
+            issues,
+            return_shape,
+            return_facts,
+            collection_analysis,
+        ) = self.build_ssa_blocks();
         let ssa = SsaForm {
             cfg: self.cfg.clone(),
             dominance: self.dominance,
@@ -190,6 +201,7 @@ impl<'a> SsaBuilder<'a> {
             ssa,
             fidelity,
             return_shape,
+            return_facts,
             collection_analysis,
         }
     }
@@ -279,6 +291,7 @@ impl<'a> SsaBuilder<'a> {
         let mut covered_offsets = BTreeSet::new();
         let mut issues = Vec::new();
         let mut return_shapes = Vec::new();
+        let mut return_facts = Vec::new();
         let mut argument_field_writes = Vec::new();
         let mut static_collection_writes = Vec::new();
         let mut call_argument_facts = BTreeMap::new();
@@ -315,6 +328,7 @@ impl<'a> SsaBuilder<'a> {
             if reachable_blocks.contains(&bid) {
                 issues.extend(exec.issues.iter().cloned());
                 return_shapes.extend(exec.return_shapes.iter().copied());
+                return_facts.extend(exec.return_facts.iter().cloned());
                 argument_field_writes.extend(exec.argument_field_writes.iter().cloned());
                 static_collection_writes.extend(exec.static_collection_writes.iter().cloned());
                 call_argument_facts.extend(
@@ -357,6 +371,7 @@ impl<'a> SsaBuilder<'a> {
         }
 
         let return_shape = unanimous_collection_shape(&return_shapes);
+        let return_facts = unanimous_collection_facts(&return_facts);
         let collection_analysis = SsaCollectionAnalysis {
             argument_field_writes: unanimous_argument_field_writes(&argument_field_writes),
             static_writes: static_collection_writes,
@@ -369,6 +384,7 @@ impl<'a> SsaBuilder<'a> {
             covered_offsets,
             issues,
             return_shape,
+            return_facts,
             collection_analysis,
         )
     }
@@ -457,6 +473,7 @@ impl<'a> SsaBuilder<'a> {
                                 None,
                                 None,
                                 None,
+                                None,
                             );
                             idx += 2;
                             continue;
@@ -481,6 +498,9 @@ impl<'a> SsaBuilder<'a> {
                     self.method_context
                         .and_then(|context| context.calls_by_offset.get(&instr.offset))
                         .and_then(|contract| contract.return_shape),
+                    self.method_context
+                        .and_then(|context| context.calls_by_offset.get(&instr.offset))
+                        .and_then(|contract| contract.return_facts.as_ref()),
                     seeded_static_facts,
                     static_load_index(instr).or_else(|| static_store_index(instr)),
                 );
@@ -498,6 +518,20 @@ impl<'a> SsaBuilder<'a> {
                         &collection_invalidations.shapes,
                     )
                 })),
+                _ => None,
+            })
+            .collect();
+        let return_facts = stmts
+            .iter()
+            .filter_map(|statement| match statement {
+                SsaStmt::Return(Some(SsaExpr::Variable(variable))) => {
+                    Some(Some(collection_shape_facts_for_variable(
+                        variable,
+                        &facts.definitions,
+                        &collection_invalidations,
+                    )))
+                }
+                SsaStmt::Return(_) => Some(None),
                 _ => None,
             })
             .collect();
@@ -530,6 +564,7 @@ impl<'a> SsaBuilder<'a> {
             issues,
             exit_collection_invalidations: collection_invalidations,
             return_shapes,
+            return_facts,
             argument_field_writes,
             static_collection_writes,
             call_argument_facts,
@@ -551,6 +586,7 @@ struct BlockExec {
     covered_offsets: BTreeSet<usize>,
     issues: Vec<LoweringIssue>,
     return_shapes: Vec<Option<CollectionShape>>,
+    return_facts: Vec<Option<CollectionShapeFacts>>,
     argument_field_writes: Vec<Vec<BTreeMap<usize, CollectionShape>>>,
     static_collection_writes: Vec<StaticCollectionWrite>,
     call_argument_facts: BTreeMap<usize, Vec<CollectionShapeFacts>>,

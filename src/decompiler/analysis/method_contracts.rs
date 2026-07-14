@@ -63,6 +63,11 @@ pub struct MethodContract {
     pub may_return: bool,
     /// Exact collection shape shared by every reachable normal return.
     pub return_shape: Option<CollectionShape>,
+    /// Proven constant-index collection facts shared by every reachable
+    /// normal return. This is internal lowering metadata and is omitted from
+    /// serialized contract reports.
+    #[serde(skip)]
+    pub(crate) return_collection_facts: Option<CollectionShapeFacts>,
     /// Per-argument effects on fixed collection shape.
     pub argument_effects: Vec<CollectionArgumentEffect>,
     /// Fixed collection facts shared by every resolved incoming call.
@@ -154,6 +159,7 @@ pub fn infer_method_contracts(
                     return_behavior,
                     may_return: true,
                     return_shape: None,
+                    return_collection_facts: None,
                     argument_effects: vec![
                         CollectionArgumentEffect::Unknown;
                         argument_counts.get(&offset).copied().unwrap_or(0)
@@ -263,21 +269,22 @@ pub fn infer_method_contracts(
         }
     }
     let calls_by_offset = build_call_contracts(call_graph, &contracts);
-    let return_shapes = views_by_offset
+    let return_facts = views_by_offset
         .iter()
         .filter_map(|(offset, view)| {
             let contract = contracts.get(offset)?;
             (contract.may_return && contract.return_behavior.returns_value()).then(|| {
                 (
                     *offset,
-                    method_return_shape(view, &calls_by_offset, contract.argument_count),
+                    method_return_facts(view, &calls_by_offset, contract.argument_count),
                 )
             })
         })
         .collect::<Vec<_>>();
-    for (offset, return_shape) in return_shapes {
+    for (offset, facts) in return_facts {
         if let Some(contract) = contracts.get_mut(&offset) {
-            contract.return_shape = return_shape;
+            contract.return_shape = facts.as_ref().and_then(|facts| facts.shape);
+            contract.return_collection_facts = facts;
         }
     }
 
@@ -296,11 +303,11 @@ pub fn infer_method_contracts(
     }
 }
 
-fn method_return_shape(
+fn method_return_facts(
     view: &MethodView,
     calls_by_offset: &BTreeMap<usize, CallContract>,
     argument_count: usize,
-) -> Option<CollectionShape> {
+) -> Option<CollectionShapeFacts> {
     if view.instructions.len() > crate::decompiler::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS {
         return None;
     }
@@ -340,7 +347,7 @@ fn method_return_shape(
     SsaBuilder::new(cfg, &view.instructions)
         .with_method_context(&context)
         .build_with_report()
-        .return_shape
+        .return_facts
 }
 
 fn method_may_return(view: &MethodView, calls_by_offset: &BTreeMap<usize, CallContract>) -> bool {
@@ -454,6 +461,9 @@ fn build_call_contracts(
                 )
                 .with_may_return(method_contract.is_none_or(|contract| contract.may_return))
                 .with_return_shape(method_contract.and_then(|contract| contract.return_shape))
+                .with_return_facts(
+                    method_contract.and_then(|contract| contract.return_collection_facts.clone()),
+                )
                 .with_argument_effects(
                     method_contract
                         .map(|contract| contract.argument_effects.clone())

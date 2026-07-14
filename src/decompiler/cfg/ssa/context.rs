@@ -62,6 +62,7 @@ pub(crate) struct CallContract {
     pub(crate) returns_value: bool,
     pub(crate) may_return: bool,
     pub(crate) return_shape: Option<CollectionShape>,
+    pub(crate) return_facts: Option<CollectionShapeFacts>,
     pub(crate) argument_effects: Vec<CollectionArgumentEffect>,
     pub(crate) argument_field_writes: Vec<BTreeMap<usize, CollectionShape>>,
 }
@@ -79,6 +80,7 @@ impl CallContract {
             returns_value,
             may_return: true,
             return_shape: None,
+            return_facts: None,
             argument_effects: vec![CollectionArgumentEffect::Unknown; argument_count],
             argument_field_writes: vec![BTreeMap::new(); argument_count],
         }
@@ -93,6 +95,15 @@ impl CallContract {
     #[must_use]
     pub(crate) fn with_return_shape(mut self, return_shape: Option<CollectionShape>) -> Self {
         self.return_shape = return_shape;
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_return_facts(mut self, return_facts: Option<CollectionShapeFacts>) -> Self {
+        if self.return_shape.is_none() {
+            self.return_shape = return_facts.as_ref().and_then(|facts| facts.shape);
+        }
+        self.return_facts = return_facts;
         self
     }
 

@@ -5,6 +5,7 @@ pub(super) fn record_definition_facts(
     opcode: OpCode,
     state: &mut BuildPassState<'_>,
     return_shape: Option<CollectionShape>,
+    return_facts: Option<&CollectionShapeFacts>,
     seeded_facts: Option<CollectionShapeFacts>,
     static_index: Option<usize>,
 ) {
@@ -47,10 +48,12 @@ pub(super) fn record_definition_facts(
                 }),
                 indexed: BTreeMap::new(),
             },
-            SsaExpr::Call { .. } => CollectionShapeFacts {
-                shape: return_shape,
-                indexed: BTreeMap::new(),
-            },
+            SsaExpr::Call { .. } => return_facts
+                .cloned()
+                .unwrap_or_else(|| CollectionShapeFacts {
+                    shape: return_shape,
+                    indexed: BTreeMap::new(),
+                }),
             _ => CollectionShapeFacts::default(),
         };
         let has_reaching_definition = match value {
@@ -99,11 +102,26 @@ pub(super) fn indexed_collection_shape_for_access(
         }
         SsaExpr::Literal(Literal::Int(value)) => usize::try_from(*value).ok(),
         _ => None,
-    }?;
-    collection_shape_facts_for_expression_from_state(base, state)
+    };
+    let facts = collection_shape_facts_for_expression_from_state(base, state);
+    if let Some(selected_index) = selected_index {
+        return facts.indexed.get(&selected_index).copied();
+    }
+
+    let length = facts.shape?.len();
+    if facts.indexed.len() != length {
+        return None;
+    }
+    let mut shapes = facts.indexed.iter();
+    let first = shapes.next()?.1;
+    (facts
         .indexed
-        .get(&selected_index)
+        .keys()
         .copied()
+        .enumerate()
+        .all(|(expected, actual)| expected == actual)
+        && shapes.all(|(_, shape)| shape == first))
+    .then_some(*first)
 }
 
 pub(super) fn indexed_collection_shapes_for_elements(
@@ -293,6 +311,17 @@ pub(super) fn unanimous_collection_shape(
     return_shapes
         .iter()
         .all(|shape| *shape == Some(first))
+        .then_some(first)
+}
+
+pub(super) fn unanimous_collection_facts(
+    return_facts: &[Option<CollectionShapeFacts>],
+) -> Option<CollectionShapeFacts> {
+    let first = return_facts.first().cloned().flatten()?;
+    first.shape?;
+    return_facts
+        .iter()
+        .all(|facts| *facts == Some(first.clone()))
         .then_some(first)
 }
 
