@@ -32,15 +32,26 @@ const CSHARP_COLLECTION_HELPERS = new Map([
 ]);
 
 const CSHARP_SYSCALLS = new Map([
+  ["System.Contract.CreateStandardAccount", "Contract.CreateStandardAccount"],
+  ["System.Contract.CreateMultisigAccount", "Contract.CreateMultisigAccount"],
   ["System.Storage.GetContext", "Storage.CurrentContext"],
   ["System.Storage.GetReadOnlyContext", "Storage.CurrentReadOnlyContext"],
   ["System.Runtime.GetTime", "Runtime.Time"],
+  ["System.Runtime.GetRandom", "Runtime.GetRandom"],
+  ["System.Runtime.GetScriptContainer", "Runtime.Transaction"],
   ["System.Runtime.GetCallingScriptHash", "Runtime.CallingScriptHash"],
   ["System.Runtime.GetEntryScriptHash", "Runtime.EntryScriptHash"],
   ["System.Runtime.GetExecutingScriptHash", "Runtime.ExecutingScriptHash"],
   ["System.Runtime.GetInvocationCounter", "Runtime.InvocationCounter"],
+  ["System.Contract.GetCallFlags", "Contract.GetCallFlags"],
   ["System.Runtime.GetNetwork", "Runtime.GetNetwork"],
   ["System.Runtime.GetTrigger", "Runtime.Trigger"],
+  ["System.Runtime.CurrentSigners", "Runtime.CurrentSigners"],
+  ["System.Runtime.GasLeft", "Runtime.GasLeft"],
+  ["System.Runtime.GetAddressVersion", "Runtime.AddressVersion"],
+  ["System.Runtime.Platform", "Runtime.Platform"],
+  ["System.Crypto.CheckSig", "Crypto.CheckSig"],
+  ["System.Crypto.CheckMultisig", "Crypto.CheckMultisig"],
   ["System.Storage.Get", "Storage.Get"],
   ["System.Storage.Put", "Storage.Put"],
   ["System.Storage.Delete", "Storage.Delete"],
@@ -148,7 +159,11 @@ function isStaticSyscall(name) {
     name === "System.Runtime.GetEntryScriptHash" ||
     name === "System.Runtime.GetExecutingScriptHash" ||
     name === "System.Runtime.GetInvocationCounter" ||
-    name === "System.Runtime.GetTrigger";
+    name === "System.Runtime.GetTrigger" ||
+    name === "System.Runtime.GetScriptContainer" ||
+    name === "System.Runtime.GasLeft" ||
+    name === "System.Runtime.GetAddressVersion" ||
+    name === "System.Runtime.Platform";
 }
 
 function findCallClose(text, open) {

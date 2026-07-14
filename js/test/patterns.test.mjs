@@ -423,6 +423,24 @@ test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   assert.match(csharp, /syscall\("System\.Custom\.Unknown", key\)/);
 });
 
+test("C# rendering recognizes additional Neo runtime and crypto syscalls", () => {
+  const source = [
+    "contract Runtime {",
+    'fn inspect() -> any {',
+    '    let signers = syscall("System.Runtime.CurrentSigners");',
+    '    let random = syscall("System.Runtime.GetRandom");',
+    '    let valid = syscall("System.Crypto.CheckSig", key, signature);',
+    '    return syscall("System.Contract.GetCallFlags");',
+    "}",
+    "}",
+  ].join("\n");
+  const csharp = renderCSharpContract(source);
+  assert.match(csharp, /Runtime\.CurrentSigners\(\)/);
+  assert.match(csharp, /Runtime\.GetRandom\(\)/);
+  assert.match(csharp, /Crypto\.CheckSig\(key, signature\)/);
+  assert.match(csharp, /return Contract\.GetCallFlags\(\);/);
+});
+
 test("C# rendering preserves ABI events as framework events", () => {
   const source = [
     "contract Token {",
