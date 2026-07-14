@@ -83,6 +83,25 @@ fn cat_temporaries_preserve_known_byte_container_types() {
 }
 
 #[test]
+fn typed_array_index_temporaries_keep_their_element_type() {
+    let body = Block::with_stmts(vec![Stmt::assign(
+        "element",
+        Expr::index(
+            Expr::NewArray {
+                length: Box::new(Expr::int(2)),
+                element_type: Some(ValueType::Integer),
+            },
+            Expr::int(0),
+        ),
+    )]);
+    let mut symbols = BTreeMap::new();
+
+    register_structured_temporaries(&body, &mut symbols);
+
+    assert_eq!(symbols["element"].value_type, ValueType::Integer);
+}
+
+#[test]
 fn dynamic_stack_opcodes_defer_fidelity_to_literal_resolution() {
     for opcode in [OpCode::Pick, OpCode::Roll, OpCode::Xdrop, OpCode::Reversen] {
         assert_eq!(

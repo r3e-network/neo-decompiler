@@ -501,6 +501,13 @@ fn structured_expr_type(expression: &Expr, symbols: &BTreeMap<String, SymbolInfo
         Expr::NewArray { .. } | Expr::Array(_) => ValueType::Array,
         Expr::Struct(_) => ValueType::Struct,
         Expr::Map(_) => ValueType::Map,
+        Expr::Index { base, .. } => match base.as_ref() {
+            Expr::NewArray {
+                element_type: Some(element_type),
+                ..
+            } => *element_type,
+            _ => ValueType::Unknown,
+        },
         Expr::Ternary {
             then_expr,
             else_expr,
@@ -527,11 +534,9 @@ fn structured_expr_type(expression: &Expr, symbols: &BTreeMap<String, SymbolInfo
             target: SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
             ..
         } => ValueType::Struct,
-        Expr::Call { .. }
-        | Expr::Index { .. }
-        | Expr::Member { .. }
-        | Expr::Cast { .. }
-        | Expr::StackTemp(_) => ValueType::Unknown,
+        Expr::Call { .. } | Expr::Member { .. } | Expr::Cast { .. } | Expr::StackTemp(_) => {
+            ValueType::Unknown
+        }
     }
 }
 
