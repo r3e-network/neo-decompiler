@@ -407,6 +407,7 @@ export function renderCSharpContract(
   highLevel: string,
   manifest?: ContractManifest | null,
   options?: { typedDeclarations?: boolean },
+  patternInfo?: PatternInfo | null,
 ): string;
 
 export function decompileBytes(

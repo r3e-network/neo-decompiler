@@ -10,10 +10,16 @@ import {
   renderEventDeclaration,
   renderMetadataLine,
   renderManifestAttributes,
+  renderPatternComments,
   renderSignature,
 } from "./csharp-render.js";
 
-export function renderCSharpContract(highLevel, manifest = null, options = {}) {
+export function renderCSharpContract(
+  highLevel,
+  manifest = null,
+  options = {},
+  patternInfo = null,
+) {
   if (typeof highLevel !== "string") {
     throw new TypeError("highLevel must be a string");
   }
@@ -52,7 +58,19 @@ export function renderCSharpContract(highLevel, manifest = null, options = {}) {
     }
   }
   let metadataBlock = false;
+  let patternCommentsPending = true;
+  const patternComments = renderPatternComments(patternInfo);
   for (const [lineIndex, line] of sourceLines.entries()) {
+    if (
+      classSeen &&
+      patternCommentsPending &&
+      patternComments.length > 0 &&
+      !metadataBlock &&
+      !isContractHeaderLine(line)
+    ) {
+      output.push(...patternComments);
+      patternCommentsPending = false;
+    }
     if (metadataBlock) {
       const indentation = line.match(/^\s*/)?.[0] ?? "";
       const trimmed = line.trim();
@@ -103,11 +121,27 @@ export function renderCSharpContract(highLevel, manifest = null, options = {}) {
       metadataBlock = true;
     }
   }
+  if (classSeen && patternCommentsPending && patternComments.length > 0) {
+    output.push(...patternComments);
+  }
   if (!classSeen) {
     output.push("public class NeoContract : SmartContract {");
+    output.push(...patternComments);
     output.push("    // high-level contract body was unavailable");
   }
   return output.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
+function isContractHeaderLine(line) {
+  const trimmed = line.trim();
+  return (
+    trimmed === "" ||
+    trimmed.startsWith("//") ||
+    /^(?:supported_standards|features|groups|permissions|trusts)\b/.test(trimmed) ||
+    trimmed.startsWith("pubkey=") ||
+    /^fn\s+.*;(?:\s*\/\/.*)?$/.test(trimmed) ||
+    /^event\s+/.test(trimmed)
+  );
 }
 
 // Labels are method-scoped in C#. A partially recovered VM branch can still

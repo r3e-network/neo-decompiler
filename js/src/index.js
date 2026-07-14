@@ -154,14 +154,15 @@ export function decompileHighLevelBytes(bytes, options = {}) {
     callGraph,
   );
   const highLevel = renderHighLevelMethodGroups(methodGroups, null, context);
+  const patterns = result.patterns;
   return {
     ...result,
     warnings: [...result.warnings, ...context.highLevelWarnings],
     methodGroups,
     methodContracts: context.methodContracts,
-    patterns: identifyPatterns(result.nef, result.instructions, null),
+    patterns,
     highLevel,
-    csharp: renderCSharpContract(highLevel, null, options),
+    csharp: renderCSharpContract(highLevel, null, options, patterns),
   };
 }
 
@@ -190,15 +191,16 @@ export function decompileHighLevelBytesWithManifest(bytes, manifestInput, option
     callGraph,
   );
   const highLevel = renderHighLevelMethodGroups(methodGroups, manifest, context);
+  const patterns = identifyPatterns(result.nef, result.instructions, manifest);
   return {
     ...result,
     warnings: [...result.warnings, ...context.highLevelWarnings],
     manifest,
     methodGroups,
     methodContracts: context.methodContracts,
-    patterns: identifyPatterns(result.nef, result.instructions, manifest),
+    patterns,
     highLevel,
-    csharp: renderCSharpContract(highLevel, manifest, options),
+    csharp: renderCSharpContract(highLevel, manifest, options, patterns),
     groupedPseudocode: renderGroupedPseudocode(methodGroups, manifest),
   };
 }

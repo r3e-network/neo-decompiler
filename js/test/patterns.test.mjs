@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   decompileBytes,
   decompileBytesWithManifest,
+  decompileHighLevelBytesWithManifest,
   identifyPatterns,
   renderCSharpContract,
 } from "../src/index.js";
@@ -393,6 +394,21 @@ test("pattern analysis identifies native system-management contracts", () => {
     );
     assert.ok(info.patterns.includes(pattern), `${method} should identify ${pattern}`);
   }
+});
+
+test("high-level C# output surfaces its inferred pattern summary", () => {
+  const result = decompileHighLevelBytesWithManifest(
+    buildNef(),
+    {
+      name: "Token",
+      supportedstandards: ["NEP-17"],
+      abi: { methods: [], events: [] },
+    },
+  );
+  assert.match(result.csharp, /    \/\/ inferred standards: NEP-17/);
+  assert.match(result.csharp, /    \/\/ inferred patterns: NEP-17/);
+  assert.match(result.csharp, /    \/\/ inferred language: C#/);
+  assert.match(result.csharp, /    \/\/ pattern confidence: high/);
 });
 
 test("C# rendering widens direct nullable parameter aliases", () => {

@@ -120,6 +120,7 @@ test("integration: complete workflow from bytes to analysis output", () => {
 test("integration: C# rendering translates manifest signatures and preserves body structure", () => {
   const manifest = JSON.stringify({
     name: "SampleToken",
+    supportedstandards: ["NEP-17"],
     abi: {
       methods: [{
         name: "transfer",
@@ -133,13 +134,18 @@ test("integration: C# rendering translates manifest signatures and preserves bod
     trusts: "*",
   });
   const result = decompileHighLevelBytesWithManifest(
-    buildNef({ script: [0x78, 0x40] }),
+    buildNef({ script: [0x78, 0x40], compiler: "Neo.Compiler.CSharp" }),
     manifest,
   );
   assert.match(result.csharp, /public class SampleToken : SmartContract/);
+  assert.match(result.csharp, /inferred standards: NEP-17/);
+  assert.match(result.csharp, /inferred language: C#/);
   assert.match(result.csharp, /public static bool transfer\(UInt160 @from\)/);
   assert.match(result.csharp, /return/);
-  assert.equal(renderCSharpContract(result.highLevel), result.csharp);
+  assert.equal(
+    renderCSharpContract(result.highLevel, result.manifest, {}, result.patterns),
+    result.csharp,
+  );
 });
 
 test("integration: rejects call flags outside the 0x0F allowed mask", () => {

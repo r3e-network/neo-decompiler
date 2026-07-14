@@ -102,6 +102,10 @@ same `options` object.
 `csharp` is a readable C#-style view of the lifted body. VM-specific
 expressions remain visible when they do not have a direct C# translation; the
 field is source-oriented and is not a guarantee of framework compilation.
+When produced by the high-level APIs, its contract header also records the
+inferred standards, behavior patterns, source language, and confidence from
+`patterns`. Direct `renderCSharpContract` callers can pass that `PatternInfo`
+as its optional fourth argument.
 The JavaScript port deliberately targets C# only; pseudocode and high-level
 text remain intermediate analysis views rather than alternate language output.
 Runtime-variable stack rearrangements such as `PICK` and `ROLL` lower to

@@ -76,6 +76,45 @@ export function renderManifestAttributes(manifest) {
   return lines;
 }
 
+/**
+ * Render the conservative pattern summary as C# comments. Keep the summary
+ * optional so direct callers that only provide high-level text retain the
+ * existing output, while the full decompile pipeline can make its analysis
+ * visible in the generated contract.
+ */
+export function renderPatternComments(patternInfo, indentation = "    ") {
+  if (!patternInfo || typeof patternInfo !== "object") return [];
+  const lines = [];
+  const standards = stringList(patternInfo.standards);
+  const patterns = stringList(patternInfo.patterns);
+  if (standards.length > 0) {
+    lines.push(`${indentation}// inferred standards: ${standards.join(", ")}`);
+  }
+  if (patterns.length > 0) {
+    lines.push(`${indentation}// inferred patterns: ${patterns.join(", ")}`);
+  }
+  if (typeof patternInfo.language === "string" && patternInfo.language.trim()) {
+    lines.push(`${indentation}// inferred language: ${escapeCSharpComment(patternInfo.language)}`);
+  }
+  const confidence = String(patternInfo.confidence ?? "").toLowerCase();
+  if (["high", "medium", "low"].includes(confidence)) {
+    lines.push(`${indentation}// pattern confidence: ${escapeCSharpComment(confidence)}`);
+  }
+  if (lines.length > 0) lines.push("");
+  return lines;
+}
+
+function stringList(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry) => typeof entry === "string" && entry.trim())
+    .map((entry) => escapeCSharpComment(entry.trim()));
+}
+
+function escapeCSharpComment(value) {
+  return escapeCSharpString(String(value)).replace(/\*\//g, "* /");
+}
+
 function splitParameters(parameters) {
   const parts = [];
   let start = 0;
