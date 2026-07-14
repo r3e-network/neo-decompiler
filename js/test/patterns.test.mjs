@@ -538,6 +538,19 @@ test("C# rendering lowers unambiguous collection helpers", () => {
   assert.match(csharp, /map\.ContainsKey\(key\)/);
 });
 
+test("C# rendering lowers Neo concatenation outside string literals", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn join(a, b) -> string {",
+    '    let text = "cat" cat a cat b;',
+    "    return text;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /var text = "cat" \+ a \+ b;/);
+  assert.doesNotMatch(csharp, /\s+cat\s+/);
+});
+
 test("C# rendering preserves typed buffer allocations", () => {
   const csharp = renderCSharpContract([
     "contract Token {",

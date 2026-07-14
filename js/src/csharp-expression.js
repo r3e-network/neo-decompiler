@@ -68,7 +68,22 @@ const CSHARP_SYSCALLS = new Map([
 ]);
 
 export function rewriteCSharpExpression(line) {
-  return rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(line)));
+  return rewriteConcatenation(rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(line))));
+}
+
+function rewriteConcatenation(line) {
+  const pattern = /\bcat\b/g;
+  let output = "";
+  let cursor = 0;
+  while (true) {
+    const match = nextOutsideMatch(line, pattern);
+    if (!match) break;
+    output += line.slice(cursor, match.index).replace(/\s+$/, "") + " + ";
+    cursor = pattern.lastIndex;
+    while (/\s/.test(line[cursor] ?? "")) cursor += 1;
+    pattern.lastIndex = cursor;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
 }
 
 function rewriteQualifiedCalls(line) {
