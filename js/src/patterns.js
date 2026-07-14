@@ -1,5 +1,6 @@
 import { SYSCALLS } from "./generated/syscalls.js";
 import { describeMethodToken } from "./native-contracts.js";
+import { inferNativePatterns } from "./patterns-native.js";
 import { inferSyscallPatterns } from "./patterns-syscalls.js";
 
 /**
@@ -130,22 +131,12 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     const hint = describeMethodToken(hash, token.method);
     if (hint?.hasExactMethod()) {
       patterns.add("native_contract_calls");
+      const label = hint.formattedLabel(token.method);
       evidence.push({
         source: "nef.method_tokens.native",
-        value: hint.formattedLabel(token.method),
+        value: label,
       });
-      if (hint.contract === "OracleContract") patterns.add("oracle");
-      if (hint.contract === "ContractManagement") {
-        patterns.add("contract_management");
-        if (hint.canonicalMethod === "Update") patterns.add("upgradeable");
-      }
-      if (hint.contract === "Governance") patterns.add("governance");
-      if (hint.contract === "RoleManagement") patterns.add("role_management");
-      if (hint.contract === "PolicyContract") patterns.add("policy_management");
-      if (hint.contract === "TokenManagement") patterns.add("token_management");
-      if (hint.contract === "LedgerContract") patterns.add("ledger");
-      if (hint.contract === "Notary") patterns.add("notary");
-      if (hint.contract === "Treasury") patterns.add("treasury");
+      inferNativePatterns(hint, label, patterns, evidence);
     }
   }
   if ((instructions ?? []).some((instruction) =>

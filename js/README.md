@@ -124,7 +124,9 @@ lifting calls.
 `patterns` reports declared or inferred standards, behavior patterns such as
 `storage`, `storage_reads`, `storage_writes`, `storage_deletes`,
 `storage_iteration`, `iterator_usage`, `runtime_context`, `account_creation`,
-`gas_management`, `notifications`, `events`, `ownership`, `royalties`, and native
+`gas_management`, `cryptography`, `serialization`, `string_operations`,
+`memory_operations`, `blockchain_queries`, `native_token_calls`,
+`notifications`, `events`, `ownership`, `royalties`, and native
 contract calls (including `oracle`, `governance`, `role_management`,
 `policy_management`, `token_management`, `ledger`, `notary`, `treasury`,
 `contract_management`, and `upgradeable`),

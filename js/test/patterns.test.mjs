@@ -394,6 +394,7 @@ test("pattern analysis identifies upgradeable native contracts", () => {
     null,
   );
   assert.deepEqual(info.patterns, [
+    "contract_lifecycle",
     "contract_management",
     "method_tokens",
     "native_contract_calls",
@@ -434,6 +435,30 @@ test("pattern analysis identifies native system-management contracts", () => {
       null,
     );
     assert.ok(info.patterns.includes(pattern), `${method} should identify ${pattern}`);
+  }
+});
+
+test("pattern analysis identifies fine-grained native behavior", () => {
+  const cases = [
+    ["1bf575ab1189688413610a35a12886cde0b66c72", "Sha256", "cryptography"],
+    ["c0ef39cee0e4e925c6c2a06a79e1440dd86fceac", "JsonSerialize", "serialization"],
+    ["c0ef39cee0e4e925c6c2a06a79e1440dd86fceac", "StringSplit", "string_operations"],
+    ["bef2043140362a77c15099c7e64c12f700b665da", "GetBlock", "blockchain_queries"],
+    ["f563ea40bc283d4d0e05c48ea305b3f2a07340ef", "Transfer", "native_token_calls"],
+    ["fda3fa4346ea532a258fc497ddaddb6437c9fdff", "Deploy", "contract_lifecycle"],
+    ["fda3fa4346ea532a258fc497ddaddb6437c9fdff", "GetContract", "contract_queries"],
+  ];
+  for (const [hex, method, pattern] of cases) {
+    const info = identifyPatterns(
+      { ...nef(), methodTokens: [{ hash: Uint8Array.from(Buffer.from(hex, "hex")), method }] },
+      [],
+      null,
+    );
+    assert.ok(info.patterns.includes(pattern), `${method} should identify ${pattern}`);
+    assert.ok(info.evidence.some((entry) =>
+      entry.source === "nef.method_tokens.pattern" &&
+      entry.value.includes(pattern) && entry.value.includes(method)
+    ));
   }
 });
 

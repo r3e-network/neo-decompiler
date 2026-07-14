@@ -553,9 +553,11 @@ compiler/source metadata are retained as explainable evidence with lower
 confidence. Behavior signals currently include storage, notifications, events,
 ownership, token-receiver callbacks, royalties, minting, burning, pausable controls, signature
 verification, multisig, storage reads/writes/deletes/iteration, iterator usage,
-runtime context, account creation, gas management, external calls, method tokens, native contract calls
-(including Oracle, governance, role management, policy/token management,
-ledger, notary, treasury, contract management, and upgradeability), and
+runtime context, account creation, gas management, cryptography, serialization,
+string and memory operations, blockchain queries, native-token calls, external
+calls, method tokens, native contract calls (including Oracle, governance, role
+management, policy/token management, ledger, notary, treasury, contract
+management, lifecycle/query operations, and upgradeability), and
 wildcard permissions. Compiler/source hints are retained as secondary metadata;
 generated source output is intentionally focused on readable Neo C# contracts.
 ABI method signatures can conservatively infer NEP-17, NEP-11, and NEP-24

@@ -16,6 +16,7 @@ use crate::nef::NefFile;
 
 mod abi;
 mod language;
+mod native_patterns;
 mod syscall_patterns;
 
 /// Confidence assigned to an identified pattern or language hint.
@@ -169,43 +170,12 @@ pub fn identify_patterns(
             .filter(|hint| hint.has_exact_method())
         {
             patterns.insert("native_contract_calls".to_string());
+            let label = hint.formatted_label(&token.method);
             evidence.push(PatternEvidence {
                 source: "nef.method_tokens.native".to_string(),
-                value: hint.formatted_label(&token.method),
+                value: label.clone(),
             });
-            if hint.contract == "OracleContract" {
-                patterns.insert("oracle".to_string());
-            }
-            if hint.contract == "ContractManagement" && hint.canonical_method == Some("Update") {
-                patterns.insert("contract_management".to_string());
-                patterns.insert("upgradeable".to_string());
-            } else if hint.contract == "ContractManagement" {
-                patterns.insert("contract_management".to_string());
-            }
-            if hint.contract == "Governance" {
-                patterns.insert("governance".to_string());
-            }
-            if hint.contract == "RoleManagement" {
-                patterns.insert("role_management".to_string());
-            }
-            match hint.contract {
-                "PolicyContract" => {
-                    patterns.insert("policy_management".to_string());
-                }
-                "TokenManagement" => {
-                    patterns.insert("token_management".to_string());
-                }
-                "LedgerContract" => {
-                    patterns.insert("ledger".to_string());
-                }
-                "Notary" => {
-                    patterns.insert("notary".to_string());
-                }
-                "Treasury" => {
-                    patterns.insert("treasury".to_string());
-                }
-                _ => {}
-            }
+            native_patterns::infer_native_patterns(&hint, &label, &mut patterns, &mut evidence);
         }
     }
     if instructions.iter().any(|instruction| {
@@ -619,6 +589,7 @@ mod tests {
         assert_eq!(
             info.patterns,
             vec![
+                "contract_lifecycle",
                 "contract_management",
                 "method_tokens",
                 "native_contract_calls",
@@ -666,5 +637,91 @@ mod tests {
         };
         let info = identify_patterns(&nef, &[], None);
         assert!(info.patterns.contains(&"policy_management".to_string()));
+    }
+
+    #[test]
+    fn native_method_tokens_report_fine_grained_behavior_patterns() {
+        let cases = [
+            (
+                [
+                    0x1B, 0xF5, 0x75, 0xAB, 0x11, 0x89, 0x68, 0x84, 0x13, 0x61, 0x0A, 0x35, 0xA1,
+                    0x28, 0x86, 0xCD, 0xE0, 0xB6, 0x6C, 0x72,
+                ],
+                "Sha256",
+                "cryptography",
+            ),
+            (
+                [
+                    0xC0, 0xEF, 0x39, 0xCE, 0xE0, 0xE4, 0xE9, 0x25, 0xC6, 0xC2, 0xA0, 0x6A, 0x79,
+                    0xE1, 0x44, 0x0D, 0xD8, 0x6F, 0xCE, 0xAC,
+                ],
+                "JsonSerialize",
+                "serialization",
+            ),
+            (
+                [
+                    0xC0, 0xEF, 0x39, 0xCE, 0xE0, 0xE4, 0xE9, 0x25, 0xC6, 0xC2, 0xA0, 0x6A, 0x79,
+                    0xE1, 0x44, 0x0D, 0xD8, 0x6F, 0xCE, 0xAC,
+                ],
+                "StringSplit",
+                "string_operations",
+            ),
+            (
+                [
+                    0xBE, 0xF2, 0x04, 0x31, 0x40, 0x36, 0x2A, 0x77, 0xC1, 0x50, 0x99, 0xC7, 0xE6,
+                    0x4C, 0x12, 0xF7, 0x00, 0xB6, 0x65, 0xDA,
+                ],
+                "GetBlock",
+                "blockchain_queries",
+            ),
+            (
+                [
+                    0xF5, 0x63, 0xEA, 0x40, 0xBC, 0x28, 0x3D, 0x4D, 0x0E, 0x05, 0xC4, 0x8E, 0xA3,
+                    0x05, 0xB3, 0xF2, 0xA0, 0x73, 0x40, 0xEF,
+                ],
+                "Transfer",
+                "native_token_calls",
+            ),
+            (
+                [
+                    0xFD, 0xA3, 0xFA, 0x43, 0x46, 0xEA, 0x53, 0x2A, 0x25, 0x8F, 0xC4, 0x97, 0xDD,
+                    0xAD, 0xDB, 0x64, 0x37, 0xC9, 0xFD, 0xFF,
+                ],
+                "Deploy",
+                "contract_lifecycle",
+            ),
+            (
+                [
+                    0xFD, 0xA3, 0xFA, 0x43, 0x46, 0xEA, 0x53, 0x2A, 0x25, 0x8F, 0xC4, 0x97, 0xDD,
+                    0xAD, 0xDB, 0x64, 0x37, 0xC9, 0xFD, 0xFF,
+                ],
+                "GetContract",
+                "contract_queries",
+            ),
+        ];
+
+        for (hash, method, pattern) in cases {
+            let nef = NefFile {
+                method_tokens: vec![crate::nef::MethodToken {
+                    hash,
+                    method: method.to_string(),
+                    parameters_count: 0,
+                    has_return_value: false,
+                    call_flags: 0x0F,
+                }],
+                ..nef("", "")
+            };
+            let info = identify_patterns(&nef, &[], None);
+            assert!(
+                info.patterns.iter().any(|candidate| candidate == pattern),
+                "{method} should identify {pattern}: {:?}",
+                info.patterns
+            );
+            assert!(info.evidence.iter().any(|entry| {
+                entry.source == "nef.method_tokens.pattern"
+                    && entry.value.contains(pattern)
+                    && entry.value.contains(method)
+            }));
+        }
     }
 }
