@@ -573,6 +573,7 @@ test("C# rendering lowers common Neo math and byte helpers", () => {
     "contract Token {",
     "fn math(a, b, m, data) -> any {",
     "    let x = abs(a);",
+    "    let sign = sign(a);",
     "    let y = min(a, b);",
     "    let z = modmul(a, b, m);",
     "    let slice = substr(data, 1, 2);",
@@ -581,6 +582,7 @@ test("C# rendering lowers common Neo math and byte helpers", () => {
     "}",
   ].join("\n"));
   assert.match(csharp, /BigInteger\.Abs\(a\)/);
+  assert.match(csharp, /\(a\)\.Sign/);
   assert.match(csharp, /BigInteger\.Min\(a, b\)/);
   assert.match(csharp, /Helper\.ModMultiply\(a, b, m\)/);
   assert.match(csharp, /Helper\.Range\(data, 1, 2\)/);

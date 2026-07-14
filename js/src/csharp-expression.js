@@ -46,7 +46,7 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["convert_to_bytestring", (args) => args.length === 1 ? `(ByteString)(${args[0]})` : null],
   ["pack", (args) => `new object[] { ${args.join(", ")} }`],
   ["abs", (args) => args.length === 1 ? `BigInteger.Abs(${args[0]})` : null],
-  ["sign", (args) => args.length === 1 ? `BigInteger.Sign(${args[0]})` : null],
+  ["sign", (args) => args.length === 1 ? `(${args[0]}).Sign` : null],
   ["min", (args) => args.length === 2 ? `BigInteger.Min(${args[0]}, ${args[1]})` : null],
   ["max", (args) => args.length === 2 ? `BigInteger.Max(${args[0]}, ${args[1]})` : null],
   ["sqrt", (args) => args.length === 1 ? `Helper.Sqrt(${args[0]})` : null],
