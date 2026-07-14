@@ -88,6 +88,9 @@ const CSHARP_COLLECTION_HELPERS = new Map([
       ? `((Neo.SmartContract.Framework.List<object>)${args[0]}).PopItem()`
       : `((dynamic)${args[0]}).PopItem()`;
   }],
+  ["reverse_items", (args) => args.length === 1
+    ? `Helper.Reverse(${args[0]})`
+    : null],
 ]);
 
 const CSHARP_SYSCALLS = new Map([
@@ -165,7 +168,7 @@ function rewriteKnownHelpers(line, types) {
   for (let pass = 0; pass < 32; pass += 1) {
     const match = nextOutsideMatch(
       output,
-      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item)\s*\(/g,
+      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item|reverse_items)\s*\(/g,
     );
     if (!match) break;
     const open = output.indexOf("(", match.index);

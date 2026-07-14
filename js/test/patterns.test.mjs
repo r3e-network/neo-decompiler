@@ -633,6 +633,19 @@ test("C# rendering lowers the NEWSTRUCT high-level spelling", () => {
   assert.doesNotMatch(csharp, /new_struct\(/);
 });
 
+test("C# rendering lowers reverse item operations for array-like values", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn reverse(items) -> any {",
+    "    reverse_items(items);",
+    "    return items;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /Helper\.Reverse\(items\)/);
+  assert.doesNotMatch(csharp, /reverse_items\(/);
+});
+
 test("C# rendering lowers an empty VM struct to a framework-compatible array", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
