@@ -169,6 +169,10 @@ export function identifyPatterns(nef, instructions, manifest = null) {
       if (name === "System.Crypto.CheckMultisig") patterns.add("multisig");
       evidence.push({ source: "syscall", value: name });
     }
+    if (name === "System.Runtime.CheckWitness") {
+      patterns.add("authorization");
+      evidence.push({ source: "syscall", value: name });
+    }
   }
 
   const compiler = nef?.header?.compiler?.trim() || null;

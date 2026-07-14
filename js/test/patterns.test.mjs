@@ -117,6 +117,20 @@ test("pattern analysis identifies signature and multisig syscalls", () => {
   );
 });
 
+test("pattern analysis identifies CheckWitness authorization", () => {
+  const info = identifyPatterns(
+    nef(),
+    [{ opcode: { mnemonic: "SYSCALL" }, operand: { value: 0x8CEC27F8 } }],
+    null,
+  );
+  assert.deepEqual(info.patterns, ["authorization"]);
+  assert.ok(
+    info.evidence.some(
+      (entry) => entry.source === "syscall" && entry.value === "System.Runtime.CheckWitness",
+    ),
+  );
+});
+
 test("pattern analysis identifies wildcard call permissions", () => {
   const info = identifyPatterns(
     nef(),

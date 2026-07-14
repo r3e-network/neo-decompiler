@@ -246,6 +246,13 @@ pub fn identify_patterns(
                 value: name.to_string(),
             });
         }
+        if name == "System.Runtime.CheckWitness" {
+            patterns.insert("authorization".to_string());
+            evidence.push(PatternEvidence {
+                source: "syscall".to_string(),
+                value: name.to_string(),
+            });
+        }
     }
 
     let compiler = (!nef.header.compiler.trim().is_empty()).then(|| nef.header.compiler.clone());
@@ -390,6 +397,23 @@ mod tests {
         assert_eq!(info.patterns, vec!["multisig", "signature_verification"]);
         assert!(info.evidence.iter().any(|entry| {
             entry.source == "syscall" && entry.value == "System.Crypto.CheckMultisig"
+        }));
+    }
+
+    #[test]
+    fn check_witness_reports_authorization_pattern() {
+        let info = identify_patterns(
+            &nef("", ""),
+            &[Instruction::new(
+                0,
+                OpCode::Syscall,
+                Some(Operand::Syscall(0x8CEC27F8)),
+            )],
+            None,
+        );
+        assert_eq!(info.patterns, vec!["authorization"]);
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "syscall" && entry.value == "System.Runtime.CheckWitness"
         }));
     }
 
