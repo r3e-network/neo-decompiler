@@ -2,16 +2,46 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::cfg::{BlockId, EdgeKind};
 use crate::decompiler::ir::SemanticCallTarget;
-use crate::instruction::Instruction;
+use crate::instruction::{Instruction, OpCode};
 
 use super::super::context::CollectionShapeFacts;
 use super::super::form::SsaExpr;
 use super::super::variable::SsaVariable;
 use super::slots::*;
 use super::{
-    absent_slot_value, fresh_var, is_static_slot_name, phi_var, unknown_var, BuildFacts,
-    CollectionInvalidations, DefinitionFact, DefinitionFacts, SlotState, SsaBuilder,
+    absent_slot_value, fresh_var, is_static_slot_name, is_unknown, phi_var, unknown_var,
+    BuildFacts, CollectionInvalidations, DefinitionFact, DefinitionFacts, SlotState, SsaBuilder,
 };
+
+fn is_slot_load_opcode(opcode: OpCode) -> bool {
+    matches!(
+        opcode,
+        OpCode::Ldloc0
+            | OpCode::Ldloc1
+            | OpCode::Ldloc2
+            | OpCode::Ldloc3
+            | OpCode::Ldloc4
+            | OpCode::Ldloc5
+            | OpCode::Ldloc6
+            | OpCode::Ldloc
+            | OpCode::Ldarg0
+            | OpCode::Ldarg1
+            | OpCode::Ldarg2
+            | OpCode::Ldarg3
+            | OpCode::Ldarg4
+            | OpCode::Ldarg5
+            | OpCode::Ldarg6
+            | OpCode::Ldarg
+            | OpCode::Ldsfld0
+            | OpCode::Ldsfld1
+            | OpCode::Ldsfld2
+            | OpCode::Ldsfld3
+            | OpCode::Ldsfld4
+            | OpCode::Ldsfld5
+            | OpCode::Ldsfld6
+            | OpCode::Ldsfld
+    )
+}
 
 impl<'a> SsaBuilder<'a> {
     pub(super) fn tainted_phi_targets(
@@ -101,16 +131,31 @@ impl<'a> SsaBuilder<'a> {
             .unwrap_or(0);
         let max_depth = predecessor_depth.max(initial_arguments.len());
         let entry_source = BlockId::from(usize::MAX);
+        let recovered_dup_value = self.recover_dup_join_value(bid, &incoming_stacks);
         for depth in 0..max_depth {
             // A predecessor with a known but shorter stack contributes `?` at
             // this depth. Skipping it would fabricate a value on that path.
             let mut operands: Vec<(BlockId, SsaVariable)> = Vec::new();
             for (pred, stack) in &incoming_stacks {
                 let leading_underflow = max_depth.saturating_sub(stack.len());
-                let variable = depth
-                    .checked_sub(leading_underflow)
-                    .and_then(|index| stack.get(index))
-                    .cloned()
+                let variable = recovered_dup_value
+                    .as_ref()
+                    .filter(|(recovered_pred, _, _)| pred == recovered_pred)
+                    .and_then(|(_, recovered_depth, recovered_value)| {
+                        if depth < *recovered_depth {
+                            stack.get(depth).cloned()
+                        } else if depth == *recovered_depth {
+                            Some(recovered_value.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .or_else(|| {
+                        depth
+                            .checked_sub(leading_underflow)
+                            .and_then(|index| stack.get(index))
+                            .cloned()
+                    })
                     .unwrap_or_else(unknown_var);
                 operands.push((*pred, variable));
             }
@@ -143,6 +188,49 @@ impl<'a> SsaBuilder<'a> {
         }
 
         (entry, phis)
+    }
+
+    /// A compiler-generated conditional value may reach a merge through two
+    /// stack shapes: the longer path keeps an ambient value and pushes the
+    /// normalized value, while the shorter path leaves the original value on
+    /// top. When the merge begins with DUP, the shorter top value is the
+    /// proven operand for that missing slot; treating it as an absent bottom
+    /// value creates a false cleanup diagnostic without changing semantics.
+    fn recover_dup_join_value(
+        &self,
+        bid: BlockId,
+        incoming_stacks: &[(BlockId, Vec<SsaVariable>)],
+    ) -> Option<(BlockId, usize, SsaVariable)> {
+        let block = self.cfg.block(bid)?;
+        let first = self.instructions.get(block.instruction_range.start)?;
+        let slot_load = self.instructions.get(block.instruction_range.start + 1)?;
+        let conditional = self.instructions.get(block.instruction_range.start + 2)?;
+        if first.opcode != OpCode::Dup
+            || !is_slot_load_opcode(slot_load.opcode)
+            || !matches!(
+                conditional.opcode,
+                OpCode::Jmpif | OpCode::Jmpif_L | OpCode::Jmpifnot | OpCode::Jmpifnot_L
+            )
+            || incoming_stacks.len() != 2
+        {
+            return None;
+        }
+        let first = &incoming_stacks[0];
+        let second = &incoming_stacks[1];
+        let (short_pred, short_stack, long_stack) = if first.1.len() < second.1.len() {
+            (first.0, &first.1, &second.1)
+        } else if second.1.len() < first.1.len() {
+            (second.0, &second.1, &first.1)
+        } else {
+            return None;
+        };
+        if long_stack.len() != short_stack.len() + 1
+            || long_stack[..short_stack.len()] != short_stack[..]
+        {
+            return None;
+        }
+        let value = short_stack.last()?.clone();
+        (!is_unknown(&value)).then_some((short_pred, short_stack.len(), value))
     }
 
     /// Compute a block's entry slot state and the φ nodes it needs, from its

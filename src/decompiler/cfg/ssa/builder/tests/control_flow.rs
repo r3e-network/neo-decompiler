@@ -653,6 +653,75 @@ fn known_non_returning_call_does_not_produce_a_stack_value() {
 }
 
 #[test]
+fn dup_conditional_join_reuses_a_shorter_prefix_top_value() {
+    let instructions = vec![
+        instr(0, OpCode::Nop),
+        instr(1, OpCode::Nop),
+        instr(2, OpCode::Nop),
+        instr(3, OpCode::Dup),
+        instr(4, OpCode::Ldloc0),
+        Instruction::new(5, OpCode::Jmpifnot, Some(Operand::Jump(0))),
+    ];
+    let preheader = BlockId(0);
+    let short_path = BlockId(1);
+    let long_path = BlockId(2);
+    let merge = BlockId(3);
+    let mut cfg = Cfg::new();
+    cfg.add_block(BasicBlock::new(
+        preheader,
+        0,
+        1,
+        0..1,
+        Terminator::Branch {
+            then_target: short_path,
+            else_target: long_path,
+        },
+    ));
+    cfg.add_block(BasicBlock::new(
+        short_path,
+        1,
+        2,
+        1..2,
+        Terminator::Jump { target: merge },
+    ));
+    cfg.add_block(BasicBlock::new(
+        long_path,
+        2,
+        3,
+        2..3,
+        Terminator::Jump { target: merge },
+    ));
+    cfg.add_block(BasicBlock::new(merge, 3, 6, 3..6, Terminator::Return));
+    cfg.add_edge(preheader, short_path, EdgeKind::ConditionalTrue);
+    cfg.add_edge(preheader, long_path, EdgeKind::ConditionalFalse);
+    cfg.add_edge(short_path, merge, EdgeKind::Unconditional);
+    cfg.add_edge(long_path, merge, EdgeKind::Unconditional);
+
+    let ambient = SsaVariable::initial("ambient".to_string());
+    let argument = SsaVariable::initial("argument".to_string());
+    let transformed = SsaVariable::initial("transformed".to_string());
+    let exits = BTreeMap::from([
+        (short_path, vec![ambient.clone(), argument.clone()]),
+        (
+            long_path,
+            vec![ambient.clone(), argument.clone(), transformed.clone()],
+        ),
+    ]);
+    let builder = SsaBuilder::new(&cfg, &instructions);
+    let (entry, phis) = builder.compute_join_entry(merge, &exits);
+
+    assert_eq!(entry.len(), 3);
+    assert_eq!(entry[0], ambient);
+    assert_eq!(entry[1], argument.clone());
+    let phi = phis
+        .iter()
+        .find(|phi| phi.target == entry[2])
+        .expect("conditional merge should place a top-value phi");
+    assert_eq!(phi.operands.get(&short_path), Some(&argument));
+    assert_eq!(phi.operands.get(&long_path), Some(&transformed));
+}
+
+#[test]
 fn entry_loop_slot_without_virtual_initial_value_is_incomplete() {
     let instructions = vec![
         instr(0, OpCode::Ldloc0),

@@ -1,24 +1,24 @@
 ---
-status: investigating
+status: narrowed
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-13T18:20:48+08:00
+updated: 2026-07-14T15:11:45+08:00
 ---
 
 ## Current Focus
 
-hypothesis: The two residual Contract_Enum methods share a loop-carried stack-join failure around Enum.Parse(ignoreCase); recovering the exact VM stack invariant at the backedge may eliminate their DROP underflows without weakening the genuinely variable Foreach UNPACK guard.
-test: Compare the 0x0057 and 0x00F1 CFG/SSA loop headers against the original bytecode, identify which predecessor stack value is lost or tainted, and model only the invariant proven on every entry/backedge.
-expecting: Contract_Foreach@04AC remains fail-closed; the Enum methods improve only if their loop stack invariant is unanimous and independent of consumer-driven arity assumptions.
-next_action: Disassemble and trace Contract_Enum@0057 and @00F1 through CFG joins, then add a minimal loop regression before changing stack analysis.
+hypothesis: The remaining Contract_Foreach method has a genuinely runtime-variable UNPACK source; its arity cannot be recovered soundly from downstream consumers.
+test: Keep dynamic UNPACK provenance fail-closed while verifying the compiler-generated DUP/slot-load/conditional join pattern against focused SSA coverage and the pinned corpus census.
+expecting: Contract_Foreach@04AC remains the only incomplete method; generated C# must still compile across all 103 pinned contracts.
+next_action: Treat Foreach@04AC as an explicit known limitation unless a first-class runtime-variable stack-state model is designed.
 reasoning_checkpoint: null
 tdd_checkpoint: null
 
 ## Symptoms
 
 expected: Every pinned v3.10.0 contract whose runtime collection arity is statically provable should decompile exactly, while genuinely variable UNPACK sources remain fail-closed.
-actual: The corpus now has three incomplete methods: Foreach@04AC has a genuinely variable UNPACK source, while Enum@0057 and @00F1 lose values at loop-carried stack joins.
-errors: Foreach reports MissingProvenance at UNPACK plus downstream stack loss; both Enum methods report DROP underflow from tainted loop stack joins.
+actual: The corpus now has one incomplete method: Foreach@04AC has a genuinely variable UNPACK source. The two Enum loop-stack methods are exact after the targeted join recovery.
+errors: Foreach reports MissingProvenance at UNPACK plus downstream stack loss; no Enum join underflow remains.
 reproduction: Run the pinned v3.10.0 Roslyn corpus census with /tmp/devpack-artifacts-v3.10.0 and inspect Contract_Returns.mix, Contract_Tuple.t1, Contract_NEP11.transfer, Contract_Record.test_DeconstructRecord, Contract_Reentrancy helpers, Contract_Foreach, and the two Contract_Enum parse-ignore-case methods.
 started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858d850.
 
@@ -31,6 +31,10 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
 - hypothesis: Infer Reentrancy UNPACK arity from syscall consumers or the observed two-value prefix.
   evidence: A three-element runtime source changes the storage key and leaves a tail value across RET, so consumer-driven arity two is unsound.
   timestamp: 2026-07-13T00:00:00+08:00
+
+- hypothesis: Recovering the proven top value at a compiler-generated DUP/slot-load/conditional join would be unsound across all short-stack merges.
+  evidence: The recovery is gated on the exact three-instruction shape, two predecessors, a one-value common-prefix extension, and a non-unknown shorter-path top value. It resolves both Enum methods without changing unrelated join behavior.
+  timestamp: 2026-07-14T15:11:45+08:00
 
 ## Evidence
 
@@ -94,9 +98,14 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   found: 722 library tests pass / 1 ignored in both feature configurations; all integration targets pass; both Clippy runs pass; census is Exact 1106 / Conservative 70 / Incomplete 3; Reentrancy helpers emit direct runtime indexes with no synthetic UNPACK fallback; Roslyn compiles 103 contracts with 0 failures and 0 errors; TestingArtifacts/devpack is absent after the gate.
   implication: The Reentrancy slice is verified and ready to checkpoint. The residual investigation is limited to genuinely variable Foreach and the two Enum loop-stack methods.
 
+- timestamp: 2026-07-14T15:11:45+08:00
+  checked: Targeted DUP-join recovery, native C# API lowering, focused renderer tests, and the pinned v3.10.0 Roslyn census.
+  found: The fidelity census is Exact 1108 / Conservative 70 / Incomplete 1; the only incomplete method is Contract_Foreach@0x04AC. Native properties (`NeoToken.Symbol`, `GasToken.Symbol`, `LedgerContract.CurrentHash`, and `CurrentIndex`) now render as properties, signature-sensitive casts cover `MemorySearch` and `RoleManagement.GetDesignatedByRole`, and Roslyn compiles 103/103 contracts with 0 errors.
+  implication: Enum loop joins and all known C# framework API-shape failures are resolved. Foreach remains intentionally fail-closed because runtime-variable UNPACK arity is not statically provable.
+
 ## Resolution
 
 root_cause: Fixed collection shape was lost across resolved call returns, content-only argument mutation, constructor field writes, static storage, and private method entry. Method-global invalidation also let later calls poison earlier facts, while Record exposed stale typed declarations for runtime index values.
 fix: Added flow-sensitive content-versus-shape invalidation, unanimous Array/Struct return summaries, escape-aware read-only/shape-preserving effects, bounded constant-index postconditions, unanimous static/private-entry fixed points, flow-sensitive static alias invalidation, runtime Index expansion, and fixed-point typed-index safety for locals plus live parameter/static storage.
-verification: Focused positive/negative shape, escape, field, static, entry, and mutation tests pass; full all-target Rust tests pass with all and no default features; both Clippy configurations pass with warnings denied; pinned census is Exact 1106 / Conservative 70 / Incomplete 3; pinned Roslyn is 103 passed / 0 failed / 0 errors; formatting and diff checks pass.
+verification: Focused positive/negative shape, escape, field, static, entry, mutation, and DUP-join tests pass; native C# renderer tests pass; pinned census is Exact 1108 / Conservative 70 / Incomplete 1; pinned Roslyn is 103 passed / 0 failed / 0 errors. Foreach@0x04AC remains fail-closed by design because its UNPACK count is runtime-variable.
 files_changed: [src/decompiler/analysis/method_contracts.rs, src/decompiler/cfg/method_view.rs, src/decompiler/cfg/ssa/builder.rs, src/decompiler/cfg/ssa/context.rs, src/decompiler/cfg/ssa/mod.rs, src/decompiler/csharp/render.rs, src/decompiler/csharp/render/structured/plan.rs, src/decompiler/csharp/render/structured/stmt.rs, src/decompiler/csharp/render/structured/tests.rs, src/lib.rs]
