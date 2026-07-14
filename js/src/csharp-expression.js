@@ -52,11 +52,19 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["sqrt", (args) => args.length === 1 ? `Helper.Sqrt(${args[0]})` : null],
   ["modmul", (args) => args.length === 3 ? `Helper.ModMultiply(${args.join(", ")})` : null],
   ["modpow", (args) => args.length === 3 ? `BigInteger.ModPow(${args.join(", ")})` : null],
-  ["pow", (args) => args.length === 2 ? `BigInteger.Pow(${args.join(", ")})` : null],
+  ["pow", (args) => args.length === 2
+    ? `BigInteger.Pow(${args[0]}, (int)(${args[1]}))`
+    : null],
   ["within", (args) => args.length === 3 ? `Helper.Within(${args.join(", ")})` : null],
-  ["substr", (args) => args.length === 3 ? `Helper.Range(${args.join(", ")})` : null],
-  ["left", (args) => args.length === 2 ? `Helper.Take(${args.join(", ")})` : null],
-  ["right", (args) => args.length === 2 ? `Helper.Last(${args.join(", ")})` : null],
+  ["substr", (args) => args.length === 3
+    ? `Helper.Range(${args[0]}, (int)(${args[1]}), (int)(${args[2]}))`
+    : null],
+  ["left", (args) => args.length === 2
+    ? `Helper.Take(${args[0]}, (int)(${args[1]}))`
+    : null],
+  ["right", (args) => args.length === 2
+    ? `Helper.Last(${args[0]}, (int)(${args[1]}))`
+    : null],
   ["pop_item", (args, types) => {
     if (args.length !== 1) return null;
     return collectionKind(args[0], types) === "list"

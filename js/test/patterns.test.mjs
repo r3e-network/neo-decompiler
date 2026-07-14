@@ -585,7 +585,7 @@ test("C# rendering lowers common Neo math and byte helpers", () => {
   assert.match(csharp, /\(a\)\.Sign/);
   assert.match(csharp, /BigInteger\.Min\(a, b\)/);
   assert.match(csharp, /Helper\.ModMultiply\(a, b, m\)/);
-  assert.match(csharp, /Helper\.Range\(data, 1, 2\)/);
+  assert.match(csharp, /Helper\.Range\(data, \(int\)\(1\), \(int\)\(2\)\)/);
   assert.match(csharp, /Helper\.Within\(x, y, z\)/);
   assert.doesNotMatch(csharp, /\b(?:abs|min|modmul|substr|within)\(/);
 });
@@ -600,7 +600,7 @@ test("C# rendering lowers power and inferred list pop helpers", () => {
     "}",
     "}",
   ].join("\n"), null, { typedDeclarations: true });
-  assert.match(csharp, /BigInteger\.Pow\(a, b\)/);
+  assert.match(csharp, /BigInteger\.Pow\(a, \(int\)\(b\)\)/);
   assert.match(csharp, /List<object>\)items\)\.PopItem\(\)/);
   assert.doesNotMatch(csharp, /\b(?:pow|pop_item)\(/);
 });
