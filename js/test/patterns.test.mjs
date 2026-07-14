@@ -620,6 +620,19 @@ test("C# rendering lowers packed map and struct literals", () => {
   assert.doesNotMatch(csharp, /\b(?:Map|Struct)\([^)]*:/);
 });
 
+test("C# rendering lowers the NEWSTRUCT high-level spelling", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn build(value) -> any {",
+    "    let structure = new_struct(value);",
+    "    return structure;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /new object\[\] \{ value \}/);
+  assert.doesNotMatch(csharp, /new_struct\(/);
+});
+
 test("C# rendering lowers an empty VM struct to a framework-compatible array", () => {
   const csharp = renderCSharpContract([
     "contract Token {",

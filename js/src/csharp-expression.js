@@ -14,6 +14,9 @@ const CSHARP_COLLECTION_HELPERS = new Map([
     }[type] ?? "object";
     return `new ${element}[(int)(${args[0] ?? "???"})]`;
   }],
+  ["new_struct", (args, types) => args.length === 1
+    ? `new object[] { ${rewriteCSharpExpression(args[0], types)} }`
+    : null],
   ["Map", (args, types) => {
     if (args.length === 0) return "new Map<object, object>()";
     const entries = args.map((entry) => {
@@ -162,7 +165,7 @@ function rewriteKnownHelpers(line, types) {
   for (let pass = 0; pass < 32; pass += 1) {
     const match = nextOutsideMatch(
       output,
-      /\b(new_array_t|new_array|new_buffer|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item)\s*\(/g,
+      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item)\s*\(/g,
     );
     if (!match) break;
     const open = output.indexOf("(", match.index);
