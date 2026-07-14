@@ -535,7 +535,7 @@ test("C# rendering lowers unambiguous collection helpers", () => {
   ].join("\n"));
   assert.match(csharp, /new object\[\(int\)\(2\)\]/);
   assert.match(csharp, /List<object>\)items\)\.Add\(value\)/);
-  assert.match(csharp, /map\.ContainsKey\(key\)/);
+  assert.match(csharp, /map\.HasKey\(key\)/);
 });
 
 test("C# rendering keeps CLEARITEMS compatible with array and map receivers", () => {
