@@ -24,6 +24,10 @@ export function renderCSharpContract(highLevel, manifest = null, options = {}) {
     "using Neo.SmartContract.Framework;",
     "using Neo.SmartContract.Framework.Attributes;",
     "using Neo.SmartContract.Framework.Services;",
+    "using Neo.SmartContract.Framework.Native;",
+    "using LedgerContract = Neo.SmartContract.Framework.Native.Ledger;",
+    "using NeoToken = Neo.SmartContract.Framework.Native.NEO;",
+    "using GasToken = Neo.SmartContract.Framework.Native.GAS;",
     "",
   ];
   let classSeen = false;

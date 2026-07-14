@@ -296,6 +296,67 @@ fn renders_all_expression_variants() {
         render_expr(&native_token_call, &context),
         "NeoToken.GetCandidates(items)"
     );
+    let native_property_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 5,
+            name: "symbol".to_string(),
+            hash_le: Some("CF76E28BD0062C4A478EE35561011319F3CFA4D2".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![],
+    );
+    assert_eq!(
+        render_expr(&native_property_call, &context),
+        "GasToken.Symbol"
+    );
+    let ledger_property_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 6,
+            name: "currentHash".to_string(),
+            hash_le: Some("BEF2043140362A77C15099C7E64C12F700B665DA".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![],
+    );
+    assert_eq!(
+        render_expr(&ledger_property_call, &context),
+        "LedgerContract.CurrentHash"
+    );
+    let memory_search_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 7,
+            name: "memorySearch".to_string(),
+            hash_le: Some("C0EF39CEE0E4E925C6C2A06A79E1440DD86FCEAC".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![Expr::var("items"), Expr::var("value"), Expr::var("index")],
+    );
+    assert_eq!(
+        render_expr(&memory_search_call, &context),
+        "StdLib.MemorySearch(items, value, (int)(index))"
+    );
+    let typed_memory_context = expr_context_with_types(&[
+        ("items", ValueType::ByteString),
+        ("value", ValueType::Integer),
+        ("index", ValueType::Integer),
+    ]);
+    assert_eq!(
+        render_expr(&memory_search_call, &typed_memory_context),
+        "StdLib.MemorySearch(items, (ByteString)(value), (int)(index))"
+    );
+    let role_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 8,
+            name: "getDesignatedByRole".to_string(),
+            hash_le: Some("E295E391544C178AD94F03EC4DCDFF78534ECF49".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![Expr::int(8), Expr::int(0)],
+    );
+    assert_eq!(
+        render_expr(&role_call, &context),
+        "RoleManagement.GetDesignatedByRole((Role)(int)(8), 0)"
+    );
     let restricted_native_token_call = Expr::call(
         SemanticCallTarget::MethodToken {
             index: 4,

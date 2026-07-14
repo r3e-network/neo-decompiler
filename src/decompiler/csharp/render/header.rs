@@ -16,6 +16,24 @@ pub(super) fn write_preamble(output: &mut String) {
     writeln!(output, "using Neo.SmartContract.Framework;").unwrap();
     writeln!(output, "using Neo.SmartContract.Framework.Attributes;").unwrap();
     writeln!(output, "using Neo.SmartContract.Framework.Services;").unwrap();
+    writeln!(output, "using Neo.SmartContract.Framework.Native;").unwrap();
+    // The native catalog uses Neo's canonical contract labels while the
+    // framework types retain the shorter CLR names for these contracts.
+    writeln!(
+        output,
+        "using LedgerContract = Neo.SmartContract.Framework.Native.Ledger;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "using NeoToken = Neo.SmartContract.Framework.Native.NEO;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "using GasToken = Neo.SmartContract.Framework.Native.GAS;"
+    )
+    .unwrap();
     writeln!(output).unwrap();
 }
 

@@ -4,6 +4,7 @@ pub(super) mod expr_context;
 pub(super) mod expr_inline;
 pub(super) mod expr_intrinsics;
 pub(super) mod expr_low_level;
+pub(super) mod expr_native;
 pub(super) mod expr_syscalls;
 pub(super) mod expr_values;
 pub(super) mod nullability;
