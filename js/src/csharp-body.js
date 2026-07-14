@@ -63,6 +63,7 @@ export function renderBodyLine(line, declarationTypes = null) {
       : "var";
     return rewriteCSharpExpression(
       `${indentation}${declarationType} ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
+      declarationTypes,
     );
   }
   const assertExpression = trimmed.match(/^assert\((.*)\);$/);
@@ -70,19 +71,19 @@ export function renderBodyLine(line, declarationTypes = null) {
     const args = splitCallArguments(assertExpression[1]);
     const condition = renderCSharpAssertionCondition(args[0] ?? "null");
     if (args.length > 1) {
-      const message = rewriteCSharpExpression(args.slice(1).join(", ").trim());
+      const message = rewriteCSharpExpression(args.slice(1).join(", ").trim(), declarationTypes);
       return `${indentation}if (!${condition}) throw new InvalidOperationException(Convert.ToString(${message}));`;
     }
     return `${indentation}global::Neo.SmartContract.Framework.ExecutionEngine.Assert(${condition});`;
   }
   const throwExpression = trimmed.match(/^throw\((.*)\);$/);
   if (throwExpression) {
-    const payload = rewriteCSharpExpression(throwExpression[1]);
+    const payload = rewriteCSharpExpression(throwExpression[1], declarationTypes);
     return `${indentation}throw new Exception(Convert.ToString(${payload}));`;
   }
   const abortExpression = trimmed.match(/^abort\((.*)\);$/);
   if (abortExpression) {
-    const payload = rewriteCSharpExpression(abortExpression[1].trim());
+    const payload = rewriteCSharpExpression(abortExpression[1].trim(), declarationTypes);
     return payload
       ? `${indentation}throw new InvalidOperationException(Convert.ToString(${payload}));`
       : `${indentation}throw new InvalidOperationException();`;
@@ -90,7 +91,7 @@ export function renderBodyLine(line, declarationTypes = null) {
   if (trimmed === "abort" || trimmed === "abort;") {
     return `${indentation}throw new InvalidOperationException();`;
   }
-  return rewriteCSharpExpression(line).replace(/\bunknown\b/g, "default");
+  return rewriteCSharpExpression(line, declarationTypes).replace(/\bunknown\b/g, "default");
 }
 
 function renderCSharpAssertionCondition(expression) {

@@ -17,12 +17,26 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["Map", (args) => args.length === 0 ? "new Map<object, object>()" : null],
   ["Struct", (args) => args.length === 0 ? "new object[] { }" : null],
   ["is_null", (args) => args.length === 1 ? `(${args[0]} is null)` : null],
-  ["clear_items", (args) => args.length === 1
-    ? `((dynamic)${args[0]}).Clear()`
-    : null],
+  ["clear_items", (args, types) => {
+    if (args.length !== 1) return null;
+    const kind = collectionKind(args[0], types);
+    return kind === "map"
+      ? `${args[0]}.Clear()`
+      : kind === "list"
+        ? `((Neo.SmartContract.Framework.List<object>)${args[0]}).Clear()`
+        : `((dynamic)${args[0]}).Clear()`;
+  }],
   ["keys", (args) => args.length === 1 ? `${args[0]}.Keys` : null],
   ["values", (args) => args.length === 1 ? `${args[0]}.Values` : null],
-  ["remove_item", (args) => args.length === 2 ? `${args[0]}.Remove(${args[1]})` : null],
+  ["remove_item", (args, types) => {
+    if (args.length !== 2) return null;
+    const kind = collectionKind(args[0], types);
+    return kind === "map"
+      ? `${args[0]}.Remove(${args[1]})`
+      : kind === "list"
+        ? `((Neo.SmartContract.Framework.List<object>)${args[0]}).RemoveAt((int)(${args[1]}))`
+        : `((dynamic)${args[0]}).Remove(${args[1]})`;
+  }],
   ["append", (args) => args.length === 2
     ? `((Neo.SmartContract.Framework.List<object>)${args[0]}).Add(${args[1]})`
     : null],
@@ -69,8 +83,10 @@ const CSHARP_SYSCALLS = new Map([
   ["System.Contract.CallLegacy", "Contract.CallLegacy"],
 ]);
 
-export function rewriteCSharpExpression(line) {
-  return rewriteConcatenation(rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(line))));
+export function rewriteCSharpExpression(line, types = null) {
+  return rewriteConcatenation(
+    rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(line, types))),
+  );
 }
 
 function rewriteConcatenation(line) {
@@ -101,7 +117,7 @@ function rewriteQualifiedCalls(line) {
   return cursor === 0 ? line : output + line.slice(cursor);
 }
 
-function rewriteKnownHelpers(line) {
+function rewriteKnownHelpers(line, types) {
   let output = line;
   for (let pass = 0; pass < 32; pass += 1) {
     const match = nextOutsideMatch(
@@ -114,11 +130,20 @@ function rewriteKnownHelpers(line) {
     if (close < 0) break;
     const args = splitCallArguments(output.slice(open + 1, close));
     const renderer = CSHARP_COLLECTION_HELPERS.get(match[1]);
-    const replacement = renderer?.(args);
+    const replacement = renderer?.(args, types);
     if (!replacement) break;
     output = `${output.slice(0, match.index)}${replacement}${output.slice(close + 1)}`;
   }
   return output;
+}
+
+function collectionKind(expression, types) {
+  if (!types) return "unknown";
+  const name = expression.trim().replace(/^@/, "");
+  const type = types.get(name) ?? types.get(expression.trim()) ?? "";
+  if (/^Map<|\bMap\b/.test(type)) return "map";
+  if (/\[\]$/.test(type) || /\bList</.test(type)) return "list";
+  return "unknown";
 }
 
 function rewriteKnownSyscalls(line) {

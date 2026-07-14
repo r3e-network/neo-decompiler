@@ -549,6 +549,25 @@ test("C# rendering keeps CLEARITEMS compatible with array and map receivers", ()
   assert.match(csharp, /\(\(dynamic\)items\)\.Clear\(\);/);
 });
 
+test("C# rendering uses inferred collection types for removal helpers", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn mutate() {",
+    "    let items = new_array(2);",
+    "    let map = Map();",
+    "    remove_item(items, index);",
+    "    remove_item(map, key);",
+    "    clear_items(items);",
+    "    clear_items(map);",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+  assert.match(csharp, /List<object>\)items\)\.RemoveAt\(\(int\)\(index\)\)/);
+  assert.match(csharp, /map\.Remove\(key\)/);
+  assert.match(csharp, /List<object>\)items\)\.Clear\(\)/);
+  assert.match(csharp, /map\.Clear\(\)/);
+});
+
 test("C# rendering lowers an empty VM struct to a framework-compatible array", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
