@@ -24,6 +24,10 @@ function buildNef(script = [0x40], compiler = "Neo.Compiler.CSharp") {
   return Uint8Array.from(data);
 }
 
+function compareCodepoints(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 test("pattern analysis treats declared NEP standards as authoritative", () => {
   const info = identifyPatterns(
     nef("Neo.Compiler.CSharp 3"),
@@ -286,8 +290,30 @@ test("pattern analysis identifies external-call bytecode signals", () => {
   assert.deepEqual(
     info.evidence,
     [...info.evidence].sort((left, right) =>
-      left.source.localeCompare(right.source) || left.value.localeCompare(right.value),
+      compareCodepoints(left.source, right.source) || compareCodepoints(left.value, right.value),
     ),
+  );
+});
+
+test("pattern evidence ordering matches Rust codepoint sorting", () => {
+  const stdLibHash = Uint8Array.from([
+    0xC0, 0xEF, 0x39, 0xCE, 0xE0, 0xE4, 0xE9, 0x25, 0xC6, 0xC2,
+    0xA0, 0x6A, 0x79, 0xE1, 0x44, 0x0D, 0xD8, 0x6F, 0xCE, 0xAC,
+  ]);
+  const info = identifyPatterns(
+    { ...nef(), methodTokens: [
+      { hash: stdLibHash, method: "strLen" },
+      { hash: stdLibHash, method: "memorySearch" },
+      { hash: stdLibHash, method: "stringSplit" },
+    ] },
+    [],
+    null,
+  );
+  assert.deepEqual(
+    info.evidence
+      .filter((entry) => entry.source === "nef.method_tokens.native")
+      .map((entry) => entry.value),
+    ["StdLib::MemorySearch", "StdLib::StrLen", "StdLib::StringSplit"],
   );
 });
 

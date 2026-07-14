@@ -199,7 +199,7 @@ export function identifyPatterns(nef, instructions, manifest = null) {
         ? "low"
         : "unknown";
   evidence.sort((left, right) =>
-    left.source.localeCompare(right.source) || left.value.localeCompare(right.value),
+    compareCodepoints(left.source, right.source) || compareCodepoints(left.value, right.value),
   );
   return {
     standards: [...standards].sort(),
@@ -209,6 +209,10 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     confidence,
     evidence,
   };
+}
+
+function compareCodepoints(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function inferLanguage(compiler) {

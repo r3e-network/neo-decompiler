@@ -397,5 +397,10 @@ for (const nefPath of nefFiles) {
       stableJson(rust.analysis.types),
       `types differs for ${label}`,
     );
+    assert.equal(
+      stableJson(js.patterns),
+      stableJson(rust.analysis.patterns),
+      `patterns differs for ${label}`,
+    );
   });
 }
