@@ -197,9 +197,27 @@ fn is_csharp_keyword(ident: &str) -> bool {
 }
 
 pub(in crate::decompiler::csharp) fn escape_csharp_string(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\0' => escaped.push_str("\\0"),
+            '\u{0007}' => escaped.push_str("\\a"),
+            '\u{0008}' => escaped.push_str("\\b"),
+            '\u{000C}' => escaped.push_str("\\f"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\u{000B}' => escaped.push_str("\\v"),
+            '\u{2028}' => escaped.push_str("\\u2028"),
+            '\u{2029}' => escaped.push_str("\\u2029"),
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            control if control.is_control() => {
+                use std::fmt::Write;
+                write!(escaped, "\\u{:04X}", u32::from(control)).unwrap();
+            }
+            other => escaped.push(other),
+        }
+    }
+    escaped
 }

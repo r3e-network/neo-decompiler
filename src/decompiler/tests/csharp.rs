@@ -1662,6 +1662,28 @@ fn csharp_view_respects_manifest_metadata_and_parameters() {
 }
 
 #[test]
+fn csharp_view_escapes_all_manifest_attribute_controls() {
+    let nef_bytes = sample_nef();
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "Demo",
+                "abi": {"methods": [], "events": []},
+                "extra": {"Note": "line\u0000\u0007\u0008\u000C\n\r\t\u000B\u0001\u2028\u2029"}
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let csharp = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds")
+        .csharp
+        .expect("csharp output");
+    assert!(csharp.contains(r#"[ManifestExtra("Note", "line\0\a\b\f\n\r\t\v\u0001\u2028\u2029")]"#));
+}
+
+#[test]
 fn high_level_view_renders_manifest_groups_block() {
     // `groups` (signed pubkey memberships authorising contract
     // updates) was dropped from the high-level summary. The C#

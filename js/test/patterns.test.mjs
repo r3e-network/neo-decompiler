@@ -472,9 +472,9 @@ test("C# rendering emits manifest class attributes", () => {
 
 test("C# rendering escapes control characters in manifest string literals", () => {
   const csharp = renderCSharpContract("contract Token {\n}", {
-    extra: { Note: "line\nnext\rvalue" },
+    extra: { Note: "line\0\t\nnext\rvalue\u0001\u2028" },
   });
-  assert.match(csharp, /\[ManifestExtra\("Note", "line\\nnext\\rvalue"\)\]/);
+  assert.match(csharp, /\[ManifestExtra\("Note", "line\\0\\t\\nnext\\rvalue\\u0001\\u2028"\)\]/);
   assert.doesNotMatch(csharp, /ManifestExtra\("Note", "line\n/);
 });
 

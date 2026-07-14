@@ -48,11 +48,30 @@ export function csharpType(type) {
 }
 
 export function escapeCSharpString(value) {
-  return String(value)
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\n/g, "\\n")
-    .replace(/\r/g, "\\r");
+  let escaped = "";
+  for (const character of String(value)) {
+    switch (character) {
+      case "\0": escaped += "\\0"; break;
+      case "\u0007": escaped += "\\a"; break;
+      case "\u0008": escaped += "\\b"; break;
+      case "\u000C": escaped += "\\f"; break;
+      case "\n": escaped += "\\n"; break;
+      case "\r": escaped += "\\r"; break;
+      case "\t": escaped += "\\t"; break;
+      case "\u000B": escaped += "\\v"; break;
+      case '"': escaped += '\\"'; break;
+      case "\\": escaped += "\\\\"; break;
+      case "\u2028": escaped += "\\u2028"; break;
+      case "\u2029": escaped += "\\u2029"; break;
+      default:
+        if (character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f) {
+          escaped += `\\u${character.charCodeAt(0).toString(16).padStart(4, "0").toUpperCase()}`;
+        } else {
+          escaped += character;
+        }
+    }
+  }
+  return escaped;
 }
 
 export function renderManifestAttributes(manifest) {
