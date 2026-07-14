@@ -508,8 +508,8 @@ fn foreach_contract_methods_use_structured_loops_without_unlifted_cfg_warnings()
         "intForeach should not include unlifted CFG warning comments after loop reconstruction: {int_foreach_block}"
     );
     assert!(
-        int_foreach_block.contains("for (") || int_foreach_block.contains("while "),
-        "intForeach should use a structured loop form: {int_foreach_block}"
+        int_foreach_block.contains("for ("),
+        "intForeach should recover its compiler-generated induction loop as a for loop: {int_foreach_block}"
     );
 }
 
