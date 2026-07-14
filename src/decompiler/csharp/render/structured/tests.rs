@@ -70,6 +70,8 @@ mod expr;
 mod expr_types;
 #[path = "tests_plan.rs"]
 mod plan;
+#[path = "tests_plan_types.rs"]
+mod plan_types;
 #[path = "tests_stmt.rs"]
 mod stmt;
 #[path = "tests_stmt_foreach.rs"]
