@@ -1,5 +1,6 @@
 import { SYSCALLS } from "./generated/syscalls.js";
 import { describeMethodToken } from "./native-contracts.js";
+import { inferSyscallPatterns } from "./patterns-syscalls.js";
 
 /**
  * Conservative contract-standard and source-language pattern identification.
@@ -156,31 +157,7 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     evidence.push({ source: "bytecode.calls", value: "CALLA/CALLT/Contract.Call" });
   }
   for (const name of syscallNames) {
-    if (name.startsWith("System.Storage.")) {
-      patterns.add("storage");
-      evidence.push({ source: "syscall", value: name });
-    }
-    if (name === "System.Runtime.Notify" || name === "System.Runtime.Log") {
-      patterns.add("notifications");
-      evidence.push({ source: "syscall", value: name });
-    }
-    if (name === "System.Crypto.CheckSig" || name === "System.Crypto.CheckMultisig") {
-      patterns.add("signature_verification");
-      if (name === "System.Crypto.CheckMultisig") patterns.add("multisig");
-      evidence.push({ source: "syscall", value: name });
-    }
-    if (name === "System.Runtime.CheckWitness") {
-      patterns.add("authorization");
-      evidence.push({ source: "syscall", value: name });
-    }
-    if (name === "System.Runtime.GetCallingScriptHash") {
-      patterns.add("caller_context");
-      evidence.push({ source: "syscall", value: name });
-    }
-    if (name === "System.Runtime.CurrentSigners") {
-      patterns.add("signer_introspection");
-      evidence.push({ source: "syscall", value: name });
-    }
+    inferSyscallPatterns(name, patterns, evidence);
   }
 
   const compiler = nef?.header?.compiler?.trim() || null;

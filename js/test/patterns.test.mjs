@@ -158,6 +158,47 @@ test("pattern analysis identifies caller and signer context syscalls", () => {
   );
 });
 
+test("pattern analysis identifies storage, runtime, and account syscalls", () => {
+  const info = identifyPatterns(
+    nef(),
+    [
+      0x31E85D92, // System.Storage.Get
+      0x0AE30C39, // System.Storage.Local.Put
+      0xEDC5582F, // System.Storage.Delete
+      0x9AB830DF, // System.Storage.Find
+      0x9CED089C, // System.Iterator.Next
+      0xDC92494C, // System.Runtime.GetAddressVersion
+      0x09E9336A, // System.Contract.CreateMultisigAccount
+      0xBC8C5AC3, // System.Runtime.BurnGas
+    ].map((value) => ({
+      opcode: { mnemonic: "SYSCALL" },
+      operand: { value },
+    })),
+    null,
+  );
+  assert.deepEqual(info.patterns, [
+    "account_creation",
+    "gas_management",
+    "iterator_usage",
+    "runtime_context",
+    "storage",
+    "storage_deletes",
+    "storage_iteration",
+    "storage_reads",
+    "storage_writes",
+  ]);
+  assert.equal(
+    info.evidence.filter((entry) => entry.source === "syscall").length,
+    12,
+  );
+  assert.ok(info.evidence.some((entry) =>
+    entry.source === "syscall" && entry.value === "System.Storage.Local.Put"
+  ));
+  assert.ok(info.evidence.some((entry) =>
+    entry.source === "syscall" && entry.value === "System.Runtime.GetAddressVersion"
+  ));
+});
+
 test("pattern analysis identifies wildcard call permissions", () => {
   const info = identifyPatterns(
     nef(),

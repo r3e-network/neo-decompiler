@@ -16,6 +16,7 @@ use crate::nef::NefFile;
 
 mod abi;
 mod language;
+mod syscall_patterns;
 
 /// Confidence assigned to an identified pattern or language hint.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
@@ -48,7 +49,8 @@ pub struct PatternEvidence {
 pub struct PatternInfo {
     /// Declared or inferred Neo standards, sorted and deduplicated.
     pub standards: Vec<String>,
-    /// Contract behavior patterns such as `storage` or `notifications`.
+    /// Contract behavior patterns such as `storage`, `storage_writes`, or
+    /// `notifications`.
     pub patterns: Vec<String>,
     /// Inferred source language, when compiler/source metadata supports it.
     pub language: Option<String>,
@@ -222,51 +224,7 @@ pub fn identify_patterns(
         });
     }
     for name in syscall_names {
-        if name.starts_with("System.Storage.") {
-            patterns.insert("storage".to_string());
-            evidence.push(PatternEvidence {
-                source: "syscall".to_string(),
-                value: name.to_string(),
-            });
-        }
-        if name == "System.Runtime.Notify" || name == "System.Runtime.Log" {
-            patterns.insert("notifications".to_string());
-            evidence.push(PatternEvidence {
-                source: "syscall".to_string(),
-                value: name.to_string(),
-            });
-        }
-        if name == "System.Crypto.CheckSig" || name == "System.Crypto.CheckMultisig" {
-            patterns.insert("signature_verification".to_string());
-            if name == "System.Crypto.CheckMultisig" {
-                patterns.insert("multisig".to_string());
-            }
-            evidence.push(PatternEvidence {
-                source: "syscall".to_string(),
-                value: name.to_string(),
-            });
-        }
-        if name == "System.Runtime.CheckWitness" {
-            patterns.insert("authorization".to_string());
-            evidence.push(PatternEvidence {
-                source: "syscall".to_string(),
-                value: name.to_string(),
-            });
-        }
-        if name == "System.Runtime.GetCallingScriptHash" {
-            patterns.insert("caller_context".to_string());
-            evidence.push(PatternEvidence {
-                source: "syscall".to_string(),
-                value: name.to_string(),
-            });
-        }
-        if name == "System.Runtime.CurrentSigners" {
-            patterns.insert("signer_introspection".to_string());
-            evidence.push(PatternEvidence {
-                source: "syscall".to_string(),
-                value: name.to_string(),
-            });
-        }
+        syscall_patterns::infer_syscall_patterns(name, &mut patterns, &mut evidence);
     }
 
     let compiler = (!nef.header.compiler.trim().is_empty()).then(|| nef.header.compiler.clone());
@@ -450,6 +408,57 @@ mod tests {
         }));
         assert!(info.evidence.iter().any(|entry| {
             entry.source == "syscall" && entry.value == "System.Runtime.CurrentSigners"
+        }));
+    }
+
+    #[test]
+    fn storage_runtime_and_account_syscalls_report_behavior_patterns() {
+        let hashes = [
+            0x31E8_5D92, // System.Storage.Get
+            0x0AE3_0C39, // System.Storage.Local.Put
+            0xEDC5_582F, // System.Storage.Delete
+            0x9AB8_30DF, // System.Storage.Find
+            0x9CED_089C, // System.Iterator.Next
+            0xDC92_494C, // System.Runtime.GetAddressVersion
+            0x09E9_336A, // System.Contract.CreateMultisigAccount
+            0xBC8C_5AC3, // System.Runtime.BurnGas
+        ];
+        let instructions = hashes
+            .iter()
+            .enumerate()
+            .map(|(index, hash)| {
+                Instruction::new(index * 5, OpCode::Syscall, Some(Operand::Syscall(*hash)))
+            })
+            .collect::<Vec<_>>();
+
+        let info = identify_patterns(&nef("", ""), &instructions, None);
+
+        assert_eq!(
+            info.patterns,
+            vec![
+                "account_creation",
+                "gas_management",
+                "iterator_usage",
+                "runtime_context",
+                "storage",
+                "storage_deletes",
+                "storage_iteration",
+                "storage_reads",
+                "storage_writes",
+            ]
+        );
+        assert_eq!(
+            info.evidence
+                .iter()
+                .filter(|entry| entry.source == "syscall")
+                .count(),
+            12
+        );
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "syscall" && entry.value == "System.Storage.Local.Put"
+        }));
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "syscall" && entry.value == "System.Runtime.GetAddressVersion"
         }));
     }
 

@@ -552,7 +552,8 @@ as authoritative, while ABI names, events, syscalls, permissions, and NEF
 compiler/source metadata are retained as explainable evidence with lower
 confidence. Behavior signals currently include storage, notifications, events,
 ownership, token-receiver callbacks, royalties, minting, burning, pausable controls, signature
-verification, multisig, external calls, method tokens, native contract calls
+verification, multisig, storage reads/writes/deletes/iteration, iterator usage,
+runtime context, account creation, gas management, external calls, method tokens, native contract calls
 (including Oracle, governance, role management, policy/token management,
 ledger, notary, treasury, contract management, and upgradeability), and
 wildcard permissions. Compiler/source hints are retained as secondary metadata;
