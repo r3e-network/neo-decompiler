@@ -207,13 +207,24 @@ export function renderBodyLine(line, declarationTypes = null) {
       `${indentation}${declarationType} ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
     );
   }
+  const assertExpression = trimmed.match(/^assert\((.*)\);$/);
+  if (assertExpression) {
+    const args = splitCallArguments(assertExpression[1]);
+    const condition = renderCSharpAssertionCondition(args[0] ?? "null");
+    if (args.length > 1) {
+      const message = rewriteCSharpExpression(args.slice(1).join(", ").trim());
+      return `${indentation}if (!${condition}) throw new InvalidOperationException(Convert.ToString(${message}));`;
+    }
+    return `${indentation}global::Neo.SmartContract.Framework.ExecutionEngine.Assert(${condition});`;
+  }
   const throwExpression = trimmed.match(/^throw\((.*)\);$/);
   if (throwExpression) {
-    return `${indentation}throw new Exception(Convert.ToString(${throwExpression[1]}));`;
+    const payload = rewriteCSharpExpression(throwExpression[1]);
+    return `${indentation}throw new Exception(Convert.ToString(${payload}));`;
   }
   const abortExpression = trimmed.match(/^abort\((.*)\);$/);
   if (abortExpression) {
-    const payload = abortExpression[1].trim();
+    const payload = rewriteCSharpExpression(abortExpression[1].trim());
     return payload
       ? `${indentation}throw new InvalidOperationException(Convert.ToString(${payload}));`
       : `${indentation}throw new InvalidOperationException();`;
@@ -223,6 +234,14 @@ export function renderBodyLine(line, declarationTypes = null) {
   }
   return rewriteCSharpExpression(line)
     .replace(/\bunknown\b/g, "default");
+}
+
+function renderCSharpAssertionCondition(expression) {
+  const source = expression.trim();
+  if (source === "null") return "false";
+  if (source === "true" || source === "false") return source;
+  if (/^-?\d+$/.test(source)) return `${source} != 0`;
+  return `(bool)(object)(${rewriteCSharpExpression(source)})`;
 }
 
 export function renderMetadataLine(line) {

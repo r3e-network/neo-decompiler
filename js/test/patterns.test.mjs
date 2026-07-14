@@ -578,6 +578,23 @@ test("C# rendering keeps ABORT distinct from catchable THROW", () => {
   assert.doesNotMatch(csharp, /ABORT/);
 });
 
+test("C# rendering lowers THROW and ASSERT forms", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn fail(value) {",
+    "    assert(value > 0);",
+    '    assert(value, "bad" cat value);',
+    "    throw(value);",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /ExecutionEngine\.Assert\(\(bool\)\(object\)\(value > 0\)\);/);
+  assert.match(csharp, /if \(!\(bool\)\(object\)\(value\)\) throw new InvalidOperationException/);
+  assert.match(csharp, /throw new Exception\(Convert\.ToString\(value\)\);/);
+  assert.doesNotMatch(csharp, /assert\(/);
+  assert.doesNotMatch(csharp, /throw\(value\)/);
+});
+
 test("C# rendering lowers native qualified calls outside literals", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
