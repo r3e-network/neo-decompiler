@@ -15,7 +15,7 @@ const CSHARP_COLLECTION_HELPERS = new Map([
     return `new ${element}[(int)(${args[0] ?? "???"})]`;
   }],
   ["Map", (args) => args.length === 0 ? "new Map<object, object>()" : null],
-  ["Struct", (args) => args.length === 0 ? "new Struct()" : null],
+  ["Struct", (args) => args.length === 0 ? "new object[] { }" : null],
   ["is_null", (args) => args.length === 1 ? `(${args[0]} is null)` : null],
   ["clear_items", (args) => args.length === 1 ? `${args[0]}.Clear()` : null],
   ["keys", (args) => args.length === 1 ? `${args[0]}.Keys` : null],

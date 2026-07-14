@@ -538,6 +538,19 @@ test("C# rendering lowers unambiguous collection helpers", () => {
   assert.match(csharp, /map\.ContainsKey\(key\)/);
 });
 
+test("C# rendering lowers an empty VM struct to a framework-compatible array", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn build() -> any {",
+    "    let value = Struct();",
+    "    return value;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /var @value = new object\[\] \{ \};/);
+  assert.doesNotMatch(csharp, /new Struct\(\)/);
+});
+
 test("C# rendering lowers Neo concatenation outside string literals", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
