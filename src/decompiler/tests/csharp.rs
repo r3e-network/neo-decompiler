@@ -2732,8 +2732,8 @@ fn csharp_escapes_reserved_keywords() {
                 "abi": {
                     "methods": [
                         {
-                            "name": "class",
-                            "parameters": [{ "name": "namespace", "type": "Integer" }],
+                            "name": "record",
+                            "parameters": [{ "name": "await", "type": "Integer" }],
                             "returntype": "Void",
                             "offset": 0
                         }
@@ -2753,7 +2753,7 @@ fn csharp_escapes_reserved_keywords() {
 
     let csharp = decompilation.csharp.as_deref().expect("csharp output");
     assert!(csharp.contains("public class @class : SmartContract"));
-    assert!(csharp.contains("public static void @class(BigInteger @namespace)"));
+    assert!(csharp.contains("public static void @record(BigInteger @await)"));
 }
 
 #[test]

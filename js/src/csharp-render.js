@@ -28,7 +28,11 @@ const CSHARP_KEYWORDS = new Set([
   "readonly", "ref", "return", "sbyte", "sealed", "short", "sizeof", "stackalloc",
   "static", "string", "struct", "switch", "this", "throw", "true", "try", "typeof",
   "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual", "void",
-  "volatile", "while",
+  "volatile", "while", "add", "alias", "ascending", "async", "await", "by",
+  "descending", "dynamic", "equals", "file", "from", "get", "global", "group",
+  "init", "into", "join", "let", "nameof", "nint", "notnull", "nuint", "on",
+  "orderby", "partial", "record", "remove", "required", "scoped", "select", "set",
+  "unmanaged", "value", "when", "where", "with", "yield",
 ]);
 
 export function csharpIdentifier(name) {

@@ -186,6 +186,13 @@ fn is_csharp_keyword(ident: &str) -> bool {
             | "where"
             | "with"
             | "yield"
+            | "file"
+            | "nint"
+            | "notnull"
+            | "nuint"
+            | "record"
+            | "required"
+            | "scoped"
     )
 }
 

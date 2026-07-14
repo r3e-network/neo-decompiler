@@ -383,7 +383,7 @@ test("C# rendering widens direct nullable parameter aliases", () => {
       "}",
     ].join("\n"),
   );
-  assert.match(rendered, /BigInteger valueOrDefault\(dynamic value\)/);
+  assert.match(rendered, /BigInteger valueOrDefault\(dynamic @value\)/);
 });
 
 test("C# rendering can opt into conservative typed declarations", () => {
@@ -476,6 +476,13 @@ test("C# rendering preserves raw names for sanitized ABI methods", () => {
     },
   );
   assert.match(csharp, /\[DisplayName\("balance-of"\)\]/);
+});
+
+test("C# rendering escapes contextual and newer keyword identifiers", () => {
+  const csharp = renderCSharpContract(
+    "contract Token {\nfn record(await: int) -> void {\n}\n}",
+  );
+  assert.match(csharp, /public static void @record\(BigInteger @await\)/);
 });
 
 test("C# rendering lowers unambiguous collection helpers", () => {
