@@ -131,6 +131,28 @@ test("pattern analysis identifies CheckWitness authorization", () => {
   );
 });
 
+test("pattern analysis identifies caller and signer context syscalls", () => {
+  const info = identifyPatterns(
+    nef(),
+    [
+      { opcode: { mnemonic: "SYSCALL" }, operand: { value: 0x3C6E5339 } },
+      { opcode: { mnemonic: "SYSCALL" }, operand: { value: 0x8B18F1AC } },
+    ],
+    null,
+  );
+  assert.deepEqual(info.patterns, ["caller_context", "signer_introspection"]);
+  assert.ok(
+    info.evidence.some(
+      (entry) => entry.source === "syscall" && entry.value === "System.Runtime.GetCallingScriptHash",
+    ),
+  );
+  assert.ok(
+    info.evidence.some(
+      (entry) => entry.source === "syscall" && entry.value === "System.Runtime.CurrentSigners",
+    ),
+  );
+});
+
 test("pattern analysis identifies wildcard call permissions", () => {
   const info = identifyPatterns(
     nef(),

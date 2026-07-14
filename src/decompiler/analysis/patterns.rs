@@ -253,6 +253,20 @@ pub fn identify_patterns(
                 value: name.to_string(),
             });
         }
+        if name == "System.Runtime.GetCallingScriptHash" {
+            patterns.insert("caller_context".to_string());
+            evidence.push(PatternEvidence {
+                source: "syscall".to_string(),
+                value: name.to_string(),
+            });
+        }
+        if name == "System.Runtime.CurrentSigners" {
+            patterns.insert("signer_introspection".to_string());
+            evidence.push(PatternEvidence {
+                source: "syscall".to_string(),
+                value: name.to_string(),
+            });
+        }
     }
 
     let compiler = (!nef.header.compiler.trim().is_empty()).then(|| nef.header.compiler.clone());
@@ -414,6 +428,28 @@ mod tests {
         assert_eq!(info.patterns, vec!["authorization"]);
         assert!(info.evidence.iter().any(|entry| {
             entry.source == "syscall" && entry.value == "System.Runtime.CheckWitness"
+        }));
+    }
+
+    #[test]
+    fn caller_and_signer_syscalls_report_context_patterns() {
+        let info = identify_patterns(
+            &nef("", ""),
+            &[
+                Instruction::new(0, OpCode::Syscall, Some(Operand::Syscall(0x3C6E5339))),
+                Instruction::new(5, OpCode::Syscall, Some(Operand::Syscall(0x8B18F1AC))),
+            ],
+            None,
+        );
+        assert_eq!(
+            info.patterns,
+            vec!["caller_context", "signer_introspection"]
+        );
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "syscall" && entry.value == "System.Runtime.GetCallingScriptHash"
+        }));
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "syscall" && entry.value == "System.Runtime.CurrentSigners"
         }));
     }
 

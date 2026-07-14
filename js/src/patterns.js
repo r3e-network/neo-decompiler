@@ -173,6 +173,14 @@ export function identifyPatterns(nef, instructions, manifest = null) {
       patterns.add("authorization");
       evidence.push({ source: "syscall", value: name });
     }
+    if (name === "System.Runtime.GetCallingScriptHash") {
+      patterns.add("caller_context");
+      evidence.push({ source: "syscall", value: name });
+    }
+    if (name === "System.Runtime.CurrentSigners") {
+      patterns.add("signer_introspection");
+      evidence.push({ source: "syscall", value: name });
+    }
   }
 
   const compiler = nef?.header?.compiler?.trim() || null;
