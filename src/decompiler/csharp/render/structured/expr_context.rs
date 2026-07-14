@@ -225,6 +225,7 @@ fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {
         "bool" => Some(ValueType::Boolean),
         "ByteString" => Some(ValueType::ByteString),
         "byte[]" => Some(ValueType::Buffer),
+        "object[]" => Some(ValueType::Array),
         "Map<object, object>" => Some(ValueType::Map),
         _ => None,
     }

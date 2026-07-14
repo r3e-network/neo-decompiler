@@ -25,6 +25,10 @@ use super::plan_helpers::{
 };
 use super::MethodPlanDraft;
 
+#[path = "plan_methods/return_types.rs"]
+mod return_types;
+use return_types::infer_private_return_types;
+
 pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
     instructions: &[Instruction],
     manifest: Option<&ContractManifest>,
@@ -401,6 +405,13 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
         plan.method_context.calls_by_offset = calls_by_offset;
         plan.planning_issues = planning_issues;
     }
+
+    infer_private_return_types(
+        &mut plans,
+        &inferred_methods,
+        &plans_by_offset,
+        instructions,
+    );
 
     let mut parameter_index_definitions: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
     let mut index_defined_statics = BTreeSet::new();

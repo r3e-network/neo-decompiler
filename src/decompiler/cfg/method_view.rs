@@ -107,6 +107,7 @@ pub(crate) fn render_method_body(
                 .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
         returns_value,
         calls_by_offset: calls_for_view(view, calls_by_offset),
+        call_return_types: BTreeMap::new(),
         argument_collection_facts: method_contract
             .map(|contract| contract.argument_collection_facts.clone())
             .unwrap_or_default(),

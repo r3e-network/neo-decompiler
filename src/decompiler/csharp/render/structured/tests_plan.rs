@@ -182,6 +182,234 @@ fn plans_overloads_and_calls_together() {
 }
 
 #[test]
+fn infers_concrete_return_type_for_private_literal_helper() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Call, Some(Operand::Jump(4))),
+        Instruction::new(2, OpCode::Ret, None),
+        Instruction::new(4, OpCode::Push1, None),
+        Instruction::new(5, OpCode::Ret, None),
+    ];
+    let helper = MethodRef {
+        offset: 4,
+        name: "sub_0x0004".to_string(),
+    };
+    let call_graph = CallGraph {
+        methods: vec![
+            MethodRef {
+                offset: 0,
+                name: "sub_0x0000".to_string(),
+            },
+            helper.clone(),
+        ],
+        edges: vec![CallEdge {
+            caller: MethodRef {
+                offset: 0,
+                name: "sub_0x0000".to_string(),
+            },
+            call_offset: 0,
+            opcode: "CALL".to_string(),
+            target: CallTarget::Internal { method: helper },
+        }],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "sub_0x0000", 0, ReturnBehavior::Unknown),
+            method_contract(4, "sub_0x0004", 0, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        None,
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 4],
+    );
+    let helper_plan = plans.inferred_method(4).expect("private helper plan");
+
+    assert_eq!(helper_plan.return_type, "BigInteger");
+    assert_eq!(helper_plan.return_behavior, ReturnBehavior::Value);
+    assert_eq!(plans.method_return_types_by_offset()[&4], "BigInteger");
+}
+
+#[test]
+fn unresolved_private_call_keeps_helper_return_dynamic() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Call, Some(Operand::Jump(4))),
+        Instruction::new(2, OpCode::Ret, None),
+        Instruction::new(4, OpCode::Call, Some(Operand::Jump(4))),
+        Instruction::new(6, OpCode::Ret, None),
+    ];
+    let entry = MethodRef {
+        offset: 0,
+        name: "sub_0x0000".to_string(),
+    };
+    let helper = MethodRef {
+        offset: 4,
+        name: "sub_0x0004".to_string(),
+    };
+    let call_graph = CallGraph {
+        methods: vec![entry.clone(), helper.clone()],
+        edges: vec![
+            CallEdge {
+                caller: entry,
+                call_offset: 0,
+                opcode: "CALL".to_string(),
+                target: CallTarget::Internal {
+                    method: helper.clone(),
+                },
+            },
+            CallEdge {
+                caller: helper,
+                call_offset: 4,
+                opcode: "CALL".to_string(),
+                target: CallTarget::UnresolvedInternal { target: 8 },
+            },
+        ],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "sub_0x0000", 0, ReturnBehavior::Unknown),
+            method_contract(4, "sub_0x0004", 0, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        None,
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 4],
+    );
+
+    assert_eq!(
+        plans
+            .inferred_method(4)
+            .expect("private helper plan")
+            .return_type,
+        "dynamic"
+    );
+}
+
+#[test]
+fn propagates_private_return_type_through_helper_chain() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Call, Some(Operand::Jump(4))),
+        Instruction::new(2, OpCode::Ret, None),
+        Instruction::new(4, OpCode::Call, Some(Operand::Jump(4))),
+        Instruction::new(6, OpCode::Ret, None),
+        Instruction::new(8, OpCode::Push1, None),
+        Instruction::new(9, OpCode::Ret, None),
+    ];
+    let entry = MethodRef {
+        offset: 0,
+        name: "sub_0x0000".to_string(),
+    };
+    let middle = MethodRef {
+        offset: 4,
+        name: "sub_0x0004".to_string(),
+    };
+    let leaf = MethodRef {
+        offset: 8,
+        name: "sub_0x0008".to_string(),
+    };
+    let call_graph = CallGraph {
+        methods: vec![entry.clone(), middle.clone(), leaf.clone()],
+        edges: vec![
+            CallEdge {
+                caller: entry,
+                call_offset: 0,
+                opcode: "CALL".to_string(),
+                target: CallTarget::Internal {
+                    method: middle.clone(),
+                },
+            },
+            CallEdge {
+                caller: middle,
+                call_offset: 4,
+                opcode: "CALL".to_string(),
+                target: CallTarget::Internal {
+                    method: leaf.clone(),
+                },
+            },
+        ],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "sub_0x0000", 0, ReturnBehavior::Unknown),
+            method_contract(4, "sub_0x0004", 0, ReturnBehavior::Unknown),
+            method_contract(8, "sub_0x0008", 0, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        None,
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 4, 8],
+    );
+
+    assert_eq!(plans.inferred_method(8).unwrap().return_type, "BigInteger");
+    assert_eq!(plans.inferred_method(4).unwrap().return_type, "BigInteger");
+}
+
+#[test]
+fn mixed_private_returns_remain_dynamic() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Call, Some(Operand::Jump(4))),
+        Instruction::new(2, OpCode::Ret, None),
+        Instruction::new(4, OpCode::Push1, None),
+        Instruction::new(5, OpCode::Jmpif, Some(Operand::Jump(4))),
+        Instruction::new(7, OpCode::Push1, None),
+        Instruction::new(8, OpCode::Ret, None),
+        Instruction::new(9, OpCode::PushT, None),
+        Instruction::new(10, OpCode::Ret, None),
+    ];
+    let entry = MethodRef {
+        offset: 0,
+        name: "sub_0x0000".to_string(),
+    };
+    let helper = MethodRef {
+        offset: 4,
+        name: "sub_0x0004".to_string(),
+    };
+    let call_graph = CallGraph {
+        methods: vec![entry.clone(), helper.clone()],
+        edges: vec![CallEdge {
+            caller: entry,
+            call_offset: 0,
+            opcode: "CALL".to_string(),
+            target: CallTarget::Internal { method: helper },
+        }],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "sub_0x0000", 0, ReturnBehavior::Unknown),
+            method_contract(4, "sub_0x0004", 0, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        None,
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 4],
+    );
+
+    assert_eq!(plans.inferred_method(4).unwrap().return_type, "dynamic");
+}
+
+#[test]
 fn plans_cross_range_tail_jump_with_detached_helper_arity() {
     let manifest = ContractManifest::from_json_str(
         r#"{

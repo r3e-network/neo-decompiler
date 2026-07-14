@@ -20,6 +20,7 @@ pub(super) fn method_return_facts(
             .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
         returns_value: Some(true),
         calls_by_offset: calls_for_view(view, calls_by_offset),
+        call_return_types: BTreeMap::new(),
         argument_collection_facts: Vec::new(),
         static_collection_facts: BTreeMap::new(),
     };

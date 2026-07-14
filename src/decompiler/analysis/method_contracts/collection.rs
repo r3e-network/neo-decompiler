@@ -231,6 +231,7 @@ fn method_collection_analysis(
             .is_none_or(|instruction| instruction.opcode != OpCode::Initslot),
         returns_value: Some(contract.return_behavior.returns_value()),
         calls_by_offset: calls_for_view(view, calls_by_offset),
+        call_return_types: BTreeMap::new(),
         argument_collection_facts: argument_collection_facts.to_vec(),
         static_collection_facts: static_collection_facts.clone(),
     };

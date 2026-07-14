@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use crate::decompiler::analysis::types::ValueType;
 use serde::Serialize;
 
 use crate::decompiler::ir::SemanticCallTarget;
@@ -133,6 +134,10 @@ pub(crate) struct MethodContext {
     pub(crate) arguments_on_entry_stack: bool,
     pub(crate) returns_value: Option<bool>,
     pub(crate) calls_by_offset: BTreeMap<usize, CallContract>,
+    /// Proven primitive return types for resolved internal calls in the
+    /// current C# lowering pass.  This is intentionally separate from the
+    /// VM stack contract: an absent entry means the call remains dynamic.
+    pub(crate) call_return_types: BTreeMap<usize, ValueType>,
     pub(crate) argument_collection_facts: Vec<CollectionShapeFacts>,
     pub(crate) static_collection_facts: BTreeMap<usize, CollectionShapeFacts>,
 }

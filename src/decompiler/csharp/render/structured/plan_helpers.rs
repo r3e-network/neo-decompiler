@@ -27,6 +27,7 @@ pub(super) fn draft_method_context(
         arguments_on_entry_stack: draft.arguments_on_entry_stack,
         returns_value: return_value_option(draft.return_behavior),
         calls_by_offset: BTreeMap::new(),
+        call_return_types: BTreeMap::new(),
         argument_collection_facts: method_contract
             .map(|contract| contract.argument_collection_facts.clone())
             .unwrap_or_default(),

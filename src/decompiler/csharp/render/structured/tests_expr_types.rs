@@ -26,7 +26,7 @@ fn resolved_internal_call_return_types_drive_expression_typing() {
     assert_eq!(context.value_type(&call(3)), ValueType::ByteString);
     assert_eq!(context.value_type(&call(4)), ValueType::Buffer);
     assert_eq!(context.value_type(&call(5)), ValueType::Map);
-    assert_eq!(context.value_type(&call(6)), ValueType::Unknown);
+    assert_eq!(context.value_type(&call(6)), ValueType::Array);
     assert_eq!(context.value_type(&call(7)), ValueType::Unknown);
     assert_eq!(context.value_type(&call(8)), ValueType::Unknown);
 
@@ -92,6 +92,6 @@ fn proven_expression_shapes_keep_concrete_value_types() {
             expr: Box::new(Expr::Unknown),
             target_type: "object[]".to_string(),
         }),
-        ValueType::Unknown
+        ValueType::Array
     );
 }

@@ -218,7 +218,11 @@ pub(crate) fn lower_method_body(request: MethodIrRequest<'_>) -> StructuredMetho
     let (source_names, mut symbols) =
         allocate_source_symbols(&request.context, &request.symbol_types, &ssa);
     let body = structure_cfg_with_source_names(&ssa, &source_names);
-    register_structured_temporaries(&body, &mut symbols);
+    register_structured_temporaries_with_call_types(
+        &body,
+        &mut symbols,
+        &request.context.call_return_types,
+    );
     let source_map = source_map::build_source_map(&body, &ssa, &source_names, &instructions);
 
     let mut fidelity = built.fidelity;
@@ -262,7 +266,16 @@ fn return_behavior(context: &MethodContext) -> ReturnBehavior {
     }
 }
 
+#[cfg(test)]
 fn register_structured_temporaries(body: &Block, symbols: &mut BTreeMap<String, SymbolInfo>) {
+    register_structured_temporaries_with_call_types(body, symbols, &BTreeMap::new());
+}
+
+fn register_structured_temporaries_with_call_types(
+    body: &Block,
+    symbols: &mut BTreeMap<String, SymbolInfo>,
+    call_return_types: &BTreeMap<usize, ValueType>,
+) {
     let mut names = BTreeSet::new();
     collect_block_names(body, &mut names);
     for name in names {
@@ -276,7 +289,7 @@ fn register_structured_temporaries(body: &Block, symbols: &mut BTreeMap<String, 
     }
 
     for _ in 0..symbols.len() {
-        if !refine_block_temporary_types(body, symbols) {
+        if !refine_block_temporary_types(body, symbols, call_return_types) {
             break;
         }
     }
@@ -368,10 +381,14 @@ fn collect_direct_copy_edges(block: &Block, copies: &mut Vec<(String, String)>) 
     }
 }
 
-fn refine_block_temporary_types(block: &Block, symbols: &mut BTreeMap<String, SymbolInfo>) -> bool {
+fn refine_block_temporary_types(
+    block: &Block,
+    symbols: &mut BTreeMap<String, SymbolInfo>,
+    call_return_types: &BTreeMap<usize, ValueType>,
+) -> bool {
     let mut changed = false;
     for statement in &block.stmts {
-        changed |= refine_statement_temporary_types(statement, symbols);
+        changed |= refine_statement_temporary_types(statement, symbols, call_return_types);
     }
     changed
 }
@@ -379,10 +396,11 @@ fn refine_block_temporary_types(block: &Block, symbols: &mut BTreeMap<String, Sy
 fn refine_statement_temporary_types(
     statement: &Stmt,
     symbols: &mut BTreeMap<String, SymbolInfo>,
+    call_return_types: &BTreeMap<usize, ValueType>,
 ) -> bool {
     match statement {
         Stmt::Assign { target, value } => {
-            let inferred = structured_expr_type(value, symbols);
+            let inferred = structured_expr_type(value, symbols, call_return_types);
             let Some(symbol) = symbols.get_mut(target) else {
                 return false;
             };
@@ -400,20 +418,22 @@ fn refine_statement_temporary_types(
                 else_branch,
                 ..
             } => {
-                let mut changed = refine_block_temporary_types(then_branch, symbols);
+                let mut changed =
+                    refine_block_temporary_types(then_branch, symbols, call_return_types);
                 if let Some(else_branch) = else_branch {
-                    changed |= refine_block_temporary_types(else_branch, symbols);
+                    changed |=
+                        refine_block_temporary_types(else_branch, symbols, call_return_types);
                 }
                 changed
             }
             ControlFlow::While { body, .. } | ControlFlow::DoWhile { body, .. } => {
-                refine_block_temporary_types(body, symbols)
+                refine_block_temporary_types(body, symbols, call_return_types)
             }
             ControlFlow::For { init, body, .. } => {
-                let mut changed = init
-                    .as_deref()
-                    .is_some_and(|init| refine_statement_temporary_types(init, symbols));
-                changed |= refine_block_temporary_types(body, symbols);
+                let mut changed = init.as_deref().is_some_and(|init| {
+                    refine_statement_temporary_types(init, symbols, call_return_types)
+                });
+                changed |= refine_block_temporary_types(body, symbols, call_return_types);
                 changed
             }
             ControlFlow::TryCatch {
@@ -422,22 +442,24 @@ fn refine_statement_temporary_types(
                 finally_body,
                 ..
             } => {
-                let mut changed = refine_block_temporary_types(try_body, symbols);
+                let mut changed =
+                    refine_block_temporary_types(try_body, symbols, call_return_types);
                 if let Some(catch_body) = catch_body {
-                    changed |= refine_block_temporary_types(catch_body, symbols);
+                    changed |= refine_block_temporary_types(catch_body, symbols, call_return_types);
                 }
                 if let Some(finally_body) = finally_body {
-                    changed |= refine_block_temporary_types(finally_body, symbols);
+                    changed |=
+                        refine_block_temporary_types(finally_body, symbols, call_return_types);
                 }
                 changed
             }
             ControlFlow::Switch { cases, default, .. } => {
                 let mut changed = false;
                 for (_, body) in cases {
-                    changed |= refine_block_temporary_types(body, symbols);
+                    changed |= refine_block_temporary_types(body, symbols, call_return_types);
                 }
                 if let Some(default) = default {
-                    changed |= refine_block_temporary_types(default, symbols);
+                    changed |= refine_block_temporary_types(default, symbols, call_return_types);
                 }
                 changed
             }
@@ -455,7 +477,11 @@ fn refine_statement_temporary_types(
     }
 }
 
-fn structured_expr_type(expression: &Expr, symbols: &BTreeMap<String, SymbolInfo>) -> ValueType {
+fn structured_expr_type(
+    expression: &Expr,
+    symbols: &BTreeMap<String, SymbolInfo>,
+    call_return_types: &BTreeMap<usize, ValueType>,
+) -> ValueType {
     match expression {
         Expr::Unknown => ValueType::Unknown,
         Expr::Literal(Literal::Int(_) | Literal::BigInt(_)) => ValueType::Integer,
@@ -513,14 +539,14 @@ fn structured_expr_type(expression: &Expr, symbols: &BTreeMap<String, SymbolInfo
             else_expr,
             ..
         } => merge_value_types(
-            structured_expr_type(then_expr, symbols),
-            structured_expr_type(else_expr, symbols),
+            structured_expr_type(then_expr, symbols, call_return_types),
+            structured_expr_type(else_expr, symbols, call_return_types),
         ),
         Expr::Call {
             target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Cat)),
             args,
         } => args.first().map_or(ValueType::Unknown, |left| {
-            match structured_expr_type(left, symbols) {
+            match structured_expr_type(left, symbols, call_return_types) {
                 ValueType::ByteString => ValueType::ByteString,
                 ValueType::Buffer => ValueType::Buffer,
                 _ => ValueType::Unknown,
@@ -534,6 +560,13 @@ fn structured_expr_type(expression: &Expr, symbols: &BTreeMap<String, SymbolInfo
             target: SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
             ..
         } => ValueType::Struct,
+        Expr::Call {
+            target: SemanticCallTarget::Internal { offset, .. },
+            ..
+        } => call_return_types
+            .get(offset)
+            .copied()
+            .unwrap_or(ValueType::Unknown),
         Expr::Call { .. } | Expr::Member { .. } | Expr::Cast { .. } | Expr::StackTemp(_) => {
             ValueType::Unknown
         }
