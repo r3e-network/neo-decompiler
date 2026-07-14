@@ -29,6 +29,31 @@ pub(crate) fn lookup(
     let method = hint.canonical_method?;
 
     match (hint.contract, method) {
+        ("ContractManagement", "HasMethod" | "IsContract") => {
+            Some(return_type(ValueType::Boolean, "bool"))
+        }
+        ("ContractManagement", "GetMinimumDeploymentFee") => {
+            Some(return_type(ValueType::Integer, "long"))
+        }
+        ("LedgerContract", "CurrentHash") => Some(return_type(ValueType::ByteString, "UInt256")),
+        ("LedgerContract", "CurrentIndex") => Some(return_type(ValueType::Integer, "uint")),
+        ("LedgerContract", "GetTransactionHeight") => Some(return_type(ValueType::Integer, "int")),
+        ("LedgerContract", "GetTransactionVMState") => {
+            Some(return_type(ValueType::Integer, "VMState"))
+        }
+        ("LedgerContract", "GetTransactionSigners") => {
+            Some(return_type(ValueType::Array, "Signer[]"))
+        }
+        ("GasToken" | "NeoToken", "Symbol") => Some(return_type(ValueType::ByteString, "string")),
+        ("GasToken" | "NeoToken", "Decimals") => Some(return_type(ValueType::Integer, "byte")),
+        (
+            "GasToken" | "NeoToken",
+            "BalanceOf" | "GetGasPerBlock" | "TotalSupply" | "UnclaimedGas",
+        ) => Some(return_type(ValueType::Integer, "BigInteger")),
+        ("GasToken" | "NeoToken", "Transfer") => Some(return_type(ValueType::Boolean, "bool")),
+        ("RoleManagement", "GetDesignatedByRole") => {
+            Some(return_type(ValueType::Array, "ECPoint[]"))
+        }
         // The VM represents strings as ByteStrings, while generated C# keeps
         // the framework's string spelling for direct helper return types.
         ("StdLib", "Atoi") => Some(return_type(ValueType::Integer, "BigInteger")),
@@ -74,6 +99,9 @@ mod tests {
     use super::*;
 
     const STDLIB: &str = "C0EF39CEE0E4E925C6C2A06A79E1440DD86FCEAC";
+    const LEDGER: &str = "BEF2043140362A77C15099C7E64C12F700B665DA";
+    const NEO: &str = "F563EA40BC283D4D0E05C48EA305B3F2A07340EF";
+    const ROLE_MANAGEMENT: &str = "E295E391544C178AD94F03EC4DCDFF78534ECF49";
 
     #[test]
     fn resolves_only_hash_bound_native_signatures() {
@@ -103,5 +131,24 @@ mod tests {
         let json = lookup(Some(STDLIB), "jsonSerialize", Some(0x0F)).unwrap();
         assert_eq!(json.value_type, ValueType::ByteString);
         assert_eq!(json.csharp_type, "string");
+    }
+
+    #[test]
+    fn maps_framework_native_contract_returns() {
+        let current_index = lookup(Some(LEDGER), "currentIndex", Some(0x0F)).unwrap();
+        assert_eq!(current_index.value_type, ValueType::Integer);
+        assert_eq!(current_index.csharp_type, "uint");
+
+        let signers = lookup(Some(LEDGER), "getTransactionSigners", Some(0x0F)).unwrap();
+        assert_eq!(signers.value_type, ValueType::Array);
+        assert_eq!(signers.csharp_type, "Signer[]");
+
+        let balance = lookup(Some(NEO), "balanceOf", Some(0x0F)).unwrap();
+        assert_eq!(balance.value_type, ValueType::Integer);
+        assert_eq!(balance.csharp_type, "BigInteger");
+
+        let designated = lookup(Some(ROLE_MANAGEMENT), "getDesignatedByRole", Some(0x0F)).unwrap();
+        assert_eq!(designated.value_type, ValueType::Array);
+        assert_eq!(designated.csharp_type, "ECPoint[]");
     }
 }

@@ -122,6 +122,67 @@ fn symbol_aware_expression_types_cover_index_and_numeric_copies() {
 }
 
 #[test]
+fn framework_native_aliases_are_accepted_for_typed_declarations() {
+    let call = |hash: &str, name: &str| {
+        Expr::call(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: name.to_string(),
+                hash_le: Some(hash.to_string()),
+                call_flags: Some(0x0F),
+            },
+            Vec::new(),
+        )
+    };
+    let body = Block::from(vec![
+        Stmt::assign(
+            "height",
+            call(
+                "BEF2043140362A77C15099C7E64C12F700B665DA",
+                "getTransactionHeight",
+            ),
+        ),
+        Stmt::assign(
+            "signers",
+            call(
+                "BEF2043140362A77C15099C7E64C12F700B665DA",
+                "getTransactionSigners",
+            ),
+        ),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "height".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(0),
+                value_type: ValueType::Integer,
+            },
+        ),
+        (
+            "signers".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(1),
+                value_type: ValueType::Array,
+            },
+        ),
+    ]);
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["height"].csharp_type, "int");
+    assert_eq!(plan.declarations["signers"].csharp_type, "Signer[]");
+    assert_eq!(
+        concrete_definition_type(&Expr::index(
+            call(
+                "BEF2043140362A77C15099C7E64C12F700B665DA",
+                "getTransactionSigners",
+            ),
+            Expr::int(0),
+        )),
+        Some("Signer".to_string())
+    );
+}
+
+#[test]
 fn typed_array_element_types_survive_aliases_but_unknown_arrays_stay_dynamic() {
     let body = Block::from(vec![
         Stmt::assign(

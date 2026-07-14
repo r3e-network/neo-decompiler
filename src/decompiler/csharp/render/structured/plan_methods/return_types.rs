@@ -103,11 +103,12 @@ fn concrete_return_types_by_offset(
 fn csharp_return_value_type(return_type: &str) -> Option<ValueType> {
     match return_type {
         "BigInteger" => Some(ValueType::Integer),
+        "byte" | "int" | "uint" | "long" | "VMState" => Some(ValueType::Integer),
         "bool" => Some(ValueType::Boolean),
         "string" => Some(ValueType::ByteString),
         "ByteString" => Some(ValueType::ByteString),
         "byte[]" => Some(ValueType::Buffer),
-        "object[]" => Some(ValueType::Array),
+        "object[]" | "ECPoint[]" | "Signer[]" => Some(ValueType::Array),
         "Map<object, object>" => Some(ValueType::Map),
         "UInt160" | "UInt256" | "ECPoint" => Some(ValueType::ByteString),
         "StorageContext" | "Iterator" | "Transaction" => Some(ValueType::InteropInterface),

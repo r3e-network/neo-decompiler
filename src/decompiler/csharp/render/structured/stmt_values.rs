@@ -148,6 +148,15 @@ impl StatementRenderer<'_> {
             }
         }
         let source_type = self.expressions.value_type(value);
+        if target_type == "object[]"
+            && source_type == ValueType::Array
+            && matches!(
+                self.expressions.exact_csharp_type(value),
+                Some("ECPoint[]" | "Signer[]")
+            )
+        {
+            return rendered;
+        }
         let cast = match (target_type, source_type) {
             ("dynamic" | "object", _) => None,
             (_, ValueType::Unknown | ValueType::Any | ValueType::Null) => {

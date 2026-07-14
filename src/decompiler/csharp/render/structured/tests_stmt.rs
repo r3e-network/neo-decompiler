@@ -399,6 +399,39 @@ fn typed_static_field_boundaries_use_contract_field_types() {
 }
 
 #[test]
+fn concrete_native_reference_arrays_flow_into_object_array_storage() {
+    let body = Block::from(vec![Stmt::assign(
+        "static0",
+        Expr::call(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: "getDesignatedByRole".to_string(),
+                hash_le: Some("E295E391544C178AD94F03EC4DCDFF78534ECF49".to_string()),
+                call_flags: Some(0x0F),
+            },
+            vec![Expr::int(8), Expr::int(0)],
+        ),
+    )]);
+    let symbols = BTreeMap::from([(
+        "static0".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Static(0),
+            value_type: ValueType::Array,
+        },
+    )]);
+    let plan =
+        plan_declarations(&body, &symbols, true).with_static_field_types(&BTreeMap::from([(
+            "static0".to_string(),
+            "object[]".to_string(),
+        )]));
+
+    assert_eq!(
+        render_block(&body, &plan, &symbols, ReturnBehavior::Void, false),
+        "static0 = RoleManagement.GetDesignatedByRole((Role)(int)(8), 0);"
+    );
+}
+
+#[test]
 fn compiler_debug_notify_omits_the_packed_state_temp() {
     let body = Block::from(vec![
         Stmt::assign(

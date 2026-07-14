@@ -211,6 +211,8 @@ fn array_element_type(base_type: Option<&str>) -> Option<String> {
         Some("ByteString" | "byte[]" | "BigInteger[]") => Some("BigInteger".to_string()),
         Some("bool[]") => Some("bool".to_string()),
         Some("ByteString[]") => Some("ByteString".to_string()),
+        Some("ECPoint[]") => Some("ECPoint".to_string()),
+        Some("Signer[]") => Some("Signer".to_string()),
         Some("byte[][]") => Some("byte[]".to_string()),
         Some("object[][]") => Some("object[]".to_string()),
         Some("Map<object, object>[]") => Some("Map<object, object>".to_string()),
@@ -238,6 +240,11 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
     matches!(
         type_name,
         "BigInteger"
+            | "byte"
+            | "int"
+            | "uint"
+            | "long"
+            | "VMState"
             | "bool"
             | "ByteString"
             | "byte[]"
@@ -247,6 +254,8 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
             | "UInt160"
             | "UInt256"
             | "ECPoint"
+            | "ECPoint[]"
+            | "Signer[]"
     )
     .then(|| type_name.to_string())
 }
@@ -256,7 +265,10 @@ pub(super) fn concrete_type_matches_value_type(type_name: &str, value_type: Valu
         ValueType::Unknown | ValueType::Any => true,
         ValueType::Null => false,
         ValueType::Boolean => type_name == "bool",
-        ValueType::Integer => type_name == "BigInteger",
+        ValueType::Integer => matches!(
+            type_name,
+            "BigInteger" | "byte" | "int" | "uint" | "long" | "VMState"
+        ),
         ValueType::ByteString => matches!(
             type_name,
             "ByteString" | "string" | "UInt160" | "UInt256" | "ECPoint"

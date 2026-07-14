@@ -90,6 +90,40 @@ fn known_native_method_tokens_drive_exact_csharp_expression_types() {
 }
 
 #[test]
+fn framework_native_alias_types_remain_concrete_in_expression_context() {
+    let context = ExprContext::default();
+    let call = |hash: &str, name: &str| {
+        Expr::call(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: name.to_string(),
+                hash_le: Some(hash.to_string()),
+                call_flags: Some(0x0F),
+            },
+            Vec::new(),
+        )
+    };
+
+    let current_index = call("BEF2043140362A77C15099C7E64C12F700B665DA", "currentIndex");
+    assert_eq!(context.exact_csharp_type(&current_index), Some("uint"));
+    assert_eq!(context.value_type(&current_index), ValueType::Integer);
+
+    let signers = call(
+        "BEF2043140362A77C15099C7E64C12F700B665DA",
+        "getTransactionSigners",
+    );
+    assert_eq!(context.exact_csharp_type(&signers), Some("Signer[]"));
+    assert_eq!(context.value_type(&signers), ValueType::Array);
+
+    let designated = call(
+        "E295E391544C178AD94F03EC4DCDFF78534ECF49",
+        "getDesignatedByRole",
+    );
+    assert_eq!(context.exact_csharp_type(&designated), Some("ECPoint[]"));
+    assert_eq!(context.value_type(&designated), ValueType::Array);
+}
+
+#[test]
 fn known_syscalls_drive_exact_csharp_expression_types() {
     let context = ExprContext::default();
     let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());
