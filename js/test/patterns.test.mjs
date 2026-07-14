@@ -450,6 +450,14 @@ test("C# rendering emits manifest class attributes", () => {
   assert.doesNotMatch(csharp, /Nested/);
 });
 
+test("C# rendering escapes control characters in manifest string literals", () => {
+  const csharp = renderCSharpContract("contract Token {\n}", {
+    extra: { Note: "line\nnext\rvalue" },
+  });
+  assert.match(csharp, /\[ManifestExtra\("Note", "line\\nnext\\rvalue"\)\]/);
+  assert.doesNotMatch(csharp, /ManifestExtra\("Note", "line\n/);
+});
+
 test("C# rendering preserves safe ABI methods", () => {
   const csharp = renderCSharpContract(
     "contract Token {\nfn balanceOf(account: hash160) -> int {\n}\n}",

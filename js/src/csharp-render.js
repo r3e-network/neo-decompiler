@@ -48,7 +48,11 @@ export function csharpType(type) {
 }
 
 export function escapeCSharpString(value) {
-  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r");
 }
 
 export function renderManifestAttributes(manifest) {
