@@ -349,7 +349,7 @@ fn typed_internal_call_boundaries_use_exact_resolved_return_types() {
     );
     assert_eq!(
         render(&BTreeMap::from([(42, "ByteString".to_string())])),
-        "return (BigInteger)(dynamic)(helper());"
+        "return (BigInteger)(helper());"
     );
     assert_eq!(
         render(&BTreeMap::new()),

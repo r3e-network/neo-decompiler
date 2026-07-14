@@ -127,6 +127,12 @@ impl ExprContext {
             .map(String::as_str)
     }
 
+    fn exact_internal_call_value_type(&self, expression: &Expr) -> ValueType {
+        self.exact_csharp_type(expression)
+            .and_then(csharp_type_value_type)
+            .unwrap_or(ValueType::Unknown)
+    }
+
     pub(super) fn is_inlined(&self, name: &str) -> bool {
         self.inline_values.contains_key(name)
     }
@@ -189,7 +195,22 @@ impl ExprContext {
                 target: SemanticCallTarget::Intrinsic(Intrinsic::UnpackPackStruct),
                 ..
             } => ValueType::Struct,
+            Expr::Call {
+                target: SemanticCallTarget::Internal { .. },
+                ..
+            } => self.exact_internal_call_value_type(expression),
             _ => ValueType::Unknown,
         }
+    }
+}
+
+fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {
+    match csharp_type {
+        "BigInteger" => Some(ValueType::Integer),
+        "bool" => Some(ValueType::Boolean),
+        "ByteString" => Some(ValueType::ByteString),
+        "byte[]" => Some(ValueType::Buffer),
+        "Map<object, object>" => Some(ValueType::Map),
+        _ => None,
     }
 }
