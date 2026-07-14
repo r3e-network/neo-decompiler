@@ -185,7 +185,7 @@ function rewriteKnownHelpers(line, types) {
   for (let pass = 0; pass < 32; pass += 1) {
     const match = nextOutsideMatch(
       output,
-      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|convert_to_buffer|convert|len|size|memcpy|unpack|unpack_item|keys|values|pack|pack_dynamic|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item|reverse_items|is_type_[A-Za-z0-9_]+)\s*\(/g,
+      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|convert_to_buffer|convert|len|size|memcpy|unpack|unpack_item|keys|values|pack|pack_dynamic|pick|roll|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item|reverse_items|is_type_[A-Za-z0-9_]+)\s*\(/g,
     );
     if (!match) break;
     const open = output.indexOf("(", match.index);
@@ -195,11 +195,20 @@ function rewriteKnownHelpers(line, types) {
     const renderer = CSHARP_COLLECTION_HELPERS.get(match[1]);
     const replacement = match[1].startsWith("is_type_")
       ? renderCSharpTypeTest(match[1], args)
-      : renderer?.(args, types);
+      : renderer?.(args, types) ?? renderUnresolvedStackHelper(match[1], args);
     if (!replacement) break;
     output = `${output.slice(0, match.index)}${replacement}${output.slice(close + 1)}`;
   }
   return output;
+}
+
+// A runtime-variable PICK/ROLL cannot be represented as an ordinary C#
+// expression once the VM stack position has been lost. Keep the generated
+// contract valid and make the loss explicit instead of leaking pseudo-code
+// helpers that do not exist in the Neo framework.
+function renderUnresolvedStackHelper(name, args) {
+  if (name !== "pick" && name !== "roll") return null;
+  return `default(dynamic) /* unresolved VM ${name.toUpperCase()}(${args.join(", ")}) */`;
 }
 
 function rewriteKnownSyscalls(line) {

@@ -222,7 +222,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 - A C# contract skeleton view (`--format csharp`) that mirrors the manifest
   entry point, emits stubs for additional ABI methods, declares ABI events,
   and adds `[DisplayName]`/`[Safe]` attributes when available
-- Label-based control-transfer placeholders use `label_0xNNNN` targets in both high-level and C# views (`goto label_...`; high-level may emit `leave label_...` for exceptional flow)
+- Label-based control-transfer placeholders use `label_0xNNNN` targets in the high-level view and C# when the target is method-scoped; unrecoverable C# transfers are retained as explicit comments (high-level may emit `leave label_...` for exceptional flow)
 - A single binary (`neo-decompiler`) and a reusable library (`neo_decompiler`)
 
 ## Quick start

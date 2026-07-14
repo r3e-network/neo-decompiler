@@ -100,6 +100,10 @@ same `options` object.
 `csharp` is a readable C#-style view of the lifted body. VM-specific
 expressions remain visible when they do not have a direct C# translation; the
 field is source-oriented and is not a guarantee of framework compilation.
+Runtime-variable stack rearrangements such as `PICK` and `ROLL` lower to
+`default(dynamic)` with an inline explanation, and transfers to labels that
+are missing or outside the current method become comments. Valid labels remain
+ordinary C# `goto` targets.
 
 ### `analyzeBytes(bytes, manifest?) → { ..., callGraph, methodContracts, xrefs, types, patterns, methodGroups }`
 

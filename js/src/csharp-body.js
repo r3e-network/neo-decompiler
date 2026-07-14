@@ -59,15 +59,17 @@ export function renderBodyLine(line, declarationTypes = null) {
   const trimmed = line.trim();
   const finish = (rendered) => rewriteCSharpControlSyntax(rendered);
   if (trimmed.startsWith("//")) return line;
-  const declaration = trimmed.match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*.*)?;$/);
+  const declaration = trimmed.match(
+    /^let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*.*?;)(\s*\/\/.*)?$/,
+  );
   if (declaration) {
     const declarationType = declarationTypes
       ? declarationTypes.get(declaration[1]) ?? "dynamic"
       : "var";
     return finish(rewriteCSharpExpression(
-      `${indentation}${declarationType} ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
+      `${indentation}${declarationType} ${csharpIdentifier(declaration[1])}${declaration[2]}`,
       declarationTypes,
-    ));
+    )) + (declaration[3] ?? "");
   }
   const assertExpression = trimmed.match(/^assert\((.*)\);$/);
   if (assertExpression) {
@@ -94,7 +96,68 @@ export function renderBodyLine(line, declarationTypes = null) {
   if (trimmed === "abort" || trimmed === "abort;") {
     return finish(`${indentation}throw new InvalidOperationException();`);
   }
-  return finish(rewriteCSharpExpression(line, declarationTypes).replace(/\bunknown\b/g, "default"));
+  return renderDiscardedExpression(
+    finish(rewriteCSharpExpression(line, declarationTypes).replace(/\bunknown\b/g, "default")),
+  );
+}
+
+// Stack lifting can leave a pure value on its own line when the VM later
+// consumes it along another path. Such lines are meaningful in the lifted
+// trace but are not legal C# expression statements (`null;`, `1;`, or
+// `items[0];`). Preserve their evaluation with a harmless framework-neutral
+// conversion call while leaving calls and ordinary assignments untouched.
+function renderDiscardedExpression(line) {
+  const indentation = line.match(/^\s*/)?.[0] ?? "";
+  const trimmed = line.trim();
+  if (!trimmed.endsWith(";") || trimmed.startsWith("//")) return line;
+  if (/^(?:return|throw|break|continue|goto)\b/.test(trimmed)) return line;
+  if (/^(?:if|while|for|switch|case|default|try|catch|finally|else)\b/.test(trimmed)) return line;
+  if (/^}\s*(?:while|else|catch|finally)\b/.test(trimmed)) return line;
+  if (/^(?:label_0x[0-9A-Fa-f]+):/.test(trimmed)) return line;
+  if (hasTopLevelAssignment(trimmed)) return line;
+  if (isInvocationStatement(trimmed)) return line;
+  const expression = trimmed.slice(0, -1).trim();
+  return `${indentation}global::System.Convert.ToString((object)(${expression}));`;
+}
+
+function hasTopLevelAssignment(source) {
+  let depth = 0;
+  let quote = null;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if ("([{<".includes(character)) {
+      depth += 1;
+    } else if (")]}>".includes(character)) {
+      depth = Math.max(0, depth - 1);
+    } else if (character === "=" && depth === 0 && source[index - 1] !== "=" && source[index + 1] !== "=") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isInvocationStatement(source) {
+  const expression = source.slice(0, -1).trim();
+  if (/^default\s*\(/.test(expression) || /^new\b/.test(expression)) return false;
+  if (/^(?:global::)?[A-Za-z_@][A-Za-z0-9_@]*(?:(?:\.|::)[A-Za-z_@][A-Za-z0-9_@]*)*\s*\(/.test(expression)) {
+    return true;
+  }
+  const open = expression.lastIndexOf("(");
+  if (open < 1 || !expression.endsWith(")")) return false;
+  let cursor = open - 1;
+  while (cursor >= 0 && /\s/.test(expression[cursor])) cursor -= 1;
+  if (cursor < 0 || !/[A-Za-z0-9_@]/.test(expression[cursor])) return false;
+  while (cursor >= 0 && /[A-Za-z0-9_@]/.test(expression[cursor])) cursor -= 1;
+  const prefix = expression.slice(0, cursor + 1).trimEnd();
+  if (/[+\-*\/%|&!~]/.test(prefix)) return false;
+  return prefix === "" || /(?:\.|::|\)|\])$/.test(prefix);
 }
 
 function rewriteCSharpControlSyntax(line) {

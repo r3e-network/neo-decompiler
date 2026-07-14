@@ -630,6 +630,26 @@ test("C# rendering keeps dynamic pack sizes as C# arrays", () => {
   assert.doesNotMatch(csharp, /pack_dynamic\(/);
 });
 
+test("C# rendering lowers unresolved VM stack helpers and discarded values", () => {
+  const csharp = renderCSharpContract([
+    "contract StackFallback {",
+    "fn test(value: any) -> any {",
+    "    let picked = pick(value);",
+    "    let rolled = roll(3); // dynamic roll",
+    "    null;",
+    "    picked;",
+    "    return rolled;",
+    "}",
+    "}",
+  ].join("\n"));
+
+  assert.match(csharp, /var picked = default\(dynamic\) \/\* unresolved VM PICK\(value\) \*\//);
+  assert.match(csharp, /var rolled = default\(dynamic\) \/\* unresolved VM ROLL\(3\) \*\/; \/\/ dynamic roll/);
+  assert.match(csharp, /global::System\.Convert\.ToString\(\(object\)\(null\)\);/);
+  assert.match(csharp, /global::System\.Convert\.ToString\(\(object\)\(picked\)\);/);
+  assert.doesNotMatch(csharp, /\blet\b|\b(?:pick|roll)\(/);
+});
+
 test("C# rendering comments metadata block continuations", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
@@ -715,6 +735,22 @@ test("C# rendering adapts high-level control syntax", () => {
   assert.match(csharp, /\} while \(\(bool\)\(dynamic\)\(value\)\);/);
   assert.match(csharp, /goto label_0x000A;/);
   assert.doesNotMatch(csharp, /\b(?:if value|while 1|leave label_)/);
+});
+
+test("C# rendering comments unresolved method-scoped gotos", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn flow(value) -> void {",
+    "    if value { goto label_0x000A; }",
+    "    goto label_0x000B;",
+    "    label_0x000A:",
+    "    return;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /goto label_0x000A;/);
+  assert.match(csharp, /\/\/ unresolved control transfer: goto label_0x000B;/);
+  assert.doesNotMatch(csharp, /^\s+goto label_0x000B;$/m);
 });
 
 test("C# rendering replays framework-internal syscalls through Runtime.LoadScript", () => {
