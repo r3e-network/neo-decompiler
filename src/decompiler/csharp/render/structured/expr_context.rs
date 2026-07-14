@@ -201,8 +201,17 @@ impl ExprContext {
                     element_type: Some(element_type),
                     ..
                 } => *element_type,
+                _ if matches!(
+                    self.value_type(base),
+                    ValueType::ByteString | ValueType::Buffer
+                ) =>
+                {
+                    ValueType::Integer
+                }
                 _ => ValueType::Unknown,
             },
+            Expr::Member { name, .. } if name.eq_ignore_ascii_case("Length") => ValueType::Integer,
+            Expr::Member { .. } => ValueType::Unknown,
             Expr::Ternary {
                 then_expr,
                 else_expr,
@@ -213,14 +222,31 @@ impl ExprContext {
                 args,
             } => match opcode {
                 OpCode::Newarray0 | OpCode::Newarray | OpCode::NewarrayT => ValueType::Array,
+                OpCode::Keys | OpCode::Values => ValueType::Array,
                 OpCode::Newstruct0 | OpCode::Newstruct => ValueType::Struct,
                 OpCode::Newmap => ValueType::Map,
                 OpCode::Newbuffer => ValueType::Buffer,
-                OpCode::Size | OpCode::Sqrt | OpCode::Min | OpCode::Max => ValueType::Integer,
+                OpCode::Depth | OpCode::Size | OpCode::Sqrt | OpCode::Min | OpCode::Max => {
+                    ValueType::Integer
+                }
                 OpCode::Haskey | OpCode::Isnull | OpCode::Istype | OpCode::Nz => ValueType::Boolean,
-                OpCode::Cat => args
-                    .first()
-                    .map_or(ValueType::Unknown, |left| self.value_type(left)),
+                OpCode::Substr | OpCode::Left | OpCode::Right => {
+                    args.first().map_or(ValueType::Unknown, |source| {
+                        match self.value_type(source) {
+                            ValueType::ByteString => ValueType::ByteString,
+                            ValueType::Buffer => ValueType::Buffer,
+                            _ => ValueType::Unknown,
+                        }
+                    })
+                }
+                OpCode::Cat => {
+                    args.first()
+                        .map_or(ValueType::Unknown, |left| match self.value_type(left) {
+                            ValueType::ByteString => ValueType::ByteString,
+                            ValueType::Buffer => ValueType::Buffer,
+                            _ => ValueType::Unknown,
+                        })
+                }
                 _ => ValueType::Unknown,
             },
             Expr::Call {

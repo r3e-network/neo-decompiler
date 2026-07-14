@@ -153,3 +153,56 @@ fn proven_expression_shapes_keep_concrete_value_types() {
         ValueType::Array
     );
 }
+
+#[test]
+fn intrinsic_and_member_shapes_keep_concrete_value_types() {
+    let context = expr_context_with_types(&[
+        ("text", ValueType::ByteString),
+        ("buffer", ValueType::Buffer),
+        ("map", ValueType::Map),
+    ]);
+    let intrinsic = |opcode, args| {
+        Expr::call(
+            SemanticCallTarget::Intrinsic(Intrinsic::Opcode(opcode)),
+            args,
+        )
+    };
+
+    assert_eq!(
+        context.value_type(&intrinsic(OpCode::Depth, Vec::new())),
+        ValueType::Integer
+    );
+    assert_eq!(
+        context.value_type(&intrinsic(
+            OpCode::Substr,
+            vec![Expr::var("text"), Expr::int(0), Expr::int(1)],
+        )),
+        ValueType::ByteString
+    );
+    assert_eq!(
+        context.value_type(&intrinsic(
+            OpCode::Left,
+            vec![Expr::var("buffer"), Expr::int(1)],
+        )),
+        ValueType::Buffer
+    );
+    assert_eq!(
+        context.value_type(&intrinsic(OpCode::Keys, vec![Expr::var("map")])),
+        ValueType::Array
+    );
+    assert_eq!(
+        context.value_type(&intrinsic(OpCode::Values, vec![Expr::var("map")])),
+        ValueType::Array
+    );
+    assert_eq!(
+        context.value_type(&Expr::Member {
+            base: Box::new(Expr::var("text")),
+            name: "Length".to_string(),
+        }),
+        ValueType::Integer
+    );
+    assert_eq!(
+        context.value_type(&Expr::index(Expr::var("buffer"), Expr::int(0))),
+        ValueType::Integer
+    );
+}

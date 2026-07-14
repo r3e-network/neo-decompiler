@@ -4,10 +4,11 @@ use crate::decompiler::analysis::types::{TypeInfo, ValueType};
 use crate::decompiler::cfg::method_body::{
     Fidelity, LoweringIssue, LoweringIssueKind, SymbolInfo, SymbolOrigin,
 };
-use crate::decompiler::ir::{Block, Expr};
-use crate::decompiler::native_method_types;
+use crate::decompiler::ir::Block;
 use crate::instruction::OpCode;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+
+use super::declaration_types::concrete_type_matches_value_type;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(in crate::decompiler::csharp::render) struct ScopeId(u32);
@@ -215,7 +216,11 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
                     collector
                         .concrete_definition_types
                         .get(name)
-                        .filter(|_| typed && activity.definitions.len() == 1)
+                        .filter(|candidate| {
+                            typed
+                                && activity.definitions.len() == 1
+                                && concrete_type_matches_value_type(candidate, symbol.value_type)
+                        })
                         .cloned()
                         .unwrap_or_else(|| csharp_type(symbol.value_type, typed).to_string())
                 },
@@ -243,56 +248,6 @@ pub(in crate::decompiler::csharp::render) fn collect_index_defined_symbols(
     let root = collector.scopes.root();
     collector.visit_block(body, root);
     collector.index_defined_symbols()
-}
-
-pub(in crate::decompiler::csharp::render) fn concrete_definition_type(
-    expression: &Expr,
-) -> Option<String> {
-    if let Expr::Call {
-        target:
-            crate::decompiler::ir::SemanticCallTarget::MethodToken {
-                name,
-                hash_le,
-                call_flags,
-                ..
-            },
-        ..
-    } = expression
-    {
-        if let Some(return_type) =
-            native_method_types::lookup(hash_le.as_deref(), name, *call_flags)
-        {
-            return Some(return_type.csharp_type.to_string());
-        }
-    }
-    if let Expr::Call {
-        target: crate::decompiler::ir::SemanticCallTarget::Syscall { hash, .. },
-        ..
-    } = expression
-    {
-        if let Some(return_type) = crate::decompiler::syscall_types::lookup(*hash) {
-            return Some(return_type.csharp_type.to_string());
-        }
-    }
-    let Expr::NewArray {
-        element_type: Some(element_type),
-        ..
-    } = expression
-    else {
-        return None;
-    };
-    Some(match element_type {
-        ValueType::Boolean => "bool[]".to_string(),
-        ValueType::Integer => "BigInteger[]".to_string(),
-        ValueType::ByteString => "ByteString[]".to_string(),
-        ValueType::Buffer => "byte[][]".to_string(),
-        ValueType::Array | ValueType::Struct => "object[][]".to_string(),
-        ValueType::Map => "Map<object, object>[]".to_string(),
-        ValueType::Any | ValueType::Null | ValueType::InteropInterface | ValueType::Pointer => {
-            "object[]".to_string()
-        }
-        ValueType::Unknown => return None,
-    })
 }
 
 pub(in crate::decompiler::csharp::render) fn plan_contract_symbols(

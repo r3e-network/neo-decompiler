@@ -6,11 +6,14 @@ use crate::decompiler::cfg::method_body::{LoweringIssue, MethodSymbolTypes, Symb
 use crate::decompiler::cfg::ssa::MethodContext;
 
 use super::super::super::helpers::CSharpParameter;
+#[path = "declaration_types.rs"]
+mod declaration_types;
+pub(in crate::decompiler::csharp::render) use declaration_types::concrete_definition_type;
 #[path = "declarations.rs"]
 mod declarations;
 pub(in crate::decompiler::csharp::render) use declarations::{
-    collect_index_defined_symbols, concrete_definition_type, csharp_type, plan_contract_symbols,
-    plan_declarations, CSharpContractSymbols, DeclarationKind, DeclarationPlan, ScopeId, ScopeTree,
+    collect_index_defined_symbols, csharp_type, plan_contract_symbols, plan_declarations,
+    CSharpContractSymbols, DeclarationKind, DeclarationPlan, ScopeId, ScopeTree,
 };
 
 #[allow(dead_code)]

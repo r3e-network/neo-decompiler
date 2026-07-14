@@ -1,6 +1,48 @@
 use super::*;
 
 #[test]
+fn infers_concrete_types_for_common_structured_expressions() {
+    assert_eq!(
+        concrete_definition_type(&Expr::int(1)),
+        Some("BigInteger".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type(&Expr::Literal(Literal::String("text".to_string()))),
+        Some("ByteString".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type(&Expr::binary(BinOp::Add, Expr::int(1), Expr::int(2))),
+        Some("BigInteger".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type(&Expr::binary(BinOp::Eq, Expr::int(1), Expr::int(2))),
+        Some("bool".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type(&Expr::call(
+            SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Size)),
+            vec![Expr::var("items")],
+        )),
+        Some("BigInteger".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type(&Expr::call(
+            SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Cat)),
+            vec![Expr::var("left"), Expr::var("right")],
+        )),
+        Some("ByteString".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type(&Expr::Member {
+            base: Box::new(Expr::var("items")),
+            name: "Length".to_string(),
+        }),
+        Some("BigInteger".to_string())
+    );
+    assert_eq!(concrete_definition_type(&Expr::var("unknown")), None);
+}
+
+#[test]
 fn plans_overloads_and_calls_together() {
     let manifest = ContractManifest::from_json_str(
         r#"{
