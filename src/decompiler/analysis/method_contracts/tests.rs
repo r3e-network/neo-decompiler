@@ -224,6 +224,59 @@ fn static_and_nested_argument_aliases_remain_unknown() {
 }
 
 #[test]
+fn converted_argument_aliases_escape_shape_preservation() {
+    let manifest = standard_manifest();
+    // Each helper first mutates arg0 without resizing it, then aliases the
+    // converted value through a return, a static, or SETITEM respectively.
+    let returned = [
+        0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x78, 0xD1, 0x78, 0xDB, 0x40, 0x40,
+    ];
+    let stored_static = [
+        0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x78, 0xD1, 0x78, 0xDB, 0x40, 0x60, 0x40,
+    ];
+    let stored_nested = [
+        0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x78, 0xD1, 0x78, 0xDB, 0x40, 0xC2, 0x10, 0x51,
+        0xD0, 0x40,
+    ];
+
+    for script in [&returned[..], &stored_static[..], &stored_nested[..]] {
+        assert_eq!(
+            analyze(script, Some(&manifest))
+                .get(4)
+                .expect("converted alias helper contract")
+                .argument_effects,
+            vec![CollectionArgumentEffect::Unknown]
+        );
+    }
+}
+
+#[test]
+fn converted_argument_alias_passed_to_method_token_is_unknown() {
+    let manifest = standard_manifest();
+    let script = [
+        0x34, 0x04, 0x40, 0x21, 0x57, 0x00, 0x01, 0x78, 0xD1, 0x78, 0xDB, 0x40, 0x37, 0x00, 0x00,
+        0x40,
+    ];
+    let token = MethodToken {
+        hash: [0; 20],
+        method: "consume".to_string(),
+        parameters_count: 1,
+        has_return_value: false,
+        call_flags: 0,
+    };
+
+    let contracts = analyze_with_tokens(&script, Some(&manifest), vec![token]);
+
+    assert_eq!(
+        contracts
+            .get(4)
+            .expect("method-token alias helper contract")
+            .argument_effects,
+        vec![CollectionArgumentEffect::Unknown]
+    );
+}
+
+#[test]
 fn static_fact_intersection_rejects_unknown_and_conflicting_writes() {
     let array_two = CollectionShapeFacts {
         shape: Some(CollectionShape::Array(2)),

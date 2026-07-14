@@ -531,11 +531,10 @@ pub(super) fn method_argument_effects(
                 }
             }
             for statement in &block.stmts {
-                let SsaStmt::Assign {
-                    target,
-                    value: SsaExpr::Variable(source),
-                } = statement
-                else {
+                let SsaStmt::Assign { target, value } = statement else {
+                    continue;
+                };
+                let Some(source) = possible_alias_source(value) else {
                     continue;
                 };
                 if let Some(origin) = origins.get(source).copied() {
@@ -621,6 +620,17 @@ pub(super) fn method_argument_effects(
             }
         })
         .collect()
+}
+
+fn possible_alias_source(expression: &SsaExpr) -> Option<&SsaVariable> {
+    match expression {
+        SsaExpr::Variable(variable) => Some(variable),
+        // Reference-type casts and same-type VM conversions may retain object
+        // identity, so an alias must remain tainted until a sink is observed.
+        SsaExpr::Cast { expr, .. } => possible_alias_source(expr),
+        SsaExpr::Convert { value, .. } => possible_alias_source(value),
+        _ => None,
+    }
 }
 
 fn collect_escaping_argument_origins(
