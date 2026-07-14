@@ -3,15 +3,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::decompiler::analysis::method_contracts::ReturnBehavior;
 use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::cfg::ssa::{optimize_ssa, MethodContext, SsaBuilder};
-use crate::decompiler::cfg::{
-    structure_cfg_with_source_names, BasicBlock, Cfg, CfgBuilder, Terminator,
-};
+use crate::decompiler::cfg::structure_cfg_with_source_names;
 use crate::decompiler::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS;
 use crate::decompiler::ir::{
     BinOp, Block, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt, UnaryOp,
 };
-use crate::instruction::{Instruction, OpCode, Operand};
+use crate::instruction::{Instruction, OpCode};
 
+mod cfg;
 #[path = "method_body_names.rs"]
 mod names;
 mod opcode;
@@ -26,6 +25,8 @@ use names::collect_block_names;
 pub(crate) use opcode::{classify_opcode, OpcodeFidelity};
 use symbols::allocate_source_symbols;
 use types::{intrinsic_result_type, merge_value_types};
+
+pub(crate) use cfg::{build_method_cfg, build_method_cfg_with_non_returning_calls};
 
 pub(crate) struct MethodIrRequest<'a> {
     pub(crate) start: usize,
@@ -251,87 +252,6 @@ pub(crate) fn lower_method_body(request: MethodIrRequest<'_>) -> StructuredMetho
         fidelity,
         source_map,
     }
-}
-
-pub(crate) fn build_method_cfg(instructions: &[Instruction], start: usize, end: usize) -> Cfg {
-    build_method_cfg_with_non_returning_calls(instructions, start, end, &BTreeSet::new())
-}
-
-pub(crate) fn build_method_cfg_with_non_returning_calls(
-    instructions: &[Instruction],
-    start: usize,
-    end: usize,
-    non_returning_calls: &BTreeSet<usize>,
-) -> Cfg {
-    let built = CfgBuilder::new(instructions)
-        .with_non_returning_calls(non_returning_calls.iter().copied())
-        .build();
-    let mut cfg = Cfg::new();
-
-    for block in built.blocks() {
-        let mut block = block.clone();
-        if control_transfer_leaves_method(&block, instructions, start, end) {
-            block.terminator = Terminator::Return;
-        }
-        cfg.add_block(block);
-    }
-
-    for edge in built.edges() {
-        let retained = cfg
-            .block(edge.from)
-            .is_some_and(|block| block.terminator.successors().contains(&edge.to));
-        if retained {
-            cfg.add_edge(edge.from, edge.to, edge.kind);
-        }
-    }
-
-    cfg
-}
-
-fn control_transfer_leaves_method(
-    block: &BasicBlock,
-    instructions: &[Instruction],
-    start: usize,
-    end: usize,
-) -> bool {
-    let Some(last_index) = block.instruction_range.end.checked_sub(1) else {
-        return false;
-    };
-    let Some(instruction) = instructions.get(last_index) else {
-        return false;
-    };
-    let is_conditional = matches!(
-        instruction.opcode,
-        OpCode::Jmpif
-            | OpCode::Jmpif_L
-            | OpCode::Jmpifnot
-            | OpCode::Jmpifnot_L
-            | OpCode::JmpEq
-            | OpCode::JmpEq_L
-            | OpCode::JmpNe
-            | OpCode::JmpNe_L
-            | OpCode::JmpGt
-            | OpCode::JmpGt_L
-            | OpCode::JmpGe
-            | OpCode::JmpGe_L
-            | OpCode::JmpLt
-            | OpCode::JmpLt_L
-            | OpCode::JmpLe
-            | OpCode::JmpLe_L
-    );
-    let is_jump = is_conditional || matches!(instruction.opcode, OpCode::Jmp | OpCode::Jmp_L);
-    if !is_jump {
-        return false;
-    }
-
-    let target = match instruction.operand {
-        Some(Operand::Jump(delta)) => instruction.offset.checked_add_signed(delta as isize),
-        Some(Operand::Jump32(delta)) => instruction.offset.checked_add_signed(delta as isize),
-        _ => None,
-    };
-    let target_leaves = target.is_some_and(|target| target < start || target >= end);
-    let fallthrough_leaves = is_conditional && instructions.get(last_index + 1).is_none();
-    target_leaves || fallthrough_leaves
 }
 
 fn return_behavior(context: &MethodContext) -> ReturnBehavior {

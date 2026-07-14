@@ -343,6 +343,10 @@ It accepts camelCase JS options and normalizes them to the wasm ABI. See [web/RE
 There is also a separate plain-JavaScript port under `js/`. Unlike the wasm
 wrapper, it does not call into Rust at runtime.
 
+Both implementations currently generate one source target: Neo C#. The
+pseudocode, high-level, IR, and SSA views are analysis/intermediate views, not
+additional source-language backends.
+
 Current JS scope:
 
 - Parse Neo N3 NEF containers and verify checksums
