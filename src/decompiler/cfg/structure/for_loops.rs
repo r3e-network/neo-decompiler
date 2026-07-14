@@ -1,4 +1,7 @@
-use crate::decompiler::ir::{Block as IrBlock, ControlFlow, Expr, Literal, Stmt, UnaryOp};
+use crate::decompiler::ir::{
+    Block as IrBlock, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt, UnaryOp,
+};
+use crate::instruction::OpCode;
 
 use super::StructCtx;
 
@@ -13,7 +16,7 @@ impl<'a> StructCtx<'a> {
         condition: Expr,
         body: &mut IrBlock,
     ) -> bool {
-        let Some((update, variable, update_len)) = update_shape(body) else {
+        let Some((update, variable, update_range)) = update_shape(body, &condition) else {
             return false;
         };
         if !contains_variable(&condition, &variable) {
@@ -43,7 +46,7 @@ impl<'a> StructCtx<'a> {
             return false;
         }
         out.stmts.remove(init_index);
-        body.stmts.truncate(body.stmts.len() - update_len);
+        body.stmts.drain(update_range);
         out.push(Stmt::ControlFlow(Box::new(ControlFlow::for_loop(
             Some(init),
             Some(condition),
@@ -54,7 +57,10 @@ impl<'a> StructCtx<'a> {
     }
 }
 
-fn update_shape(body: &IrBlock) -> Option<(Expr, String, usize)> {
+fn update_shape(
+    body: &IrBlock,
+    condition: &Expr,
+) -> Option<(Expr, String, std::ops::Range<usize>)> {
     let last = body.stmts.last()?;
     if let Stmt::ExprStmt(
         update @ Expr::Unary {
@@ -63,10 +69,13 @@ fn update_shape(body: &IrBlock) -> Option<(Expr, String, usize)> {
         },
     ) = last
     {
-        let Expr::Variable(variable) = operand.as_ref() else {
-            return None;
-        };
-        return Some((update.clone(), variable.clone(), 1));
+        if let Expr::Variable(variable) = operand.as_ref() {
+            return Some((
+                update.clone(),
+                variable.clone(),
+                body.stmts.len() - 1..body.stmts.len(),
+            ));
+        }
     }
     if let Stmt::Assign {
         target,
@@ -76,52 +85,192 @@ fn update_shape(body: &IrBlock) -> Option<(Expr, String, usize)> {
         },
     } = last
     {
-        if !matches!(update_op, UnaryOp::Inc | UnaryOp::Dec) {
-            return None;
-        }
-        let Expr::Variable(variable) = operand.as_ref() else {
-            return None;
-        };
-        if symbol_base(target) == symbol_base(variable) {
-            return Some((
-                Expr::unary(*update_op, Expr::var(variable.clone())),
-                variable.clone(),
-                1,
-            ));
+        if matches!(update_op, UnaryOp::Inc | UnaryOp::Dec) {
+            if let Expr::Variable(variable) = operand.as_ref() {
+                if symbol_base(target) == symbol_base(variable) {
+                    return Some((
+                        Expr::unary(*update_op, Expr::var(variable.clone())),
+                        variable.clone(),
+                        body.stmts.len() - 1..body.stmts.len(),
+                    ));
+                }
+            }
         }
     }
 
-    let [prefix @ .., Stmt::Assign {
+    if let [prefix @ .., Stmt::Assign {
         target: copied_target,
         value: Expr::Variable(copied_value),
     }] = body.stmts.as_slice()
-    else {
-        return None;
-    };
-    let Stmt::Assign {
-        target: temporary,
-        value: Expr::Unary {
-            op: update_op,
-            operand,
+    {
+        if let Some(Stmt::Assign {
+            target: temporary,
+            value:
+                Expr::Unary {
+                    op: update_op,
+                    operand,
+                },
+        }) = prefix.last()
+        {
+            if matches!(update_op, UnaryOp::Inc | UnaryOp::Dec) {
+                if let Expr::Variable(variable) = operand.as_ref() {
+                    if copied_value == temporary
+                        && symbol_base(copied_target) == symbol_base(variable)
+                    {
+                        return Some((
+                            Expr::unary(*update_op, Expr::var(variable.clone())),
+                            variable.clone(),
+                            body.stmts.len() - 2..body.stmts.len(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    normalized_update_shape(body, condition)
+}
+
+fn normalized_update_shape(
+    body: &IrBlock,
+    condition: &Expr,
+) -> Option<(Expr, String, std::ops::Range<usize>)> {
+    for index in (0..body.stmts.len()).rev() {
+        let Stmt::Assign {
+            target,
+            value:
+                Expr::Unary {
+                    op: update_op,
+                    operand,
+                },
+        } = &body.stmts[index]
+        else {
+            continue;
+        };
+        if !matches!(update_op, UnaryOp::Inc | UnaryOp::Dec) || !is_generated_name(target) {
+            continue;
+        }
+        let Expr::Variable(variable) = operand.as_ref() else {
+            continue;
+        };
+        if !contains_variable(condition, variable) {
+            continue;
+        }
+        let suffix = &body.stmts[index + 1..];
+        if suffix.is_empty()
+            || !suffix
+                .iter()
+                .all(|statement| is_scalar_normalization(statement, variable))
+        {
+            continue;
+        }
+
+        // A compiler-generated loop may refresh `size(collection)` after
+        // normalizing the induction value. Keep that refresh in the body so
+        // the original condition still observes the same value each round.
+        let remove_end = suffix
+            .last()
+            .and_then(size_refresh_target)
+            .filter(|target| contains_variable(condition, target))
+            .map_or(body.stmts.len(), |_| body.stmts.len() - 1);
+        if remove_end <= index {
+            continue;
+        }
+        return Some((
+            Expr::unary(*update_op, Expr::var(variable.clone())),
+            variable.clone(),
+            index..remove_end,
+        ));
+    }
+    None
+}
+
+fn is_scalar_normalization(statement: &Stmt, induction: &str) -> bool {
+    match statement {
+        Stmt::Assign { target, value } => {
+            is_normalization_target(target, induction) && is_scalar_expression(value, induction)
+        }
+        Stmt::ControlFlow(control) => match control.as_ref() {
+            ControlFlow::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                is_scalar_expression(condition, induction)
+                    && then_branch
+                        .stmts
+                        .iter()
+                        .all(|statement| is_scalar_normalization(statement, induction))
+                    && else_branch.as_ref().is_none_or(|branch| {
+                        branch
+                            .stmts
+                            .iter()
+                            .all(|statement| is_scalar_normalization(statement, induction))
+                    })
+            }
+            _ => false,
         },
-    } = prefix.last()?
+        _ => false,
+    }
+}
+
+fn is_normalization_target(name: &str, induction: &str) -> bool {
+    symbol_base(name) == symbol_base(induction) || is_generated_name(name)
+}
+
+fn is_scalar_expression(expression: &Expr, induction: &str) -> bool {
+    match expression {
+        Expr::Variable(name) => name == induction || is_generated_name(name),
+        Expr::Literal(_) => true,
+        Expr::Binary { left, right, .. } => {
+            is_scalar_expression(left, induction) && is_scalar_expression(right, induction)
+        }
+        Expr::Unary { operand, .. }
+        | Expr::Convert { value: operand, .. }
+        | Expr::IsType { value: operand, .. }
+        | Expr::Cast { expr: operand, .. } => is_scalar_expression(operand, induction),
+        Expr::Call {
+            target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Size)),
+            args,
+        } => args.iter().all(is_side_effect_free_expression),
+        _ => false,
+    }
+}
+
+fn is_side_effect_free_expression(expression: &Expr) -> bool {
+    match expression {
+        Expr::Variable(_) | Expr::Literal(_) => true,
+        Expr::Binary { left, right, .. } => {
+            is_side_effect_free_expression(left) && is_side_effect_free_expression(right)
+        }
+        Expr::Unary { operand, .. }
+        | Expr::Convert { value: operand, .. }
+        | Expr::IsType { value: operand, .. }
+        | Expr::Cast { expr: operand, .. } => is_side_effect_free_expression(operand),
+        _ => false,
+    }
+}
+
+fn size_refresh_target(statement: &Stmt) -> Option<&str> {
+    let Stmt::Assign {
+        target,
+        value:
+            Expr::Call {
+                target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Size)),
+                ..
+            },
+    } = statement
     else {
         return None;
     };
-    if !matches!(update_op, UnaryOp::Inc | UnaryOp::Dec) {
-        return None;
-    }
-    let Expr::Variable(variable) = operand.as_ref() else {
-        return None;
-    };
-    if copied_value != temporary || symbol_base(copied_target) != symbol_base(variable) {
-        return None;
-    }
-    Some((
-        Expr::unary(*update_op, Expr::var(variable.clone())),
-        variable.clone(),
-        2,
-    ))
+    Some(target)
+}
+
+fn is_generated_name(name: &str) -> bool {
+    let base = symbol_base(name);
+    base == "t"
+        || base.strip_prefix('p').is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn is_zero_initializer(expression: &Expr) -> bool {
@@ -191,5 +340,30 @@ fn contains_variable(expression: &Expr, name: &str) -> bool {
                 || contains_variable(else_expr, name)
         }
         Expr::Unknown | Expr::Literal(_) | Expr::StackTemp(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::decompiler::ir::BinOp;
+
+    #[test]
+    fn normalized_update_rejects_source_state_after_increment() {
+        let induction = Expr::var("loc2_0");
+        let condition = Expr::binary(BinOp::Lt, induction.clone(), Expr::var("t_38"));
+        let body = IrBlock::with_stmts(vec![
+            Stmt::assign("t_24", Expr::unary(UnaryOp::Inc, induction.clone())),
+            Stmt::assign("loc1_0", Expr::var("t_24")),
+            Stmt::assign(
+                "t_38",
+                Expr::call(
+                    SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Size)),
+                    vec![Expr::var("loc0_0")],
+                ),
+            ),
+        ]);
+
+        assert!(normalized_update_shape(&body, &condition).is_none());
     }
 }

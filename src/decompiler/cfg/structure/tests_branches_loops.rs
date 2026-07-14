@@ -1,4 +1,6 @@
 use super::*;
+use crate::decompiler::ir::{Intrinsic, SemanticCallTarget};
+use crate::instruction::OpCode;
 
 #[test]
 fn bypassable_loop_node_is_not_a_shared_merge() {
@@ -1601,5 +1603,108 @@ fn promotes_compiler_copy_chain_induction_loop_to_for() {
             Stmt::ControlFlow(control) if matches!(control.as_ref(), ControlFlow::For { .. })
         )),
         "expected compiler copy-chain induction loop to promote: {structured:?}"
+    );
+}
+
+#[test]
+fn promotes_scalar_normalized_induction_loop_to_for() {
+    let preheader = BlockId(0);
+    let header = BlockId(1);
+    let body = BlockId(2);
+    let exit = BlockId(3);
+    let mut cfg = Cfg::new();
+    cfg.add_block(BasicBlock::new(
+        preheader,
+        0,
+        1,
+        0..1,
+        Terminator::Jump { target: header },
+    ));
+    cfg.add_block(BasicBlock::new(
+        header,
+        1,
+        2,
+        1..2,
+        Terminator::Branch {
+            then_target: body,
+            else_target: exit,
+        },
+    ));
+    cfg.add_block(BasicBlock::new(
+        body,
+        2,
+        3,
+        2..3,
+        Terminator::Jump { target: header },
+    ));
+    cfg.add_block(BasicBlock::new(exit, 3, 4, 3..4, Terminator::Return));
+    cfg.add_edge(preheader, header, EdgeKind::Unconditional);
+    cfg.add_edge(header, body, EdgeKind::ConditionalTrue);
+    cfg.add_edge(header, exit, EdgeKind::ConditionalFalse);
+    cfg.add_edge(body, header, EdgeKind::Unconditional);
+
+    let induction = v("loc2", 0);
+    let collection = v("loc0", 0);
+    let bound = v("t", 38);
+    let increment_result = v("t", 24);
+    let normalized = v("p11", 1);
+    let condition = v("condition", 0);
+    let size = |value| {
+        SsaExpr::call(
+            SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Size)),
+            vec![value],
+        )
+    };
+    let ssa = SsaForm {
+        dominance: crate::decompiler::cfg::ssa::compute(&cfg),
+        cfg,
+        blocks: BTreeMap::from([
+            (
+                preheader,
+                block_with(vec![
+                    SsaStmt::assign(induction.clone(), SsaExpr::lit(Literal::Int(0))),
+                    SsaStmt::assign(
+                        collection.clone(),
+                        SsaExpr::Array(vec![SsaExpr::lit(Literal::Int(1))]),
+                    ),
+                    SsaStmt::assign(bound.clone(), size(SsaExpr::var(collection.clone()))),
+                ]),
+            ),
+            (
+                header,
+                block_with(vec![SsaStmt::assign(
+                    condition.clone(),
+                    SsaExpr::binary(
+                        BinOp::Lt,
+                        SsaExpr::var(induction.clone()),
+                        SsaExpr::var(bound.clone()),
+                    ),
+                )]),
+            ),
+            (
+                body,
+                block_with(vec![
+                    SsaStmt::assign(
+                        increment_result.clone(),
+                        SsaExpr::unary(UnaryOp::Inc, SsaExpr::var(induction.clone())),
+                    ),
+                    SsaStmt::assign(normalized.clone(), SsaExpr::var(increment_result.clone())),
+                    SsaStmt::assign(induction.clone(), SsaExpr::var(normalized)),
+                    SsaStmt::assign(bound.clone(), size(SsaExpr::var(collection))),
+                ]),
+            ),
+            (exit, SsaBlock::new()),
+        ]),
+        definitions: BTreeMap::new(),
+        uses: BTreeMap::from([(condition, BTreeSet::from([UseSite::terminator(header)]))]),
+    };
+
+    let structured = structure(&ssa);
+    assert!(
+        structured.stmts.iter().any(|statement| matches!(
+            statement,
+            Stmt::ControlFlow(control) if matches!(control.as_ref(), ControlFlow::For { .. })
+        )),
+        "expected scalar-normalized induction loop to promote: {structured:?}"
     );
 }

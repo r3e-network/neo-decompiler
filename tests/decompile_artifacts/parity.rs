@@ -511,6 +511,25 @@ fn foreach_contract_methods_use_structured_loops_without_unlifted_cfg_warnings()
         int_foreach_block.contains("for ("),
         "intForeach should recover its compiler-generated induction loop as a for loop: {int_foreach_block}"
     );
+    let int_forloop_block = method_block(
+        high_level,
+        "\n    fn intForloop() -> int {",
+        "\n    fn testIteratorForEach(",
+    );
+    assert!(
+        int_forloop_block.contains("for ("),
+        "intForloop should recover its scalar-normalized induction loop as a for loop: {int_forloop_block}"
+    );
+    let csharp = result.csharp.as_deref().expect("C# output");
+    let csharp_int_forloop = method_block(
+        csharp,
+        "public static BigInteger intForloop()",
+        "\n        public static void testIteratorForEach(",
+    );
+    assert!(
+        csharp_int_forloop.contains("for ("),
+        "C# intForloop should recover its scalar-normalized induction loop as a for loop: {csharp_int_forloop}"
+    );
 }
 
 #[test]
