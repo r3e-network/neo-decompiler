@@ -57,15 +57,17 @@ export function inferDeclarationTypes(lines) {
 export function renderBodyLine(line, declarationTypes = null) {
   const indentation = line.match(/^\s*/)?.[0] ?? "";
   const trimmed = line.trim();
+  const finish = (rendered) => rewriteCSharpControlSyntax(rendered);
+  if (trimmed.startsWith("//")) return line;
   const declaration = trimmed.match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*.*)?;$/);
   if (declaration) {
     const declarationType = declarationTypes
       ? declarationTypes.get(declaration[1]) ?? "dynamic"
       : "var";
-    return rewriteCSharpExpression(
+    return finish(rewriteCSharpExpression(
       `${indentation}${declarationType} ${csharpIdentifier(declaration[1])}${declaration[2] ?? ""};`,
       declarationTypes,
-    );
+    ));
   }
   const assertExpression = trimmed.match(/^assert\((.*)\);$/);
   if (assertExpression) {
@@ -73,26 +75,119 @@ export function renderBodyLine(line, declarationTypes = null) {
     const condition = renderCSharpAssertionCondition(args[0] ?? "null", declarationTypes);
     if (args.length > 1) {
       const message = rewriteCSharpExpression(args.slice(1).join(", ").trim(), declarationTypes);
-      return `${indentation}if (!${condition}) throw new InvalidOperationException(Convert.ToString(${message}));`;
+      return finish(`${indentation}if (!${condition}) throw new InvalidOperationException(Convert.ToString(${message}));`);
     }
-    return `${indentation}global::Neo.SmartContract.Framework.ExecutionEngine.Assert(${condition});`;
+    return finish(`${indentation}global::Neo.SmartContract.Framework.ExecutionEngine.Assert(${condition});`);
   }
   const throwExpression = trimmed.match(/^throw\((.*)\);$/);
   if (throwExpression) {
     const payload = rewriteCSharpExpression(throwExpression[1], declarationTypes);
-    return `${indentation}throw new Exception(Convert.ToString(${payload}));`;
+    return finish(`${indentation}throw new Exception(Convert.ToString(${payload}));`);
   }
   const abortExpression = trimmed.match(/^abort\((.*)\);$/);
   if (abortExpression) {
     const payload = rewriteCSharpExpression(abortExpression[1].trim(), declarationTypes);
-    return payload
+    return finish(payload
       ? `${indentation}throw new InvalidOperationException(Convert.ToString(${payload}));`
-      : `${indentation}throw new InvalidOperationException();`;
+      : `${indentation}throw new InvalidOperationException();`);
   }
   if (trimmed === "abort" || trimmed === "abort;") {
-    return `${indentation}throw new InvalidOperationException();`;
+    return finish(`${indentation}throw new InvalidOperationException();`);
   }
-  return rewriteCSharpExpression(line, declarationTypes).replace(/\bunknown\b/g, "default");
+  return finish(rewriteCSharpExpression(line, declarationTypes).replace(/\bunknown\b/g, "default"));
+}
+
+function rewriteCSharpControlSyntax(line) {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("//")) return line;
+
+  let output = line.replace(/\bleave\s+(label_0x[0-9A-Fa-f]+);/g, "goto $1;");
+  output = output.replace(/\bfor\s*\(\s*let\b/g, "for (var");
+  const loop = output.match(/^(\s*)loop\s*\{\s*$/);
+  if (loop) return `${loop[1]}while (true) {`;
+
+  const control = output.match(/^(\s*)((?:}\s*else\s+)?(?:if|while))\s+/);
+  if (control) {
+    const [, indentation, keyword] = control;
+    const conditionStart = control[0].length;
+    const openingBrace = findControlBodyOpen(output, conditionStart);
+    if (openingBrace >= 0) {
+      const condition = output.slice(conditionStart, openingBrace).trim();
+      const tail = output.slice(openingBrace + 1);
+      const body = tail.trim();
+      if (body.endsWith("}")) {
+        return `${indentation}${keyword} (${renderCSharpCondition(condition)}) { ${body.slice(0, -1).trim()} }`;
+      }
+      if (!body) {
+        return `${indentation}${keyword} (${renderCSharpCondition(condition)}) {`;
+      }
+    }
+  }
+
+  const doWhile = output.match(/^(\s*}\s*while)\s+(.+?);$/);
+  if (doWhile) {
+    return `${doWhile[1]} (${renderCSharpCondition(doWhile[2])});`;
+  }
+  const label = output.match(/^(\s*label_0x[0-9A-Fa-f]+):\s*$/);
+  if (label) return `${label[1]}: ;`;
+  return output;
+}
+
+function findControlBodyOpen(line, start) {
+  let quote = null;
+  let parentheses = 0;
+  let brackets = 0;
+  for (let index = start; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+    } else if (character === "(") {
+      parentheses += 1;
+    } else if (character === ")") {
+      parentheses = Math.max(0, parentheses - 1);
+    } else if (character === "[") {
+      brackets += 1;
+    } else if (character === "]") {
+      brackets = Math.max(0, brackets - 1);
+    } else if (character === "{" && parentheses === 0 && brackets === 0) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function renderCSharpCondition(condition) {
+  let source = condition.trim();
+  if (hasBalancedOuterParens(source)) source = source.slice(1, -1).trim();
+  if (source === "true" || source === "false") return source;
+  if (/^-?\d+$/.test(source)) return `${source} != 0`;
+  if (source.startsWith("!")) {
+    const operand = source.slice(1).trim();
+    return `!(${renderCSharpBooleanOperand(operand)})`;
+  }
+  return renderCSharpBooleanOperand(source);
+}
+
+function renderCSharpBooleanOperand(source) {
+  return /(?:===?|!==?|<=|>=|&&|\|\||\bis\b)/.test(source)
+    ? source
+    : `(bool)(dynamic)(${source})`;
+}
+
+function hasBalancedOuterParens(source) {
+  if (!source.startsWith("(") || !source.endsWith(")")) return false;
+  let depth = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "(") depth += 1;
+    else if (source[index] === ")") depth -= 1;
+    if (depth === 0 && index < source.length - 1) return false;
+  }
+  return depth === 0;
 }
 
 function renderCSharpAssertionCondition(expression, declarationTypes) {

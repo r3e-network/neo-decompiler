@@ -12,33 +12,22 @@ export function rewriteElseIfChains(statements) {
     if (isElseOpen(statements[i]) && isIfOpen(statements[i + 1])) {
       const condition = extractIfCondition(statements[i + 1]);
       if (condition !== null) {
+        // Capture the original `else` wrapper's closer before removing its
+        // nested `if` opener. The wrapper may contain suffix statements after
+        // that nested branch, so its closer is not necessarily adjacent to
+        // the nested branch's closer.
+        const wrapperClose = findMatchingClose(statements, i);
         statements[i] = `} else if ${condition} {`;
         statements.splice(i + 1, 1);
-        const closeIdx = findMatchingClose(statements, i);
-        if (closeIdx >= 0) removeOneCloser(statements, closeIdx);
+        if (wrapperClose >= i + 2) {
+          const adjustedClose = wrapperClose - 1;
+          if (statements[adjustedClose]?.trim() === "}") {
+            statements.splice(adjustedClose, 1);
+          }
+        }
         continue;
       }
     }
     i++;
-  }
-}
-
-function removeOneCloser(statements, closeIdx) {
-  if (
-    closeIdx + 1 < statements.length &&
-    statements[closeIdx].trim() === "}" &&
-    statements[closeIdx + 1].trim() === "}"
-  ) {
-    statements.splice(closeIdx + 1, 1);
-    return;
-  }
-  if (statements[closeIdx].trim() === "}" && closeIdx > 0) {
-    for (let i = closeIdx - 1; i >= 0; i--) {
-      const previous = statements[i].trim();
-      if (previous !== "") {
-        if (previous === "}") statements.splice(closeIdx, 1);
-        break;
-      }
-    }
   }
 }

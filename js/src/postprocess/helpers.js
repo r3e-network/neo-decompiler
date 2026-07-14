@@ -168,14 +168,11 @@ export function escapeRegex(s) {
 }
 
 export function findMatchingClose(statements, start) {
-  let depth = 0;
-  for (let i = start; i < statements.length; i++) {
-    const t = statements[i].trim();
-    if (t.endsWith("{")) depth++;
-    if (t === "}") {
-      depth--;
-      if (depth === 0) return i;
-    }
+  const opening = statements[start]?.trim() ?? "";
+  let depth = opening.endsWith("{") ? 1 : 0;
+  for (let i = start + 1; i < statements.length; i++) {
+    depth += braceDelta(statements[i]);
+    if (depth === 0) return i;
   }
   return -1;
 }

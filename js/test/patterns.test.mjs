@@ -423,6 +423,32 @@ test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   assert.match(csharp, /syscall\("System\.Custom\.Unknown", key\)/);
 });
 
+test("C# rendering rewrites nested syscall arguments", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn get(key) -> any {",
+    '    return syscall("System.Storage.Get", syscall("System.Storage.GetReadOnlyContext"), key);',
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /Storage\.Get\(Storage\.CurrentReadOnlyContext, key\)/);
+  assert.doesNotMatch(csharp, /syscall\("System\.Storage\.GetReadOnlyContext"/);
+});
+
+test("C# rendering keeps unknown stack placeholders valid and literal", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn unknown() -> any {",
+    "    let value = ???;",
+    '    return "???";',
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /var @value = default\(dynamic\);/);
+  assert.match(csharp, /return \"\?\?\?\";/);
+  assert.doesNotMatch(csharp, /\?\?\?(?!\")/);
+});
+
 test("C# rendering recognizes additional Neo runtime and crypto syscalls", () => {
   const source = [
     "contract Runtime {",
@@ -575,6 +601,120 @@ test("C# rendering lowers VM array, type-test, and memory helpers", () => {
   assert.match(csharp, /Array\.Copy\(items, \(int\)\(0\), items, \(int\)\(0\), \(int\)\(count\)\);/);
   assert.match(csharp, /return \(object\)\(value\);/);
   assert.doesNotMatch(csharp, /\b(?:len|is_type_array|memcpy|convert)\(/);
+});
+
+test("C# rendering lowers dynamic unpack helpers to indexable values", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn unpackValue(value) -> any {",
+    "    let values = unpack(value);",
+    "    let first = unpack_item(values, 0);",
+    "    return first;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /var values = \(\(dynamic\)value\);/);
+  assert.match(csharp, /var first = \(\(dynamic\)values\)\[\(int\)\(0\)\];/);
+  assert.doesNotMatch(csharp, /\b(?:unpack|unpack_item)\(/);
+});
+
+test("C# rendering keeps dynamic pack sizes as C# arrays", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn packValue(count) -> any {",
+    "    return pack_dynamic(count);",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /return new object\[\(int\)\(count\)\];/);
+  assert.doesNotMatch(csharp, /pack_dynamic\(/);
+});
+
+test("C# rendering comments metadata block continuations", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "    permissions {",
+    '        contract=hash:0x0123456789abcdef0123456789abcdef01234567 methods=["transfer"]',
+    "    }",
+    "    fn verify() -> bool {",
+    "        return true;",
+    "    }",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /\/\/ permissions \{/);
+  assert.match(csharp, /\/\/ contract=hash:0x0123456789abcdef0123456789abcdef01234567 methods=\["transfer"\]/);
+  assert.match(csharp, /\/\/ \}/);
+  assert.doesNotMatch(csharp, /^\s+contract=hash:/m);
+});
+
+test("C# rendering lowers buffer conversions and oversized byte literals", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn buffer() -> any {",
+    "    return convert_to_buffer(0x010203);",
+    "}",
+    "fn bytes() -> any {",
+    "    return 0x024700DB2E90D9F02C4F9FC862ABACA92725F95B4FDDCC8D7FFA538693ECF463A9;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /return \(\(BigInteger\)\(0x010203\)\)\.ToByteArray\(\);/);
+  assert.match(csharp, /return \(ByteString\)new byte\[\] \{ 0x02, 0x47, 0x00, 0xDB/);
+  assert.doesNotMatch(csharp, /0x024700DB2E90D9F02C4F9FC862ABACA92725F95B4FDDCC8D7FFA538693ECF463A9/);
+});
+
+test("C# rendering preserves oversized decimal integers with BigInteger.Parse", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn value() -> int {",
+    "    return 18446744073709551616;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /return BigInteger\.Parse\("18446744073709551616"\);/);
+});
+
+test("C# rendering lowers collection literals and pseudo loops", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn flow(flag: bool) -> any {",
+    "    if flag {",
+    "        return [[3]];",
+    "    }",
+    "    loop {",
+    "        break;",
+    "    }",
+    "    return [1, 2];",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /return new object\[\] \{ new object\[\] \{ 3 \} \};/);
+  assert.match(csharp, /while \(true\) \{/);
+  assert.match(csharp, /return new object\[\] \{ 1, 2 \};/);
+  assert.doesNotMatch(csharp, /\bloop\s*\{/);
+});
+
+test("C# rendering adapts high-level control syntax", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn flow(value) -> void {",
+    "    if value { goto label_0x000A; }",
+    "    while 1 {",
+    "        break;",
+    "    }",
+    "    label_0x000A:",
+    "    do {",
+    "        continue;",
+    "    } while (value);",
+    "    leave label_0x000A;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /if \(\(bool\)\(dynamic\)\(value\)\) \{ goto label_0x000A; \}/);
+  assert.match(csharp, /while \(1 != 0\) \{/);
+  assert.match(csharp, /\} while \(\(bool\)\(dynamic\)\(value\)\);/);
+  assert.match(csharp, /goto label_0x000A;/);
+  assert.doesNotMatch(csharp, /\b(?:if value|while 1|leave label_)/);
 });
 
 test("C# rendering replays framework-internal syscalls through Runtime.LoadScript", () => {

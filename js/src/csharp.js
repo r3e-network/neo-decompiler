@@ -28,6 +28,12 @@ export function renderCSharpContract(highLevel, manifest = null, options = {}) {
   ];
   let classSeen = false;
   const sourceLines = highLevel.split(/\r?\n/);
+  const sourceDepthByLine = [];
+  let sourceDepth = 0;
+  for (const sourceLine of sourceLines) {
+    sourceDepthByLine.push(sourceDepth);
+    sourceDepth += sourceBraceDelta(sourceLine);
+  }
   const declarationTypes = options.typedDeclarations
     ? inferDeclarationTypes(sourceLines)
     : null;
@@ -40,7 +46,15 @@ export function renderCSharpContract(highLevel, manifest = null, options = {}) {
       );
     }
   }
+  let metadataBlock = false;
   for (const [lineIndex, line] of sourceLines.entries()) {
+    if (metadataBlock) {
+      const indentation = line.match(/^\s*/)?.[0] ?? "";
+      const trimmed = line.trim();
+      output.push(trimmed ? `${indentation}// ${trimmed}` : line);
+      if (trimmed === "}") metadataBlock = false;
+      continue;
+    }
     const contract = line.match(/^contract\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{$/);
     if (contract) {
       for (const attribute of renderManifestAttributes(manifest)) output.push(attribute);
@@ -75,11 +89,35 @@ export function renderCSharpContract(highLevel, manifest = null, options = {}) {
       continue;
     }
     const metadata = renderMetadataLine(line);
-    output.push(metadata ?? renderBodyLine(line, declarationTypes));
+    const orphanElse = /^\s*}\s*else\s*\{\s*$/.test(line) && sourceDepthByLine[lineIndex] <= 2;
+    output.push(metadata ?? (orphanElse
+      ? `${line.match(/^\s*/)?.[0] ?? ""}// orphaned else branch`
+      : renderBodyLine(line, declarationTypes)));
+    if (/^\s*(?:features|groups|permissions)\s*\{\s*$/.test(line)) {
+      metadataBlock = true;
+    }
   }
   if (!classSeen) {
     output.push("public class NeoContract : SmartContract {");
     output.push("    // high-level contract body was unavailable");
   }
   return output.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
+function sourceBraceDelta(line) {
+  let delta = 0;
+  let quote = null;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "/" && line[index + 1] === "/") break;
+    if (character === '"' || character === "'") quote = character;
+    else if (character === "{") delta += 1;
+    else if (character === "}") delta -= 1;
+  }
+  return delta;
 }

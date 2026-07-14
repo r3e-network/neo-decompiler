@@ -243,6 +243,37 @@ test("postprocess: empty-if/else inversion keeps braces balanced", async () => {
   );
 });
 
+test("postprocess: collapsing nested else-if chains keeps braces balanced", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "if loc0 == \"0\" {",
+    "return 1;",
+    "} else {",
+    "if loc0 == \"1\" {",
+    "return 2;",
+    "} else {",
+    "if loc0 == \"2\" {",
+    "return 3;",
+    "} else {",
+    "if true {",
+    "return 99;",
+    "} else {",
+    "throw(loc0);",
+    "}",
+    "return 4;",
+    "}",
+    "}",
+    "}",
+  ];
+  postprocess(statements, {});
+  const balance = statements.reduce((acc, line) => {
+    const t = line.trim();
+    return acc + (t.match(/{/g) || []).length - (t.match(/}/g) || []).length;
+  }, 0);
+  assert.equal(balance, 0, `unbalanced braces: ${JSON.stringify(statements)}`);
+  assert.equal(statements.filter((line) => line.trim() === "}").length, 1);
+});
+
 test("postprocess: ' get '/' has_key ' inside a string literal is not rewritten as an index", async () => {
   const { postprocess } = await import("../src/postprocess.js");
   const getCase = ['return "a get b";'];

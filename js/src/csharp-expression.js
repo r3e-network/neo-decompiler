@@ -1,123 +1,68 @@
 import { renderCSharpSyscall } from "./csharp-syscalls.js";
+import {
+  createCSharpCollectionHelpers,
+  renderCSharpTypeTest,
+} from "./csharp-collections.js";
 
-const CSHARP_COLLECTION_HELPERS = new Map([
-  ["new_array", (args) => `new object[(int)(${args[0] ?? "???"})]`],
-  ["new_buffer", (args) => `new byte[(int)(${args[0] ?? "???"})]`],
-  ["new_array_t", (args) => {
-    const type = String(args[1] ?? "").replace(/^"|"$/g, "").toLowerCase();
-    const element = {
-      bool: "bool",
-      boolean: "bool",
-      integer: "BigInteger",
-      int: "BigInteger",
-      bytes: "ByteString",
-      bytestring: "ByteString",
-      buffer: "byte",
-    }[type] ?? "object";
-    return `new ${element}[(int)(${args[0] ?? "???"})]`;
-  }],
-  ["new_struct", (args, types) => args.length === 1
-    ? `new object[] { ${rewriteCSharpExpression(args[0], types)} }`
-    : null],
-  ["Map", (args, types) => {
-    if (args.length === 0) return "new Map<object, object>()";
-    const entries = args.map((entry) => {
-      const colon = splitTopLevelColon(entry);
-      if (colon < 0) return null;
-      const key = rewriteCSharpExpression(entry.slice(0, colon).trim(), types);
-      const value = rewriteCSharpExpression(entry.slice(colon + 1).trim(), types);
-      return `[${key}] = ${value}`;
-    });
-    return entries.every(Boolean)
-      ? `new Map<object, object> { ${entries.join(", ")} }`
-      : null;
-  }],
-  ["Struct", (args, types) => args.length === 0
-    ? "new object[] { }"
-    : `new object[] { ${args.map((arg) => rewriteCSharpExpression(arg, types)).join(", ")} }`],
-  ["is_null", (args) => args.length === 1 ? `(${args[0]} is null)` : null],
-  ["clear_items", (args, types) => {
-    if (args.length !== 1) return null;
-    const kind = collectionKind(args[0], types);
-    return kind === "map"
-      ? `${args[0]}.Clear()`
-      : kind === "list"
-        ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).Clear()`
-        : `((dynamic)${args[0]}).Clear()`;
-  }],
-  ["keys", (args, types) => args.length === 1
-    ? collectionKind(args[0], types) === "map" ? `${args[0]}.Keys` : `((dynamic)${args[0]}).Keys`
-    : null],
-  ["values", (args, types) => args.length === 1
-    ? collectionKind(args[0], types) === "map" ? `${args[0]}.Values` : `((dynamic)${args[0]}).Values`
-    : null],
-  ["remove_item", (args, types) => {
-    if (args.length !== 2) return null;
-    const kind = collectionKind(args[0], types);
-    return kind === "map"
-      ? `${args[0]}.Remove(${args[1]})`
-      : kind === "list"
-        ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).RemoveAt((int)(${args[1]}))`
-        : `((dynamic)${args[0]}).Remove(${args[1]})`;
-  }],
-  ["append", (args, types) => {
-    if (args.length !== 2) return null;
-    return collectionKind(args[0], types) === "list"
-      ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).Add(${args[1]})`
-      : `((dynamic)${args[0]}).Add(${args[1]})`;
-  }],
-  ["has_key", (args, types) => args.length === 2
-    ? collectionKind(args[0], types) === "map"
-      ? `${args[0]}.HasKey(${args[1]})`
-      : `((dynamic)${args[0]}).HasKey(${args[1]})`
-    : null],
-  ["convert_to_integer", (args) => args.length === 1 ? `(BigInteger)(${args[0]})` : null],
-  ["convert_to_bool", (args) => args.length === 1 ? `(bool)(${args[0]})` : null],
-  ["convert_to_bytestring", (args) => args.length === 1 ? `(ByteString)(${args[0]})` : null],
-  ["convert", (args) => args.length === 1 ? `(object)(${args[0]})` : null],
-  ["len", (args, types) => args.length === 1 ? collectionLength(args[0], types) : null],
-  ["size", (args, types) => args.length === 1 ? collectionLength(args[0], types) : null],
-  ["memcpy", (args) => args.length === 5
-    ? `Array.Copy(${args[2]}, (int)(${args[3]}), ${args[0]}, (int)(${args[1]}), (int)(${args[4]}))`
-    : null],
-  ["pack", (args) => `new object[] { ${args.join(", ")} }`],
-  ["abs", (args) => args.length === 1 ? `BigInteger.Abs(${args[0]})` : null],
-  ["sign", (args) => args.length === 1 ? `(${args[0]}).Sign` : null],
-  ["min", (args) => args.length === 2 ? `BigInteger.Min(${args[0]}, ${args[1]})` : null],
-  ["max", (args) => args.length === 2 ? `BigInteger.Max(${args[0]}, ${args[1]})` : null],
-  ["sqrt", (args) => args.length === 1 ? `Helper.Sqrt(${args[0]})` : null],
-  ["modmul", (args) => args.length === 3 ? `Helper.ModMultiply(${args.join(", ")})` : null],
-  ["modpow", (args) => args.length === 3 ? `BigInteger.ModPow(${args.join(", ")})` : null],
-  ["pow", (args) => args.length === 2
-    ? `BigInteger.Pow(${args[0]}, (int)(${args[1]}))`
-    : null],
-  ["within", (args) => args.length === 3 ? `Helper.Within(${args.join(", ")})` : null],
-  ["substr", (args) => args.length === 3
-    ? `Helper.Range(${args[0]}, (int)(${args[1]}), (int)(${args[2]}))`
-    : null],
-  ["left", (args) => args.length === 2
-    ? `Helper.Take(${args[0]}, (int)(${args[1]}))`
-    : null],
-  ["right", (args) => args.length === 2
-    ? `Helper.Last(${args[0]}, (int)(${args[1]}))`
-    : null],
-  ["pop_item", (args, types) => {
-    if (args.length !== 1) return null;
-    return collectionKind(args[0], types) === "list"
-      ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).PopItem()`
-      : `((dynamic)${args[0]}).PopItem()`;
-  }],
-  ["reverse_items", (args) => args.length === 1
-    ? `Helper.Reverse(${args[0]})`
-    : null],
-]);
+const CSHARP_COLLECTION_HELPERS = createCSharpCollectionHelpers(
+  (expression, types) => rewriteCSharpExpression(expression, types),
+);
 
 export function rewriteCSharpExpression(line, types = null) {
-  return rewriteEmptyArrayLiterals(
+  return rewriteCSharpIdentifiers(rewriteUnknownPlaceholders(rewriteCollectionLiterals(rewriteEmptyArrayLiterals(
     rewriteConcatenation(
-      rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(line, types))),
+      rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(
+        rewriteOversizedDecimalLiterals(rewriteOversizedHexLiterals(line)),
+        types,
+      ))),
     ),
-  );
+  ))));
+}
+
+function rewriteOversizedHexLiterals(line) {
+  const pattern = /\b0x([0-9a-fA-F]{17,})\b/g;
+  let output = "";
+  let cursor = 0;
+  let match;
+  while ((match = nextOutsideMatch(line, pattern)) !== null) {
+    const paddedLength = match[1].length % 2 === 0 ? match[1].length : match[1].length + 1;
+    const hex = match[1].padStart(paddedLength, "0");
+    const bytes = hex.match(/../g)?.map((value) => `0x${value.toUpperCase()}`) ?? [];
+    output += line.slice(cursor, match.index);
+    output += `(ByteString)new byte[] { ${bytes.join(", ")} }`;
+    cursor = match.index + match[0].length;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function rewriteOversizedDecimalLiterals(line) {
+  const pattern = /(?<![A-Za-z0-9_])-?\d{19,}(?![A-Za-z0-9_])/g;
+  const min = -(1n << 63n);
+  const max = (1n << 63n) - 1n;
+  let output = "";
+  let cursor = 0;
+  let match;
+  while ((match = nextOutsideMatch(line, pattern)) !== null) {
+    const value = BigInt(match[0]);
+    output += line.slice(cursor, match.index);
+    output += value < min || value > max
+      ? `BigInteger.Parse("${match[0]}")`
+      : match[0];
+    cursor = match.index + match[0].length;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function rewriteUnknownPlaceholders(line) {
+  const marker = /\?\?\?/g;
+  let output = "";
+  let cursor = 0;
+  let match;
+  while ((match = nextOutsideMatch(line, marker)) !== null) {
+    output += line.slice(cursor, match.index) + "default(dynamic)";
+    cursor = match.index + match[0].length;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
 }
 
 function rewriteEmptyArrayLiterals(line) {
@@ -132,6 +77,77 @@ function rewriteEmptyArrayLiterals(line) {
     output += line.slice(cursor, match.index);
     output += isTypeSuffix ? "[]" : "new object[] { }";
     cursor = match.index + 2;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function rewriteCollectionLiterals(line) {
+  let output = "";
+  let cursor = 0;
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] !== "[" || isInsideQuotedString(line, index) || !isCollectionLiteralStart(line, index)) {
+      continue;
+    }
+    const close = findBracketClose(line, index);
+    if (close < 0) continue;
+    const elements = splitCallArguments(line.slice(index + 1, close))
+      .map((element) => rewriteCSharpExpression(element));
+    output += line.slice(cursor, index);
+    output += `new object[] { ${elements.join(", ")} }`;
+    cursor = close + 1;
+    index = close;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function isCollectionLiteralStart(line, index) {
+  let previous = index - 1;
+  while (previous >= 0 && /\s/.test(line[previous])) previous -= 1;
+  if (previous < 0) return true;
+  if (line[previous] === "[") return true;
+  if (line[previous] === "{") {
+    const prefix = line.slice(0, previous).trimEnd();
+    return !prefix.endsWith("new Map<object, object>");
+  }
+  if (line[previous] === ",") {
+    const prefix = line.slice(0, previous).trimEnd();
+    const mapOpen = prefix.lastIndexOf("new Map<object, object> {");
+    const mapClose = prefix.lastIndexOf("}");
+    if (mapOpen > mapClose) return false;
+  }
+  if ("=,(\:{;".includes(line[previous])) return true;
+  if (/[+\-*/%&|!?<>]/.test(line[previous])) return true;
+  const prefix = line.slice(0, previous + 1).match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0];
+  return prefix === "return" || prefix === "throw";
+}
+
+function findBracketClose(text, open) {
+  let depth = 0;
+  let quote = null;
+  for (let index = open; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    else if (character === "[") depth += 1;
+    else if (character === "]" && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function rewriteCSharpIdentifiers(line) {
+  const pattern = /\bthrow\b/g;
+  let output = "";
+  let cursor = 0;
+  let match;
+  while ((match = nextOutsideMatch(line, pattern)) !== null) {
+    const tail = line.slice(match.index + match[0].length).trimStart();
+    output += line.slice(cursor, match.index);
+    output += tail.startsWith("new") ? "throw" : "@throw";
+    cursor = match.index + match[0].length;
   }
   return cursor === 0 ? line : output + line.slice(cursor);
 }
@@ -169,7 +185,7 @@ function rewriteKnownHelpers(line, types) {
   for (let pass = 0; pass < 32; pass += 1) {
     const match = nextOutsideMatch(
       output,
-      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|convert|len|size|memcpy|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item|reverse_items|is_type_[A-Za-z0-9_]+)\s*\(/g,
+      /\b(new_array_t|new_array|new_buffer|new_struct|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|convert_to_buffer|convert|len|size|memcpy|unpack|unpack_item|keys|values|pack|pack_dynamic|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|pow|within|substr|left|right|pop_item|reverse_items|is_type_[A-Za-z0-9_]+)\s*\(/g,
     );
     if (!match) break;
     const open = output.indexOf("(", match.index);
@@ -186,77 +202,6 @@ function rewriteKnownHelpers(line, types) {
   return output;
 }
 
-function collectionKind(expression, types) {
-  if (!types) return "unknown";
-  const name = expression.trim().replace(/^@/, "");
-  const type = types.get(name) ?? types.get(expression.trim()) ?? "";
-  if (/^Map<|\bMap\b/.test(type)) return "map";
-  if (/\[\]$/.test(type) || /\bList</.test(type)) return "list";
-  return "unknown";
-}
-
-function collectionLength(expression, types) {
-  const source = expression.trim();
-  const type = inferredType(source, types);
-  if (/^Map(?:<|\b)/.test(type)) return `${source}.Count`;
-  if (/\bList</.test(type)) return `${source}.Count`;
-  if (/\[\]$/.test(type) || /^(?:ByteString|string)$/.test(type)) {
-    return `${source}.Length`;
-  }
-  if (/^\"(?:[^\"\\]|\\.)*\"$/.test(source)) return `${source}.Length`;
-  return `((dynamic)${source}).Count`;
-}
-
-function inferredType(expression, types) {
-  if (!types) return "";
-  const name = expression.trim().replace(/^@/, "");
-  return types.get(name) ?? types.get(expression.trim()) ?? "";
-}
-
-function renderCSharpTypeTest(name, args) {
-  if (args.length !== 1) return null;
-  const kind = name.slice("is_type_".length).toLowerCase();
-  if (kind === "any") return "true";
-  const type = {
-    bool: "bool",
-    boolean: "bool",
-    integer: "BigInteger",
-    bytestring: "ByteString",
-    buffer: "byte[]",
-    array: "object[]",
-    struct: "object[]",
-    map: "Map<object, object>",
-    interopinterface: "object",
-    pointer: "System.IntPtr",
-  }[kind] ?? null;
-  return type ? `((object)(${args[0]})) is ${type}` : null;
-}
-
-function listElementType(expression, types) {
-  if (!types) return "object";
-  const name = expression.trim().replace(/^@/, "");
-  const type = types.get(name) ?? types.get(expression.trim()) ?? "";
-  return type.match(/^(.+)\[\]$/)?.[1] ?? "object";
-}
-
-function splitTopLevelColon(text) {
-  let depth = 0;
-  let quote = null;
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    if (quote) {
-      if (character === "\\") index += 1;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === '"' || character === "'") quote = character;
-    else if ("([{<".includes(character)) depth += 1;
-    else if (")]}>".includes(character)) depth -= 1;
-    else if (character === ":" && depth === 0) return index;
-  }
-  return -1;
-}
-
 function rewriteKnownSyscalls(line) {
   const marker = /syscall\("([^"]+)"/g;
   let output = "";
@@ -270,7 +215,11 @@ function rewriteKnownSyscalls(line) {
       .slice(open + 1, close)
       .replace(/^\s*"[^"]*"\s*(?:,\s*)?/, "")
       .trim();
-    const args = splitCallArguments(argsText);
+    // Rewrite nested syscall expressions before rendering the enclosing call.
+    // A syscall argument can itself be a syscall (for example storage calls
+    // receiving `GetReadOnlyContext`), and a single left-to-right scan would
+    // otherwise skip the nested marker inside the replaced outer call.
+    const args = splitCallArguments(argsText).map((arg) => rewriteKnownSyscalls(arg));
     const replacement = renderCSharpSyscall(match[1], args);
     if (!replacement) continue;
     output += line.slice(cursor, match.index) + replacement;
