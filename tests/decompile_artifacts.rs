@@ -18,3 +18,6 @@ mod test;
 
 #[path = "decompile_artifacts/parity.rs"]
 mod parity;
+
+#[path = "decompile_artifacts/loop_parity.rs"]
+mod loop_parity;

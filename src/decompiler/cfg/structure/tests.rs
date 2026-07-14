@@ -287,11 +287,14 @@ fn entry_self_loop_structure() -> IrBlock {
 
 #[path = "tests_branches_loops.rs"]
 mod branches_loops;
+
 #[path = "tests_do_while_switch.rs"]
 mod do_while_switch;
 #[path = "tests_entry_phi.rs"]
 mod entry_phi;
 #[path = "tests_irreducible_phi.rs"]
 mod irreducible_phi;
+#[path = "tests_terminal_loops.rs"]
+mod terminal_loops;
 #[path = "tests_try_regions.rs"]
 mod try_regions;

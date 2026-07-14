@@ -1,9 +1,14 @@
 use crate::decompiler::ir::{
-    Block as IrBlock, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt, UnaryOp,
+    BinOp, Block as IrBlock, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt,
+    UnaryOp,
 };
 use crate::instruction::OpCode;
 
 use super::StructCtx;
+
+mod terminal_update;
+
+use terminal_update::{rewrite_terminal_update, terminal_update_shape};
 
 impl<'a> StructCtx<'a> {
     /// Promote `i = init; while (cond(i)) { ...; i++; }` only when the update
@@ -16,9 +21,12 @@ impl<'a> StructCtx<'a> {
         condition: Expr,
         body: &mut IrBlock,
     ) -> bool {
-        let Some((update, variable, update_range)) = update_shape(body, &condition) else {
+        let Some(shape) =
+            update_shape(body, &condition).or_else(|| terminal_update_shape(body, &condition))
+        else {
             return false;
         };
+        let (update, variable) = shape.update_and_variable();
         if !contains_variable(&condition, &variable) {
             return false;
         }
@@ -46,7 +54,16 @@ impl<'a> StructCtx<'a> {
             return false;
         }
         out.stmts.remove(init_index);
-        body.stmts.drain(update_range);
+        match shape {
+            LoopUpdateShape::Tail { range, .. } => {
+                body.stmts.drain(range);
+            }
+            LoopUpdateShape::TerminalIf {
+                index,
+                terminal_in_then,
+                ..
+            } => rewrite_terminal_update(body, index, terminal_in_then),
+        }
         out.push(Stmt::ControlFlow(Box::new(ControlFlow::for_loop(
             Some(init),
             Some(condition),
@@ -57,10 +74,34 @@ impl<'a> StructCtx<'a> {
     }
 }
 
-fn update_shape(
-    body: &IrBlock,
-    condition: &Expr,
-) -> Option<(Expr, String, std::ops::Range<usize>)> {
+enum LoopUpdateShape {
+    Tail {
+        update: Expr,
+        variable: String,
+        range: std::ops::Range<usize>,
+    },
+    TerminalIf {
+        update: Expr,
+        variable: String,
+        index: usize,
+        terminal_in_then: bool,
+    },
+}
+
+impl LoopUpdateShape {
+    fn update_and_variable(&self) -> (Expr, String) {
+        match self {
+            Self::Tail {
+                update, variable, ..
+            }
+            | Self::TerminalIf {
+                update, variable, ..
+            } => (update.clone(), variable.clone()),
+        }
+    }
+}
+
+fn update_shape(body: &IrBlock, condition: &Expr) -> Option<LoopUpdateShape> {
     let last = body.stmts.last()?;
     if let Stmt::ExprStmt(
         update @ Expr::Unary {
@@ -70,11 +111,11 @@ fn update_shape(
     ) = last
     {
         if let Expr::Variable(variable) = operand.as_ref() {
-            return Some((
-                update.clone(),
-                variable.clone(),
-                body.stmts.len() - 1..body.stmts.len(),
-            ));
+            return Some(LoopUpdateShape::Tail {
+                update: update.clone(),
+                variable: variable.clone(),
+                range: body.stmts.len() - 1..body.stmts.len(),
+            });
         }
     }
     if let Stmt::Assign {
@@ -88,14 +129,22 @@ fn update_shape(
         if matches!(update_op, UnaryOp::Inc | UnaryOp::Dec) {
             if let Expr::Variable(variable) = operand.as_ref() {
                 if symbol_base(target) == symbol_base(variable) {
-                    return Some((
-                        Expr::unary(*update_op, Expr::var(variable.clone())),
-                        variable.clone(),
-                        body.stmts.len() - 1..body.stmts.len(),
-                    ));
+                    return Some(LoopUpdateShape::Tail {
+                        update: Expr::unary(*update_op, Expr::var(variable.clone())),
+                        variable: variable.clone(),
+                        range: body.stmts.len() - 1..body.stmts.len(),
+                    });
                 }
             }
         }
+    }
+
+    if let Some((update, variable)) = arithmetic_update_shape(last) {
+        return Some(LoopUpdateShape::Tail {
+            update,
+            variable,
+            range: body.stmts.len() - 1..body.stmts.len(),
+        });
     }
 
     if let [prefix @ .., Stmt::Assign {
@@ -117,17 +166,68 @@ fn update_shape(
                     if copied_value == temporary
                         && symbol_base(copied_target) == symbol_base(variable)
                     {
-                        return Some((
-                            Expr::unary(*update_op, Expr::var(variable.clone())),
-                            variable.clone(),
-                            body.stmts.len() - 2..body.stmts.len(),
-                        ));
+                        return Some(LoopUpdateShape::Tail {
+                            update: Expr::unary(*update_op, Expr::var(variable.clone())),
+                            variable: variable.clone(),
+                            range: body.stmts.len() - 2..body.stmts.len(),
+                        });
                     }
                 }
             }
         }
     }
-    normalized_update_shape(body, condition)
+    normalized_update_shape(body, condition).map(|(update, variable, range)| {
+        LoopUpdateShape::Tail {
+            update,
+            variable,
+            range,
+        }
+    })
+}
+
+fn arithmetic_update_shape(statement: &Stmt) -> Option<(Expr, String)> {
+    let Stmt::Assign {
+        target,
+        value: Expr::Binary { op, left, right },
+    } = statement
+    else {
+        return None;
+    };
+
+    let (variable, step, decrement) = match op {
+        BinOp::Add => match (left.as_ref(), right.as_ref()) {
+            (Expr::Variable(variable), step) if is_one_literal(step) => (variable, step, false),
+            (step, Expr::Variable(variable)) if is_one_literal(step) => (variable, step, false),
+            _ => return None,
+        },
+        BinOp::Sub => {
+            let (Expr::Variable(variable), step) = (left.as_ref(), right.as_ref()) else {
+                return None;
+            };
+            (variable, step, true)
+        }
+        _ => return None,
+    };
+    if !is_one_literal(step) || symbol_base(target) != symbol_base(variable) {
+        return None;
+    }
+    let operation = if decrement {
+        UnaryOp::Dec
+    } else {
+        UnaryOp::Inc
+    };
+    Some((
+        Expr::unary(operation, Expr::var(variable.clone())),
+        variable.clone(),
+    ))
+}
+
+fn is_one_literal(expression: &Expr) -> bool {
+    match expression {
+        Expr::Literal(Literal::Int(value)) => *value == 1,
+        Expr::Literal(Literal::BigInt(value)) => value == "1",
+        _ => false,
+    }
 }
 
 fn normalized_update_shape(
@@ -347,6 +447,39 @@ fn contains_variable(expression: &Expr, name: &str) -> bool {
 mod tests {
     use super::*;
     use crate::decompiler::ir::BinOp;
+
+    #[test]
+    fn arithmetic_update_recovers_increment_and_decrement() {
+        let increment = Stmt::assign(
+            "index_1",
+            Expr::binary(BinOp::Add, Expr::var("index_0"), Expr::int(1)),
+        );
+        let decrement = Stmt::assign(
+            "index_2",
+            Expr::binary(BinOp::Sub, Expr::var("index_1"), Expr::int(1)),
+        );
+
+        assert!(matches!(
+            arithmetic_update_shape(&increment),
+            Some((
+                Expr::Unary {
+                    op: UnaryOp::Inc,
+                    operand,
+                },
+                variable,
+            )) if variable == "index_0" && *operand == Expr::var("index_0")
+        ));
+        assert!(matches!(
+            arithmetic_update_shape(&decrement),
+            Some((
+                Expr::Unary {
+                    op: UnaryOp::Dec,
+                    operand,
+                },
+                variable,
+            )) if variable == "index_1" && *operand == Expr::var("index_1")
+        ));
+    }
 
     #[test]
     fn normalized_update_rejects_source_state_after_increment() {
