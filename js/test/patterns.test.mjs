@@ -568,6 +568,26 @@ test("C# rendering uses inferred collection types for removal helpers", () => {
   assert.match(csharp, /map\.Clear\(\)/);
 });
 
+test("C# rendering lowers common Neo math and byte helpers", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn math(a, b, m, data) -> any {",
+    "    let x = abs(a);",
+    "    let y = min(a, b);",
+    "    let z = modmul(a, b, m);",
+    "    let slice = substr(data, 1, 2);",
+    "    return within(x, y, z);",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /BigInteger\.Abs\(a\)/);
+  assert.match(csharp, /BigInteger\.Min\(a, b\)/);
+  assert.match(csharp, /Helper\.ModMultiply\(a, b, m\)/);
+  assert.match(csharp, /Helper\.Range\(data, 1, 2\)/);
+  assert.match(csharp, /Helper\.Within\(x, y, z\)/);
+  assert.doesNotMatch(csharp, /\b(?:abs|min|modmul|substr|within)\(/);
+});
+
 test("C# rendering lowers an empty VM struct to a framework-compatible array", () => {
   const csharp = renderCSharpContract([
     "contract Token {",

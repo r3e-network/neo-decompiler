@@ -45,6 +45,17 @@ const CSHARP_COLLECTION_HELPERS = new Map([
   ["convert_to_bool", (args) => args.length === 1 ? `(bool)(${args[0]})` : null],
   ["convert_to_bytestring", (args) => args.length === 1 ? `(ByteString)(${args[0]})` : null],
   ["pack", (args) => `new object[] { ${args.join(", ")} }`],
+  ["abs", (args) => args.length === 1 ? `BigInteger.Abs(${args[0]})` : null],
+  ["sign", (args) => args.length === 1 ? `BigInteger.Sign(${args[0]})` : null],
+  ["min", (args) => args.length === 2 ? `BigInteger.Min(${args[0]}, ${args[1]})` : null],
+  ["max", (args) => args.length === 2 ? `BigInteger.Max(${args[0]}, ${args[1]})` : null],
+  ["sqrt", (args) => args.length === 1 ? `Helper.Sqrt(${args[0]})` : null],
+  ["modmul", (args) => args.length === 3 ? `Helper.ModMultiply(${args.join(", ")})` : null],
+  ["modpow", (args) => args.length === 3 ? `BigInteger.ModPow(${args.join(", ")})` : null],
+  ["within", (args) => args.length === 3 ? `Helper.Within(${args.join(", ")})` : null],
+  ["substr", (args) => args.length === 3 ? `Helper.Range(${args.join(", ")})` : null],
+  ["left", (args) => args.length === 2 ? `Helper.Take(${args.join(", ")})` : null],
+  ["right", (args) => args.length === 2 ? `Helper.Last(${args.join(", ")})` : null],
 ]);
 
 const CSHARP_SYSCALLS = new Map([
@@ -122,7 +133,7 @@ function rewriteKnownHelpers(line, types) {
   for (let pass = 0; pass < 32; pass += 1) {
     const match = nextOutsideMatch(
       output,
-      /\b(new_array_t|new_array|new_buffer|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct)\s*\(/g,
+      /\b(new_array_t|new_array|new_buffer|is_null|clear_items|remove_item|append|has_key|convert_to_integer|convert_to_bool|convert_to_bytestring|keys|values|pack|Map|Struct|abs|sign|min|max|sqrt|modmul|modpow|within|substr|left|right)\s*\(/g,
     );
     if (!match) break;
     const open = output.indexOf("(", match.index);
