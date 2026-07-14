@@ -203,14 +203,17 @@ fn collect_escaping_argument_origins(
             collect_argument_origins(then_expr, origins, found);
             collect_argument_origins(else_expr, origins, found);
         }
+        // CONVERT and CAST can preserve the underlying VM object. Treat their
+        // operand as escaping so a later alias cannot retain a stale shape.
+        SsaExpr::Convert { value, .. } | SsaExpr::Cast { expr: value, .. } => {
+            collect_argument_origins(value, origins, found);
+        }
         SsaExpr::Literal(_)
         | SsaExpr::Variable(_)
         | SsaExpr::Binary { .. }
         | SsaExpr::Unary { .. }
         | SsaExpr::Index { .. }
         | SsaExpr::Member { .. }
-        | SsaExpr::Cast { .. }
-        | SsaExpr::Convert { .. }
         | SsaExpr::IsType { .. }
         | SsaExpr::NewArray { .. } => {}
     }
