@@ -605,6 +605,21 @@ test("C# rendering lowers power and inferred list pop helpers", () => {
   assert.doesNotMatch(csharp, /\b(?:pow|pop_item)\(/);
 });
 
+test("C# rendering lowers packed map and struct literals", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn build() -> any {",
+    "    let map = Map(1: 2, 3: 4);",
+    "    let structure = Struct(1, map);",
+    "    return structure;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /new Map<object, object> \{ \[1\] = 2, \[3\] = 4 \}/);
+  assert.match(csharp, /new object\[\] \{ 1, map \}/);
+  assert.doesNotMatch(csharp, /\b(?:Map|Struct)\([^)]*:/);
+});
+
 test("C# rendering lowers an empty VM struct to a framework-compatible array", () => {
   const csharp = renderCSharpContract([
     "contract Token {",

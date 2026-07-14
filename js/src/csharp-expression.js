@@ -14,8 +14,22 @@ const CSHARP_COLLECTION_HELPERS = new Map([
     }[type] ?? "object";
     return `new ${element}[(int)(${args[0] ?? "???"})]`;
   }],
-  ["Map", (args) => args.length === 0 ? "new Map<object, object>()" : null],
-  ["Struct", (args) => args.length === 0 ? "new object[] { }" : null],
+  ["Map", (args, types) => {
+    if (args.length === 0) return "new Map<object, object>()";
+    const entries = args.map((entry) => {
+      const colon = splitTopLevelColon(entry);
+      if (colon < 0) return null;
+      const key = rewriteCSharpExpression(entry.slice(0, colon).trim(), types);
+      const value = rewriteCSharpExpression(entry.slice(colon + 1).trim(), types);
+      return `[${key}] = ${value}`;
+    });
+    return entries.every(Boolean)
+      ? `new Map<object, object> { ${entries.join(", ")} }`
+      : null;
+  }],
+  ["Struct", (args, types) => args.length === 0
+    ? "new object[] { }"
+    : `new object[] { ${args.map((arg) => rewriteCSharpExpression(arg, types)).join(", ")} }`],
   ["is_null", (args) => args.length === 1 ? `(${args[0]} is null)` : null],
   ["clear_items", (args, types) => {
     if (args.length !== 1) return null;
@@ -170,6 +184,24 @@ function collectionKind(expression, types) {
   if (/^Map<|\bMap\b/.test(type)) return "map";
   if (/\[\]$/.test(type) || /\bList</.test(type)) return "list";
   return "unknown";
+}
+
+function splitTopLevelColon(text) {
+  let depth = 0;
+  let quote = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") quote = character;
+    else if ("([{<".includes(character)) depth += 1;
+    else if (")]}>".includes(character)) depth -= 1;
+    else if (character === ":" && depth === 0) return index;
+  }
+  return -1;
 }
 
 function rewriteKnownSyscalls(line) {
