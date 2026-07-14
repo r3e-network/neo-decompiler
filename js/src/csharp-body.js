@@ -1,5 +1,6 @@
 import { rewriteCSharpExpression, splitCallArguments } from "./csharp-expression.js";
 import { csharpIdentifier } from "./csharp-identifiers.js";
+import { csharpSyscallReturnType } from "./csharp-syscalls.js";
 
 function inferExpressionType(expression) {
   let value = expression.trim();
@@ -32,6 +33,8 @@ function inferExpressionType(expression) {
   }
   if (/^convert_to_bool\s*\(/i.test(value)) return "bool";
   if (/^convert_to_bytestring\s*\(/i.test(value)) return "ByteString";
+  const syscall = value.match(/^syscall\s*\(\s*"([^"]+)"/i);
+  if (syscall) return csharpSyscallReturnType(syscall[1]) ?? "dynamic";
   if (/[<>=!]=?|&&|\|\|/.test(value)) return "bool";
   if (/[+\-*\/%]|\b(?:and|or|xor|shl|shr)\b/.test(value)) return "BigInteger";
   return "dynamic";

@@ -33,6 +33,38 @@ const CSHARP_SYSCALLS = new Map([
   ["System.Contract.Call", "Contract.Call"],
 ]);
 
+// Return types used by the C# body type planner. These follow the VM-oriented
+// types emitted by the Rust renderer so numeric results remain composable as
+// BigInteger expressions and collection results stay framework-compatible.
+const CSHARP_SYSCALL_RETURN_TYPES = new Map([
+  ["System.Contract.CreateStandardAccount", "UInt160"],
+  ["System.Contract.CreateMultisigAccount", "UInt160"],
+  ["System.Crypto.CheckSig", "bool"],
+  ["System.Crypto.CheckMultisig", "bool"],
+  ["System.Iterator.Next", "bool"],
+  ["System.Runtime.CheckWitness", "bool"],
+  ["System.Runtime.GetAddressVersion", "BigInteger"],
+  ["System.Runtime.GetInvocationCounter", "BigInteger"],
+  ["System.Runtime.GetNetwork", "BigInteger"],
+  ["System.Runtime.GetRandom", "BigInteger"],
+  ["System.Runtime.GetTime", "BigInteger"],
+  ["System.Runtime.GasLeft", "BigInteger"],
+  ["System.Runtime.GetCallingScriptHash", "UInt160"],
+  ["System.Runtime.GetEntryScriptHash", "UInt160"],
+  ["System.Runtime.GetExecutingScriptHash", "UInt160"],
+  ["System.Runtime.GetNotifications", "object[]"],
+  ["System.Runtime.CurrentSigners", "object[]"],
+  ["System.Runtime.GetScriptContainer", "Transaction"],
+  ["System.Runtime.Platform", "string"],
+  ["System.Storage.Get", "ByteString"],
+  ["System.Storage.Local.Get", "ByteString"],
+  ["System.Storage.GetContext", "StorageContext"],
+  ["System.Storage.GetReadOnlyContext", "StorageContext"],
+  ["System.Storage.AsReadOnly", "StorageContext"],
+  ["System.Storage.Find", "Iterator"],
+  ["System.Storage.Local.Find", "Iterator"],
+]);
+
 // These syscalls are exposed by Neo's VM, but do not have public
 // SmartContract.Framework methods. Keep them representable in valid C# by
 // replaying the syscall through Runtime.LoadScript, matching the Rust
@@ -62,6 +94,10 @@ const STATIC_SYSCALLS = new Set([
   "System.Runtime.GetAddressVersion",
   "System.Runtime.Platform",
 ]);
+
+export function csharpSyscallReturnType(name) {
+  return CSHARP_SYSCALL_RETURN_TYPES.get(name) ?? null;
+}
 
 export function renderCSharpSyscall(name, args) {
   const iteratorMethod = {

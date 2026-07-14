@@ -88,7 +88,9 @@ Full decompilation to structured pseudocode (if/else, loops, etc.).
   RHS at the use site. Implied by `clean: true`.
 - `typedDeclarations: true` — use conservative inferred C# declaration types
   for obvious literals, arithmetic, and collection helpers. Unresolved or
-  conflicting values remain `dynamic`; the default keeps `var` declarations.
+  conflicting values remain `dynamic`; catalog-known syscall results use their
+  VM-normalized C# types, while unknown syscall hashes remain `dynamic`. The
+  default keeps `var` declarations.
 - `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
   for opcodes the disassembler does not recognise.
 

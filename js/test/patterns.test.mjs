@@ -407,6 +407,28 @@ test("C# rendering can opt into conservative typed declarations", () => {
   assert.match(typedRendered, /dynamic unknown = call\(\);/);
 });
 
+test("C# typed declarations use catalog syscall return types", () => {
+  const source = [
+    "contract Syscalls {",
+    "fn inspect() -> any {",
+    '    let time = syscall("System.Runtime.GetTime");',
+    '    let context = syscall("System.Storage.GetContext");',
+    '    let value = syscall("System.Storage.Get", context, key);',
+    '    let iterator = syscall("System.Storage.Local.Find", key, 0);',
+    '    let next = syscall("System.Iterator.Next", iterator);',
+    '    let unknown = syscall("System.Custom.Unknown", key);',
+    "}",
+    "}",
+  ].join("\n");
+  const typedRendered = renderCSharpContract(source, null, { typedDeclarations: true });
+  assert.match(typedRendered, /BigInteger time = Runtime\.Time;/);
+  assert.match(typedRendered, /StorageContext context = Storage\.CurrentContext;/);
+  assert.match(typedRendered, /ByteString @value = Storage\.Get\(context, key\);/);
+  assert.match(typedRendered, /Iterator iterator = Storage\.Find\(key, 0\);/);
+  assert.match(typedRendered, /bool next = iterator\.Next\(\);/);
+  assert.match(typedRendered, /dynamic unknown = syscall\("System\.Custom\.Unknown", key\);/);
+});
+
 test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const source = [
     "contract Token {",
