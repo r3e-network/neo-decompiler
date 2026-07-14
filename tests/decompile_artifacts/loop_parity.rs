@@ -4,13 +4,35 @@ use std::path::{Path, PathBuf};
 
 use neo_decompiler::{ContractManifest, Decompiler, OutputFormat};
 
-fn method_block<'a>(text: &'a str, start_marker: &str, next_marker: &str) -> &'a str {
-    let start = text
-        .find(start_marker)
-        .unwrap_or_else(|| panic!("missing marker `{start_marker}`"));
-    let end = text[start..]
-        .find(next_marker)
-        .map_or(text.len(), |relative| start + relative);
+fn private_method_block<'a>(text: &'a str, name: &str, next_name: &str) -> &'a str {
+    let start = [
+        "bool",
+        "dynamic",
+        "object[]",
+        "ByteString",
+        "BigInteger",
+        "void",
+    ]
+    .iter()
+    .find_map(|return_type| {
+        let marker = format!("private static {return_type} {name}(");
+        text.find(&marker)
+    })
+    .unwrap_or_else(|| panic!("missing private method `{name}`"));
+    let end = [
+        "bool",
+        "dynamic",
+        "object[]",
+        "ByteString",
+        "BigInteger",
+        "void",
+    ]
+    .iter()
+    .find_map(|return_type| {
+        let marker = format!("private static {return_type} {next_name}(");
+        text[start..].find(&marker).map(|relative| start + relative)
+    })
+    .unwrap_or(text.len());
     &text[start..end]
 }
 
@@ -51,11 +73,7 @@ fn lambda_and_linq_scan_helpers_use_csharp_for_loops() {
         eprintln!("Skipping C# loop parity: Contract_Lambda artifacts are unavailable");
         return;
     };
-    let lambda_scan = method_block(
-        &lambda,
-        "private static dynamic sub_0x027D(",
-        "private static dynamic sub_0x029D(",
-    );
+    let lambda_scan = private_method_block(&lambda, "sub_0x027D", "sub_0x029D");
     assert!(
         lambda_scan.contains("for ("),
         "Lambda predicate scan should use a C# for loop: {lambda_scan}"
@@ -74,24 +92,12 @@ fn lambda_and_linq_scan_helpers_use_csharp_for_loops() {
         return;
     };
     for (start, next) in [
-        (
-            "private static dynamic sub_0x00A8(",
-            "private static void sub_0x00D9(",
-        ),
-        (
-            "private static dynamic sub_0x0141(",
-            "private static void sub_0x0175(",
-        ),
-        (
-            "private static dynamic sub_0x04AA(",
-            "private static dynamic sub_0x04E1(",
-        ),
-        (
-            "private static dynamic sub_0x05C1(",
-            "private static void sub_0x05F5(",
-        ),
+        ("sub_0x00A8", "sub_0x00D9"),
+        ("sub_0x0141", "sub_0x0175"),
+        ("sub_0x04AA", "sub_0x04E1"),
+        ("sub_0x05C1", "sub_0x05F5"),
     ] {
-        let scan = method_block(&linq, start, next);
+        let scan = private_method_block(&linq, start, next);
         assert!(
             scan.contains("for (") && !scan.contains("while ("),
             "Linq scan helper should use a C# for loop: {scan}"

@@ -2,7 +2,7 @@
 status: narrowed
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-14T15:11:45+08:00
+updated: 2026-07-14T22:35:00+08:00
 ---
 
 ## Current Focus
@@ -10,7 +10,7 @@ updated: 2026-07-14T15:11:45+08:00
 hypothesis: Contract_Foreach@04AC calls a no-INITSLOT helper that requires four entry-stack values, but the caller supplies none; the subsequent dynamic `PICKITEM; UNPACK` cannot prove tuple element shape.
 test: Preserve the proven indexed-return path for uniform nested collections, while keeping unresolved call arity and dynamic UNPACK provenance fail-closed in the pinned corpus.
 expecting: Contract_Foreach@04AC remains the only incomplete method; generated C# still compiles across all 103 pinned contracts.
-next_action: Keep this bytecode path explicit as a known limitation unless a VM-validated call-entry model can prove the helper's hidden arguments.
+next_action: Keep this bytecode path explicit as a known limitation unless a corrected compiler artifact or VM-validated call-entry model supplies the missing tuple values.
 reasoning_checkpoint: null
 tdd_checkpoint: null
 
@@ -102,6 +102,11 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   checked: Targeted DUP-join recovery, native C# API lowering, focused renderer tests, and the pinned v3.10.0 Roslyn census.
   found: The current env-enabled Rust fidelity gate reports 103 contracts with Exact 1101 / Conservative 70 / Incomplete 1. The only incomplete method is Contract_Foreach@0x04AC: CALL consumes four unproven entry-stack values while its caller supplies none, then UNPACK and two local stores lose provenance. Native properties (`NeoToken.Symbol`, `GasToken.Symbol`, `LedgerContract.CurrentHash`, and `CurrentIndex`) render as properties, signature-sensitive casts cover `MemorySearch` and `RoleManagement.GetDesignatedByRole`, and Roslyn compiles 103/103 contracts with 0 errors.
   implication: Enum loop joins and all known C# framework API-shape failures are resolved. The generic indexed-return fact path is verified, while Foreach remains intentionally fail-closed because the private helper's first tuple element is not proven and the dynamic UNPACK cannot be reconstructed soundly.
+
+- timestamp: 2026-07-14T22:35:00+08:00
+  checked: Raw v3.10.0 `Contract_Foreach.nef` bytes at `0x04A4..0x04AB`, the call target at `0x04AF`, and `CommonForEachStatement.cs` in the pinned compiler.
+  found: The detached helper is exactly `PUSH2; PACKSTRUCT; PUSH2; PACKSTRUCT; SWAP; PUSH2; PACK; RET`, with no literal element pushes and no `INITSLOT`. The caller starts with `INITSLOT 5,0` and executes only `CALL -11`; the VM therefore supplies zero stack values to a helper whose first two `PACKSTRUCT` operations require four. The compiler lowering confirms tuple foreach emits `UNPACK; DROP; STLOC...`, but it does not provide a hidden argument or tuple-value ABI.
+  implication: The outer `Array(2)` length is provable, but neither outer element is uniformly proven to be `Struct(2)`: under the inferred four-value ABI one element is an unconstrained entry argument, and under the actual caller stack the helper underflows. Recovering two tuple fields would invent values or silently change VM fault behavior, so the C# renderer must retain the compatibility/null path and incomplete fidelity marker.
 
 ## Resolution
 
