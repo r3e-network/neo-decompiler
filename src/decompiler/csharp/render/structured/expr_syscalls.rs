@@ -32,6 +32,24 @@ pub(super) fn render_syscall(
                     );
                 }
             }
+            if let Some((event_name, parameter_types)) = context.event_signature(label) {
+                if let Some(elements) = context.array_elements(state) {
+                    if elements.len() == parameter_types.len() {
+                        let rendered = elements
+                            .iter()
+                            .zip(parameter_types)
+                            .map(|(expression, expected)| {
+                                render_event_argument(expression, expected, context, expanding)
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        return RenderedExpr::new(
+                            format!("{event_name}({rendered})"),
+                            PREC_PRIMARY,
+                        );
+                    }
+                }
+            }
         }
     }
     match known_syscall_api(hash) {
@@ -81,6 +99,26 @@ pub(super) fn render_syscall(
         )
     } else {
         rendered
+    }
+}
+
+fn render_event_argument(
+    expression: &Expr,
+    expected_type: &str,
+    context: &ExprContext,
+    expanding: &mut BTreeSet<String>,
+) -> String {
+    let rendered = render_expr_prec(expression, 0, context, expanding);
+    match (expected_type, context.value_type(expression)) {
+        ("ByteString", ValueType::Buffer | ValueType::Integer) => {
+            format!("(ByteString)({rendered})")
+        }
+        ("BigInteger", ValueType::ByteString) => format!("(BigInteger)({rendered})"),
+        ("byte[]", ValueType::ByteString) => format!("(byte[])({rendered})"),
+        ("UInt160" | "UInt256" | "ECPoint", ValueType::ByteString) => {
+            format!("({expected_type})(byte[])({rendered})")
+        }
+        _ => rendered,
     }
 }
 

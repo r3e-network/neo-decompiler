@@ -64,6 +64,8 @@ fn expr_context_with_types(types: &[(&str, ValueType)]) -> ExprContext {
     ExprContext::for_block(&Block::new(), &symbols, false)
 }
 
+#[path = "tests_events.rs"]
+mod events;
 #[path = "tests_expr.rs"]
 mod expr;
 #[path = "tests_expr_types.rs"]

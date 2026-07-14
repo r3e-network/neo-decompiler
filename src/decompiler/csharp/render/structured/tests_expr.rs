@@ -976,6 +976,87 @@ fn compiler_debug_notify_lowers_only_proven_singleton_string_states() {
 }
 
 #[test]
+fn manifest_event_notify_lifts_only_an_exact_packed_state() {
+    let notify = |state| {
+        Expr::call(
+            SemanticCallTarget::Syscall {
+                hash: 0x616F_0195,
+                name: Some("System.Runtime.Notify".to_string()),
+            },
+            vec![
+                Expr::Literal(Literal::String("transfer".to_string())),
+                state,
+            ],
+        )
+    };
+    let body = Block::from(vec![
+        Stmt::assign(
+            "state",
+            Expr::Array(vec![
+                Expr::var("from"),
+                Expr::var("to"),
+                Expr::var("amount"),
+            ]),
+        ),
+        Stmt::expr(notify(Expr::var("state"))),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "state".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "from".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Buffer,
+            },
+        ),
+        (
+            "to".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Buffer,
+            },
+        ),
+        (
+            "amount".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Integer,
+            },
+        ),
+    ]);
+    let signatures = BTreeMap::from([(
+        "transfer".to_string(),
+        (
+            "transfer".to_string(),
+            vec![
+                "ByteString".to_string(),
+                "ByteString".to_string(),
+                "BigInteger".to_string(),
+            ],
+        ),
+    )]);
+    let context = ExprContext::for_block(&body, &symbols, true).with_event_signatures(&signatures);
+
+    assert!(context.is_event_array_target("state"));
+    assert_eq!(
+        render_expr(&notify(Expr::var("state")), &context),
+        "transfer((ByteString)(from), (ByteString)(to), amount)"
+    );
+
+    let wrong_arity = notify(Expr::Array(vec![Expr::var("from"), Expr::var("amount")]));
+    assert_eq!(
+        render_expr(&wrong_arity, &context),
+        "Runtime.LoadScript((ByteString)new byte[] { 0x41, 0x95, 0x01, 0x6F, 0x61 }, CallFlags.All, new object[] { \"transfer\", new object[] { from, amount } })"
+    );
+}
+
+#[test]
 fn typed_syscall_fallbacks_preserve_catalog_return_types() {
     let context = expr_context_with_types(&[("storage", ValueType::InteropInterface)]);
     let expression = Expr::call(

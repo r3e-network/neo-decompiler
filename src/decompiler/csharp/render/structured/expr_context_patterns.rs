@@ -1,22 +1,22 @@
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use crate::decompiler::ir::{Block, ControlFlow, Expr, Literal, SemanticCallTarget, Stmt};
 
 /// Find compiler-generated state temporaries used by the `Runtime.Debug`
 /// lowering (`Notify("Debug", PACK(message))`).
-pub(super) fn collect_debug_state_names(block: &Block) -> BTreeSet<String> {
-    let mut names = BTreeSet::new();
+pub(super) fn collect_notification_state_targets(block: &Block) -> BTreeMap<String, String> {
+    let mut names = BTreeMap::new();
     collect_block(block, &mut names);
     names
 }
 
-fn collect_block(block: &Block, names: &mut BTreeSet<String>) {
+fn collect_block(block: &Block, names: &mut BTreeMap<String, String>) {
     for statement in &block.stmts {
         collect_statement(statement, names);
     }
 }
 
-fn collect_statement(statement: &Stmt, names: &mut BTreeSet<String>) {
+fn collect_statement(statement: &Stmt, names: &mut BTreeMap<String, String>) {
     match statement {
         Stmt::Assign { value, .. } | Stmt::ExprStmt(value) => collect_expr(value, names),
         Stmt::Return(value) | Stmt::Throw(value) | Stmt::Abort(value) => {
@@ -35,7 +35,7 @@ fn collect_statement(statement: &Stmt, names: &mut BTreeSet<String>) {
     }
 }
 
-fn collect_control(control: &ControlFlow, names: &mut BTreeSet<String>) {
+fn collect_control(control: &ControlFlow, names: &mut BTreeMap<String, String>) {
     match control {
         ControlFlow::If {
             condition,
@@ -100,7 +100,7 @@ fn collect_control(control: &ControlFlow, names: &mut BTreeSet<String>) {
     }
 }
 
-fn collect_expr(expression: &Expr, names: &mut BTreeSet<String>) {
+fn collect_expr(expression: &Expr, names: &mut BTreeMap<String, String>) {
     if let Expr::Call {
         target: SemanticCallTarget::Syscall { hash, .. },
         args,
@@ -108,20 +108,16 @@ fn collect_expr(expression: &Expr, names: &mut BTreeSet<String>) {
     {
         if *hash == 0x616F_0195 {
             let state = match args.as_slice() {
-                [Expr::Literal(Literal::String(label)), Expr::Variable(name)]
-                    if label == "Debug" =>
-                {
-                    Some(name)
+                [Expr::Literal(Literal::String(label)), Expr::Variable(name)] => {
+                    Some((label, name))
                 }
-                [Expr::Literal(Literal::String(_)), Expr::Literal(Literal::String(label)), Expr::Variable(name)]
-                    if label == "Debug" =>
-                {
-                    Some(name)
+                [Expr::Literal(Literal::String(_)), Expr::Literal(Literal::String(label)), Expr::Variable(name)] => {
+                    Some((label, name))
                 }
                 _ => None,
             };
-            if let Some(name) = state {
-                names.insert(name.clone());
+            if let Some((label, name)) = state {
+                names.insert(name.clone(), label.clone());
             }
         }
     }

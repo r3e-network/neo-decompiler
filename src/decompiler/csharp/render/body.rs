@@ -50,6 +50,7 @@ pub(super) struct LiftedBodyContext<'a> {
     pub(super) unpack_packstruct_helper_call: Option<&'a str>,
     pub(super) tagged_opcode_helper_calls: &'a BTreeMap<(u8, u8), String>,
     pub(super) static_field_types: &'a BTreeMap<String, String>,
+    pub(super) event_signatures: &'a super::events::EventSignatures,
 }
 
 pub(super) fn render_method_body(
@@ -129,6 +130,7 @@ pub(super) fn render_method_body(
         Some(&method_plan.return_type),
         context.emit_trace_comments.then_some(&lowered.source_map),
         instructions,
+        context.event_signatures,
     );
     let source = ensure_non_void_termination(source, &lowered.body, method_plan.return_behavior);
     if source.trim().is_empty() && method_plan.return_behavior != ReturnBehavior::Void {
@@ -183,6 +185,7 @@ fn recovered_result(
             Some(&method_plan.return_type),
             None,
             instructions,
+            context.event_signatures,
         );
         let structured = ensure_non_void_termination(structured, body, method_plan.return_behavior);
         if !structured.trim().is_empty() {

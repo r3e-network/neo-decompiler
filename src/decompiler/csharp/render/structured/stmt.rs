@@ -6,6 +6,7 @@ use crate::decompiler::cfg::method_body::{SourceMap, StatementId, SymbolInfo};
 use crate::decompiler::csharp::helpers::{
     format_vm_assertion, VM_ASSERT_MESSAGE_HELPER, VM_EXCEPTION_TYPE,
 };
+use crate::decompiler::csharp::render::events::EventSignatures;
 use crate::decompiler::ir::{Block, ControlFlow, Expr, Stmt};
 
 use super::expr::{render_expr, render_vm_condition, ExprContext};
@@ -47,6 +48,7 @@ pub(in crate::decompiler::csharp::render) fn render_block(
         None,
         None,
         &[],
+        &BTreeMap::new(),
     )
 }
 
@@ -66,6 +68,7 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
     return_type: Option<&str>,
     source_map: Option<&SourceMap>,
     instructions: &[crate::instruction::Instruction],
+    event_signatures: &EventSignatures,
 ) -> String {
     let mut reserved_names = symbols.keys().cloned().collect::<BTreeSet<_>>();
     reserved_names.extend(
@@ -84,7 +87,8 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
             )
             .with_unpack_packstruct_helper_call(unpack_packstruct_helper_call)
             .with_tagged_opcode_helper_calls(tagged_opcode_helper_calls)
-            .with_internal_call_return_types(internal_call_return_types),
+            .with_internal_call_return_types(internal_call_return_types)
+            .with_event_signatures(event_signatures),
         return_behavior,
         return_type,
         scopes: ScopeCursor::new(&plan.scopes),
@@ -336,10 +340,9 @@ impl StatementRenderer<'_> {
             Stmt::Assign {
                 target,
                 value: Expr::Array(elements),
-            } if elements.len() == 1
-                && self
-                    .expressions
-                    .is_debug_singleton_array_target(target)
+            } if (elements.len() == 1
+                && self.expressions.is_debug_singleton_array_target(target))
+                || self.expressions.is_event_array_target(target)
         )
     }
 }

@@ -23,7 +23,7 @@ use super::helpers::{
 };
 
 mod body;
-mod events;
+pub(crate) mod events;
 mod header;
 mod methods;
 mod structured;
@@ -121,6 +121,7 @@ pub(crate) fn render_csharp(
     opts: &RenderOptions,
 ) -> CSharpRender {
     let patterns = identify_patterns(nef, instructions, manifest);
+    let event_signatures = manifest.map(events::event_signatures).unwrap_or_default();
     let mut output = String::new();
     let mut warnings = Vec::new();
     let mut coverage = CSharpCoverage::default();
@@ -198,6 +199,7 @@ pub(crate) fn render_csharp(
         unpack_packstruct_helper_call: unpack_packstruct_helper_call.as_deref(),
         tagged_opcode_helper_calls: &tagged_opcode_helper_calls,
         static_field_types: &static_field_types,
+        event_signatures: &event_signatures,
     };
     let methods_context = methods::MethodsContext {
         instructions,

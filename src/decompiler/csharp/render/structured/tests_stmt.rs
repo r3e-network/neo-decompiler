@@ -306,6 +306,7 @@ fn typed_boundaries_render_valid_explicit_conversions() {
             Some("UInt160"),
             None,
             &[],
+            &BTreeMap::new(),
         ),
         "ByteString text = (ByteString)(buffer);\nreturn (UInt160)(buffer);"
     );
@@ -340,6 +341,7 @@ fn typed_internal_call_boundaries_use_exact_resolved_return_types() {
             Some("BigInteger"),
             None,
             &[],
+            &BTreeMap::new(),
         )
     };
 

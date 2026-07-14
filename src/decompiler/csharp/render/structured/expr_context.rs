@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::cfg::method_body::{SymbolInfo, SymbolOrigin};
+use crate::decompiler::csharp::render::events::EventSignatures;
 use crate::decompiler::ir::{BinOp, Block, Expr, Intrinsic, Literal, SemanticCallTarget, UnaryOp};
 use crate::decompiler::native_method_types;
 use crate::decompiler::syscall_types;
@@ -10,14 +11,17 @@ use crate::instruction::OpCode;
 use super::expr_inline::{is_inline_pure, InlineCollector};
 #[path = "expr_context_patterns.rs"]
 mod patterns;
-use patterns::collect_debug_state_names;
+use patterns::collect_notification_state_targets;
 
 #[derive(Debug, Default)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(super) struct ExprContext {
     pub(super) inline_values: BTreeMap<String, Expr>,
-    singleton_array_values: BTreeMap<String, Expr>,
+    array_values: BTreeMap<String, Vec<Expr>>,
+    notification_state_targets: BTreeMap<String, String>,
     debug_singleton_array_targets: BTreeSet<String>,
+    event_array_targets: BTreeSet<String>,
+    event_signatures: EventSignatures,
     value_types: BTreeMap<String, ValueType>,
     pub(super) emitted_names: BTreeMap<String, String>,
     pub(super) unpack_packstruct_helper_call: Option<String>,
@@ -38,18 +42,26 @@ impl ExprContext {
             .collect();
         let mut collector = InlineCollector::default();
         collector.visit_block(block, 0);
-        let singleton_array_values = collect_singleton_array_values(&collector);
-        let debug_state_names = collect_debug_state_names(block);
-        let debug_singleton_array_targets = singleton_array_values
+        let array_values = collect_array_values(&collector);
+        let notification_state_targets = collect_notification_state_targets(block);
+        let debug_singleton_array_targets = array_values
             .keys()
-            .filter(|name| debug_state_names.contains(*name))
+            .filter(|name| {
+                array_values[*name].len() == 1
+                    && notification_state_targets
+                        .get(*name)
+                        .is_some_and(|label| label == "Debug")
+            })
             .cloned()
             .collect();
         if !inline_single_use_temps {
             return Self {
                 inline_values: BTreeMap::new(),
-                singleton_array_values,
+                array_values,
+                notification_state_targets,
                 debug_singleton_array_targets,
+                event_array_targets: BTreeSet::new(),
+                event_signatures: BTreeMap::new(),
                 value_types,
                 emitted_names: BTreeMap::new(),
                 unpack_packstruct_helper_call: None,
@@ -96,8 +108,11 @@ impl ExprContext {
             .collect();
         Self {
             inline_values,
-            singleton_array_values,
+            array_values,
+            notification_state_targets,
             debug_singleton_array_targets,
+            event_array_targets: BTreeSet::new(),
+            event_signatures: BTreeMap::new(),
             value_types,
             emitted_names: BTreeMap::new(),
             unpack_packstruct_helper_call: None,
@@ -129,6 +144,24 @@ impl ExprContext {
         return_types: &BTreeMap<usize, String>,
     ) -> Self {
         self.internal_call_return_types.clone_from(return_types);
+        self
+    }
+
+    pub(super) fn with_event_signatures(mut self, signatures: &EventSignatures) -> Self {
+        self.event_signatures.clone_from(signatures);
+        self.event_array_targets = self
+            .array_values
+            .keys()
+            .filter(|name| {
+                let Some(label) = self.notification_state_targets.get(*name) else {
+                    return false;
+                };
+                signatures.get(label).is_some_and(|(_, parameter_types)| {
+                    self.array_values[*name].len() == parameter_types.len()
+                })
+            })
+            .cloned()
+            .collect();
         self
     }
 
@@ -173,13 +206,34 @@ impl ExprContext {
     pub(super) fn singleton_array_element<'a>(&'a self, expression: &'a Expr) -> Option<&'a Expr> {
         match expression {
             Expr::Array(elements) => elements.as_slice().first().filter(|_| elements.len() == 1),
-            Expr::Variable(name) => self.singleton_array_values.get(name),
+            Expr::Variable(name) => self
+                .array_values
+                .get(name)
+                .and_then(|elements| elements.as_slice().first().filter(|_| elements.len() == 1)),
             _ => None,
         }
     }
 
+    pub(super) fn array_elements<'a>(&'a self, expression: &'a Expr) -> Option<&'a [Expr]> {
+        match expression {
+            Expr::Array(elements) => Some(elements),
+            Expr::Variable(name) => self.array_values.get(name).map(Vec::as_slice),
+            _ => None,
+        }
+    }
+
+    pub(super) fn event_signature(&self, label: &str) -> Option<(&str, &[String])> {
+        self.event_signatures
+            .get(label)
+            .map(|(name, types)| (name.as_str(), types.as_slice()))
+    }
+
     pub(super) fn is_debug_singleton_array_target(&self, name: &str) -> bool {
         self.debug_singleton_array_targets.contains(name)
+    }
+
+    pub(super) fn is_event_array_target(&self, name: &str) -> bool {
+        self.event_array_targets.contains(name)
     }
 
     pub(super) fn value_type(&self, expression: &Expr) -> ValueType {
@@ -319,7 +373,7 @@ impl ExprContext {
     }
 }
 
-fn collect_singleton_array_values(collector: &InlineCollector) -> BTreeMap<String, Expr> {
+fn collect_array_values(collector: &InlineCollector) -> BTreeMap<String, Vec<Expr>> {
     collector
         .definitions
         .iter()
@@ -330,14 +384,11 @@ fn collect_singleton_array_values(collector: &InlineCollector) -> BTreeMap<Strin
             let Expr::Array(elements) = &definition.value else {
                 return None;
             };
-            let [element] = elements.as_slice() else {
-                return None;
-            };
             let [usage] = collector.uses.get(name)?.as_slice() else {
                 return None;
             };
             (definition.scope == usage.scope && definition.order < usage.order)
-                .then(|| (name.clone(), element.clone()))
+                .then(|| (name.clone(), elements.clone()))
         })
         .collect()
 }
