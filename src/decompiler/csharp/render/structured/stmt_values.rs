@@ -102,16 +102,18 @@ impl StatementRenderer<'_> {
         let target_type = if self.plan.typed && self.plan.index_defined_symbols.contains(target) {
             "dynamic"
         } else {
-            self.plan.declarations.get(target).map_or_else(
-                || {
+            self.plan
+                .declarations
+                .get(target)
+                .map(|declaration| declaration.csharp_type.as_str())
+                .or_else(|| self.plan.static_field_types.get(target).map(String::as_str))
+                .unwrap_or_else(|| {
                     if self.plan.typed {
                         csharp_type(self.expressions.value_type(&Expr::var(target)), true)
                     } else {
                         "dynamic"
                     }
-                },
-                |declaration| declaration.csharp_type.as_str(),
-            )
+                })
         };
         let value = self.render_typed_value(value, target_type);
         let body = match self.plan.declarations.get(target) {

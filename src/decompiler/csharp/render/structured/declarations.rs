@@ -114,9 +114,20 @@ pub(in crate::decompiler::csharp::render) struct PlannedDeclaration {
 pub(in crate::decompiler::csharp::render) struct DeclarationPlan {
     pub(in crate::decompiler::csharp::render) scopes: ScopeTree,
     pub(in crate::decompiler::csharp::render) declarations: BTreeMap<String, PlannedDeclaration>,
+    pub(in crate::decompiler::csharp::render) static_field_types: BTreeMap<String, String>,
     pub(in crate::decompiler::csharp::render) issues: Vec<LoweringIssue>,
     pub(in crate::decompiler::csharp::render) typed: bool,
     pub(in crate::decompiler::csharp::render) index_defined_symbols: HashSet<String>,
+}
+
+impl DeclarationPlan {
+    pub(in crate::decompiler::csharp::render) fn with_static_field_types(
+        mut self,
+        static_field_types: &BTreeMap<String, String>,
+    ) -> Self {
+        self.static_field_types.clone_from(static_field_types);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,7 +146,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
     symbols: &BTreeMap<String, SymbolInfo>,
     typed: bool,
 ) -> DeclarationPlan {
-    let mut collector = ActivityCollector::new();
+    let mut collector = ActivityCollector::new().with_symbol_types(symbols);
     let root = collector.scopes.root();
     collector.visit_block(body, root);
     let index_defined_symbols = collector.index_defined_symbols();
@@ -200,6 +211,15 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
                     .map(|occurrence| occurrence.scope),
             )
         };
+        let concrete_type = collector
+            .concrete_definition_types
+            .get(name)
+            .filter(|candidate| {
+                typed
+                    && activity.definitions.len() == 1
+                    && concrete_type_matches_value_type(candidate, symbol.value_type)
+            })
+            .cloned();
         declarations.insert(
             name.clone(),
             PlannedDeclaration {
@@ -210,18 +230,13 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
                     DeclarationKind::HoistedAssignment
                 },
                 emitted_name: sanitize_csharp_identifier(name),
-                csharp_type: if typed && index_defined_symbols.contains(name) {
+                csharp_type: if typed
+                    && index_defined_symbols.contains(name)
+                    && concrete_type.is_none()
+                {
                     "dynamic".to_string()
                 } else {
-                    collector
-                        .concrete_definition_types
-                        .get(name)
-                        .filter(|candidate| {
-                            typed
-                                && activity.definitions.len() == 1
-                                && concrete_type_matches_value_type(candidate, symbol.value_type)
-                        })
-                        .cloned()
+                    concrete_type
                         .unwrap_or_else(|| csharp_type(symbol.value_type, typed).to_string())
                 },
                 initialize_to_default: !inline && symbol.origin == SymbolOrigin::Phi,
@@ -235,6 +250,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
     DeclarationPlan {
         scopes: collector.scopes,
         declarations,
+        static_field_types: BTreeMap::new(),
         issues,
         typed,
         index_defined_symbols,

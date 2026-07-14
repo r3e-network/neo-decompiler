@@ -43,6 +43,115 @@ fn infers_concrete_types_for_common_structured_expressions() {
 }
 
 #[test]
+fn symbol_aware_expression_types_cover_index_and_numeric_copies() {
+    let symbols = BTreeMap::from([
+        (
+            "text".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(0),
+                value_type: ValueType::ByteString,
+            },
+        ),
+        (
+            "buffer".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(1),
+                value_type: ValueType::Buffer,
+            },
+        ),
+        (
+            "left".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(2),
+                value_type: ValueType::Integer,
+            },
+        ),
+        (
+            "right".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(3),
+                value_type: ValueType::Integer,
+            },
+        ),
+    ]);
+
+    assert_eq!(
+        concrete_definition_type_with_symbols(
+            &Expr::index(Expr::var("text"), Expr::int(0)),
+            &symbols,
+        ),
+        Some("BigInteger".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type_with_symbols(
+            &Expr::call(
+                SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Left)),
+                vec![Expr::var("buffer"), Expr::int(1)],
+            ),
+            &symbols,
+        ),
+        Some("byte[]".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type_with_symbols(
+            &Expr::binary(BinOp::Add, Expr::var("left"), Expr::var("right")),
+            &symbols,
+        ),
+        Some("BigInteger".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type_with_symbols(
+            &Expr::call(
+                SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Pickitem)),
+                vec![Expr::var("text"), Expr::int(0)],
+            ),
+            &symbols,
+        ),
+        Some("BigInteger".to_string())
+    );
+    assert_eq!(
+        concrete_definition_type_with_symbols(
+            &Expr::call(
+                SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Within)),
+                vec![Expr::var("left"), Expr::int(0), Expr::int(2)],
+            ),
+            &symbols,
+        ),
+        Some("bool".to_string())
+    );
+}
+
+#[test]
+fn unknown_pickitem_provenance_remains_dynamic() {
+    let body = Block::from(vec![Stmt::assign(
+        "item",
+        Expr::call(
+            SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Pickitem)),
+            vec![Expr::var("items"), Expr::int(0)],
+        ),
+    )]);
+    let symbols = BTreeMap::from([
+        (
+            "items".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(0),
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "item".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+    assert_eq!(plan.declarations["item"].csharp_type, "dynamic");
+}
+
+#[test]
 fn plans_overloads_and_calls_together() {
     let manifest = ContractManifest::from_json_str(
         r#"{

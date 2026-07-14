@@ -142,6 +142,11 @@ pub(crate) fn render_csharp(
         opts.typed_declarations,
         method_plans.index_defined_statics(),
     );
+    let static_field_types = contract_symbols
+        .static_fields
+        .iter()
+        .map(|field| (field.name.clone(), field.csharp_type.clone()))
+        .collect::<BTreeMap<_, _>>();
     let mut used_member_names =
         contract_member_names(&contract_name, manifest, &method_plans, &contract_symbols);
     let vm_exception_type = vm_exception_type_name(instructions, &mut used_member_names);
@@ -190,6 +195,7 @@ pub(crate) fn render_csharp(
         bare_throw_helper_call: bare_throw_helper_call.as_deref(),
         unpack_packstruct_helper_call: unpack_packstruct_helper_call.as_deref(),
         tagged_opcode_helper_calls: &tagged_opcode_helper_calls,
+        static_field_types: &static_field_types,
     };
     let methods_context = methods::MethodsContext {
         instructions,

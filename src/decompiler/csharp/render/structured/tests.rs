@@ -18,8 +18,8 @@ use crate::nef::{NefFile, NefHeader};
 use super::expr::{render_expr, render_vm_condition, ExprContext};
 use super::expr_syscalls::known_syscall_is_classified;
 use super::plan::{
-    build_csharp_method_plans, concrete_definition_type, plan_contract_symbols, plan_declarations,
-    DeclarationKind,
+    build_csharp_method_plans, concrete_definition_type, concrete_definition_type_with_symbols,
+    plan_contract_symbols, plan_declarations, DeclarationKind,
 };
 use super::stmt::{render_block, terminates};
 

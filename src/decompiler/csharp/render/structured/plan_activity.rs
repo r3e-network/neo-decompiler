@@ -1,8 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use crate::decompiler::ir::{Block, ControlFlow, Expr, Stmt};
+use crate::decompiler::cfg::method_body::SymbolInfo;
+use crate::decompiler::ir::{Block, ControlFlow, Expr, Intrinsic, SemanticCallTarget, Stmt};
+use crate::instruction::OpCode;
 
-use super::plan::{concrete_definition_type, ScopeId, ScopeTree};
+use super::plan::{
+    concrete_definition_type, concrete_definition_type_with_symbols, ScopeId, ScopeTree,
+};
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -19,10 +23,11 @@ pub(super) struct SymbolActivity {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-pub(super) struct ActivityCollector {
+pub(super) struct ActivityCollector<'a> {
     pub(super) scopes: ScopeTree,
     pub(super) activity: BTreeMap<String, SymbolActivity>,
     pub(super) concrete_definition_types: BTreeMap<String, String>,
+    symbol_types: Option<&'a BTreeMap<String, SymbolInfo>>,
     non_concrete_definitions: HashSet<String>,
     direct_index_definitions: HashSet<String>,
     copy_definitions: Vec<(String, String)>,
@@ -32,18 +37,37 @@ pub(super) struct ActivityCollector {
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
-impl ActivityCollector {
+impl<'a> ActivityCollector<'a> {
     pub(super) fn new() -> Self {
         Self {
             scopes: ScopeTree::new(),
             activity: BTreeMap::new(),
             concrete_definition_types: BTreeMap::new(),
+            symbol_types: None,
             non_concrete_definitions: HashSet::new(),
             direct_index_definitions: HashSet::new(),
             copy_definitions: Vec::new(),
             implicit_declarations: HashSet::new(),
             stack_placeholders: BTreeSet::new(),
             next_order: 0,
+        }
+    }
+
+    pub(super) fn with_symbol_types<'b>(
+        self,
+        symbol_types: &'b BTreeMap<String, SymbolInfo>,
+    ) -> ActivityCollector<'b> {
+        ActivityCollector {
+            scopes: self.scopes,
+            activity: self.activity,
+            concrete_definition_types: self.concrete_definition_types,
+            symbol_types: Some(symbol_types),
+            non_concrete_definitions: self.non_concrete_definitions,
+            direct_index_definitions: self.direct_index_definitions,
+            copy_definitions: self.copy_definitions,
+            implicit_declarations: self.implicit_declarations,
+            stack_placeholders: self.stack_placeholders,
+            next_order: self.next_order,
         }
     }
 
@@ -55,7 +79,14 @@ impl ActivityCollector {
             .definitions
             .push(occurrence);
 
-        if matches!(value, Expr::Index { .. }) {
+        if matches!(
+            value,
+            Expr::Index { .. }
+                | Expr::Call {
+                    target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Pickitem)),
+                    ..
+                }
+        ) {
             self.direct_index_definitions.insert(name.to_string());
         }
         if let Expr::Variable(source) = value {
@@ -63,7 +94,11 @@ impl ActivityCollector {
                 .push((name.to_string(), source.clone()));
         }
 
-        let Some(candidate) = concrete_definition_type(value) else {
+        let candidate = self.symbol_types.map_or_else(
+            || concrete_definition_type(value),
+            |symbol_types| concrete_definition_type_with_symbols(value, symbol_types),
+        );
+        let Some(candidate) = candidate else {
             self.concrete_definition_types.remove(name);
             self.non_concrete_definitions.insert(name.to_string());
             return;

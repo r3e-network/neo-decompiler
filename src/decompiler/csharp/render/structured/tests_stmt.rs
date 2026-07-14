@@ -382,6 +382,21 @@ fn typed_ambient_assignments_render_boundary_conversions() {
 }
 
 #[test]
+fn typed_static_field_boundaries_use_contract_field_types() {
+    let body = Block::from(vec![Stmt::assign("static0", Expr::Unknown)]);
+    let symbols = BTreeMap::new();
+    let static_field_types =
+        BTreeMap::from([(String::from("static0"), String::from("BigInteger"))]);
+    let plan =
+        plan_declarations(&body, &symbols, true).with_static_field_types(&static_field_types);
+
+    assert_eq!(
+        render_block(&body, &plan, &symbols, ReturnBehavior::Void, false),
+        "static0 = (BigInteger)(dynamic)((dynamic)null);"
+    );
+}
+
+#[test]
 fn typed_index_definitions_ignore_stale_slot_collection_types() {
     let body = Block::from(vec![
         Stmt::assign("t0", Expr::index(Expr::var("items"), Expr::int(0))),

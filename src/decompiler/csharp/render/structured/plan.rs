@@ -8,7 +8,9 @@ use crate::decompiler::cfg::ssa::MethodContext;
 use super::super::super::helpers::CSharpParameter;
 #[path = "declaration_types.rs"]
 mod declaration_types;
-pub(in crate::decompiler::csharp::render) use declaration_types::concrete_definition_type;
+pub(in crate::decompiler::csharp::render) use declaration_types::{
+    concrete_definition_type, concrete_definition_type_with_symbols,
+};
 #[path = "declarations.rs"]
 mod declarations;
 pub(in crate::decompiler::csharp::render) use declarations::{

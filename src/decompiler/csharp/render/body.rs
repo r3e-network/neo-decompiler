@@ -10,8 +10,7 @@ use crate::instruction::OpCode;
 use crate::instruction::Operand;
 
 use super::super::helpers::VM_ASSERT_MESSAGE_HELPER;
-use super::structured::plan::plan_declarations;
-use super::structured::plan::CSharpMethodPlan;
+use super::structured::plan::{plan_declarations, CSharpMethodPlan};
 use super::structured::stmt;
 
 mod fidelity;
@@ -50,6 +49,7 @@ pub(super) struct LiftedBodyContext<'a> {
     pub(super) bare_throw_helper_call: Option<&'a str>,
     pub(super) unpack_packstruct_helper_call: Option<&'a str>,
     pub(super) tagged_opcode_helper_calls: &'a BTreeMap<(u8, u8), String>,
+    pub(super) static_field_types: &'a BTreeMap<String, String>,
 }
 
 pub(super) fn render_method_body(
@@ -104,7 +104,8 @@ pub(super) fn render_method_body(
     }
 
     let declarations =
-        plan_declarations(&lowered.body, &lowered.symbols, context.typed_declarations);
+        plan_declarations(&lowered.body, &lowered.symbols, context.typed_declarations)
+            .with_static_field_types(context.static_field_types);
     fidelity.issues.extend(declarations.issues.iter().cloned());
     fidelity.finish();
     if fidelity.status == Fidelity::Incomplete && requires_structured_stub(&fidelity) {
@@ -163,7 +164,8 @@ fn recovered_result(
             crate::decompiler::ir::Stmt::Comment(_) | crate::decompiler::ir::Stmt::Return(None)
         )
     }) {
-        let declarations = plan_declarations(body, symbols, context.typed_declarations);
+        let declarations = plan_declarations(body, symbols, context.typed_declarations)
+            .with_static_field_types(context.static_field_types);
         let structured = stmt::render_block_with_trace(
             body,
             &declarations,

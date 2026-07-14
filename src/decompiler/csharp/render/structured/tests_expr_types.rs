@@ -195,6 +195,27 @@ fn intrinsic_and_member_shapes_keep_concrete_value_types() {
         ValueType::Array
     );
     assert_eq!(
+        context.value_type(&intrinsic(
+            OpCode::Pickitem,
+            vec![Expr::var("text"), Expr::int(0)],
+        )),
+        ValueType::Integer
+    );
+    assert_eq!(
+        context.value_type(&intrinsic(
+            OpCode::Within,
+            vec![Expr::int(1), Expr::int(0), Expr::int(2)],
+        )),
+        ValueType::Boolean
+    );
+    assert_eq!(
+        context.value_type(&intrinsic(
+            OpCode::Modpow,
+            vec![Expr::int(2), Expr::int(3), Expr::int(5)],
+        )),
+        ValueType::Integer
+    );
+    assert_eq!(
         context.value_type(&Expr::Member {
             base: Box::new(Expr::var("text")),
             name: "Length".to_string(),

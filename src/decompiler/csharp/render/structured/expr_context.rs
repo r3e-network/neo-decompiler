@@ -226,10 +226,25 @@ impl ExprContext {
                 OpCode::Newstruct0 | OpCode::Newstruct => ValueType::Struct,
                 OpCode::Newmap => ValueType::Map,
                 OpCode::Newbuffer => ValueType::Buffer,
+                OpCode::Within => ValueType::Boolean,
                 OpCode::Depth | OpCode::Size | OpCode::Sqrt | OpCode::Min | OpCode::Max => {
                     ValueType::Integer
                 }
+                OpCode::Modmul | OpCode::Modpow => ValueType::Integer,
                 OpCode::Haskey | OpCode::Isnull | OpCode::Istype | OpCode::Nz => ValueType::Boolean,
+                OpCode::Pickitem => args.first().map_or(ValueType::Unknown, |base| {
+                    if let Expr::NewArray {
+                        element_type: Some(element_type),
+                        ..
+                    } = base
+                    {
+                        return *element_type;
+                    }
+                    match self.value_type(base) {
+                        ValueType::ByteString | ValueType::Buffer => ValueType::Integer,
+                        _ => ValueType::Unknown,
+                    }
+                }),
                 OpCode::Substr | OpCode::Left | OpCode::Right => {
                     args.first().map_or(ValueType::Unknown, |source| {
                         match self.value_type(source) {

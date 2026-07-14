@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use crate::decompiler::analysis::types::ValueType;
+use crate::decompiler::cfg::method_body::SymbolInfo;
 use crate::decompiler::ir::{BinOp, Expr, Intrinsic, Literal, SemanticCallTarget, UnaryOp};
 use crate::decompiler::native_method_types;
 use crate::instruction::OpCode;
@@ -6,41 +9,56 @@ use crate::instruction::OpCode;
 pub(in crate::decompiler::csharp::render) fn concrete_definition_type(
     expression: &Expr,
 ) -> Option<String> {
-    if let Expr::Call { target, .. } = expression {
-        match target {
-            SemanticCallTarget::MethodToken {
-                name,
-                hash_le,
-                call_flags,
-                ..
-            } => {
-                if let Some(return_type) =
-                    native_method_types::lookup(hash_le.as_deref(), name, *call_flags)
-                {
-                    return Some(return_type.csharp_type.to_string());
-                }
-            }
-            SemanticCallTarget::Syscall { hash, .. } => {
-                if let Some(return_type) = crate::decompiler::syscall_types::lookup(*hash) {
-                    return Some(return_type.csharp_type.to_string());
-                }
-            }
-            _ => {}
-        }
+    concrete_call_type(expression).or_else(|| concrete_expression_type(expression))
+}
+
+pub(in crate::decompiler::csharp::render) fn concrete_definition_type_with_symbols(
+    expression: &Expr,
+    symbols: &BTreeMap<String, SymbolInfo>,
+) -> Option<String> {
+    concrete_call_type(expression)
+        .or_else(|| concrete_expression_type_with_symbols(expression, Some(symbols)))
+}
+
+fn concrete_call_type(expression: &Expr) -> Option<String> {
+    let Expr::Call { target, .. } = expression else {
+        return None;
+    };
+    match target {
+        SemanticCallTarget::MethodToken {
+            name,
+            hash_le,
+            call_flags,
+            ..
+        } => native_method_types::lookup(hash_le.as_deref(), name, *call_flags)
+            .map(|return_type| return_type.csharp_type.to_string()),
+        SemanticCallTarget::Syscall { hash, .. } => crate::decompiler::syscall_types::lookup(*hash)
+            .map(|return_type| return_type.csharp_type.to_string()),
+        _ => None,
     }
-    concrete_expression_type(expression)
 }
 
 fn concrete_expression_type(expression: &Expr) -> Option<String> {
+    concrete_expression_type_with_symbols(expression, None)
+}
+
+fn concrete_expression_type_with_symbols(
+    expression: &Expr,
+    symbols: Option<&BTreeMap<String, SymbolInfo>>,
+) -> Option<String> {
+    if let Some(call_type) = concrete_call_type(expression) {
+        return Some(call_type);
+    }
     match expression {
         Expr::Literal(Literal::Int(_) | Literal::BigInt(_)) => Some("BigInteger".to_string()),
         // Neo treats compiler string literals as byte strings. The generated
         // C# framework accepts the source spelling directly as ByteString.
         Expr::Literal(Literal::String(_) | Literal::Bytes(_)) => Some("ByteString".to_string()),
         Expr::Literal(Literal::Bool(_)) => Some("bool".to_string()),
-        Expr::Literal(Literal::Null) | Expr::Unknown | Expr::Variable(_) | Expr::StackTemp(_) => {
-            None
-        }
+        Expr::Literal(Literal::Null) | Expr::Unknown | Expr::StackTemp(_) => None,
+        Expr::Variable(name) => symbols
+            .and_then(|symbols| symbols.get(name))
+            .and_then(|symbol| csharp_type_for_value_type(symbol.value_type).map(str::to_string)),
         Expr::Binary { op, left, right } => {
             if matches!(
                 op,
@@ -55,28 +73,35 @@ fn concrete_expression_type(expression: &Expr) -> Option<String> {
             ) {
                 return Some("bool".to_string());
             }
-            (concrete_expression_type(left).as_deref() == Some("BigInteger")
-                && concrete_expression_type(right).as_deref() == Some("BigInteger"))
+            (concrete_expression_type_with_symbols(left, symbols).as_deref() == Some("BigInteger")
+                && concrete_expression_type_with_symbols(right, symbols).as_deref()
+                    == Some("BigInteger"))
             .then(|| "BigInteger".to_string())
         }
         Expr::Unary { op, operand } => {
             if *op == UnaryOp::LogicalNot {
                 Some("bool".to_string())
             } else {
-                concrete_expression_type(operand).filter(|type_name| type_name == "BigInteger")
+                concrete_expression_type_with_symbols(operand, symbols)
+                    .filter(|type_name| type_name == "BigInteger")
             }
         }
-        Expr::Call { target, .. } => match target {
+        Expr::Call { target, args } => match target {
             SemanticCallTarget::Intrinsic(Intrinsic::Opcode(opcode)) => match opcode {
                 OpCode::Cat | OpCode::Substr | OpCode::Left | OpCode::Right => {
-                    Some("ByteString".to_string())
+                    byte_container_result_type(args, symbols)
                 }
-                OpCode::Depth | OpCode::Size | OpCode::Sqrt | OpCode::Min | OpCode::Max => {
-                    Some("BigInteger".to_string())
-                }
-                OpCode::Haskey | OpCode::Isnull | OpCode::Istype | OpCode::Nz => {
+                OpCode::Within | OpCode::Haskey | OpCode::Isnull | OpCode::Istype | OpCode::Nz => {
                     Some("bool".to_string())
                 }
+                OpCode::Depth
+                | OpCode::Size
+                | OpCode::Sqrt
+                | OpCode::Min
+                | OpCode::Max
+                | OpCode::Modmul
+                | OpCode::Modpow => Some("BigInteger".to_string()),
+                OpCode::Pickitem => pickitem_result_type(args, symbols),
                 OpCode::Newbuffer => Some("byte[]".to_string()),
                 OpCode::Newarray0
                 | OpCode::Newarray
@@ -97,13 +122,18 @@ fn concrete_expression_type(expression: &Expr) -> Option<String> {
             | SemanticCallTarget::Syscall { .. }
             | SemanticCallTarget::Unresolved { .. } => None,
         },
-        Expr::Index { base, .. } => match base.as_ref() {
-            Expr::NewArray {
+        Expr::Index { base, .. } => {
+            if let Expr::NewArray {
                 element_type: Some(element_type),
                 ..
-            } => csharp_type_for_value_type(*element_type).map(str::to_string),
-            _ => None,
-        },
+            } = base.as_ref()
+            {
+                return csharp_type_for_value_type(*element_type).map(str::to_string);
+            }
+            let base_type = concrete_expression_type_with_symbols(base, symbols);
+            matches!(base_type.as_deref(), Some("ByteString" | "byte[]"))
+                .then(|| "BigInteger".to_string())
+        }
         Expr::Member { name, .. } if name.eq_ignore_ascii_case("Length") => {
             Some("BigInteger".to_string())
         }
@@ -121,10 +151,44 @@ fn concrete_expression_type(expression: &Expr) -> Option<String> {
             else_expr,
             ..
         } => {
-            let then_type = concrete_expression_type(then_expr)?;
-            (concrete_expression_type(else_expr).as_deref() == Some(then_type.as_str()))
-                .then_some(then_type)
+            let then_type = concrete_expression_type_with_symbols(then_expr, symbols)?;
+            (concrete_expression_type_with_symbols(else_expr, symbols).as_deref()
+                == Some(then_type.as_str()))
+            .then_some(then_type)
         }
+    }
+}
+
+fn byte_container_result_type(
+    args: &[Expr],
+    symbols: Option<&BTreeMap<String, SymbolInfo>>,
+) -> Option<String> {
+    let source_type = args
+        .first()
+        .and_then(|source| concrete_expression_type_with_symbols(source, symbols));
+    if source_type.as_deref() == Some("byte[]") {
+        Some("byte[]".to_string())
+    } else {
+        Some("ByteString".to_string())
+    }
+}
+
+fn pickitem_result_type(
+    args: &[Expr],
+    symbols: Option<&BTreeMap<String, SymbolInfo>>,
+) -> Option<String> {
+    let base_type = args
+        .first()
+        .and_then(|base| concrete_expression_type_with_symbols(base, symbols));
+    match base_type.as_deref() {
+        Some("ByteString" | "byte[]") => Some("BigInteger".to_string()),
+        Some("BigInteger[]") => Some("BigInteger".to_string()),
+        Some("bool[]") => Some("bool".to_string()),
+        Some("ByteString[]") => Some("ByteString".to_string()),
+        Some("byte[][]") => Some("byte[]".to_string()),
+        Some("object[][]") => Some("object[]".to_string()),
+        Some("Map<object, object>[]") => Some("Map<object, object>".to_string()),
+        _ => None,
     }
 }
 

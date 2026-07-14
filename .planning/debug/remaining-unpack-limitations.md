@@ -2,7 +2,7 @@
 status: narrowed
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-15T00:00:00+08:00
+updated: 2026-07-15T03:03:09+08:00
 ---
 
 ## Current Focus
@@ -117,6 +117,11 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   checked: Catalog-bound syscall return typing, fallback rendering for known syscalls with unresolved argument types, focused renderer tests, both Clippy configurations, and the representative plus full pinned net10 Roslyn suites.
   found: Stable `Storage`, `Runtime`, `Contract`, `Crypto`, and `Iterator` syscall hashes now provide exact C# return types (`StorageContext`, `Iterator`, `ByteString`, `UInt160`, `BigInteger`, `object[]`, `Transaction`, `string`, or `bool`) while unknown hashes remain dynamic. When a known API cannot be lowered because an argument is still dynamic, its `Runtime.LoadScript` compatibility form now carries an explicit catalog return cast. The representative suite passed and the full pinned corpus compiled 103 contracts with 0 failures and 0 errors.
   implication: Known syscall return types are compile-safe even on compatibility fallbacks; arbitrary hashes and unresolved APIs remain fail-closed. The fidelity census remains Exact 1101 / Conservative 70 / Incomplete 1, with `Contract_Foreach@0x04AC` still the sole incomplete method.
+
+- timestamp: 2026-07-15T03:03:09+08:00
+  checked: Typed static-field boundary conversions, the Contract_RefSupport Roslyn regression, focused structured-renderer tests, the pinned fidelity census, and both representative plus full pinned net10 Roslyn suites.
+  found: Static slots whose neutral method symbol table omits the global field type now receive the contract-level C# field type during assignment rendering. Unknown compatibility values are emitted through an explicit `(TargetType)(dynamic)(...)` boundary; Contract_RefSupport no longer produces `object`-to-`BigInteger` CS0266 errors. The census remains Exact 1101 / Conservative 70 / Incomplete 1, and Roslyn compiles 103/103 contracts with zero errors.
+  implication: Typed C# output remains compile-valid when conservative low-level calls write known static fields, without weakening the fail-closed Foreach limitation or assigning arbitrary external-call types.
 
 ## Resolution
 
