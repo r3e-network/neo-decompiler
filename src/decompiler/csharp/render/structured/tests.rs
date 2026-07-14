@@ -65,6 +65,8 @@ fn expr_context_with_types(types: &[(&str, ValueType)]) -> ExprContext {
 
 #[path = "tests_expr.rs"]
 mod expr;
+#[path = "tests_expr_types.rs"]
+mod expr_types;
 #[path = "tests_plan.rs"]
 mod plan;
 #[path = "tests_stmt.rs"]

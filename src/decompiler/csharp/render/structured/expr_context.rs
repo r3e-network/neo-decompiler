@@ -171,11 +171,26 @@ impl ExprContext {
                 _ if self.value_type(operand) == ValueType::Integer => ValueType::Integer,
                 _ => ValueType::Unknown,
             },
+            Expr::Cast { target_type, .. } => {
+                csharp_type_value_type(target_type).unwrap_or(ValueType::Unknown)
+            }
             Expr::Convert { target, .. } => *target,
             Expr::IsType { .. } => ValueType::Boolean,
             Expr::NewArray { .. } | Expr::Array(_) => ValueType::Array,
             Expr::Struct(_) => ValueType::Struct,
             Expr::Map(_) => ValueType::Map,
+            Expr::Index { base, .. } => match base.as_ref() {
+                Expr::NewArray {
+                    element_type: Some(element_type),
+                    ..
+                } => *element_type,
+                _ => ValueType::Unknown,
+            },
+            Expr::Ternary {
+                then_expr,
+                else_expr,
+                ..
+            } => exact_common_value_type(self.value_type(then_expr), self.value_type(else_expr)),
             Expr::Call {
                 target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(opcode)),
                 args,
@@ -213,4 +228,25 @@ fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {
         "Map<object, object>" => Some(ValueType::Map),
         _ => None,
     }
+}
+
+fn exact_common_value_type(left: ValueType, right: ValueType) -> ValueType {
+    if left == right && is_concrete_value_type(left) {
+        left
+    } else {
+        ValueType::Unknown
+    }
+}
+
+fn is_concrete_value_type(value_type: ValueType) -> bool {
+    matches!(
+        value_type,
+        ValueType::Boolean
+            | ValueType::Integer
+            | ValueType::ByteString
+            | ValueType::Buffer
+            | ValueType::Array
+            | ValueType::Struct
+            | ValueType::Map
+    )
 }
