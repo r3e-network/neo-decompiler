@@ -590,6 +590,23 @@ test("C# rendering lowers common Neo math and byte helpers", () => {
   assert.doesNotMatch(csharp, /\b(?:abs|min|modmul|substr|within)\(/);
 });
 
+test("C# rendering preserves typed array element types for mutations", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn mutate(size, value) {",
+    '    let items = new_array_t(size, "integer");',
+    "    append(items, value);",
+    "    remove_item(items, 0);",
+    "    pop_item(items);",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+  assert.match(csharp, /List<BigInteger>\)items\)\.Add\(value\)/);
+  assert.match(csharp, /List<BigInteger>\)items\)\.RemoveAt/);
+  assert.match(csharp, /List<BigInteger>\)items\)\.PopItem/);
+  assert.doesNotMatch(csharp, /List<object>\)items\)/);
+});
+
 test("C# rendering lowers power and inferred list pop helpers", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
