@@ -149,6 +149,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
     let mut collector = ActivityCollector::new().with_symbol_types(symbols);
     let root = collector.scopes.root();
     collector.visit_block(body, root);
+    collector.resolve_concrete_definition_types();
     let index_defined_symbols = collector.index_defined_symbols();
 
     let mut declarations = BTreeMap::new();

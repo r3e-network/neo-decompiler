@@ -122,6 +122,77 @@ fn symbol_aware_expression_types_cover_index_and_numeric_copies() {
 }
 
 #[test]
+fn typed_array_element_types_survive_aliases_but_unknown_arrays_stay_dynamic() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "typed_array",
+            Expr::NewArray {
+                length: Box::new(Expr::int(2)),
+                element_type: Some(ValueType::Integer),
+            },
+        ),
+        Stmt::assign("alias", Expr::var("typed_array")),
+        Stmt::assign("item", Expr::index(Expr::var("alias"), Expr::int(0))),
+        Stmt::assign(
+            "unknown_array",
+            Expr::NewArray {
+                length: Box::new(Expr::int(2)),
+                element_type: None,
+            },
+        ),
+        Stmt::assign(
+            "unknown_item",
+            Expr::index(Expr::var("unknown_array"), Expr::int(0)),
+        ),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "typed_array".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "alias".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "item".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "unknown_array".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "unknown_item".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["typed_array"].csharp_type, "BigInteger[]");
+    assert_eq!(plan.declarations["alias"].csharp_type, "BigInteger[]");
+    assert_eq!(plan.declarations["item"].csharp_type, "BigInteger");
+    assert_eq!(plan.declarations["unknown_array"].csharp_type, "object[]");
+    assert_eq!(plan.declarations["unknown_item"].csharp_type, "dynamic");
+}
+
+#[test]
 fn unknown_pickitem_provenance_remains_dynamic() {
     let body = Block::from(vec![Stmt::assign(
         "item",

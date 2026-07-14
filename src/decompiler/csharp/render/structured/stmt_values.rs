@@ -136,6 +136,17 @@ impl StatementRenderer<'_> {
         if self.expressions.exact_csharp_type(value) == Some(target_type) {
             return rendered;
         }
+        if let Expr::Variable(name) = value {
+            let source_type = self
+                .plan
+                .declarations
+                .get(name)
+                .map(|declaration| declaration.csharp_type.as_str())
+                .or_else(|| self.plan.static_field_types.get(name).map(String::as_str));
+            if source_type == Some(target_type) {
+                return rendered;
+            }
+        }
         let source_type = self.expressions.value_type(value);
         let cast = match (target_type, source_type) {
             ("dynamic" | "object", _) => None,

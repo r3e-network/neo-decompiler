@@ -4,9 +4,7 @@ use crate::decompiler::cfg::method_body::SymbolInfo;
 use crate::decompiler::ir::{Block, ControlFlow, Expr, Intrinsic, SemanticCallTarget, Stmt};
 use crate::instruction::OpCode;
 
-use super::plan::{
-    concrete_definition_type, concrete_definition_type_with_symbols, ScopeId, ScopeTree,
-};
+use super::plan::{concrete_definition_type_with_symbols_and_known_types, ScopeId, ScopeTree};
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -28,6 +26,7 @@ pub(super) struct ActivityCollector<'a> {
     pub(super) activity: BTreeMap<String, SymbolActivity>,
     pub(super) concrete_definition_types: BTreeMap<String, String>,
     symbol_types: Option<&'a BTreeMap<String, SymbolInfo>>,
+    definition_values: BTreeMap<String, Vec<Expr>>,
     non_concrete_definitions: HashSet<String>,
     direct_index_definitions: HashSet<String>,
     copy_definitions: Vec<(String, String)>,
@@ -44,6 +43,7 @@ impl<'a> ActivityCollector<'a> {
             activity: BTreeMap::new(),
             concrete_definition_types: BTreeMap::new(),
             symbol_types: None,
+            definition_values: BTreeMap::new(),
             non_concrete_definitions: HashSet::new(),
             direct_index_definitions: HashSet::new(),
             copy_definitions: Vec::new(),
@@ -62,6 +62,7 @@ impl<'a> ActivityCollector<'a> {
             activity: self.activity,
             concrete_definition_types: self.concrete_definition_types,
             symbol_types: Some(symbol_types),
+            definition_values: self.definition_values,
             non_concrete_definitions: self.non_concrete_definitions,
             direct_index_definitions: self.direct_index_definitions,
             copy_definitions: self.copy_definitions,
@@ -78,6 +79,10 @@ impl<'a> ActivityCollector<'a> {
             .or_default()
             .definitions
             .push(occurrence);
+        self.definition_values
+            .entry(name.to_string())
+            .or_default()
+            .push(value.clone());
 
         if matches!(
             value,
@@ -93,30 +98,62 @@ impl<'a> ActivityCollector<'a> {
             self.copy_definitions
                 .push((name.to_string(), source.clone()));
         }
+    }
 
-        let candidate = self.symbol_types.map_or_else(
-            || concrete_definition_type(value),
-            |symbol_types| concrete_definition_type_with_symbols(value, symbol_types),
-        );
-        let Some(candidate) = candidate else {
-            self.concrete_definition_types.remove(name);
-            self.non_concrete_definitions.insert(name.to_string());
-            return;
-        };
-        if self.non_concrete_definitions.contains(name) {
-            return;
+    pub(super) fn resolve_concrete_definition_types(&mut self) {
+        let empty_symbols = BTreeMap::new();
+        let mut known_types = BTreeMap::new();
+        let iterations = self.definition_values.len().saturating_add(1);
+
+        for _ in 0..iterations {
+            let mut next_types = BTreeMap::new();
+            let mut non_concrete = HashSet::new();
+            for (name, definitions) in &self.definition_values {
+                let mut candidate = None;
+                let mut consistent = true;
+                for definition in definitions {
+                    let definition_type = concrete_definition_type_with_symbols_and_known_types(
+                        definition,
+                        self.symbol_types.unwrap_or(&empty_symbols),
+                        &known_types,
+                    );
+                    let Some(definition_type) = definition_type else {
+                        consistent = false;
+                        break;
+                    };
+                    if candidate
+                        .as_ref()
+                        .is_some_and(|existing| existing != &definition_type)
+                    {
+                        consistent = false;
+                        break;
+                    }
+                    candidate = Some(definition_type);
+                }
+                if consistent {
+                    if let Some(candidate) = candidate {
+                        next_types.insert(name.clone(), candidate);
+                    }
+                } else {
+                    non_concrete.insert(name.clone());
+                }
+            }
+
+            if next_types == known_types {
+                self.concrete_definition_types = next_types;
+                self.non_concrete_definitions = non_concrete;
+                return;
+            }
+            known_types = next_types;
         }
-        if self
-            .concrete_definition_types
-            .get(name)
-            .is_some_and(|existing| existing != &candidate)
-        {
-            self.concrete_definition_types.remove(name);
-            self.non_concrete_definitions.insert(name.to_string());
-            return;
-        }
-        self.concrete_definition_types
-            .insert(name.to_string(), candidate);
+
+        self.concrete_definition_types = known_types;
+        self.non_concrete_definitions = self
+            .definition_values
+            .keys()
+            .filter(|name| !self.concrete_definition_types.contains_key(*name))
+            .cloned()
+            .collect();
     }
 
     fn record_use(&mut self, name: &str, scope: ScopeId) {
