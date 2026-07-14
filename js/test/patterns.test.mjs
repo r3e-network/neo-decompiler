@@ -485,6 +485,16 @@ test("C# rendering escapes contextual and newer keyword identifiers", () => {
   assert.match(csharp, /public static void @record\(BigInteger @await\)/);
 });
 
+test("C# rendering accepts canonical ABI type aliases in direct high-level input", () => {
+  const csharp = renderCSharpContract(
+    "contract Aliases {\nfn convert(flag: boolean, count: integer, payload: bytearray, context: interopinterface) -> integer {\n}\n}",
+  );
+  assert.match(
+    csharp,
+    /public static BigInteger convert\(bool flag, BigInteger count, ByteString payload, object context\)/,
+  );
+});
+
 test("C# rendering lowers unambiguous collection helpers", () => {
   const csharp = renderCSharpContract([
     "contract Token {",

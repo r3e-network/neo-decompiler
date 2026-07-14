@@ -137,7 +137,7 @@ test("integration: C# rendering translates manifest signatures and preserves bod
     manifest,
   );
   assert.match(result.csharp, /public class SampleToken : SmartContract/);
-  assert.match(result.csharp, /public static bool transfer\(UInt160 from\)/);
+  assert.match(result.csharp, /public static bool transfer\(UInt160 @from\)/);
   assert.match(result.csharp, /return/);
   assert.equal(renderCSharpContract(result.highLevel), result.csharp);
 });
