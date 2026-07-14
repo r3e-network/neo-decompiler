@@ -15,8 +15,14 @@ const INDENT: &str = "    ";
 
 #[path = "stmt_control_flow.rs"]
 mod stmt_control_flow;
+#[path = "stmt_facts.rs"]
+mod stmt_facts;
+#[path = "stmt_foreach.rs"]
+mod stmt_foreach;
 #[path = "stmt_values.rs"]
 mod stmt_values;
+
+use stmt_facts::{update_definition_facts, DefinitionFacts};
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(in crate::decompiler::csharp::render) fn render_block(
@@ -167,7 +173,44 @@ impl StatementRenderer<'_> {
         indent: usize,
         is_method_body: bool,
     ) -> Vec<String> {
+        self.render_block_at_with_facts(
+            block,
+            scope,
+            indent,
+            is_method_body,
+            &DefinitionFacts::new(),
+        )
+    }
+
+    fn render_block_at_with_facts(
+        &mut self,
+        block: &Block,
+        scope: ScopeId,
+        indent: usize,
+        is_method_body: bool,
+        inherited_facts: &DefinitionFacts,
+    ) -> Vec<String> {
+        self.render_block_at_omitting(
+            block,
+            scope,
+            indent,
+            is_method_body,
+            &BTreeSet::new(),
+            inherited_facts,
+        )
+    }
+
+    fn render_block_at_omitting(
+        &mut self,
+        block: &Block,
+        scope: ScopeId,
+        indent: usize,
+        is_method_body: bool,
+        omitted: &BTreeSet<usize>,
+        inherited_facts: &DefinitionFacts,
+    ) -> Vec<String> {
         let mut lines = self.hoisted_declarations(scope, indent);
+        let mut facts = inherited_facts.clone();
         let omitted_void_return = (is_method_body && self.return_behavior == ReturnBehavior::Void)
             .then(|| {
                 block
@@ -179,11 +222,18 @@ impl StatementRenderer<'_> {
             .filter(|index| matches!(block.stmts[*index], Stmt::Return(None)));
 
         for (index, statement) in block.stmts.iter().enumerate() {
+            if omitted.contains(&index) {
+                // Keep source-map statement IDs aligned even when a compiler-
+                // generated extraction is represented by a foreach variable.
+                self.next_statement_id += 1;
+                continue;
+            }
             if omitted_void_return == Some(index) {
                 continue;
             }
             self.render_trace_comments(indent, &mut lines);
-            self.render_statement(statement, scope, indent, &mut lines);
+            self.render_statement(statement, scope, indent, &mut lines, &facts);
+            update_definition_facts(&mut facts, statement);
         }
         lines
     }
@@ -217,6 +267,7 @@ impl StatementRenderer<'_> {
         scope: ScopeId,
         indent: usize,
         lines: &mut Vec<String>,
+        facts: &DefinitionFacts,
     ) {
         match statement {
             Stmt::Assign { target, value } => {
@@ -268,7 +319,7 @@ impl StatementRenderer<'_> {
                 lines.push(line(indent, format!("goto label_{};", label.0)));
             }
             Stmt::ControlFlow(control) => {
-                self.render_control_flow(control, scope, indent, lines);
+                self.render_control_flow(control, scope, indent, lines, facts);
             }
         }
     }

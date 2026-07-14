@@ -6,7 +6,7 @@ use crate::decompiler::ir::{BinOp, Block, ControlFlow, Expr, Stmt};
 
 use super::super::expr::{render_expr, render_vm_condition};
 use super::super::plan::ScopeId;
-use super::{line, terminates, StatementRenderer};
+use super::{line, terminates, DefinitionFacts, StatementRenderer};
 
 impl StatementRenderer<'_> {
     pub(super) fn render_control_flow(
@@ -15,6 +15,7 @@ impl StatementRenderer<'_> {
         scope: ScopeId,
         indent: usize,
         lines: &mut Vec<String>,
+        facts: &DefinitionFacts,
     ) {
         match control {
             ControlFlow::If {
@@ -30,11 +31,23 @@ impl StatementRenderer<'_> {
                     ),
                 ));
                 let then_scope = self.scopes.next_child(scope);
-                lines.extend(self.render_block_at(then_branch, then_scope, indent + 1, false));
+                lines.extend(self.render_block_at_with_facts(
+                    then_branch,
+                    then_scope,
+                    indent + 1,
+                    false,
+                    facts,
+                ));
                 if let Some(else_branch) = else_branch {
                     lines.push(line(indent, "} else {"));
                     let else_scope = self.scopes.next_child(scope);
-                    lines.extend(self.render_block_at(else_branch, else_scope, indent + 1, false));
+                    lines.extend(self.render_block_at_with_facts(
+                        else_branch,
+                        else_scope,
+                        indent + 1,
+                        false,
+                        facts,
+                    ));
                 }
                 lines.push(line(indent, "}"));
             }
@@ -47,13 +60,25 @@ impl StatementRenderer<'_> {
                     ),
                 ));
                 let body_scope = self.scopes.next_child(scope);
-                lines.extend(self.render_block_at(body, body_scope, indent + 1, false));
+                lines.extend(self.render_block_at_with_facts(
+                    body,
+                    body_scope,
+                    indent + 1,
+                    false,
+                    facts,
+                ));
                 lines.push(line(indent, "}"));
             }
             ControlFlow::DoWhile { body, condition } => {
                 lines.push(line(indent, "do {"));
                 let body_scope = self.scopes.next_child(scope);
-                lines.extend(self.render_block_at(body, body_scope, indent + 1, false));
+                lines.extend(self.render_block_at_with_facts(
+                    body,
+                    body_scope,
+                    indent + 1,
+                    false,
+                    facts,
+                ));
                 lines.push(line(
                     indent,
                     format!(
@@ -75,6 +100,7 @@ impl StatementRenderer<'_> {
                 scope,
                 indent,
                 lines,
+                facts,
             ),
             ControlFlow::TryCatch {
                 try_body,
@@ -84,7 +110,13 @@ impl StatementRenderer<'_> {
             } => {
                 lines.push(line(indent, "try {"));
                 let try_scope = self.scopes.next_child(scope);
-                lines.extend(self.render_block_at(try_body, try_scope, indent + 1, false));
+                lines.extend(self.render_block_at_with_facts(
+                    try_body,
+                    try_scope,
+                    indent + 1,
+                    false,
+                    facts,
+                ));
                 lines.push(line(indent, "}"));
 
                 if let Some(catch_body) = catch_body {
@@ -103,18 +135,25 @@ impl StatementRenderer<'_> {
                         ));
                     }
                     let catch_scope = self.scopes.next_child(scope);
-                    lines.extend(self.render_block_at(catch_body, catch_scope, indent + 1, false));
+                    lines.extend(self.render_block_at_with_facts(
+                        catch_body,
+                        catch_scope,
+                        indent + 1,
+                        false,
+                        facts,
+                    ));
                     lines.push(line(indent, "}"));
                 }
 
                 if let Some(finally_body) = finally_body {
                     replace_last_line(lines, indent, "} finally {");
                     let finally_scope = self.scopes.next_child(scope);
-                    lines.extend(self.render_block_at(
+                    lines.extend(self.render_block_at_with_facts(
                         finally_body,
                         finally_scope,
                         indent + 1,
                         false,
+                        facts,
                     ));
                     lines.push(line(indent, "}"));
                 }
@@ -149,7 +188,13 @@ impl StatementRenderer<'_> {
                     };
                     lines.push(line(indent + 1, case_label));
                     let case_scope = self.scopes.next_child(scope);
-                    lines.extend(self.render_block_at(body, case_scope, indent + 2, false));
+                    lines.extend(self.render_block_at_with_facts(
+                        body,
+                        case_scope,
+                        indent + 2,
+                        false,
+                        facts,
+                    ));
                     if !terminates(body) {
                         lines.push(line(indent + 2, "break;"));
                     }
@@ -158,7 +203,13 @@ impl StatementRenderer<'_> {
                 if let Some(body) = default {
                     lines.push(line(indent + 1, "default: {"));
                     let default_scope = self.scopes.next_child(scope);
-                    lines.extend(self.render_block_at(body, default_scope, indent + 2, false));
+                    lines.extend(self.render_block_at_with_facts(
+                        body,
+                        default_scope,
+                        indent + 2,
+                        false,
+                        facts,
+                    ));
                     if !terminates(body) {
                         lines.push(line(indent + 2, "break;"));
                     }
@@ -179,8 +230,37 @@ impl StatementRenderer<'_> {
         parent_scope: ScopeId,
         indent: usize,
         lines: &mut Vec<String>,
+        facts: &DefinitionFacts,
     ) {
         let loop_scope = self.scopes.next_child(parent_scope);
+        if let Some(pattern) = self.detect_foreach(init, condition, update, body, facts) {
+            let index_name = sanitize_csharp_identifier(&pattern.index);
+            let index_is_private =
+                self.plan
+                    .declarations
+                    .get(&pattern.index)
+                    .is_some_and(|declaration| {
+                        declaration.scope == loop_scope && declaration.emitted_name == index_name
+                    });
+            let loop_declarations_are_private = self
+                .plan
+                .declarations
+                .values()
+                .filter(|declaration| declaration.scope == loop_scope)
+                .all(|declaration| declaration.emitted_name == index_name);
+            if index_is_private && loop_declarations_are_private {
+                self.render_foreach(pattern, body, loop_scope, indent, lines, facts);
+                return;
+            }
+        }
+
+        let mut loop_facts = facts.clone();
+        if let Some(Stmt::Assign { target, value }) = init {
+            loop_facts.insert(target.clone(), value.clone());
+        } else if init.is_some() {
+            loop_facts.clear();
+        }
+
         let declarations = self.hoisted_declarations(loop_scope, indent + 1);
         let wrapped = !declarations.is_empty();
         let loop_indent = if wrapped { indent + 1 } else { indent };
@@ -203,7 +283,13 @@ impl StatementRenderer<'_> {
             format!("for ({init}; {condition}; {update}) {{"),
         ));
         let body_scope = self.scopes.next_child(loop_scope);
-        lines.extend(self.render_block_at(body, body_scope, loop_indent + 1, false));
+        lines.extend(self.render_block_at_with_facts(
+            body,
+            body_scope,
+            loop_indent + 1,
+            false,
+            &loop_facts,
+        ));
         lines.push(line(loop_indent, "}"));
 
         if wrapped {
