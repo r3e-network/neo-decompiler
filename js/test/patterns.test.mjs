@@ -693,6 +693,26 @@ test("C# rendering lowers method-token calls through Contract.Call", () => {
   assert.doesNotMatch(rendered, /return testArgs1\(4\);/);
 });
 
+test("C# method-token rewriting leaves qualified native calls intact", () => {
+  const rendered = renderCSharpContract([
+    "contract NativeCall {",
+    "fn invoke() -> any {",
+    "    return NeoToken.Transfer(from, to, amount);",
+    "}",
+    "}",
+  ].join("\n"), null, {
+    methodTokens: [{
+      hash: new Uint8Array(20),
+      method: "Transfer",
+      callFlags: 15,
+      parametersCount: 3,
+      hasReturnValue: true,
+    }],
+  });
+  assert.match(rendered, /return NeoToken\.Transfer\(@from, to, amount\);/);
+  assert.doesNotMatch(rendered, /Contract\.Call\(/);
+});
+
 test("C# typed declarations propagate concrete collection aliases", () => {
   const rendered = renderCSharpContract([
     "contract AliasTypes {",

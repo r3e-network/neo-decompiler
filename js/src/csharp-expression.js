@@ -161,7 +161,7 @@ export function rewriteCSharpMethodTokenCalls(line, methodTokens = null) {
   let match;
   while ((match = nextOutsideMatch(line, pattern)) !== null) {
     const token = tokens.get(match[1]);
-    if (!token) continue;
+    if (!token || isQualifiedCallName(line, match.index)) continue;
     const open = line.indexOf("(", match.index);
     const close = findCallClose(line, open);
     if (close < 0) continue;
@@ -172,6 +172,12 @@ export function rewriteCSharpMethodTokenCalls(line, methodTokens = null) {
     pattern.lastIndex = cursor;
   }
   return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function isQualifiedCallName(line, index) {
+  let previous = index - 1;
+  while (previous >= 0 && /\s/.test(line[previous])) previous -= 1;
+  return previous >= 0 && line[previous] === ".";
 }
 
 function renderMethodTokenCall(token, args) {
