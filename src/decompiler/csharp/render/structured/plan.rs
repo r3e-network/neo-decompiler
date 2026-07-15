@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Index;
 
 use crate::decompiler::analysis::method_contracts::ReturnBehavior;
-use crate::decompiler::cfg::method_body::{LoweringIssue, MethodSymbolTypes, SymbolInfo};
+use crate::decompiler::cfg::method_body::{
+    LoweringIssue, LoweringIssueKind, MethodSymbolTypes, SymbolInfo,
+};
 use crate::decompiler::cfg::ssa::MethodContext;
 
 use super::super::super::helpers::CSharpParameter;
@@ -131,6 +133,14 @@ impl CSharpMethodPlans {
 
     pub(in crate::decompiler::csharp::render) fn index_defined_statics(&self) -> &BTreeSet<usize> {
         &self.index_defined_statics
+    }
+
+    pub(in crate::decompiler::csharp::render) fn has_unresolved_calls(&self) -> bool {
+        self.plans.iter().any(|plan| {
+            plan.planning_issues
+                .iter()
+                .any(|issue| issue.kind == LoweringIssueKind::UnresolvedCall)
+        })
     }
 }
 

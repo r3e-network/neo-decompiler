@@ -230,13 +230,15 @@ pub(crate) fn render_csharp(
     header::write_bare_throw_helper(&mut output, bare_throw_helper.as_deref());
     header::write_unpack_packstruct_helper(&mut output, unpack_packstruct_helper.as_deref());
     header::write_tagged_opcode_helpers(&mut output, &tagged_opcode_helpers);
-    if call_graph.edges.iter().any(|edge| {
-        matches!(
-            edge.target,
-            super::super::analysis::call_graph::CallTarget::Indirect { .. }
-                | super::super::analysis::call_graph::CallTarget::UnresolvedInternal { .. }
-        )
-    }) {
+    if method_plans.has_unresolved_calls()
+        || call_graph.edges.iter().any(|edge| {
+            matches!(
+                edge.target,
+                super::super::analysis::call_graph::CallTarget::Indirect { .. }
+                    | super::super::analysis::call_graph::CallTarget::UnresolvedInternal { .. }
+            )
+        })
+    {
         header::write_unresolved_call_helper(&mut output);
     }
 

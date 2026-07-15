@@ -24,6 +24,10 @@ fn csharp_resolves_internal_calls_to_method_names() {
         !csharp.contains("call_0x0004"),
         "C# output should not emit raw call_0x placeholders when a helper name is known: {csharp}"
     );
+    assert!(
+        !csharp.contains("__NeoDecompilerUnresolvedCall"),
+        "clean internal calls should not force the unresolved-call helper: {csharp}"
+    );
 }
 
 #[test]
@@ -83,6 +87,42 @@ fn csharp_internal_call_uses_duplicate_signature_suffix() {
     assert!(
         csharp.contains("return transfer_2(1);"),
         "internal call must use the declaration's final emitted name: {csharp}"
+    );
+}
+
+#[test]
+fn csharp_ambiguous_internal_call_emits_unresolved_call_helper() {
+    let mut script = vec![0x34, 0x14, 0x40]; // CALL +0x14, then RET
+    while script.len() < 0x14 {
+        script.push(0x21); // NOP padding before the duplicate declarations.
+    }
+    script.push(0x40); // helper body at offset 0x14
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "AmbiguousCall",
+            "abi": { "methods": [
+                { "name": "caller", "parameters": [], "returntype": "Void", "offset": 0 },
+                { "name": "left", "parameters": [], "returntype": "Void", "offset": 20 },
+                { "name": "right", "parameters": [], "returntype": "Void", "offset": 20 }
+            ] }
+        }"#,
+    )
+    .expect("manifest parsed");
+
+    let csharp = Decompiler::new()
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&build_nef(&script), Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds")
+        .csharp
+        .expect("csharp output");
+
+    assert!(
+        csharp.contains("__NeoDecompilerUnresolvedCall(\"call_0x0014\""),
+        "ambiguous call should remain explicit in the C# body: {csharp}"
+    );
+    assert!(
+        csharp.contains("private static dynamic __NeoDecompilerUnresolvedCall"),
+        "unresolved-call helper must be declared when planning marks a target ambiguous: {csharp}"
     );
 }
 
