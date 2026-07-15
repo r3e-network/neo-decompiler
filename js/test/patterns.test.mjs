@@ -515,6 +515,23 @@ test("C# rendering can opt into conservative typed declarations", () => {
   assert.match(typedRendered, /dynamic unknown = call\(\);/);
 });
 
+test("C# typed declarations stay scoped to each method", () => {
+  const source = [
+    "contract TypedScopes {",
+    "fn integerValue() -> void {",
+    "    let value = 1;",
+    "}",
+    "fn booleanValue() -> void {",
+    "    let value = true;",
+    "}",
+    "}",
+  ].join("\n");
+  const rendered = renderCSharpContract(source, null, { typedDeclarations: true });
+  assert.match(rendered, /BigInteger @value = 1;/);
+  assert.match(rendered, /bool @value = true;/);
+  assert.doesNotMatch(rendered, /dynamic @value/);
+});
+
 test("C# typed declarations use catalog syscall return types", () => {
   const source = [
     "contract Syscalls {",
@@ -1134,4 +1151,20 @@ test("C# rendering lowers native qualified calls outside literals", () => {
     /(?:GasToken\.Symbol|NeoToken\.Decimals|LedgerContract\.CurrentHash|LedgerContract\.CurrentIndex)\(\)/,
   );
   assert.match(csharp, /GasToken::Transfer\(x\)/);
+});
+
+test("C# rendering keeps inferred VM helpers private", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn main() -> any {",
+    "    return sub_0x0010();",
+    "}",
+    "fn sub_0x0010(arg0) -> any {",
+    "    return arg0 + 1;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /public static object main\(\)/);
+  assert.match(csharp, /private static dynamic sub_0x0010\(dynamic arg0\)/);
+  assert.doesNotMatch(csharp, /public static (?:object|dynamic) sub_0x0010\(dynamic arg0\)/);
 });

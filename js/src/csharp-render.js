@@ -133,12 +133,16 @@ function splitParameters(parameters) {
   return parts;
 }
 
-function renderParameters(parameters, nullableParameters = new Set()) {
+function renderParameters(
+  parameters,
+  nullableParameters = new Set(),
+  unknownParameterType = "object",
+) {
   return splitParameters(parameters)
     .filter(Boolean)
     .map((parameter) => {
       const separator = parameter.indexOf(":");
-      if (separator < 0) return `object ${csharpIdentifier(parameter)}`;
+      if (separator < 0) return `${unknownParameterType} ${csharpIdentifier(parameter)}`;
       const name = parameter.slice(0, separator).trim();
       const type = parameter.slice(separator + 1).trim();
       return `${nullableParameters.has(name) ? "dynamic" : csharpType(type)} ${csharpIdentifier(name)}`;
@@ -146,14 +150,24 @@ function renderParameters(parameters, nullableParameters = new Set()) {
     .join(", ");
 }
 
-export function renderSignature(line, nullableParameters = new Set()) {
+export function renderSignature(
+  line,
+  nullableParameters = new Set(),
+  visibility = "public",
+  unknownReturnType = "object",
+  unknownParameterType = "object",
+) {
   const match = line.match(/^(\s*)fn\s+([A-Za-z_][A-Za-z0-9_]*)\((.*?)\)(?:\s*->\s*([^\s{]+))?\s*\{$/);
   if (!match) return null;
   const [, indentation, name, parameters, returnType] = match;
   // High-level method bodies omit `-> void` for idiomatic readability. A
   // missing return annotation therefore represents a void method, while
   // value-producing methods carry an explicit type (usually `any`).
-  return `${indentation}public static ${csharpType(returnType ?? "void")} ${csharpIdentifier(name)}(${renderParameters(parameters, nullableParameters)}) {`;
+  const normalizedReturnType = String(returnType ?? "void").trim().toLowerCase();
+  const renderedReturnType = normalizedReturnType === "any"
+    ? unknownReturnType
+    : csharpType(returnType ?? "void");
+  return `${indentation}${visibility} static ${renderedReturnType} ${csharpIdentifier(name)}(${renderParameters(parameters, nullableParameters, unknownParameterType)}) {`;
 }
 
 export function isSafeManifestMethod(name, manifest) {

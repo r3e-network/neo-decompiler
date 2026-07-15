@@ -45,8 +45,8 @@ export function renderCSharpContract(
     sourceDepth += sourceBraceDelta(sourceLine);
   }
   const labelsByLine = labelsVisibleInMethod(sourceLines, sourceDepthByLine);
-  const declarationTypes = options.typedDeclarations
-    ? inferDeclarationTypes(sourceLines)
+  const declarationTypesByLine = options.typedDeclarations
+    ? inferDeclarationTypesByLine(sourceLines, sourceDepthByLine)
     : null;
   const nullableParametersByLine = new Map();
   for (const [lineIndex, line] of sourceLines.entries()) {
@@ -94,13 +94,24 @@ export function renderCSharpContract(
       output.push(event ?? `${line.match(/^\s*/)?.[0] ?? ""}// ${line.trim()}`);
       continue;
     }
+    const name = line.match(/^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
+    const method = name ? manifestMethodForName(name, manifest) : null;
+    const visibility = name && isInferredHelperName(name) && !method
+      ? "private"
+      : "public";
+    const inferredHelper = name && isInferredHelperName(name) && !method;
+    const unknownReturnType = inferredHelper
+      ? "dynamic"
+      : "object";
+    const unknownParameterType = inferredHelper ? "dynamic" : "object";
     const signature = renderSignature(
       line,
       nullableParametersByLine.get(lineIndex) ?? new Set(),
+      visibility,
+      unknownReturnType,
+      unknownParameterType,
     );
     if (signature) {
-      const name = line.match(/^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
-      const method = name ? manifestMethodForName(name, manifest) : null;
       const indentation = line.match(/^\s*/)?.[0] ?? "";
       if (method && sanitizeIdentifier(method.name) !== method.name) {
         output.push(`${indentation}[DisplayName("${escapeCSharpString(method.name)}")]`);
@@ -113,7 +124,10 @@ export function renderCSharpContract(
     }
     const metadata = renderMetadataLine(line);
     const orphanElse = /^\s*}\s*else\s*\{\s*$/.test(line) && sourceDepthByLine[lineIndex] <= 2;
-    const renderedBody = renderBodyLine(line, declarationTypes);
+    const renderedBody = renderBodyLine(
+      line,
+      declarationTypesByLine?.get(lineIndex) ?? null,
+    );
     output.push(metadata ?? (orphanElse
       ? `${line.match(/^\s*/)?.[0] ?? ""}// orphaned else branch`
       : rewriteUnresolvedGotos(renderedBody, labelsByLine.get(lineIndex))));
@@ -130,6 +144,29 @@ export function renderCSharpContract(
     output.push("    // high-level contract body was unavailable");
   }
   return output.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
+function isInferredHelperName(name) {
+  return /^(?:sub|call)_0x[0-9A-Fa-f]+$/.test(name);
+}
+
+function inferDeclarationTypesByLine(lines, depths) {
+  const typesByLine = new Map();
+  for (let start = 0; start < lines.length; start += 1) {
+    if (!/^\s*fn\s+.*\{\s*$/.test(lines[start])) continue;
+    const methodDepth = depths[start];
+    let end = start + 1;
+    while (end < lines.length) {
+      if (depths[end] === methodDepth + 1 && /^\s*}\s*$/.test(lines[end])) break;
+      end += 1;
+    }
+    const methodTypes = inferDeclarationTypes(lines.slice(start, end + 1));
+    for (let index = start + 1; index < end; index += 1) {
+      typesByLine.set(index, methodTypes);
+    }
+    start = end;
+  }
+  return typesByLine;
 }
 
 function isContractHeaderLine(line) {
