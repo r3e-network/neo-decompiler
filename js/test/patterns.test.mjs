@@ -1168,3 +1168,24 @@ test("C# rendering keeps inferred VM helpers private", () => {
   assert.match(csharp, /private static dynamic sub_0x0010\(dynamic arg0\)/);
   assert.doesNotMatch(csharp, /public static (?:object|dynamic) sub_0x0010\(dynamic arg0\)/);
 });
+
+test("C# rendering declares referenced static VM slots", () => {
+  const csharp = renderCSharpContract([
+    "contract StaticSlots {",
+    "    fn read() -> any {",
+    "        return static0;",
+    "    }",
+    "    fn write() {",
+    "        let static1 = 1;",
+    "        static0 = static1;",
+    "        return;",
+    "    }",
+    "}",
+  ].join("\n"));
+
+  assert.match(csharp, /private static dynamic __neoStatic0;/);
+  assert.match(csharp, /private static dynamic __neoStatic1;/);
+  assert.match(csharp, /__neoStatic0 = __neoStatic1;/);
+  assert.match(csharp, /return __neoStatic0;/);
+  assert.doesNotMatch(csharp, /\bstatic[01]\b/);
+});

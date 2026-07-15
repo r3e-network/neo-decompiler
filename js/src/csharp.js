@@ -1,6 +1,10 @@
 import { sanitizeIdentifier } from "./manifest.js";
 import { nullableParametersForMethod } from "./csharp/nullability.js";
 import {
+  renderStaticSlotDeclarations,
+  renderStaticSlotLine,
+} from "./csharp-slots.js";
+import {
   csharpIdentifier,
   escapeCSharpString,
   inferDeclarationTypes,
@@ -84,6 +88,7 @@ export function renderCSharpContract(
     if (contract) {
       for (const attribute of renderManifestAttributes(manifest)) output.push(attribute);
       output.push(`public class ${csharpIdentifier(contract[1])} : SmartContract {`);
+      output.push(...renderStaticSlotDeclarations(sourceLines));
       classSeen = true;
       continue;
     }
@@ -127,7 +132,7 @@ export function renderCSharpContract(
     const metadata = renderMetadataLine(line);
     const orphanElse = /^\s*}\s*else\s*\{\s*$/.test(line) && sourceDepthByLine[lineIndex] <= 2;
     const renderedBody = renderBodyLine(
-      line,
+      renderCSharpCatchClause(renderStaticSlotLine(line)),
       declarationTypesByLine?.get(lineIndex) ?? null,
     );
     output.push(metadata ?? (orphanElse
@@ -146,6 +151,10 @@ export function renderCSharpContract(
     output.push("    // high-level contract body was unavailable");
   }
   return output.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
+function renderCSharpCatchClause(line) {
+  return line.replace(/^(\s*\}\s*)catch\s*\{\s*$/u, "$1catch (Exception exception) {");
 }
 
 function isInferredHelperName(name) {
