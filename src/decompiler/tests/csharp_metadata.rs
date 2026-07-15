@@ -177,6 +177,8 @@ fn csharp_header_surfaces_inferred_patterns_and_language() {
     assert!(csharp.contains("        // inferred patterns: NEP-17"));
     assert!(csharp.contains("        // inferred language: C#"));
     assert!(csharp.contains("        // pattern confidence: high"));
+    assert!(csharp.contains("using OracleContract = Neo.SmartContract.Framework.Native.Oracle;"));
+    assert!(csharp.contains("using PolicyContract = Neo.SmartContract.Framework.Native.Policy;"));
 }
 
 #[test]

@@ -357,6 +357,31 @@ fn renders_all_expression_variants() {
         render_expr(&role_call, &context),
         "RoleManagement.GetDesignatedByRole((Role)(int)(8), 0)"
     );
+    let oracle_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 9,
+            name: "getPrice".to_string(),
+            hash_le: Some("588717117E0AA81072AFAB71D2DD89FE7C4B92FE".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![],
+    );
+    assert_eq!(
+        render_expr(&oracle_call, &context),
+        "OracleContract.GetPrice()"
+    );
+    let unsupported_catalog_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 10,
+            name: "getCommittee".to_string(),
+            hash_le: Some("67CA70350663BF258CA513049467C6059D15E74C".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![],
+    );
+    let unsupported_rendered = render_expr(&unsupported_catalog_call, &context);
+    assert!(unsupported_rendered.contains("Contract.Call"));
+    assert!(!unsupported_rendered.contains("Governance.GetCommittee"));
     let restricted_native_token_call = Expr::call(
         SemanticCallTarget::MethodToken {
             index: 4,

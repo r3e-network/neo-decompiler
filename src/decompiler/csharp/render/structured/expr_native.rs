@@ -54,7 +54,11 @@ pub(super) fn render_method_token_call(
     if let Some(hint) = native_hash
         .as_ref()
         .and_then(|hash| native_contracts::describe_method_token(hash, name))
-        .filter(|hint| hint.has_exact_method() && call_flags == 0x0F)
+        .filter(|hint| {
+            hint.has_exact_method()
+                && call_flags == 0x0F
+                && framework_native_contract(hint.contract)
+        })
     {
         let method = hint
             .canonical_method
@@ -121,5 +125,26 @@ fn is_native_property(contract: &str, method: &str) -> bool {
         (contract, method),
         ("GasToken" | "NeoToken", "Symbol" | "Decimals")
             | ("LedgerContract", "CurrentHash" | "CurrentIndex")
+    )
+}
+
+/// The native catalog also contains protocol contracts that do not have a
+/// corresponding class in every installed framework assembly. Keep those
+/// calls in the hash-preserving `Contract.Call` form instead of emitting a
+/// qualified C# type that cannot compile against the pinned framework.
+fn framework_native_contract(contract: &str) -> bool {
+    matches!(
+        contract,
+        "ContractManagement"
+            | "CryptoLib"
+            | "LedgerContract"
+            | "Notary"
+            | "OracleContract"
+            | "PolicyContract"
+            | "RoleManagement"
+            | "StdLib"
+            | "Treasury"
+            | "GasToken"
+            | "NeoToken"
     )
 }

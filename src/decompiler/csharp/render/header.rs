@@ -35,6 +35,16 @@ pub(super) fn write_preamble(output: &mut String) {
         "using GasToken = Neo.SmartContract.Framework.Native.GAS;"
     )
     .unwrap();
+    writeln!(
+        output,
+        "using OracleContract = Neo.SmartContract.Framework.Native.Oracle;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "using PolicyContract = Neo.SmartContract.Framework.Native.Policy;"
+    )
+    .unwrap();
     writeln!(output).unwrap();
 }
 
