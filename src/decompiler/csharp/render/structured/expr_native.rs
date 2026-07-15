@@ -10,6 +10,7 @@ use super::expr::{
     escape_csharp_string, int_cast, render_expr_list, render_expr_prec, ExprContext, RenderedExpr,
     PREC_PRIMARY,
 };
+use super::native_framework;
 
 /// Render a method-token call, using framework native APIs when the token is
 /// fully resolved and unrestricted. Unknown or restricted tokens stay dynamic.
@@ -57,17 +58,21 @@ pub(super) fn render_method_token_call(
         .filter(|hint| {
             hint.has_exact_method()
                 && call_flags == 0x0F
-                && framework_native_contract(hint.contract)
+                && hint.canonical_method.is_some_and(|method| {
+                    native_framework::method_name(hint.contract, method).is_some()
+                })
         })
     {
         let method = hint
             .canonical_method
             .expect("exact native method hint has a canonical name");
+        let framework_method = native_framework::method_name(hint.contract, method)
+            .expect("supported native method has a framework spelling");
         let rendered_args = render_native_args(hint.contract, method, args, context, expanding);
         let call = if args.is_empty() && is_native_property(hint.contract, method) {
-            format!("{}.{method}", hint.contract)
+            format!("{}.{framework_method}", hint.contract)
         } else {
-            format!("{}.{method}({rendered_args})", hint.contract)
+            format!("{}.{framework_method}({rendered_args})", hint.contract)
         };
         return RenderedExpr::new(call, PREC_PRIMARY);
     }
@@ -125,26 +130,5 @@ fn is_native_property(contract: &str, method: &str) -> bool {
         (contract, method),
         ("GasToken" | "NeoToken", "Symbol" | "Decimals")
             | ("LedgerContract", "CurrentHash" | "CurrentIndex")
-    )
-}
-
-/// The native catalog also contains protocol contracts that do not have a
-/// corresponding class in every installed framework assembly. Keep those
-/// calls in the hash-preserving `Contract.Call` form instead of emitting a
-/// qualified C# type that cannot compile against the pinned framework.
-fn framework_native_contract(contract: &str) -> bool {
-    matches!(
-        contract,
-        "ContractManagement"
-            | "CryptoLib"
-            | "LedgerContract"
-            | "Notary"
-            | "OracleContract"
-            | "PolicyContract"
-            | "RoleManagement"
-            | "StdLib"
-            | "Treasury"
-            | "GasToken"
-            | "NeoToken"
     )
 }

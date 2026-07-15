@@ -7,6 +7,7 @@ pub(super) mod expr_low_level;
 pub(super) mod expr_native;
 pub(super) mod expr_syscalls;
 pub(super) mod expr_values;
+pub(super) mod native_framework;
 pub(super) mod nullability;
 pub(super) mod plan;
 pub(super) mod plan_activity;

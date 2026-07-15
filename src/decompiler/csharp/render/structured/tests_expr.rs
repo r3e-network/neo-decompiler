@@ -370,6 +370,31 @@ fn renders_all_expression_variants() {
         render_expr(&oracle_call, &context),
         "OracleContract.GetPrice()"
     );
+    let crypto_case_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 11,
+            name: "ripemd160".to_string(),
+            hash_le: Some("1BF575AB1189688413610A35A12886CDE0B66C72".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![Expr::var("items")],
+    );
+    assert_eq!(
+        render_expr(&crypto_case_call, &context),
+        "CryptoLib.Ripemd160(items)"
+    );
+    let missing_oracle_method = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 12,
+            name: "finish".to_string(),
+            hash_le: Some("588717117E0AA81072AFAB71D2DD89FE7C4B92FE".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![],
+    );
+    let missing_oracle_rendered = render_expr(&missing_oracle_method, &context);
+    assert!(missing_oracle_rendered.contains("Contract.Call"));
+    assert!(!missing_oracle_rendered.contains("OracleContract.Finish"));
     let unsupported_catalog_call = Expr::call(
         SemanticCallTarget::MethodToken {
             index: 10,
