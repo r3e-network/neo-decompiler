@@ -214,6 +214,7 @@ fn array_element_type(base_type: Option<&str>) -> Option<String> {
         Some("ByteString[]") => Some("ByteString".to_string()),
         Some("ECPoint[]") => Some("ECPoint".to_string()),
         Some("Signer[]") => Some("Signer".to_string()),
+        Some("Notification[]") => Some("Notification".to_string()),
         Some("byte[][]") => Some("byte[]".to_string()),
         Some("object[][]") => Some("object[]".to_string()),
         Some("(ECPoint, BigInteger)[]") => Some("(ECPoint, BigInteger)".to_string()),
@@ -270,6 +271,7 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
             | "ECPoint"
             | "ECPoint[]"
             | "Signer[]"
+            | "Notification[]"
             | "ByteString[]"
             | "byte[][]"
             | "(ECPoint, BigInteger)[]"

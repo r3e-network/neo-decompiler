@@ -53,6 +53,7 @@ pub(super) fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {
         "object[]"
         | "ECPoint[]"
         | "Signer[]"
+        | "Notification[]"
         | "ByteString[]"
         | "string[]"
         | "byte[][]"

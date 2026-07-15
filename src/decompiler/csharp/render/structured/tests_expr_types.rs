@@ -186,8 +186,27 @@ fn known_syscalls_drive_exact_csharp_expression_types() {
     let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());
 
     let time = syscall(0x0388_C3B7);
-    assert_eq!(context.exact_csharp_type(&time), Some("BigInteger"));
+    assert_eq!(context.exact_csharp_type(&time), Some("ulong"));
     assert_eq!(context.value_type(&time), ValueType::Integer);
+
+    let trigger = syscall(0xA038_7DE9);
+    assert_eq!(context.exact_csharp_type(&trigger), Some("TriggerType"));
+    assert_eq!(context.value_type(&trigger), ValueType::Integer);
+
+    let signers = syscall(0x8B18_F1AC);
+    assert_eq!(context.exact_csharp_type(&signers), Some("Signer[]"));
+    assert_eq!(context.value_type(&signers), ValueType::Array);
+
+    let notifications = syscall(0xF135_4327);
+    assert_eq!(
+        context.exact_csharp_type(&notifications),
+        Some("Notification[]")
+    );
+    assert_eq!(context.value_type(&notifications), ValueType::Array);
+
+    let call_flags = syscall(0x813A_DA95);
+    assert_eq!(context.exact_csharp_type(&call_flags), Some("CallFlags"));
+    assert_eq!(context.value_type(&call_flags), ValueType::Integer);
 
     let storage = syscall(0x31E8_5D92);
     assert_eq!(context.exact_csharp_type(&storage), Some("ByteString"));

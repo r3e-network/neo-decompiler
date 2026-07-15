@@ -126,6 +126,7 @@ fn csharp_return_value_type(return_type: &str) -> Option<ValueType> {
         "object[]"
         | "ECPoint[]"
         | "Signer[]"
+        | "Notification[]"
         | "ByteString[]"
         | "string[]"
         | "byte[][]"
