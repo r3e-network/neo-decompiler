@@ -239,6 +239,58 @@ fn csharp_type_for_value_type(value_type: ValueType) -> Option<&'static str> {
     }
 }
 
+/// Map a concrete C# type spelling back to the conservative VM value kind it
+/// represents. Native/syscall return tables and private-call propagation use
+/// this same mapping so declaration and expression planning stay consistent.
+pub(in crate::decompiler::csharp::render) fn csharp_type_value_type(
+    csharp_type: &str,
+) -> Option<ValueType> {
+    match csharp_type {
+        "BigInteger" => Some(ValueType::Integer),
+        "byte"
+        | "sbyte"
+        | "short"
+        | "ushort"
+        | "int"
+        | "uint"
+        | "long"
+        | "ulong"
+        | "VMState"
+        | "CallFlags"
+        | "FindOptions"
+        | "NamedCurve"
+        | "NamedCurveHash"
+        | "Role"
+        | "TransactionAttributeType"
+        | "TriggerType" => Some(ValueType::Integer),
+        "bool" => Some(ValueType::Boolean),
+        "string" => Some(ValueType::ByteString),
+        "ByteString" => Some(ValueType::ByteString),
+        "byte[]" => Some(ValueType::Buffer),
+        "object[]"
+        | "ECPoint[]"
+        | "Signer[]"
+        | "Notification[]"
+        | "ByteString[]"
+        | "string[]"
+        | "byte[][]"
+        | "(ECPoint, BigInteger)[]" => Some(ValueType::Array),
+        "Map<object, object>" => Some(ValueType::Map),
+        "UInt160" | "UInt256" | "ECPoint" => Some(ValueType::ByteString),
+        "Block"
+        | "Contract"
+        | "Iterator"
+        | "Iterator<(ECPoint, BigInteger)>"
+        | "Iterator<(int, UInt160)>"
+        | "NeoAccountState"
+        | "Notification"
+        | "StorageContext"
+        | "Transaction"
+        | "object" => Some(ValueType::InteropInterface),
+        _ => None,
+    }
+}
+
 fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
     matches!(
         type_name,

@@ -10,6 +10,7 @@ use crate::decompiler::csharp::render::structured::stmt::terminates;
 use crate::decompiler::ir::{Block, ControlFlow, Stmt};
 use crate::instruction::Instruction;
 
+use super::super::csharp_type_value_type as csharp_return_value_type;
 use super::super::CSharpMethodPlan;
 
 /// Resolve concrete C# return types for inferred private methods only.
@@ -98,53 +99,6 @@ fn concrete_return_types_by_offset(
             csharp_return_value_type(return_type).map(|_| (*offset, return_type.to_string()))
         })
         .collect()
-}
-
-fn csharp_return_value_type(return_type: &str) -> Option<ValueType> {
-    match return_type {
-        "BigInteger" => Some(ValueType::Integer),
-        "byte"
-        | "sbyte"
-        | "short"
-        | "ushort"
-        | "int"
-        | "uint"
-        | "long"
-        | "ulong"
-        | "VMState"
-        | "CallFlags"
-        | "FindOptions"
-        | "NamedCurve"
-        | "NamedCurveHash"
-        | "Role"
-        | "TransactionAttributeType"
-        | "TriggerType" => Some(ValueType::Integer),
-        "bool" => Some(ValueType::Boolean),
-        "string" => Some(ValueType::ByteString),
-        "ByteString" => Some(ValueType::ByteString),
-        "byte[]" => Some(ValueType::Buffer),
-        "object[]"
-        | "ECPoint[]"
-        | "Signer[]"
-        | "Notification[]"
-        | "ByteString[]"
-        | "string[]"
-        | "byte[][]"
-        | "(ECPoint, BigInteger)[]" => Some(ValueType::Array),
-        "Map<object, object>" => Some(ValueType::Map),
-        "UInt160" | "UInt256" | "ECPoint" => Some(ValueType::ByteString),
-        "Block"
-        | "Contract"
-        | "Iterator"
-        | "Iterator<(ECPoint, BigInteger)>"
-        | "Iterator<(int, UInt160)>"
-        | "NeoAccountState"
-        | "Notification"
-        | "StorageContext"
-        | "Transaction"
-        | "object" => Some(ValueType::InteropInterface),
-        _ => None,
-    }
 }
 
 fn csharp_return_type(value_type: ValueType) -> Option<&'static str> {
