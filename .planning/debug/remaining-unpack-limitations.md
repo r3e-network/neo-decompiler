@@ -2,7 +2,7 @@
 status: narrowed
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-15T14:01:11+08:00
+updated: 2026-07-15T16:05:31+08:00
 ---
 
 ## Current Focus
@@ -126,7 +126,12 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
 - timestamp: 2026-07-15T14:01:11+08:00
   checked: Conservative private-helper parameter inference, indexed/nullability safety guards, focused planner regressions, and all default/no-default Rust gates.
   found: An inferred helper parameter is promoted from `dynamic` only when every resolved internal incoming call supplies the same concrete C# type. Conflicting, incomplete, indirect/unresolved, null-checked, and directly indexed parameters remain dynamic; recursive IR walkers are isolated in `parameter_calls.rs` and `parameter_index.rs`. The focused suite covers unanimous promotion plus conflicting, null-checked, and indexed negatives; all Rust tests and both Clippy configurations pass.
-  implication: Private C# helper signatures are more readable without inventing an ABI type or weakening the existing fail-closed indexed/nullability boundaries. The pinned corpus and Roslyn gates remain unavailable in this environment (`TestingArtifacts/devpack` and `NEO_CSHARP_CORPUS_DIR` are absent).
+  implication: Private C# helper signatures are more readable without inventing an ABI type or weakening the existing fail-closed indexed/nullability boundaries.
+
+- timestamp: 2026-07-15T16:05:31+08:00
+  checked: `Contract_Array` value-array boundary regression, full default/no-default Rust tests, both Clippy configurations, the pinned C# fidelity census, and the net10 Roslyn corpus gate.
+  found: A typed `BigInteger[]` array literal assigned to a VM `object[]` boundary now renders as `new object[]` with boxed elements; the focused renderer regression passes. The pinned census remains Exact 1101 / Conservative 70 / Incomplete 1, with Roslyn compiling all 103 contracts and zero errors.
+  implication: C# output no longer emits an invalid value-array-to-object-array assignment in `Contract_Array`; typed arrays remain concrete where their target is typed. `Contract_Foreach@0x04AC` remains the sole intentionally incomplete method.
 
 ## Resolution
 
