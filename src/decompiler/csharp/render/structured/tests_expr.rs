@@ -1374,7 +1374,7 @@ fn storage_syscalls_use_validated_csharp_types_when_vm_types_are_unknown() {
 
     assert_eq!(
         render_expr(&expression, &context),
-        "Storage.Put((StorageContext)(storage), (ByteString)(key), (BigInteger)(value))"
+        "Storage.Put(storage, key, value)"
     );
 }
 

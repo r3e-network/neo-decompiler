@@ -142,24 +142,42 @@ fn render_syscall_arguments(
             let rendered = render_expr_prec(expression, 0, context, expanding);
             Some(match argument {
                 SyscallArgument::Cast(target_type) => {
-                    format!("({target_type})({rendered})")
+                    render_exact_or_cast(expression, target_type, rendered, context)
                 }
-                SyscallArgument::Int => format!("(int)({rendered})"),
+                SyscallArgument::Int => render_exact_or_cast(expression, "int", rendered, context),
                 SyscallArgument::LongInteger => {
-                    format!("(long)(BigInteger)({rendered})")
+                    if context.exact_csharp_type(expression) == Some("long") {
+                        rendered
+                    } else {
+                        format!("(long)(BigInteger)({rendered})")
+                    }
                 }
                 SyscallArgument::Enum(target_type) => {
-                    format!("({target_type})(int)({rendered})")
+                    if context.exact_csharp_type(expression) == Some(*target_type) {
+                        rendered
+                    } else {
+                        format!("({target_type})(int)({rendered})")
+                    }
                 }
                 SyscallArgument::StorageKey => match context.value_type(expression) {
-                    ValueType::Buffer => format!("(byte[])({rendered})"),
-                    ValueType::ByteString => format!("(ByteString)({rendered})"),
+                    ValueType::Buffer => {
+                        render_exact_or_cast(expression, "byte[]", rendered, context)
+                    }
+                    ValueType::ByteString => {
+                        render_exact_or_cast(expression, "ByteString", rendered, context)
+                    }
                     _ => return None,
                 },
                 SyscallArgument::StorageValue => match context.value_type(expression) {
-                    ValueType::Integer => format!("(BigInteger)({rendered})"),
-                    ValueType::Buffer => format!("(byte[])({rendered})"),
-                    ValueType::ByteString => format!("(ByteString)({rendered})"),
+                    ValueType::Integer => {
+                        render_exact_or_cast(expression, "BigInteger", rendered, context)
+                    }
+                    ValueType::Buffer => {
+                        render_exact_or_cast(expression, "byte[]", rendered, context)
+                    }
+                    ValueType::ByteString => {
+                        render_exact_or_cast(expression, "ByteString", rendered, context)
+                    }
                     _ => return None,
                 },
                 SyscallArgument::Witness => {
@@ -187,10 +205,25 @@ fn render_typed_receiver(
     context: &ExprContext,
     expanding: &mut BTreeSet<String>,
 ) -> String {
-    format!(
-        "(({target_type}){})",
-        render_expr_prec(expression, PREC_UNARY, context, expanding)
-    )
+    let rendered = render_expr_prec(expression, PREC_UNARY, context, expanding);
+    if context.exact_csharp_type(expression) == Some(target_type) {
+        rendered
+    } else {
+        format!("(({target_type}){rendered})")
+    }
+}
+
+fn render_exact_or_cast(
+    expression: &Expr,
+    target_type: &str,
+    rendered: String,
+    context: &ExprContext,
+) -> String {
+    if context.exact_csharp_type(expression) == Some(target_type) {
+        rendered
+    } else {
+        format!("({target_type})({rendered})")
+    }
 }
 
 fn render_low_level_syscall(
