@@ -30,6 +30,9 @@ export function renderBodyLine(line, declarationTypes = null) {
     }
     return finish(`${indentation}global::Neo.SmartContract.Framework.ExecutionEngine.Assert(${condition});`);
   }
+  if (trimmed === "throw();") {
+    return finish(`${indentation}throw new Exception();`);
+  }
   const throwExpression = trimmed.match(/^throw\((.*)\);$/);
   if (throwExpression) {
     const payload = rewriteCSharpExpression(throwExpression[1], declarationTypes);

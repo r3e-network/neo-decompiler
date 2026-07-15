@@ -2439,6 +2439,16 @@ test("abort and throw clear the tracked stack", () => {
   assert.match(throwResult.highLevel, /return;/);
 });
 
+test("DROP followed by THROW preserves a payloadless VM throw", () => {
+  const result = decompileHighLevelBytes(
+    buildNefFromScript(new Uint8Array([0x11, 0x45, 0x3A, 0x40])),
+  );
+  assert.match(result.highLevel, /throw\(\);/);
+  assert.doesNotMatch(result.highLevel, /\?\?\?/);
+  assert.match(result.csharp, /throw new Exception\(\);/);
+  assert.doesNotMatch(result.csharp, /default\(dynamic\)/);
+});
+
 test("abortmsg and assertmsg use their message and condition arguments", () => {
   const abortmsg = decompileHighLevelBytes(
     buildNefFromScript(new Uint8Array([0x0c, 0x01, 0x41, 0xe0, 0x40])),

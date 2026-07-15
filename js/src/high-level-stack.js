@@ -50,6 +50,14 @@ export function tryControlStatement(state, instruction) {
       return true;
     }
     case "THROW": {
+      if (
+        state.previousInstruction?.opcode?.mnemonic === "DROP" &&
+        state.lastDroppedValue !== undefined
+      ) {
+        state.statements.push("throw();");
+        state.stack.length = 0;
+        return true;
+      }
       const value = stripOuterParens(state.stack.pop() ?? "???");
       state.statements.push(`throw(${value});`);
       state.stack.length = 0;
@@ -78,6 +86,7 @@ export function tryStackShapeOperation(state, instruction) {
       return true;
     case "DROP": {
       const top = state.stack.pop();
+      state.lastDroppedValue = top;
       // A discarded value-returning CALL/SYSCALL/CALLT (or any fault-capable
       // expression) has an observable effect, so it stays visible even though
       // the result is unused — mirroring Rust, which materialises every such
