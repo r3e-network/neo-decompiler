@@ -210,11 +210,13 @@ fn array_element_type(base_type: Option<&str>) -> Option<String> {
     match base_type {
         Some("ByteString" | "byte[]" | "BigInteger[]") => Some("BigInteger".to_string()),
         Some("bool[]") => Some("bool".to_string()),
+        Some("string[]") => Some("string".to_string()),
         Some("ByteString[]") => Some("ByteString".to_string()),
         Some("ECPoint[]") => Some("ECPoint".to_string()),
         Some("Signer[]") => Some("Signer".to_string()),
         Some("byte[][]") => Some("byte[]".to_string()),
         Some("object[][]") => Some("object[]".to_string()),
+        Some("(ECPoint, BigInteger)[]") => Some("(ECPoint, BigInteger)".to_string()),
         Some("Map<object, object>[]") => Some("Map<object, object>".to_string()),
         _ => None,
     }
@@ -241,21 +243,46 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
         type_name,
         "BigInteger"
             | "byte"
+            | "sbyte"
+            | "short"
+            | "ushort"
             | "int"
             | "uint"
             | "long"
+            | "ulong"
             | "VMState"
+            | "CallFlags"
+            | "FindOptions"
+            | "NamedCurve"
+            | "NamedCurveHash"
+            | "Role"
+            | "TransactionAttributeType"
+            | "TriggerType"
             | "bool"
             | "ByteString"
             | "byte[]"
             | "object[]"
             | "Map<object, object>"
             | "string"
+            | "string[]"
             | "UInt160"
             | "UInt256"
             | "ECPoint"
             | "ECPoint[]"
             | "Signer[]"
+            | "ByteString[]"
+            | "byte[][]"
+            | "(ECPoint, BigInteger)[]"
+            | "Block"
+            | "Contract"
+            | "Iterator"
+            | "Iterator<(ECPoint, BigInteger)>"
+            | "Iterator<(int, UInt160)>"
+            | "NeoAccountState"
+            | "Notification"
+            | "StorageContext"
+            | "Transaction"
+            | "object"
     )
     .then(|| type_name.to_string())
 }
@@ -267,7 +294,23 @@ pub(super) fn concrete_type_matches_value_type(type_name: &str, value_type: Valu
         ValueType::Boolean => type_name == "bool",
         ValueType::Integer => matches!(
             type_name,
-            "BigInteger" | "byte" | "int" | "uint" | "long" | "VMState"
+            "BigInteger"
+                | "byte"
+                | "sbyte"
+                | "short"
+                | "ushort"
+                | "int"
+                | "uint"
+                | "long"
+                | "ulong"
+                | "VMState"
+                | "CallFlags"
+                | "FindOptions"
+                | "NamedCurve"
+                | "NamedCurveHash"
+                | "Role"
+                | "TransactionAttributeType"
+                | "TriggerType"
         ),
         ValueType::ByteString => matches!(
             type_name,
@@ -277,6 +320,19 @@ pub(super) fn concrete_type_matches_value_type(type_name: &str, value_type: Valu
         ValueType::Array => type_name.ends_with("[]"),
         ValueType::Struct => type_name == "object[]",
         ValueType::Map => type_name == "Map<object, object>",
-        ValueType::InteropInterface | ValueType::Pointer => false,
+        ValueType::InteropInterface => matches!(
+            type_name,
+            "Block"
+                | "Contract"
+                | "Iterator"
+                | "Iterator<(ECPoint, BigInteger)>"
+                | "Iterator<(int, UInt160)>"
+                | "NeoAccountState"
+                | "Notification"
+                | "StorageContext"
+                | "Transaction"
+                | "object"
+        ),
+        ValueType::Pointer => false,
     }
 }

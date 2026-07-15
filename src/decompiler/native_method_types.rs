@@ -29,23 +29,41 @@ pub(crate) fn lookup(
     let method = hint.canonical_method?;
 
     match (hint.contract, method) {
+        ("ContractManagement", "Deploy" | "GetContract" | "GetContractById") => {
+            Some(return_type(ValueType::InteropInterface, "Contract"))
+        }
+        ("ContractManagement", "GetContractHashes") => Some(return_type(
+            ValueType::InteropInterface,
+            "Iterator<(int, UInt160)>",
+        )),
         ("ContractManagement", "HasMethod" | "IsContract") => {
             Some(return_type(ValueType::Boolean, "bool"))
         }
         ("ContractManagement", "GetMinimumDeploymentFee") => {
             Some(return_type(ValueType::Integer, "long"))
         }
+        (
+            "CryptoLib",
+            "Bls12381Deserialize" | "Bls12381Add" | "Bls12381Mul" | "Bls12381Pairing",
+        ) => Some(return_type(ValueType::Unknown, "object")),
+        ("CryptoLib", "Bls12381Equal") => Some(return_type(ValueType::Boolean, "bool")),
         ("CryptoLib", "recoverSecp256K1") => Some(return_type(ValueType::ByteString, "ByteString")),
         ("CryptoLib", "Keccak256" | "Murmur32" | "Sha256" | "ripemd160") => {
             Some(return_type(ValueType::ByteString, "ByteString"))
         }
-        (
-            "CryptoLib",
-            "Bls12381Equal" | "VerifyWithECDsa" | "VerifyWithEd25519" | "verifyWithECDsa",
-        ) => Some(return_type(ValueType::Boolean, "bool")),
+        ("CryptoLib", "VerifyWithECDsa" | "VerifyWithEd25519" | "verifyWithECDsa") => {
+            Some(return_type(ValueType::Boolean, "bool"))
+        }
         ("CryptoLib", "Bls12381Serialize") => Some(return_type(ValueType::Buffer, "byte[]")),
         ("LedgerContract", "CurrentHash") => Some(return_type(ValueType::ByteString, "UInt256")),
         ("LedgerContract", "CurrentIndex") => Some(return_type(ValueType::Integer, "uint")),
+        ("LedgerContract", "GetBlock") => Some(return_type(ValueType::InteropInterface, "Block")),
+        ("LedgerContract", "getTransaction" | "GetTransaction") => {
+            Some(return_type(ValueType::InteropInterface, "Transaction"))
+        }
+        ("LedgerContract", "GetTransactionFromBlock") => {
+            Some(return_type(ValueType::InteropInterface, "Transaction"))
+        }
         ("LedgerContract", "GetTransactionHeight") => Some(return_type(ValueType::Integer, "int")),
         ("LedgerContract", "GetTransactionVMState") => {
             Some(return_type(ValueType::Integer, "VMState"))
@@ -81,13 +99,34 @@ pub(crate) fn lookup(
         }
         ("PolicyContract", "GetFeePerByte") => Some(return_type(ValueType::Integer, "long")),
         ("PolicyContract", "IsBlocked") => Some(return_type(ValueType::Boolean, "bool")),
+        ("PolicyContract", "GetBlockedAccounts" | "GetWhitelistFeeContracts") => {
+            Some(return_type(ValueType::InteropInterface, "Iterator"))
+        }
         ("Treasury", "Verify") => Some(return_type(ValueType::Boolean, "bool")),
         ("RoleManagement", "GetDesignatedByRole") => {
             Some(return_type(ValueType::Array, "ECPoint[]"))
         }
+        ("NeoToken", "GetCandidates") => {
+            Some(return_type(ValueType::Array, "(ECPoint, BigInteger)[]"))
+        }
+        ("NeoToken", "GetAllCandidates") => Some(return_type(
+            ValueType::InteropInterface,
+            "Iterator<(ECPoint, BigInteger)>",
+        )),
+        ("NeoToken", "GetCandidateVote") => Some(return_type(ValueType::Integer, "BigInteger")),
+        ("NeoToken", "GetCommittee" | "GetNextBlockValidators") => {
+            Some(return_type(ValueType::Array, "ECPoint[]"))
+        }
+        ("NeoToken", "GetCommitteeAddress") => Some(return_type(ValueType::ByteString, "UInt160")),
+        ("NeoToken", "GetAccountState") => {
+            Some(return_type(ValueType::InteropInterface, "NeoAccountState"))
+        }
         // The VM represents strings as ByteStrings, while generated C# keeps
         // the framework's string spelling for direct helper return types.
         ("StdLib", "Atoi") => Some(return_type(ValueType::Integer, "BigInteger")),
+        ("StdLib", "Deserialize" | "JsonDeserialize") => {
+            Some(return_type(ValueType::Unknown, "object"))
+        }
         ("StdLib", "Itoa") => Some(return_type(ValueType::ByteString, "string")),
         (
             "StdLib",
@@ -153,6 +192,7 @@ mod tests {
     use super::*;
 
     const STDLIB: &str = "C0EF39CEE0E4E925C6C2A06A79E1440DD86FCEAC";
+    const CONTRACT_MANAGEMENT: &str = "FDA3FA4346EA532A258FC497DDADDB6437C9FDFF";
     const LEDGER: &str = "BEF2043140362A77C15099C7E64C12F700B665DA";
     const NEO: &str = "F563EA40BC283D4D0E05C48EA305B3F2A07340EF";
     const ROLE_MANAGEMENT: &str = "E295E391544C178AD94F03EC4DCDFF78534ECF49";
@@ -220,6 +260,48 @@ mod tests {
 
         let crypto = lookup(Some(CRYPTO_LIB), "ripemd160", Some(0x0F)).unwrap();
         assert_eq!(crypto.csharp_type, "ByteString");
+    }
+
+    #[test]
+    fn maps_additional_framework_native_returns() {
+        let contract = lookup(Some(CONTRACT_MANAGEMENT), "getContract", Some(0x0F)).unwrap();
+        assert_eq!(contract.value_type, ValueType::InteropInterface);
+        assert_eq!(contract.csharp_type, "Contract");
+
+        let hashes = lookup(Some(CONTRACT_MANAGEMENT), "getContractHashes", Some(0x0F)).unwrap();
+        assert_eq!(hashes.value_type, ValueType::InteropInterface);
+        assert_eq!(hashes.csharp_type, "Iterator<(int, UInt160)>");
+
+        let bls = lookup(Some(CRYPTO_LIB), "bls12381Add", Some(0x0F)).unwrap();
+        assert_eq!(bls.value_type, ValueType::Unknown);
+        assert_eq!(bls.csharp_type, "object");
+
+        let block = lookup(Some(LEDGER), "getBlock", Some(0x0F)).unwrap();
+        assert_eq!(block.value_type, ValueType::InteropInterface);
+        assert_eq!(block.csharp_type, "Block");
+
+        let iterator = lookup(Some(POLICY), "getBlockedAccounts", Some(0x0F)).unwrap();
+        assert_eq!(iterator.value_type, ValueType::InteropInterface);
+        assert_eq!(iterator.csharp_type, "Iterator");
+
+        let candidates = lookup(Some(NEO), "getCandidates", Some(0x0F)).unwrap();
+        assert_eq!(candidates.value_type, ValueType::Array);
+        assert_eq!(candidates.csharp_type, "(ECPoint, BigInteger)[]");
+
+        let candidate_iterator = lookup(Some(NEO), "getAllCandidates", Some(0x0F)).unwrap();
+        assert_eq!(candidate_iterator.value_type, ValueType::InteropInterface);
+        assert_eq!(
+            candidate_iterator.csharp_type,
+            "Iterator<(ECPoint, BigInteger)>"
+        );
+
+        let account_state = lookup(Some(NEO), "getAccountState", Some(0x0F)).unwrap();
+        assert_eq!(account_state.value_type, ValueType::InteropInterface);
+        assert_eq!(account_state.csharp_type, "NeoAccountState");
+
+        let deserialized = lookup(Some(STDLIB), "deserialize", Some(0x0F)).unwrap();
+        assert_eq!(deserialized.value_type, ValueType::Unknown);
+        assert_eq!(deserialized.csharp_type, "object");
     }
 
     #[test]

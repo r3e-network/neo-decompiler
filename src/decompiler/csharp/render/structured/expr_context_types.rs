@@ -30,15 +30,45 @@ pub(super) fn collect_array_values(collector: &InlineCollector) -> BTreeMap<Stri
 pub(super) fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {
     match csharp_type {
         "BigInteger" => Some(ValueType::Integer),
-        "byte" | "int" | "uint" | "long" | "VMState" => Some(ValueType::Integer),
+        "byte"
+        | "sbyte"
+        | "short"
+        | "ushort"
+        | "int"
+        | "uint"
+        | "long"
+        | "ulong"
+        | "VMState"
+        | "CallFlags"
+        | "FindOptions"
+        | "NamedCurve"
+        | "NamedCurveHash"
+        | "Role"
+        | "TransactionAttributeType"
+        | "TriggerType" => Some(ValueType::Integer),
         "bool" => Some(ValueType::Boolean),
         "string" => Some(ValueType::ByteString),
         "ByteString" => Some(ValueType::ByteString),
         "byte[]" => Some(ValueType::Buffer),
-        "object[]" | "ECPoint[]" | "Signer[]" => Some(ValueType::Array),
+        "object[]"
+        | "ECPoint[]"
+        | "Signer[]"
+        | "ByteString[]"
+        | "string[]"
+        | "byte[][]"
+        | "(ECPoint, BigInteger)[]" => Some(ValueType::Array),
         "Map<object, object>" => Some(ValueType::Map),
         "UInt160" | "UInt256" | "ECPoint" => Some(ValueType::ByteString),
-        "StorageContext" | "Iterator" | "Transaction" => Some(ValueType::InteropInterface),
+        "Block"
+        | "Contract"
+        | "Iterator"
+        | "Iterator<(ECPoint, BigInteger)>"
+        | "Iterator<(int, UInt160)>"
+        | "NeoAccountState"
+        | "Notification"
+        | "StorageContext"
+        | "Transaction"
+        | "object" => Some(ValueType::InteropInterface),
         _ => None,
     }
 }

@@ -124,6 +124,63 @@ fn framework_native_alias_types_remain_concrete_in_expression_context() {
 }
 
 #[test]
+fn additional_framework_returns_remain_concrete_in_expression_context() {
+    let context = ExprContext::default();
+    let call = |hash: &str, name: &str| {
+        Expr::call(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: name.to_string(),
+                hash_le: Some(hash.to_string()),
+                call_flags: Some(0x0F),
+            },
+            Vec::new(),
+        )
+    };
+
+    let contract = call("FDA3FA4346EA532A258FC497DDADDB6437C9FDFF", "getContract");
+    assert_eq!(context.exact_csharp_type(&contract), Some("Contract"));
+    assert_eq!(context.value_type(&contract), ValueType::InteropInterface);
+
+    let block = call("BEF2043140362A77C15099C7E64C12F700B665DA", "getBlock");
+    assert_eq!(context.exact_csharp_type(&block), Some("Block"));
+    assert_eq!(context.value_type(&block), ValueType::InteropInterface);
+
+    let candidates = call("F563EA40BC283D4D0E05C48EA305B3F2A07340EF", "getCandidates");
+    assert_eq!(
+        context.exact_csharp_type(&candidates),
+        Some("(ECPoint, BigInteger)[]")
+    );
+    assert_eq!(context.value_type(&candidates), ValueType::Array);
+
+    let candidate_iterator = call(
+        "F563EA40BC283D4D0E05C48EA305B3F2A07340EF",
+        "getAllCandidates",
+    );
+    assert_eq!(
+        context.exact_csharp_type(&candidate_iterator),
+        Some("Iterator<(ECPoint, BigInteger)>")
+    );
+    assert_eq!(
+        context.value_type(&candidate_iterator),
+        ValueType::InteropInterface
+    );
+
+    let account_state = call(
+        "F563EA40BC283D4D0E05C48EA305B3F2A07340EF",
+        "getAccountState",
+    );
+    assert_eq!(
+        context.exact_csharp_type(&account_state),
+        Some("NeoAccountState")
+    );
+    assert_eq!(
+        context.value_type(&account_state),
+        ValueType::InteropInterface
+    );
+}
+
+#[test]
 fn known_syscalls_drive_exact_csharp_expression_types() {
     let context = ExprContext::default();
     let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());
