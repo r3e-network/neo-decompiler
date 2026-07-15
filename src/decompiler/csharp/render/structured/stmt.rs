@@ -77,10 +77,16 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
             .map(|declaration| declaration.emitted_name.clone()),
     );
     let concrete_types = plan
-        .declarations
+        .parameter_types
         .iter()
-        .filter(|(_, declaration)| !declaration.csharp_type.eq_ignore_ascii_case("dynamic"))
-        .map(|(name, declaration)| (name.clone(), declaration.csharp_type.clone()))
+        .filter(|(_, type_name)| !type_name.eq_ignore_ascii_case("dynamic"))
+        .map(|(name, type_name)| (name.clone(), type_name.clone()))
+        .chain(
+            plan.declarations
+                .iter()
+                .filter(|(_, declaration)| !declaration.csharp_type.eq_ignore_ascii_case("dynamic"))
+                .map(|(name, declaration)| (name.clone(), declaration.csharp_type.clone())),
+        )
         .chain(
             plan.static_field_types
                 .iter()

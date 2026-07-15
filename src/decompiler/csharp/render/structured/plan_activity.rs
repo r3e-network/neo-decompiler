@@ -100,9 +100,13 @@ impl<'a> ActivityCollector<'a> {
         }
     }
 
-    pub(super) fn resolve_concrete_definition_types(&mut self) {
+    pub(super) fn resolve_concrete_definition_types_with_known_types(
+        &mut self,
+        initial_known_types: &BTreeMap<String, String>,
+    ) {
         let empty_symbols = BTreeMap::new();
-        let mut known_types = BTreeMap::new();
+        let mut known_types = initial_known_types.clone();
+        let mut derived_types = BTreeMap::new();
         let iterations = self.definition_values.len().saturating_add(1);
 
         for _ in 0..iterations {
@@ -139,15 +143,17 @@ impl<'a> ActivityCollector<'a> {
                 }
             }
 
-            if next_types == known_types {
+            if next_types == derived_types {
                 self.concrete_definition_types = next_types;
                 self.non_concrete_definitions = non_concrete;
                 return;
             }
-            known_types = next_types;
+            derived_types = next_types;
+            known_types = initial_known_types.clone();
+            known_types.extend(derived_types.clone());
         }
 
-        self.concrete_definition_types = known_types;
+        self.concrete_definition_types = derived_types;
         self.non_concrete_definitions = self
             .definition_values
             .keys()

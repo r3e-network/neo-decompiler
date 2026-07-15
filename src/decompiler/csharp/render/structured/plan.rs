@@ -21,9 +21,12 @@ pub(in crate::decompiler::csharp::render) use declaration_types::{
 };
 #[path = "declarations.rs"]
 mod declarations;
+#[cfg(test)]
+pub(in crate::decompiler::csharp::render) use declarations::plan_declarations;
 pub(in crate::decompiler::csharp::render) use declarations::{
-    collect_index_defined_symbols, csharp_type, plan_contract_symbols, plan_declarations,
-    CSharpContractSymbols, DeclarationKind, DeclarationPlan, ScopeId, ScopeTree,
+    collect_index_defined_symbols, csharp_type, plan_contract_symbols,
+    plan_declarations_with_known_types, CSharpContractSymbols, DeclarationKind, DeclarationPlan,
+    ScopeId, ScopeTree,
 };
 
 #[allow(dead_code)]

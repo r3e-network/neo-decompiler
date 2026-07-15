@@ -114,6 +114,10 @@ pub(in crate::decompiler::csharp::render) struct PlannedDeclaration {
 pub(in crate::decompiler::csharp::render) struct DeclarationPlan {
     pub(in crate::decompiler::csharp::render) scopes: ScopeTree,
     pub(in crate::decompiler::csharp::render) declarations: BTreeMap<String, PlannedDeclaration>,
+    /// Concrete method parameter types used while resolving member/index
+    /// expressions. Parameters are emitted by the method signature, so they
+    /// must not become local declarations here.
+    pub(in crate::decompiler::csharp::render) parameter_types: BTreeMap<String, String>,
     pub(in crate::decompiler::csharp::render) static_field_types: BTreeMap<String, String>,
     pub(in crate::decompiler::csharp::render) issues: Vec<LoweringIssue>,
     pub(in crate::decompiler::csharp::render) typed: bool,
@@ -146,10 +150,20 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
     symbols: &BTreeMap<String, SymbolInfo>,
     typed: bool,
 ) -> DeclarationPlan {
+    plan_declarations_with_known_types(body, symbols, typed, &BTreeMap::new())
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types(
+    body: &Block,
+    symbols: &BTreeMap<String, SymbolInfo>,
+    typed: bool,
+    known_types: &BTreeMap<String, String>,
+) -> DeclarationPlan {
     let mut collector = ActivityCollector::new().with_symbol_types(symbols);
     let root = collector.scopes.root();
     collector.visit_block(body, root);
-    collector.resolve_concrete_definition_types();
+    collector.resolve_concrete_definition_types_with_known_types(known_types);
     let index_defined_symbols = collector.index_defined_symbols();
 
     let mut declarations = BTreeMap::new();
@@ -249,6 +263,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations(
     DeclarationPlan {
         scopes: collector.scopes,
         declarations,
+        parameter_types: known_types.clone(),
         static_field_types: BTreeMap::new(),
         issues,
         typed,

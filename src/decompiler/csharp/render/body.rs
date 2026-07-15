@@ -10,7 +10,9 @@ use crate::instruction::OpCode;
 use crate::instruction::Operand;
 
 use super::super::helpers::VM_ASSERT_MESSAGE_HELPER;
-use super::structured::plan::{plan_declarations, CSharpMethodPlan};
+use super::structured::plan::{
+    plan_declarations_with_known_types, CSharpMethodPlan, DeclarationPlan,
+};
 use super::structured::stmt;
 
 mod fidelity;
@@ -105,8 +107,7 @@ pub(super) fn render_method_body(
     }
 
     let declarations =
-        plan_declarations(&lowered.body, &lowered.symbols, context.typed_declarations)
-            .with_static_field_types(context.static_field_types);
+        plan_method_declarations(&lowered.body, &lowered.symbols, method_plan, context);
     fidelity.issues.extend(declarations.issues.iter().cloned());
     fidelity.finish();
     if fidelity.status == Fidelity::Incomplete && requires_structured_stub(&fidelity) {
@@ -166,8 +167,7 @@ fn recovered_result(
             crate::decompiler::ir::Stmt::Comment(_) | crate::decompiler::ir::Stmt::Return(None)
         )
     }) {
-        let declarations = plan_declarations(body, symbols, context.typed_declarations)
-            .with_static_field_types(context.static_field_types);
+        let declarations = plan_method_declarations(body, symbols, method_plan, context);
         let structured = stmt::render_block_with_trace(
             body,
             &declarations,
@@ -281,6 +281,25 @@ fn recovered_result(
         warnings: semantic_warnings(method_plan, &fidelity),
         fidelity,
     }
+}
+
+fn plan_method_declarations(
+    body: &crate::decompiler::ir::Block,
+    symbols: &BTreeMap<String, crate::decompiler::cfg::method_body::SymbolInfo>,
+    method_plan: &CSharpMethodPlan,
+    context: &LiftedBodyContext<'_>,
+) -> DeclarationPlan {
+    let parameter_types = method_plan
+        .parameters
+        .iter()
+        .filter(|parameter| {
+            !parameter.ty.eq_ignore_ascii_case("dynamic")
+                && !parameter.ty.eq_ignore_ascii_case("object")
+        })
+        .map(|parameter| (parameter.name.clone(), parameter.ty.clone()))
+        .collect::<BTreeMap<_, _>>();
+    plan_declarations_with_known_types(body, symbols, context.typed_declarations, &parameter_types)
+        .with_static_field_types(context.static_field_types)
 }
 
 fn indent_body(source: &str) -> String {

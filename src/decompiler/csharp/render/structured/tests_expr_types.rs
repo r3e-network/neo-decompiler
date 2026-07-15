@@ -320,6 +320,47 @@ fn planned_alias_types_flow_into_member_and_index_inference() {
 }
 
 #[test]
+fn planned_parameter_types_flow_into_member_inference() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "hash",
+            Expr::Member {
+                base: Box::new(Expr::var("tx")),
+                name: "Hash".to_string(),
+            },
+        ),
+        Stmt::Return(Some(Expr::var("hash"))),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "tx".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(0),
+                value_type: ValueType::InteropInterface,
+            },
+        ),
+        (
+            "hash".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::ByteString,
+            },
+        ),
+    ]);
+    let parameter_types = BTreeMap::from([("tx".to_string(), "Transaction".to_string())]);
+    let plan = super::super::plan::plan_declarations_with_known_types(
+        &body,
+        &symbols,
+        true,
+        &parameter_types,
+    );
+    let rendered =
+        super::super::stmt::render_block(&body, &plan, &symbols, ReturnBehavior::Value, false);
+
+    assert!(rendered.contains("UInt256 hash = tx.Hash;"), "{rendered}");
+}
+
+#[test]
 fn known_syscalls_drive_exact_csharp_expression_types() {
     let context = ExprContext::default();
     let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());
