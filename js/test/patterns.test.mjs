@@ -1209,6 +1209,26 @@ test("C# rendering lowers THROW and ASSERT forms", () => {
   assert.doesNotMatch(csharp, /throw\(value\)/);
 });
 
+test("C# rendering guards non-void VM fallthrough after structured blocks", () => {
+  const csharp = renderCSharpContract([
+    "contract Fallthrough {",
+    "    fn abortInFinally(flag: bool) -> int {",
+    "        try {",
+    "            let result = 1;",
+    "        } catch {",
+    "            let result = 2;",
+    "        }",
+    "    }",
+    "    fn run() {",
+    "        let result = 1;",
+    "    }",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /public static BigInteger abortInFinally\(bool flag\)/);
+  assert.match(csharp, /\/\/ unreachable VM fallthrough\n\s+throw new InvalidOperationException\("Unreachable Neo VM fallthrough\."\);/);
+  assert.doesNotMatch(csharp, /public static void run\(\)[\s\S]*Unreachable Neo VM fallthrough/);
+});
+
 test("C# rendering lowers native qualified calls outside literals", () => {
   const csharp = renderCSharpContract([
     "contract Token {",

@@ -51,6 +51,10 @@ export function renderCSharpContract(
     sourceDepth += sourceBraceDelta(sourceLine);
   }
   const labelsByLine = labelsVisibleInMethod(sourceLines, sourceDepthByLine);
+  const fallthroughGuardsByLine = nonVoidFallthroughGuards(
+    sourceLines,
+    sourceDepthByLine,
+  );
   const declarationTypesByLine = options.typedDeclarations === false
     ? null
     : inferDeclarationTypesByLine(sourceLines, sourceDepthByLine);
@@ -100,6 +104,11 @@ export function renderCSharpContract(
       const event = renderEventDeclaration(line);
       output.push(event ?? `${line.match(/^\s*/)?.[0] ?? ""}// ${line.trim()}`);
       continue;
+    }
+    if (fallthroughGuardsByLine.has(lineIndex)) {
+      const indentation = line.match(/^\s*/)?.[0] ?? "";
+      output.push(`${indentation}    // unreachable VM fallthrough`);
+      output.push(`${indentation}    throw new InvalidOperationException("Unreachable Neo VM fallthrough.");`);
     }
     const name = line.match(/^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
     const method = name ? manifestMethodForName(name, manifest) : null;
@@ -151,6 +160,49 @@ export function renderCSharpContract(
     output.push("    // high-level contract body was unavailable");
   }
   return output.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+}
+
+// High-level lifting may recover a non-void method's body without a source
+// `return` at the method boundary. This is common when a VM path terminates
+// in ABORT/THROW or when a try/branch target could not be structured. Keep the
+// generated C# valid while making the uncertainty explicit and fail-closed.
+function nonVoidFallthroughGuards(lines, depths) {
+  const guards = new Set();
+  for (let start = 0; start < lines.length; start += 1) {
+    const header = lines[start].match(
+      /^\s*fn\s+[A-Za-z_][A-Za-z0-9_]*\(.*\)(?:\s*->\s*([^\s{]+))?\s*\{\s*$/,
+    );
+    if (!header || String(header[1] ?? "void").toLowerCase() === "void") continue;
+
+    const methodDepth = depths[start];
+    const end = findMethodEnd(lines, depths, start, methodDepth);
+    if (end < 0) continue;
+
+    let lastTopLevelStatement = null;
+    for (let index = start + 1; index < end; index += 1) {
+      if (depths[index] !== methodDepth + 1) continue;
+      const trimmed = lines[index].trim();
+      if (!trimmed || trimmed.startsWith("//")) continue;
+      lastTopLevelStatement = trimmed;
+    }
+    if (!isTerminalHighLevelStatement(lastTopLevelStatement)) guards.add(end);
+    start = end;
+  }
+  return guards;
+}
+
+function findMethodEnd(lines, depths, start, methodDepth = depths[start]) {
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (depths[index] === methodDepth + 1 && /^\s*}\s*$/.test(lines[index])) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function isTerminalHighLevelStatement(statement) {
+  if (!statement) return false;
+  return /^(?:return\b|throw\s*\(|abort(?:\s*\(|\s*;))/.test(statement);
 }
 
 function renderCSharpCatchClause(line) {
