@@ -25,6 +25,7 @@ pub(super) struct ExprContext {
     event_array_targets: BTreeSet<String>,
     event_signatures: EventSignatures,
     value_types: BTreeMap<String, ValueType>,
+    concrete_types: BTreeMap<String, String>,
     pub(super) emitted_names: BTreeMap<String, String>,
     pub(super) unpack_packstruct_helper_call: Option<String>,
     pub(super) tagged_opcode_helper_calls: BTreeMap<(u8, u8), String>,
@@ -65,6 +66,7 @@ impl ExprContext {
                 event_array_targets: BTreeSet::new(),
                 event_signatures: BTreeMap::new(),
                 value_types,
+                concrete_types: BTreeMap::new(),
                 emitted_names: BTreeMap::new(),
                 unpack_packstruct_helper_call: None,
                 tagged_opcode_helper_calls: BTreeMap::new(),
@@ -116,6 +118,7 @@ impl ExprContext {
             event_array_targets: BTreeSet::new(),
             event_signatures: BTreeMap::new(),
             value_types,
+            concrete_types: BTreeMap::new(),
             emitted_names: BTreeMap::new(),
             unpack_packstruct_helper_call: None,
             tagged_opcode_helper_calls: BTreeMap::new(),
@@ -125,6 +128,11 @@ impl ExprContext {
 
     pub(super) fn with_emitted_names(mut self, emitted_names: BTreeMap<String, String>) -> Self {
         self.emitted_names = emitted_names;
+        self
+    }
+
+    pub(super) fn with_concrete_types(mut self, concrete_types: &BTreeMap<String, String>) -> Self {
+        self.concrete_types.clone_from(concrete_types);
         self
     }
 
@@ -169,6 +177,7 @@ impl ExprContext {
 
     pub(super) fn exact_csharp_type(&self, expression: &Expr) -> Option<&str> {
         match expression {
+            Expr::Variable(name) => self.concrete_types.get(name).map(String::as_str),
             Expr::Call {
                 target: SemanticCallTarget::Internal { offset, .. },
                 ..

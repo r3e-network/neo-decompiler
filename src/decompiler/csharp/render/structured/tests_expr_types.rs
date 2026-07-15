@@ -261,6 +261,65 @@ fn framework_object_members_preserve_concrete_types() {
 }
 
 #[test]
+fn planned_alias_types_flow_into_member_and_index_inference() {
+    let get_contract = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 0,
+            name: "getContract".to_string(),
+            hash_le: Some("FDA3FA4346EA532A258FC497DDADDB6437C9FDFF".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![Expr::var("account")],
+    );
+    let body = Block::from(vec![
+        Stmt::assign("contract", get_contract),
+        Stmt::assign(
+            "hash",
+            Expr::Member {
+                base: Box::new(Expr::var("contract")),
+                name: "Hash".to_string(),
+            },
+        ),
+        Stmt::Return(Some(Expr::var("hash"))),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "account".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(0),
+                value_type: ValueType::ByteString,
+            },
+        ),
+        (
+            "contract".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::InteropInterface,
+            },
+        ),
+        (
+            "hash".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::ByteString,
+            },
+        ),
+    ]);
+    let plan = plan_declarations(&body, &symbols, true);
+    let rendered =
+        super::super::stmt::render_block(&body, &plan, &symbols, ReturnBehavior::Value, false);
+
+    assert!(
+        rendered.contains("Contract contract = ContractManagement.GetContract(account);"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("UInt160 hash = contract.Hash;"),
+        "{rendered}"
+    );
+}
+
+#[test]
 fn known_syscalls_drive_exact_csharp_expression_types() {
     let context = ExprContext::default();
     let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());

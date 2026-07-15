@@ -6,7 +6,7 @@ use crate::decompiler::native_method_types;
 use crate::instruction::OpCode;
 
 use super::declaration_type_catalog::{
-    array_element_type, concrete_csharp_type_name, csharp_type_for_value_type,
+    array_element_type, concrete_csharp_type_name, csharp_member_type, csharp_type_for_value_type,
 };
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -159,7 +159,11 @@ fn concrete_expression_type_with_symbols_and_known(
         Expr::Member { name, .. } if name.eq_ignore_ascii_case("Length") => {
             Some("BigInteger".to_string())
         }
-        Expr::Member { .. } => None,
+        Expr::Member { base, name } => {
+            concrete_expression_type_with_symbols_and_known(base, symbols, known_types)
+                .as_deref()
+                .and_then(|base_type| csharp_member_type(base_type, name).map(str::to_string))
+        }
         Expr::Cast { target_type, .. } => concrete_csharp_type_name(target_type),
         Expr::Convert { target, .. } => csharp_type_for_value_type(*target).map(str::to_string),
         Expr::IsType { .. } => Some("bool".to_string()),

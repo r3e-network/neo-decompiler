@@ -76,9 +76,22 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
             .values()
             .map(|declaration| declaration.emitted_name.clone()),
     );
+    let concrete_types = plan
+        .declarations
+        .iter()
+        .filter(|(_, declaration)| !declaration.csharp_type.eq_ignore_ascii_case("dynamic"))
+        .map(|(name, declaration)| (name.clone(), declaration.csharp_type.clone()))
+        .chain(
+            plan.static_field_types
+                .iter()
+                .filter(|(_, type_name)| !type_name.eq_ignore_ascii_case("dynamic"))
+                .map(|(name, type_name)| (name.clone(), type_name.clone())),
+        )
+        .collect::<BTreeMap<_, _>>();
     let mut renderer = StatementRenderer {
         plan,
         expressions: ExprContext::for_block(block, symbols, inline_single_use_temps)
+            .with_concrete_types(&concrete_types)
             .with_emitted_names(
                 plan.declarations
                     .iter()
