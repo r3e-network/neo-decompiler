@@ -143,8 +143,6 @@ fn is_supported_method(contract: &str, method: &str) -> bool {
                 | "GetNextBlockValidators"
                 | "GetRegisterPrice"
                 | "RegisterCandidate"
-                | "SetGasPerBlock"
-                | "SetRegisterPrice"
                 | "Symbol"
                 | "TotalSupply"
                 | "Transfer"

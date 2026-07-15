@@ -35,6 +35,15 @@ pub(crate) fn lookup(
         ("ContractManagement", "GetMinimumDeploymentFee") => {
             Some(return_type(ValueType::Integer, "long"))
         }
+        ("CryptoLib", "recoverSecp256K1") => Some(return_type(ValueType::ByteString, "ByteString")),
+        ("CryptoLib", "Keccak256" | "Murmur32" | "Sha256" | "ripemd160") => {
+            Some(return_type(ValueType::ByteString, "ByteString"))
+        }
+        (
+            "CryptoLib",
+            "Bls12381Equal" | "VerifyWithECDsa" | "VerifyWithEd25519" | "verifyWithECDsa",
+        ) => Some(return_type(ValueType::Boolean, "bool")),
+        ("CryptoLib", "Bls12381Serialize") => Some(return_type(ValueType::Buffer, "byte[]")),
         ("LedgerContract", "CurrentHash") => Some(return_type(ValueType::ByteString, "UInt256")),
         ("LedgerContract", "CurrentIndex") => Some(return_type(ValueType::Integer, "uint")),
         ("LedgerContract", "GetTransactionHeight") => Some(return_type(ValueType::Integer, "int")),
@@ -51,6 +60,28 @@ pub(crate) fn lookup(
             "BalanceOf" | "GetGasPerBlock" | "TotalSupply" | "UnclaimedGas",
         ) => Some(return_type(ValueType::Integer, "BigInteger")),
         ("GasToken" | "NeoToken", "Transfer") => Some(return_type(ValueType::Boolean, "bool")),
+        ("NeoToken", "GetRegisterPrice") => Some(return_type(ValueType::Integer, "long")),
+        ("NeoToken", "RegisterCandidate" | "UnregisterCandidate" | "Vote") => {
+            Some(return_type(ValueType::Boolean, "bool"))
+        }
+        ("Notary", "BalanceOf") => Some(return_type(ValueType::Integer, "BigInteger")),
+        ("Notary", "ExpirationOf" | "GetMaxNotValidBeforeDelta") => {
+            Some(return_type(ValueType::Integer, "uint"))
+        }
+        ("Notary", "LockDepositUntil" | "Verify" | "Withdraw") => {
+            Some(return_type(ValueType::Boolean, "bool"))
+        }
+        ("OracleContract", "GetPrice") => Some(return_type(ValueType::Integer, "long")),
+        (
+            "PolicyContract",
+            "GetAttributeFee" | "getAttributeFee" | "GetExecFeeFactor" | "GetStoragePrice",
+        ) => Some(return_type(ValueType::Integer, "uint")),
+        ("PolicyContract", "GetExecPicoFeeFactor") => {
+            Some(return_type(ValueType::Integer, "BigInteger"))
+        }
+        ("PolicyContract", "GetFeePerByte") => Some(return_type(ValueType::Integer, "long")),
+        ("PolicyContract", "IsBlocked") => Some(return_type(ValueType::Boolean, "bool")),
+        ("Treasury", "Verify") => Some(return_type(ValueType::Boolean, "bool")),
         ("RoleManagement", "GetDesignatedByRole") => {
             Some(return_type(ValueType::Array, "ECPoint[]"))
         }
@@ -125,6 +156,10 @@ mod tests {
     const LEDGER: &str = "BEF2043140362A77C15099C7E64C12F700B665DA";
     const NEO: &str = "F563EA40BC283D4D0E05C48EA305B3F2A07340EF";
     const ROLE_MANAGEMENT: &str = "E295E391544C178AD94F03EC4DCDFF78534ECF49";
+    const CRYPTO_LIB: &str = "1BF575AB1189688413610A35A12886CDE0B66C72";
+    const NOTARY: &str = "3BEC3531119BBAD76DD044920B0DE6C3194FE1C1";
+    const ORACLE: &str = "588717117E0AA81072AFAB71D2DD89FE7C4B92FE";
+    const POLICY: &str = "7BC681C0A1F71D543457B68BBA8D5F9FDD4E5ECC";
 
     #[test]
     fn resolves_only_hash_bound_native_signatures() {
@@ -173,6 +208,18 @@ mod tests {
         let designated = lookup(Some(ROLE_MANAGEMENT), "getDesignatedByRole", Some(0x0F)).unwrap();
         assert_eq!(designated.value_type, ValueType::Array);
         assert_eq!(designated.csharp_type, "ECPoint[]");
+
+        let oracle = lookup(Some(ORACLE), "getPrice", Some(0x0F)).unwrap();
+        assert_eq!(oracle.csharp_type, "long");
+
+        let policy = lookup(Some(POLICY), "getExecFeeFactor", Some(0x0F)).unwrap();
+        assert_eq!(policy.csharp_type, "uint");
+
+        let notary = lookup(Some(NOTARY), "expirationOf", Some(0x0F)).unwrap();
+        assert_eq!(notary.csharp_type, "uint");
+
+        let crypto = lookup(Some(CRYPTO_LIB), "ripemd160", Some(0x0F)).unwrap();
+        assert_eq!(crypto.csharp_type, "ByteString");
     }
 
     #[test]
