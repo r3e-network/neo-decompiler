@@ -83,9 +83,14 @@ pub(in crate::cli) enum Command {
         /// Annotate body-local declarations in the C# view with their
         /// inferred type (e.g. `BigInteger loc0 = ...;` instead of
         /// `var loc0 = ...;`). Locals with no inferable type still fall
-        /// back to `var`. Off by default.
+        /// back to `dynamic`. Enabled by default for readable C# output.
         #[arg(long)]
         typed_declarations: bool,
+
+        /// Keep compatibility-oriented `var`/`dynamic` declarations instead
+        /// of using conservative inferred C# types.
+        #[arg(long)]
+        no_typed_declarations: bool,
 
         // The flags below pre-date the default flip described above
         // and are kept as hidden no-op aliases so existing scripts

@@ -47,9 +47,9 @@ export function renderCSharpContract(
     sourceDepth += sourceBraceDelta(sourceLine);
   }
   const labelsByLine = labelsVisibleInMethod(sourceLines, sourceDepthByLine);
-  const declarationTypesByLine = options.typedDeclarations
-    ? inferDeclarationTypesByLine(sourceLines, sourceDepthByLine)
-    : null;
+  const declarationTypesByLine = options.typedDeclarations === false
+    ? null
+    : inferDeclarationTypesByLine(sourceLines, sourceDepthByLine);
   const nullableParametersByLine = new Map();
   for (const [lineIndex, line] of sourceLines.entries()) {
     if (/^\s*fn\s+/.test(line)) {

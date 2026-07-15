@@ -1,9 +1,9 @@
 //! End-to-end coverage for `Decompiler::with_typed_declarations`.
 //!
 //! Phase 1 of the advanced-decompiler evolution: the existing-but-unused
-//! type-inference engine (`analysis::types`) now annotates C# body-local
-//! declarations with inferred types. Opt-in (default off) so historical output
-//! is unchanged.
+//! type-inference engine (`analysis::types`) annotates C# body-local
+//! declarations with inferred types. The library keeps its compatibility
+//! default off; user-facing CLI/Web paths opt in by default.
 
 #![allow(clippy::unwrap_used)]
 

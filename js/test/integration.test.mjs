@@ -117,6 +117,28 @@ test("integration: complete workflow from bytes to analysis output", () => {
   assert.match(hlResult.csharp, /public class NeoContract/, "should expose C# rendering");
 });
 
+test("integration: C# declarations are typed by default with an explicit legacy opt-out", () => {
+  const nef = buildNef({
+    script: [
+      0x57, 0x01, 0x01, // INITSLOT 1 local, 1 arg
+      0x78, // LDARG0
+      0x11, // PUSH1
+      0x9e, // ADD
+      0x70, // STLOC0
+      0x68, // LDLOC0
+      0x40, // RET
+    ],
+  });
+
+  const typed = decompileHighLevelBytes(nef).csharp;
+  const legacy = decompileHighLevelBytes(nef, { typedDeclarations: false }).csharp;
+
+  assert.match(typed, /BigInteger loc0 = arg0 \+ 1;/);
+  assert.doesNotMatch(typed, /var loc0/);
+  assert.match(legacy, /var loc0 = arg0 \+ 1;/);
+  assert.doesNotMatch(legacy, /BigInteger loc0/);
+});
+
 test("integration: C# rendering translates manifest signatures and preserves body structure", () => {
   const manifest = JSON.stringify({
     name: "SampleToken",

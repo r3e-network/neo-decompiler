@@ -481,7 +481,7 @@ test("C# rendering widens direct nullable parameter aliases", () => {
   assert.match(rendered, /BigInteger valueOrDefault\(dynamic @value\)/);
 });
 
-test("C# rendering can opt into conservative typed declarations", () => {
+test("C# rendering uses conservative typed declarations by default", () => {
   const source = [
     "contract Typed {",
     "fn main() -> void {",
@@ -493,13 +493,13 @@ test("C# rendering can opt into conservative typed declarations", () => {
     "}",
     "}",
   ].join("\n");
-  const defaultRendered = renderCSharpContract(source);
-  const typedRendered = renderCSharpContract(source, null, { typedDeclarations: true });
-  assert.match(defaultRendered, /var count = 0;/);
+  const typedRendered = renderCSharpContract(source);
+  const legacyRendered = renderCSharpContract(source, null, { typedDeclarations: false });
   assert.match(typedRendered, /BigInteger count = 0;/);
   assert.match(typedRendered, /bool comparison = count \* 2 > 1;/);
   assert.match(typedRendered, /BigInteger\[\] values = new BigInteger\[/);
   assert.match(typedRendered, /dynamic unknown = call\(\);/);
+  assert.match(legacyRendered, /var count = 0;/);
 });
 
 test("C# typed declarations stay scoped to each method", () => {
@@ -577,7 +577,7 @@ test("C# rendering keeps unknown stack placeholders valid and literal", () => {
     '    return "???";',
     "}",
     "}",
-  ].join("\n"));
+  ].join("\n"), null, { typedDeclarations: false });
   assert.match(csharp, /var @value = default\(dynamic\);/);
   assert.match(csharp, /return \"\?\?\?\";/);
   assert.doesNotMatch(csharp, /\?\?\?(?!\")/);
@@ -711,7 +711,7 @@ test("C# rendering lowers unambiguous collection helpers", () => {
     "    return has_key(map, key);",
     "}",
     "}",
-  ].join("\n"));
+  ].join("\n"), null, { typedDeclarations: false });
   assert.match(csharp, /new object\[\(int\)\(2\)\]/);
   assert.match(csharp, /\(\(dynamic\)items\)\.Add\(value\)/);
   assert.match(csharp, /\(\(dynamic\)map\)\.HasKey\(key\)/);
@@ -746,7 +746,7 @@ test("C# rendering lowers dynamic unpack helpers to indexable values", () => {
     "    return first;",
     "}",
     "}",
-  ].join("\n"));
+  ].join("\n"), null, { typedDeclarations: false });
   assert.match(csharp, /var values = \(\(dynamic\)value\);/);
   assert.match(csharp, /var first = \(\(dynamic\)values\)\[\(int\)\(0\)\];/);
   assert.doesNotMatch(csharp, /\b(?:unpack|unpack_item)\(/);
@@ -775,7 +775,7 @@ test("C# rendering lowers unresolved VM stack helpers and discarded values", () 
     "    return rolled;",
     "}",
     "}",
-  ].join("\n"));
+  ].join("\n"), null, { typedDeclarations: false });
 
   assert.match(csharp, /var picked = default\(dynamic\) \/\* unresolved VM PICK\(value\) \*\//);
   assert.match(csharp, /var rolled = default\(dynamic\) \/\* unresolved VM ROLL\(3\) \*\/; \/\/ dynamic roll/);
@@ -1040,7 +1040,7 @@ test("C# rendering lowers an empty VM struct to a framework-compatible array", (
     "    return value;",
     "}",
     "}",
-  ].join("\n"));
+  ].join("\n"), null, { typedDeclarations: false });
   assert.match(csharp, /var @value = new object\[\] \{ \};/);
   assert.doesNotMatch(csharp, /new Struct\(\)/);
 });
@@ -1053,7 +1053,7 @@ test("C# rendering lowers Neo concatenation outside string literals", () => {
     "    return text;",
     "}",
     "}",
-  ].join("\n"));
+  ].join("\n"), null, { typedDeclarations: false });
   assert.match(csharp, /var text = "cat" \+ a \+ b;/);
   assert.doesNotMatch(csharp, /\s+cat\s+/);
 });

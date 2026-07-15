@@ -147,7 +147,7 @@ intermediate views remain available when needed for analysis.
 | SSA Optimizations             | ✅     | Constant folding/propagation, copy propagation, trivial-φ elimination, dead-code elimination to a fixed point |
 | SSA Rendering                  | ✅     | `Decompilation::compute_ssa` / `optimize_ssa` / `render_optimized_ssa` and `decompile --format ssa` |
 | IR Spine: CFG Structural Recovery | ✅  | `cfg::structure` recovers `if`/`if-else`/`while`/`do-while`/`try-catch` from the CFG into `ir::ControlFlow` (`decompile --format ir`) |
-| Type-Inferred C# Declarations | ✅     | The (previously unused) type inference now annotates C# body locals: `--typed-declarations` |
+| Type-Inferred C# Declarations | ✅     | Conservative inferred types annotate C# body locals by default; use `--no-typed-declarations` for compatibility output |
 | Full-Corpus Panic Regression  | ✅     | `tests/corpus_replay.rs` replays every fuzz corpus + artifact through the pipeline |
 
 ### Planned Features (Future Work)
@@ -261,9 +261,10 @@ cargo build --release
 # single-use temporaries inlined.
 ./target/release/neo-decompiler decompile path/to/contract.nef
 
-# Add inferred C# types for body-local declarations where the analysis is
-# confident (for example, `BigInteger loc0` instead of `dynamic loc0`).
-./target/release/neo-decompiler decompile --typed-declarations path/to/contract.nef
+# C# body-local declarations use conservative inferred types by default
+# (for example, `BigInteger loc0` instead of `dynamic loc0`). Use this flag
+# only when compatibility with the legacy dynamic/var output is required.
+./target/release/neo-decompiler decompile --no-typed-declarations path/to/contract.nef
 
 # Re-enable the per-instruction `// XXXX: OPCODE` trace comments above each
 # lifted statement (useful when cross-referencing the high-level view against

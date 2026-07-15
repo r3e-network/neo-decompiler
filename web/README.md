@@ -67,12 +67,15 @@ const decompile = decompileReport(nefBytes, {
   strictManifest: false,
   failOnUnknownOpcodes: false,
   inlineSingleUseTemps: true,
+  typedDeclarations: true,
   outputFormat: "csharp",
 });
 ```
 
 The decompile report defaults to the generated C# contract. Pass `"all"` when
-the intermediate high-level and pseudocode views are also needed.
+the intermediate high-level and pseudocode views are also needed. Set
+`typedDeclarations: false` to retain compatibility-oriented dynamic/var
+declarations.
 
 `nefBytes` should be a `Uint8Array`. `manifestJson` should be a UTF-8 JSON string.
 

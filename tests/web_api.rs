@@ -188,6 +188,7 @@ fn web_decompile_report_exposes_high_level_and_csharp_outputs() {
         neo_decompiler::web::WebDecompileOptions {
             manifest_json: Some(SAMPLE_MANIFEST.to_string()),
             output_format: OutputFormat::All,
+            typed_declarations: true,
             ..Default::default()
         },
     )
@@ -270,6 +271,7 @@ fn web_decompile_report_emit_trace_comments_re_enables_per_instruction_comments(
             manifest_json: Some(SAMPLE_MANIFEST.to_string()),
             emit_trace_comments: true,
             output_format: OutputFormat::All,
+            typed_declarations: true,
             ..Default::default()
         },
     )

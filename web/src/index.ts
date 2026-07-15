@@ -22,6 +22,8 @@ export interface DecompileOptions {
   failOnUnknownOpcodes?: boolean;
   inlineSingleUseTemps?: boolean;
   emitTraceComments?: boolean;
+  /** Conservative inferred C# declaration types; defaults to true. */
+  typedDeclarations?: boolean;
   outputFormat?: OutputFormat;
 }
 
@@ -391,6 +393,9 @@ function normalizeDecompileOptions(
   }
   if (options.emitTraceComments !== undefined) {
     normalized.emit_trace_comments = options.emitTraceComments;
+  }
+  if (options.typedDeclarations !== undefined) {
+    normalized.typed_declarations = options.typedDeclarations;
   }
   if (options.outputFormat !== undefined) {
     normalized.output_format = options.outputFormat;

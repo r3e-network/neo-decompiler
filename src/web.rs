@@ -37,6 +37,10 @@ pub struct WebDecompileOptions {
     /// output is human-readable by default; callers debugging a
     /// specific contract can opt back into trace comments.
     pub emit_trace_comments: bool,
+    /// Use conservative inferred C# declaration types. Defaults to `true`
+    /// for readable contract output; set to `false` for compatibility with
+    /// the legacy dynamic/var rendering.
+    pub typed_declarations: bool,
     /// Select which rendered outputs should be generated.
     pub output_format: OutputFormat,
 }
@@ -49,6 +53,7 @@ impl Default for WebDecompileOptions {
             fail_on_unknown_opcodes: false,
             inline_single_use_temps: true,
             emit_trace_comments: false,
+            typed_declarations: true,
             // The browser-facing decompile API produces the generated C#
             // contract by default. Analysis views remain available through
             // an explicit `output_format` selection.
@@ -101,7 +106,8 @@ pub fn decompile_report(
     let handling = unknown_handling(options.fail_on_unknown_opcodes);
     let decompiler = Decompiler::with_unknown_handling(handling)
         .with_inline_single_use_temps(options.inline_single_use_temps)
-        .with_trace_comments(options.emit_trace_comments);
+        .with_trace_comments(options.emit_trace_comments)
+        .with_typed_declarations(options.typed_declarations);
     let result =
         decompiler.decompile_bytes_with_manifest(nef_bytes, manifest, options.output_format)?;
     Ok(report::build_decompile_report(result))
@@ -160,6 +166,7 @@ struct JsDecompileOptions {
     fail_on_unknown_opcodes: bool,
     inline_single_use_temps: bool,
     emit_trace_comments: bool,
+    typed_declarations: bool,
     output_format: Option<String>,
 }
 
@@ -173,6 +180,7 @@ impl Default for JsDecompileOptions {
             fail_on_unknown_opcodes: false,
             inline_single_use_temps: defaults.inline_single_use_temps,
             emit_trace_comments: defaults.emit_trace_comments,
+            typed_declarations: defaults.typed_declarations,
             output_format: None,
         }
     }
@@ -251,6 +259,7 @@ pub fn decompile_report_wasm(
             fail_on_unknown_opcodes: options.fail_on_unknown_opcodes,
             inline_single_use_temps: options.inline_single_use_temps,
             emit_trace_comments: options.emit_trace_comments,
+            typed_declarations: options.typed_declarations,
             output_format,
         },
     )

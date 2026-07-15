@@ -77,6 +77,7 @@ test("client maps decompile options to the wasm ABI", () => {
     strictManifest: true,
     failOnUnknownOpcodes: true,
     inlineSingleUseTemps: true,
+    typedDeclarations: false,
     outputFormat: "highLevel",
   });
 
@@ -85,6 +86,7 @@ test("client maps decompile options to the wasm ABI", () => {
     strict_manifest: true,
     fail_on_unknown_opcodes: true,
     inline_single_use_temps: true,
+    typed_declarations: false,
     output_format: "highLevel",
   });
 });

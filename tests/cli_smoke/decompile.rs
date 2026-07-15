@@ -37,6 +37,37 @@ fn decompile_command_outputs_csharp_by_default() {
 }
 
 #[test]
+fn decompile_command_uses_typed_csharp_declarations_by_default() {
+    let nef_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("TestingArtifacts/edgecases/LoopIf.nef");
+    let manifest_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("TestingArtifacts/edgecases/LoopIf.manifest.json");
+
+    neo_decompiler_cmd()
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("decompile")
+        .arg("--format")
+        .arg("csharp")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("BigInteger loc0"));
+
+    neo_decompiler_cmd()
+        .arg("--manifest")
+        .arg(&manifest_path)
+        .arg("decompile")
+        .arg("--format")
+        .arg("csharp")
+        .arg("--no-typed-declarations")
+        .arg(&nef_path)
+        .assert()
+        .success()
+        .stdout(contains("dynamic loc0"));
+}
+
+#[test]
 fn decompile_command_accepts_inline_single_use_temps_flag() {
     let dir = tempdir().expect("tempdir");
     let nef_path = dir.path().join("contract.nef");

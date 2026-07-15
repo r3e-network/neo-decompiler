@@ -325,7 +325,8 @@ export interface DisassemblyOptions {
 export interface DecompileOptions extends DisassemblyOptions {
   /**
    * Use conservative inferred C# declaration types when rendering the
-   * `csharp` result. Defaults to `false`, which preserves `var` declarations.
+   * `csharp` result. Defaults to `true`; set to `false` for compatibility
+   * with legacy `var` declarations.
    */
   typedDeclarations?: boolean;
   /**

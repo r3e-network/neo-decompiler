@@ -86,11 +86,11 @@ Full decompilation to structured pseudocode (if/else, loops, etc.).
   the high-level output as source code.
 - `inlineSingleUseTemps: true` — replace every single-use `tN` with its
   RHS at the use site. Implied by `clean: true`.
-- `typedDeclarations: true` — use conservative inferred C# declaration types
-  for obvious literals, arithmetic, and collection helpers. Unresolved or
+- `typedDeclarations` — use conservative inferred C# declaration types (on by
+  default) for obvious literals, arithmetic, and collection helpers. Set it to
+  `false` for compatibility-oriented `var` declarations. Unresolved or
   conflicting values remain `dynamic`; catalog-known syscall results use their
-  VM-normalized C# types, while unknown syscall hashes remain `dynamic`. The
-  default keeps `var` declarations.
+  VM-normalized C# types, while unknown syscall hashes remain `dynamic`.
 - `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
   for opcodes the disassembler does not recognise.
 
