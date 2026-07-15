@@ -696,6 +696,29 @@ fn hoisted_phi_declarations_are_default_initialized() {
 }
 
 #[test]
+fn missing_phi_definition_gets_a_conservative_default() {
+    let body = Block::from(vec![Stmt::ret(Expr::var("p5_1"))]);
+    let symbols = BTreeMap::from([(
+        "p5_1".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Phi,
+            value_type: ValueType::Unknown,
+        },
+    )]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["p5_1"].csharp_type, "dynamic");
+    assert_eq!(
+        render_block(&body, &plan, &symbols, ReturnBehavior::Value, false),
+        "dynamic p5_1 = default;\nreturn p5_1;"
+    );
+    assert!(plan.issues.iter().any(|issue| {
+        issue.kind == LoweringIssueKind::LostStackValue && issue.detail.contains("p5_1")
+    }));
+}
+
+#[test]
 fn typed_boundaries_bridge_incompatible_known_types() {
     let body = Block::from(vec![
         Stmt::assign("flag", Expr::int(1)),

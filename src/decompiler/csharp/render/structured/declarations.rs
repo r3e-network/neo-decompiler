@@ -215,6 +215,27 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
                 LoweringIssueKind::LostStackValue,
                 format!("structured symbol {name} is used without an assignment"),
             ));
+            // A phi can survive into the structured IR when its defining edge
+            // was intentionally omitted (for example, an exceptional or
+            // malformed VM path). Keep the source compile-safe with a
+            // conservative default instead of emitting an undeclared name.
+            if let Some(symbol) = symbol {
+                if symbol.origin == SymbolOrigin::Phi {
+                    let scope = collector.scopes.nearest_common_ancestor(
+                        activity.uses.iter().map(|occurrence| occurrence.scope),
+                    );
+                    declarations.insert(
+                        name.clone(),
+                        PlannedDeclaration {
+                            scope,
+                            kind: DeclarationKind::HoistedAssignment,
+                            emitted_name: sanitize_csharp_identifier(name),
+                            csharp_type: csharp_type(symbol.value_type, typed).to_string(),
+                            initialize_to_default: true,
+                        },
+                    );
+                }
+            }
             continue;
         }
         let Some(symbol) = symbol else {
