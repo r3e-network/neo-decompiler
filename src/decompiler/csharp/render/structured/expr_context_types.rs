@@ -9,7 +9,9 @@ use super::super::expr_inline::InlineCollector;
 pub(super) use super::super::plan::csharp_array_element_type;
 pub(super) use super::super::plan::csharp_array_element_value_type;
 pub(super) use super::super::plan::csharp_member_type;
+pub(super) use super::super::plan::csharp_type;
 pub(super) use super::super::plan::csharp_type_value_type;
+pub(super) use super::super::plan::homogeneous_csharp_array_type;
 
 pub(super) fn collect_array_values(collector: &InlineCollector) -> BTreeMap<String, Vec<Expr>> {
     collector
@@ -27,6 +29,24 @@ pub(super) fn collect_array_values(collector: &InlineCollector) -> BTreeMap<Stri
             };
             (definition.scope == usage.scope && definition.order < usage.order)
                 .then(|| (name.clone(), elements.clone()))
+        })
+        .collect()
+}
+
+/// Collect single-definition copy aliases so later consumers can recover the
+/// element shape of an array even when the alias is used more than once.
+pub(super) fn collect_array_aliases(collector: &InlineCollector) -> BTreeMap<String, String> {
+    collector
+        .definitions
+        .iter()
+        .filter_map(|(name, definitions)| {
+            let [definition] = definitions.as_slice() else {
+                return None;
+            };
+            let Expr::Variable(source) = &definition.value else {
+                return None;
+            };
+            Some((name.clone(), source.clone()))
         })
         .collect()
 }

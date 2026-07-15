@@ -14,6 +14,7 @@ pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_a
 pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_array_element_value_type;
 pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_member_type;
 pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_type_value_type;
+pub(in crate::decompiler::csharp::render) use declaration_type_catalog::homogeneous_csharp_array_type;
 pub(in crate::decompiler::csharp::render) use declaration_types::concrete_definition_type_with_symbols_and_known_types;
 #[cfg(test)]
 pub(in crate::decompiler::csharp::render) use declaration_types::{

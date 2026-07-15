@@ -7,6 +7,7 @@ use crate::instruction::OpCode;
 
 use super::declaration_type_catalog::{
     array_element_type, concrete_csharp_type_name, csharp_member_type, csharp_type_for_value_type,
+    homogeneous_csharp_array_type,
 };
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -170,7 +171,12 @@ fn concrete_expression_type_with_symbols_and_known(
         Expr::NewArray { element_type, .. } => element_type.and_then(|element_type| {
             csharp_type_for_value_type(element_type).map(|element_type| format!("{element_type}[]"))
         }),
-        Expr::Array(_) | Expr::Struct(_) => Some("object[]".to_string()),
+        Expr::Array(elements) => homogeneous_csharp_array_type(elements.iter().map(|element| {
+            concrete_expression_type_with_symbols_and_known(element, symbols, known_types)
+        }))
+        .map(str::to_string)
+        .or_else(|| Some("object[]".to_string())),
+        Expr::Struct(_) => Some("object[]".to_string()),
         Expr::Map(_) => Some("Map<object, object>".to_string()),
         Expr::Ternary {
             then_expr,

@@ -112,6 +112,43 @@ pub(in crate::decompiler::csharp::render) fn csharp_array_element_type(
     }
 }
 
+/// Return a concrete array type when every element has the same known C# type.
+/// Mixed or unknown elements intentionally fall back to the VM's object-array
+/// representation at the call site.
+pub(in crate::decompiler::csharp::render) fn homogeneous_csharp_array_type(
+    element_types: impl IntoIterator<Item = Option<String>>,
+) -> Option<&'static str> {
+    let mut candidate = None;
+    for element_type in element_types {
+        let element_type = element_type?;
+        if candidate
+            .as_ref()
+            .is_some_and(|candidate| candidate != &element_type)
+        {
+            return None;
+        }
+        candidate = Some(element_type);
+    }
+    let candidate = candidate?;
+    match candidate.as_str() {
+        "BigInteger" => Some("BigInteger[]"),
+        "bool" => Some("bool[]"),
+        "byte[]" => Some("byte[][]"),
+        "ByteString" => Some("ByteString[]"),
+        "ECPoint" => Some("ECPoint[]"),
+        "Map<object, object>" => Some("Map<object, object>[]"),
+        "Notification" => Some("Notification[]"),
+        "object" => Some("object[]"),
+        "object[]" => Some("object[][]"),
+        "Signer" => Some("Signer[]"),
+        "string" => Some("string[]"),
+        "UInt160" => Some("UInt160[]"),
+        "UInt256" => Some("UInt256[]"),
+        "WitnessRule" => Some("WitnessRule[]"),
+        _ => None,
+    }
+}
+
 pub(in crate::decompiler::csharp::render) fn csharp_member_type(
     base_type: &str,
     member: &str,

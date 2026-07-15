@@ -20,12 +20,14 @@ use patterns::collect_notification_state_targets;
 pub(super) struct ExprContext {
     pub(super) inline_values: BTreeMap<String, Expr>,
     array_values: BTreeMap<String, Vec<Expr>>,
+    array_aliases: BTreeMap<String, String>,
     notification_state_targets: BTreeMap<String, String>,
     debug_singleton_array_targets: BTreeSet<String>,
     event_array_targets: BTreeSet<String>,
     event_signatures: EventSignatures,
     value_types: BTreeMap<String, ValueType>,
     concrete_types: BTreeMap<String, String>,
+    typed_array_literals: bool,
     pub(super) emitted_names: BTreeMap<String, String>,
     pub(super) unpack_packstruct_helper_call: Option<String>,
     pub(super) tagged_opcode_helper_calls: BTreeMap<(u8, u8), String>,
@@ -46,6 +48,7 @@ impl ExprContext {
         let mut collector = InlineCollector::default();
         collector.visit_block(block, 0);
         let array_values = types::collect_array_values(&collector);
+        let array_aliases = types::collect_array_aliases(&collector);
         let notification_state_targets = collect_notification_state_targets(block);
         let debug_singleton_array_targets = array_values
             .keys()
@@ -61,12 +64,14 @@ impl ExprContext {
             return Self {
                 inline_values: BTreeMap::new(),
                 array_values,
+                array_aliases,
                 notification_state_targets,
                 debug_singleton_array_targets,
                 event_array_targets: BTreeSet::new(),
                 event_signatures: BTreeMap::new(),
                 value_types,
                 concrete_types: BTreeMap::new(),
+                typed_array_literals: false,
                 emitted_names: BTreeMap::new(),
                 unpack_packstruct_helper_call: None,
                 tagged_opcode_helper_calls: BTreeMap::new(),
@@ -113,12 +118,14 @@ impl ExprContext {
         Self {
             inline_values,
             array_values,
+            array_aliases,
             notification_state_targets,
             debug_singleton_array_targets,
             event_array_targets: BTreeSet::new(),
             event_signatures: BTreeMap::new(),
             value_types,
             concrete_types: BTreeMap::new(),
+            typed_array_literals: false,
             emitted_names: BTreeMap::new(),
             unpack_packstruct_helper_call: None,
             tagged_opcode_helper_calls: BTreeMap::new(),
@@ -133,6 +140,11 @@ impl ExprContext {
 
     pub(super) fn with_concrete_types(mut self, concrete_types: &BTreeMap<String, String>) -> Self {
         self.concrete_types.clone_from(concrete_types);
+        self
+    }
+
+    pub(super) fn with_typed_array_literals(mut self, enabled: bool) -> Self {
+        self.typed_array_literals = enabled;
         self
     }
 
@@ -178,6 +190,14 @@ impl ExprContext {
     pub(super) fn exact_csharp_type(&self, expression: &Expr) -> Option<&str> {
         match expression {
             Expr::Variable(name) => self.concrete_types.get(name).map(String::as_str),
+            Expr::Array(elements) if self.typed_array_literals => {
+                let element_types = elements.iter().map(|element| {
+                    self.exact_csharp_type(element)
+                        .map(str::to_string)
+                        .or_else(|| concrete_value_type(self.value_type(element)))
+                });
+                types::homogeneous_csharp_array_type(element_types)
+            }
             Expr::Call {
                 target: SemanticCallTarget::Internal { offset, .. },
                 ..
@@ -228,20 +248,26 @@ impl ExprContext {
     }
 
     pub(super) fn singleton_array_element<'a>(&'a self, expression: &'a Expr) -> Option<&'a Expr> {
-        match expression {
-            Expr::Array(elements) => elements.as_slice().first().filter(|_| elements.len() == 1),
-            Expr::Variable(name) => self
-                .array_values
-                .get(name)
-                .and_then(|elements| elements.as_slice().first().filter(|_| elements.len() == 1)),
-            _ => None,
-        }
+        self.array_elements(expression)
+            .and_then(|elements| elements.first().filter(|_| elements.len() == 1))
     }
 
     pub(super) fn array_elements<'a>(&'a self, expression: &'a Expr) -> Option<&'a [Expr]> {
         match expression {
             Expr::Array(elements) => Some(elements),
-            Expr::Variable(name) => self.array_values.get(name).map(Vec::as_slice),
+            Expr::Variable(name) => {
+                let mut current = name.as_str();
+                let mut seen = BTreeSet::new();
+                loop {
+                    if !seen.insert(current) {
+                        return None;
+                    }
+                    if let Some(elements) = self.array_values.get(current) {
+                        return Some(elements.as_slice());
+                    }
+                    current = self.array_aliases.get(current)?.as_str();
+                }
+            }
             _ => None,
         }
     }
@@ -414,4 +440,9 @@ impl ExprContext {
             _ => ValueType::Unknown,
         }
     }
+}
+
+fn concrete_value_type(value_type: ValueType) -> Option<String> {
+    let type_name = types::csharp_type(value_type, true);
+    (!type_name.eq_ignore_ascii_case("dynamic")).then(|| type_name.to_string())
 }

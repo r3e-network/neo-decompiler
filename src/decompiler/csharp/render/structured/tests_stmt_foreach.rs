@@ -1,6 +1,76 @@
 use super::*;
 
 #[test]
+fn typed_literal_array_foreach_uses_uniform_element_type_through_aliases() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "items",
+            Expr::Array(vec![Expr::int(1), Expr::int(2), Expr::int(3)]),
+        ),
+        Stmt::assign("source", Expr::var("items")),
+        Stmt::ControlFlow(Box::new(ControlFlow::For {
+            init: Some(Box::new(Stmt::assign("index", Expr::int(0)))),
+            condition: Some(Expr::binary(
+                BinOp::Lt,
+                Expr::var("index"),
+                Expr::Member {
+                    base: Box::new(Expr::var("source")),
+                    name: "Length".to_string(),
+                },
+            )),
+            update: Some(Expr::unary(UnaryOp::Inc, Expr::var("index"))),
+            body: Block::from(vec![Stmt::assign(
+                "item",
+                Expr::index(Expr::var("source"), Expr::var("index")),
+            )]),
+        })),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "items".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(0),
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "source".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "index".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Integer,
+            },
+        ),
+        (
+            "item".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Integer,
+            },
+        ),
+    ]);
+    let plan = plan_declarations(&body, &symbols, true);
+
+    let rendered = render_block(&body, &plan, &symbols, ReturnBehavior::Void, false);
+
+    assert!(
+        rendered.contains("foreach (BigInteger item in source)"),
+        "{rendered}"
+    );
+    assert!(
+        rendered.contains("BigInteger[] items = new BigInteger[] { 1, 2, 3 };"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("foreach (dynamic item"), "{rendered}");
+}
+
+#[test]
 fn typed_array_index_loops_render_as_foreach_when_the_index_is_private() {
     let body = Block::from(vec![Stmt::ControlFlow(Box::new(ControlFlow::For {
         init: Some(Box::new(Stmt::assign("index", Expr::int(0)))),

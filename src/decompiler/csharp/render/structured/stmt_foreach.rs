@@ -8,7 +8,7 @@ use crate::decompiler::ir::{Block, Expr, Intrinsic, Literal, SemanticCallTarget,
 use crate::instruction::OpCode;
 
 use super::super::expr::render_expr;
-use super::super::plan::{DeclarationKind, ScopeId};
+use super::super::plan::{csharp_array_element_type, csharp_type, DeclarationKind, ScopeId};
 use super::{line, DefinitionFacts, StatementRenderer};
 
 #[path = "stmt_foreach_guards.rs"]
@@ -33,7 +33,15 @@ impl StatementRenderer<'_> {
             .declarations
             .get(&pattern.item)
             .map(|declaration| declaration.csharp_type.as_str())
-            .unwrap_or("dynamic");
+            .filter(|type_name| !type_name.eq_ignore_ascii_case("dynamic"))
+            .map(str::to_string)
+            .or_else(|| {
+                self.plan
+                    .typed
+                    .then(|| inferred_foreach_item_type(self, &pattern.collection, facts))
+                    .flatten()
+            })
+            .unwrap_or_else(|| "dynamic".to_string());
         let collection = render_expr(&Expr::var(pattern.collection), &self.expressions);
         lines.push(line(
             indent,
@@ -159,6 +167,57 @@ impl StatementRenderer<'_> {
             omitted,
         })
     }
+}
+
+fn inferred_foreach_item_type(
+    renderer: &StatementRenderer<'_>,
+    collection: &str,
+    facts: &DefinitionFacts,
+) -> Option<String> {
+    if let Some(element_type) = renderer
+        .expressions
+        .exact_csharp_type(&Expr::var(collection))
+        .and_then(csharp_array_element_type)
+    {
+        return Some(element_type.to_string());
+    }
+    let expression = resolve_collection_expression(collection, facts);
+    match expression {
+        Expr::Array(_) => renderer
+            .expressions
+            .exact_csharp_type(&Expr::var(collection))
+            .and_then(csharp_array_element_type)
+            .map(str::to_string),
+        Expr::NewArray {
+            element_type: Some(element_type),
+            ..
+        } => concrete_value_type(element_type),
+        expression => renderer
+            .expressions
+            .exact_csharp_type(&expression)
+            .and_then(csharp_array_element_type)
+            .map(str::to_string),
+    }
+}
+
+fn resolve_collection_expression(collection: &str, facts: &DefinitionFacts) -> Expr {
+    let mut current = Expr::var(collection);
+    let mut seen = BTreeSet::new();
+    while let Expr::Variable(name) = &current {
+        if !seen.insert(name.clone()) {
+            break;
+        }
+        let Some(value) = facts.get(name) else {
+            break;
+        };
+        current = value.clone();
+    }
+    current
+}
+
+fn concrete_value_type(value_type: ValueType) -> Option<String> {
+    let type_name = csharp_type(value_type, true);
+    (!type_name.eq_ignore_ascii_case("dynamic")).then(|| type_name.to_string())
 }
 
 pub(super) struct ForeachPattern {

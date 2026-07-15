@@ -174,7 +174,8 @@ fn render_expr_node(
         ),
         Expr::Array(elements) => RenderedExpr::new(
             format!(
-                "new object[] {{ {} }}",
+                "new {} {{ {} }}",
+                context.exact_csharp_type(expression).unwrap_or("object[]"),
                 render_expr_list(elements, context, expanding)
             ),
             PREC_PRIMARY,

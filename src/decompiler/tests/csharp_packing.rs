@@ -13,7 +13,7 @@ fn csharp_constant_pack_is_structured_while_trace_mode_selects_legacy() {
         crate::decompiler::csharp::BodyBackend::Structured
     );
     assert!(
-        pack.source.contains("new object[] { 1, 2 }"),
+        pack.source.contains("new BigInteger[] { 1, 2 }"),
         "constant PACK must render a compile-oriented array literal: {}",
         pack.source
     );

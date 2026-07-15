@@ -98,6 +98,7 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
         plan,
         expressions: ExprContext::for_block(block, symbols, inline_single_use_temps)
             .with_concrete_types(&concrete_types)
+            .with_typed_array_literals(plan.typed)
             .with_emitted_names(
                 plan.declarations
                     .iter()
