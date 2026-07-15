@@ -11,6 +11,8 @@ use crate::instruction::OpCode;
 use super::expr_inline::{is_inline_pure, InlineCollector};
 #[path = "expr_context_patterns.rs"]
 mod patterns;
+#[path = "expr_context_types.rs"]
+mod types;
 use patterns::collect_notification_state_targets;
 
 #[derive(Debug, Default)]
@@ -42,7 +44,7 @@ impl ExprContext {
             .collect();
         let mut collector = InlineCollector::default();
         collector.visit_block(block, 0);
-        let array_values = collect_array_values(&collector);
+        let array_values = types::collect_array_values(&collector);
         let notification_state_targets = collect_notification_state_targets(block);
         let debug_singleton_array_targets = array_values
             .keys()
@@ -195,7 +197,7 @@ impl ExprContext {
 
     fn exact_internal_call_value_type(&self, expression: &Expr) -> ValueType {
         self.exact_csharp_type(expression)
-            .and_then(csharp_type_value_type)
+            .and_then(types::csharp_type_value_type)
             .unwrap_or(ValueType::Unknown)
     }
 
@@ -271,7 +273,7 @@ impl ExprContext {
                 _ => ValueType::Unknown,
             },
             Expr::Cast { target_type, .. } => {
-                csharp_type_value_type(target_type).unwrap_or(ValueType::Unknown)
+                types::csharp_type_value_type(target_type).unwrap_or(ValueType::Unknown)
             }
             Expr::Convert { target, .. } => *target,
             Expr::IsType { .. } => ValueType::Boolean,
@@ -298,7 +300,10 @@ impl ExprContext {
                 then_expr,
                 else_expr,
                 ..
-            } => exact_common_value_type(self.value_type(then_expr), self.value_type(else_expr)),
+            } => types::exact_common_value_type(
+                self.value_type(then_expr),
+                self.value_type(else_expr),
+            ),
             Expr::Call {
                 target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(opcode)),
                 args,
@@ -359,73 +364,16 @@ impl ExprContext {
                 ..
             } => self
                 .exact_csharp_type(expression)
-                .and_then(csharp_type_value_type)
+                .and_then(types::csharp_type_value_type)
                 .unwrap_or(ValueType::Unknown),
             Expr::Call {
                 target: SemanticCallTarget::Syscall { .. },
                 ..
             } => self
                 .exact_csharp_type(expression)
-                .and_then(csharp_type_value_type)
+                .and_then(types::csharp_type_value_type)
                 .unwrap_or(ValueType::Unknown),
             _ => ValueType::Unknown,
         }
     }
-}
-
-fn collect_array_values(collector: &InlineCollector) -> BTreeMap<String, Vec<Expr>> {
-    collector
-        .definitions
-        .iter()
-        .filter_map(|(name, definitions)| {
-            let [definition] = definitions.as_slice() else {
-                return None;
-            };
-            let Expr::Array(elements) = &definition.value else {
-                return None;
-            };
-            let [usage] = collector.uses.get(name)?.as_slice() else {
-                return None;
-            };
-            (definition.scope == usage.scope && definition.order < usage.order)
-                .then(|| (name.clone(), elements.clone()))
-        })
-        .collect()
-}
-
-fn csharp_type_value_type(csharp_type: &str) -> Option<ValueType> {
-    match csharp_type {
-        "BigInteger" => Some(ValueType::Integer),
-        "byte" | "int" | "uint" | "long" | "VMState" => Some(ValueType::Integer),
-        "bool" => Some(ValueType::Boolean),
-        "string" => Some(ValueType::ByteString),
-        "ByteString" => Some(ValueType::ByteString),
-        "byte[]" => Some(ValueType::Buffer),
-        "object[]" | "ECPoint[]" | "Signer[]" => Some(ValueType::Array),
-        "Map<object, object>" => Some(ValueType::Map),
-        "UInt160" | "UInt256" | "ECPoint" => Some(ValueType::ByteString),
-        "StorageContext" | "Iterator" | "Transaction" => Some(ValueType::InteropInterface),
-        _ => None,
-    }
-}
-
-fn exact_common_value_type(left: ValueType, right: ValueType) -> ValueType {
-    if left == right && is_concrete_value_type(left) {
-        left
-    } else {
-        ValueType::Unknown
-    }
-}
-
-fn is_concrete_value_type(value_type: ValueType) -> bool {
-    matches!(
-        value_type,
-        ValueType::Boolean
-            | ValueType::Integer
-            | ValueType::ByteString
-            | ValueType::Buffer
-            | ValueType::Array
-            | ValueType::Struct
-            | ValueType::Map
-    )
 }
