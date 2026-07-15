@@ -383,6 +383,37 @@ fn renders_all_expression_variants() {
         render_expr(&crypto_case_call, &context),
         "CryptoLib.Ripemd160(items)"
     );
+    let policy_enum_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 13,
+            name: "getAttributeFee".to_string(),
+            hash_le: Some("7BC681C0A1F71D543457B68BBA8D5F9FDD4E5ECC".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![Expr::int(1)],
+    );
+    assert_eq!(
+        render_expr(&policy_enum_call, &context),
+        "PolicyContract.GetAttributeFee((TransactionAttributeType)(int)(1))"
+    );
+    let crypto_enum_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 14,
+            name: "verifyWithECDsa".to_string(),
+            hash_le: Some("1BF575AB1189688413610A35A12886CDE0B66C72".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![
+            Expr::var("message"),
+            Expr::var("pubkey"),
+            Expr::var("signature"),
+            Expr::int(22),
+        ],
+    );
+    assert_eq!(
+        render_expr(&crypto_enum_call, &context),
+        "CryptoLib.VerifyWithECDsa(message, pubkey, signature, (NamedCurveHash)(int)(22))"
+    );
     let missing_oracle_method = Expr::call(
         SemanticCallTarget::MethodToken {
             index: 12,

@@ -117,6 +117,22 @@ fn render_native_args(
                 )
             } else if contract == "StdLib" && method == "MemorySearch" && index == 2 {
                 int_cast(expression, context, expanding)
+            } else if contract == "PolicyContract"
+                && matches!(method, "GetAttributeFee" | "getAttributeFee")
+                && index == 0
+            {
+                format!(
+                    "(TransactionAttributeType)(int)({})",
+                    render_expr_prec(expression, 0, context, expanding)
+                )
+            } else if contract == "CryptoLib"
+                && matches!(method, "VerifyWithECDsa" | "verifyWithECDsa")
+                && index == 3
+            {
+                format!(
+                    "(NamedCurveHash)(int)({})",
+                    render_expr_prec(expression, 0, context, expanding)
+                )
             } else {
                 render_expr_prec(expression, 0, context, expanding)
             }
