@@ -137,16 +137,16 @@ fn match_int32_wrapper(operation: &Stmt, wrapper: &Stmt, copy: &Stmt) -> Option<
         return None;
     }
 
-    let Stmt::Assign {
-        target: destination,
-        value: Expr::Variable(copied_var),
-    } = copy
-    else {
-        return None;
+    let final_statement = match copy {
+        Stmt::Assign {
+            target: destination,
+            value: Expr::Variable(copied_var),
+        } if copied_var == &normalized_var => FinalStatement::Assign(destination.clone()),
+        Stmt::Return(Some(Expr::Variable(copied_var))) if copied_var == &normalized_var => {
+            FinalStatement::Return
+        }
+        _ => return None,
     };
-    if copied_var != &normalized_var {
-        return None;
-    }
 
     let mask_var = outer_path.mask_var;
     Some(vec![
@@ -165,8 +165,22 @@ fn match_int32_wrapper(operation: &Stmt, wrapper: &Stmt, copy: &Stmt) -> Option<
                 ),
             )]),
         ))),
-        Stmt::assign(destination.clone(), Expr::var(mask_var)),
+        final_statement.render(mask_var),
     ])
+}
+
+enum FinalStatement {
+    Assign(String),
+    Return,
+}
+
+impl FinalStatement {
+    fn render(self, value: String) -> Stmt {
+        match self {
+            Self::Assign(target) => Stmt::assign(target, Expr::var(value)),
+            Self::Return => Stmt::Return(Some(Expr::var(value))),
+        }
+    }
 }
 
 fn direct_copy_target(block: &IrBlock, source: &str) -> Option<String> {
@@ -370,5 +384,17 @@ mod tests {
         let rendered = crate::decompiler::ir::render_block(&block, 0);
         assert!(rendered.contains("t_19 = (t_11 & 4294967295);"));
         assert!(!rendered.contains("p6_0"));
+    }
+
+    #[test]
+    fn collapses_wrapper_when_the_normalized_value_is_returned() {
+        let mut block = wrapper();
+        block.stmts[2] = Stmt::Return(Some(v("p6_0")));
+        collapse_int32_wrappers(&mut block);
+
+        assert_eq!(block.stmts.len(), 4);
+        assert!(
+            matches!(block.stmts[3], Stmt::Return(Some(Expr::Variable(ref name))) if name == "t_19")
+        );
     }
 }
