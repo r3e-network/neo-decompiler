@@ -629,7 +629,7 @@ test("C# typed declarations use catalog syscall return types", () => {
   assert.match(typedRendered, /BigInteger time = Runtime\.Time;/);
   assert.match(typedRendered, /StorageContext context = Storage\.CurrentContext;/);
   assert.match(typedRendered, /ByteString @value = Storage\.Get\(context, key\);/);
-  assert.match(typedRendered, /Iterator iterator = Storage\.Find\(key, 0\);/);
+  assert.match(typedRendered, /Iterator iterator = Storage\.Find\(key, \(FindOptions\)\(0\)\);/);
   assert.match(typedRendered, /bool next = iterator\.Next\(\);/);
   assert.match(typedRendered, /dynamic unknown = syscall\("System\.Custom\.Unknown", key\);/);
 });
@@ -648,6 +648,35 @@ test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   assert.match(csharp, /Storage\.CurrentContext/);
   assert.match(csharp, /Storage\.Get\(context, key\)/);
   assert.match(csharp, /syscall\("System\.Custom\.Unknown", key\)/);
+});
+
+test("C# storage calls normalize numeric VM keys and find options", () => {
+  const csharp = renderCSharpContract([
+    "contract StorageTypes {",
+    "fn write() {",
+    '    syscall("System.Storage.Local.Put", 0xFF00, 0);',
+    '    syscall("System.Storage.Local.Find", 0xFF, 0);',
+    '    syscall("System.Storage.Put", syscall("System.Storage.GetContext"), 0xFF00, 0);',
+    '    syscall("System.Storage.Find", syscall("System.Storage.GetContext"), 0xFF, 0);',
+    "    return;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /Storage\.Put\(\(ByteString\)\(BigInteger\)\(0xFF00\), 0\);/);
+  assert.match(csharp, /Storage\.Find\(\(ByteString\)\(BigInteger\)\(0xFF\), \(FindOptions\)\(0\)\);/);
+  assert.match(csharp, /Storage\.Put\(Storage\.CurrentContext, \(ByteString\)\(BigInteger\)\(0xFF00\), 0\);/);
+  assert.match(csharp, /Storage\.Find\(Storage\.CurrentContext, \(ByteString\)\(BigInteger\)\(0xFF\), \(FindOptions\)\(0\)\);/);
+});
+
+test("C# contract calls normalize numeric call flags", () => {
+  const csharp = renderCSharpContract([
+    "contract ContractCallFlags {",
+    "fn call(account, args) -> any {",
+    '    return syscall("System.Contract.Call", account, "method", 15, args);',
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /return Contract\.Call\(account, "method", \(CallFlags\)\(15\), args\);/);
 });
 
 test("C# rendering rewrites nested syscall arguments", () => {

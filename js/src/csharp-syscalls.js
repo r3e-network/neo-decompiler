@@ -113,15 +113,57 @@ export function renderCSharpSyscall(name, args) {
     "System.Storage.Local.Delete": "Delete",
     "System.Storage.Local.Find": "Find",
   }[name];
-  if (localStorageMethod) return `Storage.${localStorageMethod}(${args.join(", ")})`;
+  if (localStorageMethod) return renderStorageCall(localStorageMethod, args, true);
 
   if (CSHARP_LOW_LEVEL_SYSCALLS.has(name)) return renderLowLevelSyscall(name, args);
 
   const api = CSHARP_SYSCALLS.get(name);
   if (!api) return null;
+  const storageMethod = api.startsWith("Storage.") ? api.slice("Storage.".length) : null;
+  if (storageMethod && ["Get", "Put", "Delete", "Find"].includes(storageMethod)) {
+    return renderStorageCall(storageMethod, args, false);
+  }
+  if (name === "System.Contract.Call" && args[2] !== undefined) {
+    const rendered = [...args];
+    rendered[2] = renderNumericEnum(rendered[2], "CallFlags");
+    return `Contract.Call(${rendered.join(", ")})`;
+  }
   return api.includes(".") && args.length === 0 && STATIC_SYSCALLS.has(name)
     ? api
     : `${api}(${args.join(", ")})`;
+}
+
+function renderStorageCall(method, args, local) {
+  const rendered = [...args];
+  const keyIndex = local ? 0 : 1;
+  if (rendered[keyIndex] !== undefined) {
+    rendered[keyIndex] = renderNumericStorageKey(rendered[keyIndex]);
+  }
+  if (method === "Find") {
+    const optionsIndex = local ? 1 : 2;
+    if (rendered[optionsIndex] !== undefined) {
+      rendered[optionsIndex] = renderNumericFindOptions(rendered[optionsIndex]);
+    }
+  }
+  return `Storage.${method}(${rendered.join(", ")})`;
+}
+
+function renderNumericStorageKey(expression) {
+  const source = expression.trim();
+  return /^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)
+    ? `(ByteString)(BigInteger)(${source})`
+    : expression;
+}
+
+function renderNumericFindOptions(expression) {
+  return renderNumericEnum(expression, "FindOptions");
+}
+
+function renderNumericEnum(expression, type) {
+  const source = expression.trim();
+  return /^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)
+    ? `(${type})(${source})`
+    : expression;
 }
 
 function renderLowLevelSyscall(name, args) {
