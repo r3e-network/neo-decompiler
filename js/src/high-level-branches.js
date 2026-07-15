@@ -10,15 +10,29 @@ import {
 } from "./high-level-control-flow-shared.js";
 
 export function createBranchHelpers(runtime) {
-  const { createState, cloneState, executeStraightLine, liftStructuredSlice } = runtime;
+  const {
+    createState,
+    cloneState,
+    forkStateForSlice,
+    executeStraightLine,
+    liftStructuredSlice,
+  } = runtime;
 
-  function tryLiftSimpleSwitch(instructions, manifestMethod, context, methodOffset = 0) {
+  function tryLiftSimpleSwitch(
+    instructions,
+    manifestMethod,
+    context,
+    methodOffset = 0,
+    initialState = null,
+  ) {
     if (instructions.length < 12) {
       return null;
     }
 
     let cursor = 0;
-    const prefixState = createState(manifestMethod, context, methodOffset, instructions);
+    const prefixState = initialState
+      ? forkStateForSlice(initialState, instructions)
+      : createState(manifestMethod, context, methodOffset, instructions);
 
     while (cursor < instructions.length) {
       const instruction = instructions[cursor];
@@ -129,7 +143,13 @@ export function createBranchHelpers(runtime) {
     return { statements, warnings: [...prefixState.warnings] };
   }
 
-  function tryLiftSimpleBranch(instructions, manifestMethod, context, methodOffset) {
+  function tryLiftSimpleBranch(
+    instructions,
+    manifestMethod,
+    context,
+    methodOffset,
+    initialState = null,
+  ) {
     const conditionalIndex = instructions.findIndex((instruction) => isSimpleConditional(instruction.opcode.mnemonic));
     if (conditionalIndex < 0) {
       return null;
@@ -157,7 +177,9 @@ export function createBranchHelpers(runtime) {
       return null;
     }
 
-    const prefixState = createState(manifestMethod, context, methodOffset, instructions);
+    const prefixState = initialState
+      ? forkStateForSlice(initialState, instructions)
+      : createState(manifestMethod, context, methodOffset, instructions);
     // Only emit labels for offsets within the prefix range — prevents labels
     // for inner branch targets from appearing before the if-header.
     const prefixOffsets = new Set(instructions.slice(0, conditionalIndex).map((i) => i.offset));
@@ -201,7 +223,13 @@ export function createBranchHelpers(runtime) {
     }
 
     const nestedThen = containsUnsupportedBranchStructure(thenSlice)
-      ? liftStructuredSlice(thenSlice, manifestMethod, context, thenSlice[0]?.offset ?? methodOffset)
+      ? liftStructuredSlice(
+          thenSlice,
+          manifestMethod,
+          context,
+          thenSlice[0]?.offset ?? methodOffset,
+          prefixState,
+        )
       : null;
     // Close unclosed blocks from liftStructuredSlice falling through to
     // liftStraightLineMethodBody, which emits if-headers via tryControlTransferFallback
@@ -248,7 +276,13 @@ export function createBranchHelpers(runtime) {
     }
     if (elseSlice.length > 0) {
       const nestedElse = containsUnsupportedBranchStructure(elseSlice)
-        ? liftStructuredSlice(elseSlice, manifestMethod, context, elseSlice[0]?.offset ?? methodOffset)
+        ? liftStructuredSlice(
+            elseSlice,
+            manifestMethod,
+            context,
+            elseSlice[0]?.offset ?? methodOffset,
+            prefixState,
+          )
         : null;
       const elseState = cloneState(prefixState);
       if (nestedElse === null) {

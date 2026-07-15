@@ -12,9 +12,15 @@ function findMnemonicFrom(instructions, start, mnemonic) {
 }
 
 export function createTryHelpers(runtime) {
-  const { createState, cloneState, executeStraightLine } = runtime;
+  const { createState, cloneState, forkStateForSlice, executeStraightLine } = runtime;
 
-  function tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset) {
+  function tryLiftSimpleTryBlock(
+    instructions,
+    manifestMethod,
+    context,
+    methodOffset,
+    initialState = null,
+  ) {
     const tryIndex = findMnemonicFrom(instructions, 0, "TRY");
     if (tryIndex < 0) {
       return null;
@@ -117,7 +123,9 @@ export function createTryHelpers(runtime) {
       return null;
     }
 
-    const prefixState = createState(manifestMethod, context, methodOffset, instructions);
+    const prefixState = initialState
+      ? forkStateForSlice(initialState, instructions)
+      : createState(manifestMethod, context, methodOffset, instructions);
     executeStraightLine(prefixState, instructions.slice(0, tryIndex));
     const tryBodyState = cloneState(prefixState);
     executeStraightLine(tryBodyState, instructions.slice(bodyStartIndex, endtryGlobalIndex));

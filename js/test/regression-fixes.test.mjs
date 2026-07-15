@@ -193,6 +193,29 @@ test("high-level forward jumps restore and merge stack values", () => {
   assert.match(highLevel, /return arg0;/);
 });
 
+test("nested structured branches inherit the parent stack", () => {
+  // Checked arithmetic has a second conditional nested in the false path of
+  // the first one. The nested slice must start with the duplicated operation
+  // result rather than re-infer method arguments from scratch.
+  const script = new Uint8Array([
+    0x57, 0x00, 0x02, // INITSLOT 0 locals, 2 args
+    0x78, 0x79, 0x9E, // LDARG0, LDARG1, ADD
+    0x4A, // DUP
+    0x02, 0x00, 0x00, 0x00, 0x80, // PUSHINT32 -2147483648
+    0x2E, 0x03, // JMPGE -> second check
+    0x3A, // THROW
+    0x4A, // DUP
+    0x02, 0xFF, 0xFF, 0xFF, 0x7F, // PUSHINT32 2147483647
+    0x32, 0x03, // JMPLE -> RET
+    0x3A, // THROW
+    0x40, // RET
+  ]);
+  const { highLevel } = decompileHighLevelBytes(buildNef({ script }));
+  assert.doesNotMatch(highLevel, /\?\?\?|default\(dynamic\)/);
+  assert.match(highLevel, /throw\(t\d+\);/);
+  assert.match(highLevel, /return t\d+;/);
+});
+
 test("late static PUSHA initialization resolves an earlier CALLA", () => {
   // The public method reads static0 before the compiler-generated initializer
   // writes it. The call graph prepass should recover only this unambiguous

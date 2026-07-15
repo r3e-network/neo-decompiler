@@ -1,6 +1,12 @@
 import { executeStraightLine } from "./high-level/straight-line.js";
 import { createControlFlowHelpers } from "./high-level-control-flow.js";
-import { cloneState, createState, emptyContext } from "./high-level-state.js";
+import {
+  cloneState,
+  createState,
+  emptyContext,
+  forkStateForSlice,
+  advanceNextTempIdFromStatements,
+} from "./high-level-state.js";
 import { stripOuterParens } from "./high-level-utils.js";
 import { renderContractHeader } from "./high-level/header.js";
 import {
@@ -19,23 +25,34 @@ function liftStructuredSlice(
   manifestMethod = null,
   context = emptyContext(),
   methodOffset = instructions[0]?.offset ?? 0,
+  initialState = null,
 ) {
   if (instructions.length === 0) {
     return { statements: [], warnings: [] };
   }
 
   const result =
-    CONTROL_FLOW.tryLiftSimpleSwitch(instructions, manifestMethod, context, methodOffset) ??
-    CONTROL_FLOW.tryLiftSimpleLoop(instructions, manifestMethod, context, methodOffset) ??
-    CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset) ??
-    CONTROL_FLOW.tryLiftSimpleBranch(instructions, manifestMethod, context, methodOffset) ??
-    liftStraightLineMethodBody(instructions, manifestMethod, context, undefined, methodOffset);
+    CONTROL_FLOW.tryLiftSimpleSwitch(instructions, manifestMethod, context, methodOffset, initialState) ??
+    CONTROL_FLOW.tryLiftSimpleLoop(instructions, manifestMethod, context, methodOffset, initialState) ??
+    CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset, initialState) ??
+    CONTROL_FLOW.tryLiftSimpleBranch(instructions, manifestMethod, context, methodOffset, initialState) ??
+    liftStraightLineMethodBody(
+      instructions,
+      manifestMethod,
+      context,
+      initialState ? forkStateForSlice(initialState, instructions) : undefined,
+      methodOffset,
+    );
+  if (initialState) {
+    advanceNextTempIdFromStatements(initialState, result.statements);
+  }
   return result;
 }
 
 CONTROL_FLOW = createControlFlowHelpers({
   createState,
   cloneState,
+  forkStateForSlice,
   executeStraightLine,
   liftStructuredSlice,
 });

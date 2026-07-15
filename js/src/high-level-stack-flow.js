@@ -12,6 +12,21 @@ export function recordStackSnapshot(state, target) {
   }
   const snapshot = [...state.stack];
   if (!state.stackSnapshotsByLabel.has(target)) {
+    for (let index = 0; index < snapshot.length; index += 1) {
+      const value = snapshot[index];
+      if (isMergeTemporary(value)) {
+        continue;
+      }
+      if (!isSafeMergeValue(value)) {
+        state.stackSnapshotsByLabel.set(target, null);
+        return;
+      }
+      const temp = `t${state.nextTempId}`;
+      state.nextTempId += 1;
+      state.statements.push(`let ${temp} = ${value};`);
+      snapshot[index] = temp;
+      state.stack[index] = temp;
+    }
     state.stackSnapshotsByLabel.set(target, snapshot);
     return;
   }
@@ -93,4 +108,8 @@ export function restoreStackAtLabel(state, offset) {
 
 function isMergeTemporary(value) {
   return /^t\d+$/u.test(value);
+}
+
+function isSafeMergeValue(value) {
+  return /^(?:-?\d+|0x[0-9A-Fa-f]+|true|false|null|[A-Za-z_][A-Za-z0-9_]*)$/u.test(value);
 }

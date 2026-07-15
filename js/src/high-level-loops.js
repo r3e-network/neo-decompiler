@@ -9,17 +9,34 @@ import {
 } from "./high-level-control-flow-shared.js";
 
 export function createLoopHelpers(runtime) {
-  const { createState, cloneState, executeStraightLine, liftStructuredSlice } =
-    runtime;
+  const {
+    createState,
+    cloneState,
+    forkStateForSlice,
+    executeStraightLine,
+    liftStructuredSlice,
+  } = runtime;
 
-  function tryLiftSimpleLoop(instructions, manifestMethod, context, methodOffset) {
+  function tryLiftSimpleLoop(
+    instructions,
+    manifestMethod,
+    context,
+    methodOffset,
+    initialState = null,
+  ) {
     return (
-      tryLiftSimpleWhile(instructions, manifestMethod, context, methodOffset) ??
-      tryLiftSimpleDoWhile(instructions, manifestMethod, context, methodOffset)
+      tryLiftSimpleWhile(instructions, manifestMethod, context, methodOffset, initialState) ??
+      tryLiftSimpleDoWhile(instructions, manifestMethod, context, methodOffset, initialState)
     );
   }
 
-  function tryLiftSimpleWhile(instructions, manifestMethod, context, methodOffset) {
+  function tryLiftSimpleWhile(
+    instructions,
+    manifestMethod,
+    context,
+    methodOffset,
+    initialState = null,
+  ) {
     const conditionalIndex = instructions.findIndex((instruction) =>
       isSimpleConditional(instruction.opcode.mnemonic),
     );
@@ -51,7 +68,9 @@ export function createLoopHelpers(runtime) {
       return null;
     }
 
-    const prefixState = createState(manifestMethod, context, methodOffset, instructions);
+    const prefixState = initialState
+      ? forkStateForSlice(initialState, instructions)
+      : createState(manifestMethod, context, methodOffset, instructions);
     executeStraightLine(prefixState, instructions.slice(0, conditionalIndex));
     const condition = popConditionForBranch(prefixState.stack, conditional.opcode.mnemonic);
     if (condition === null) {
@@ -91,7 +110,13 @@ export function createLoopHelpers(runtime) {
     });
   }
 
-  function tryLiftSimpleDoWhile(instructions, manifestMethod, context, methodOffset) {
+  function tryLiftSimpleDoWhile(
+    instructions,
+    manifestMethod,
+    context,
+    methodOffset,
+    initialState = null,
+  ) {
     const tailIndex = instructions.findIndex(
       (instruction, index) =>
         isSimpleConditional(instruction.opcode.mnemonic) &&
@@ -117,7 +142,9 @@ export function createLoopHelpers(runtime) {
       return null;
     }
 
-    const prefixState = createState(manifestMethod, context, methodOffset, instructions);
+    const prefixState = initialState
+      ? forkStateForSlice(initialState, instructions)
+      : createState(manifestMethod, context, methodOffset, instructions);
     executeStraightLine(prefixState, instructions.slice(0, loopStartIndex));
 
     const bodyState = cloneState(prefixState);
@@ -212,6 +239,7 @@ function executeStructuredLoopBody(
           manifestMethod,
           context,
           part.instructions[0]?.offset ?? methodOffset,
+          state,
         );
         state.statements.push(...nested.statements);
         state.warnings.push(...nested.warnings);

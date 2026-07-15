@@ -84,6 +84,33 @@ export function cloneState(state) {
   };
 }
 
+/**
+ * Fork a state for a nested structured slice. The parent stack, slot
+ * provenance, and temp numbering remain available to the nested body, while
+ * emitted statements, labels, and forward-jump snapshots belong only to the
+ * new slice.
+ */
+export function forkStateForSlice(state, instructions) {
+  const fork = cloneState(state);
+  fork.statements = [];
+  fork.warnings = [];
+  fork.previousInstruction = null;
+  fork.previousStoreInfo = null;
+  fork.labelTargets = collectLabelTargets(instructions);
+  fork.emittedLabels = new Set();
+  fork.stackSnapshotsByLabel = new Map();
+  fork.program = instructions;
+  return fork;
+}
+
+export function advanceNextTempIdFromStatements(state, statements) {
+  for (const statement of statements) {
+    for (const match of statement.matchAll(/\bt(\d+)\b/gu)) {
+      state.nextTempId = Math.max(state.nextTempId, Number(match[1]) + 1);
+    }
+  }
+}
+
 export function finishInstruction(state, instruction) {
   state.previousInstruction = instruction;
 }
