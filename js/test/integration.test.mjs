@@ -133,7 +133,7 @@ test("integration: C# declarations are typed by default with an explicit legacy 
   const typed = decompileHighLevelBytes(nef).csharp;
   const legacy = decompileHighLevelBytes(nef, { typedDeclarations: false }).csharp;
 
-  assert.match(typed, /BigInteger loc0 = arg0 \+ 1;/);
+  assert.match(typed, /BigInteger loc0 = \(\(dynamic\)\(arg0\)\) \+ 1;/);
   assert.doesNotMatch(typed, /var loc0/);
   assert.match(legacy, /var loc0 = arg0 \+ 1;/);
   assert.doesNotMatch(legacy, /BigInteger loc0/);

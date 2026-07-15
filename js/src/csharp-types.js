@@ -36,9 +36,18 @@ function inferExpressionType(expression, knownTypes = new Map()) {
   if (syscall) return csharpSyscallReturnType(syscall[1]) ?? "dynamic";
   const identifier = value.match(/^@?([A-Za-z_][A-Za-z0-9_]*)$/)?.[1];
   if (identifier) return knownTypes.get(identifier) ?? "dynamic";
-  if (/[<>=!]=?|&&|\|\|/.test(value)) return "bool";
-  if (/[+\-*\/%]|\b(?:and|or|xor|shl|shr)\b/.test(value)) return "BigInteger";
+  if (hasComparisonOperator(value)) return "bool";
+  if (/[+\-*\/%]|<<|>>|\b(?:and|or|xor|shl|shr)\b/.test(value)) return "BigInteger";
   return "dynamic";
+}
+
+// Do not mistake the individual angle brackets in VM shift expressions for
+// relational operators. BigInteger shift values are numeric, while a genuine
+// comparison still has an isolated `<` or `>` token.
+function hasComparisonOperator(value) {
+  if (/(?:===|!==|==|!=|<=|>=|&&|\|\||!)/.test(value)) return true;
+  return /(?:^|[^<])<(?:[^<]|$)/.test(value)
+    || /(?:^|[^>])>(?:[^>]|$)/.test(value);
 }
 
 function isConcreteType(type) {
@@ -71,6 +80,7 @@ function resolveDefinitionType(definitions, knownTypes) {
  */
 export function inferDeclarationTypes(lines) {
   const definitions = new Map();
+  const parameterTypes = inferParameterTypes(lines);
   for (const line of lines) {
     const match = line.trim().match(/^(?:let\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);$/);
     if (!match) continue;
@@ -78,9 +88,9 @@ export function inferDeclarationTypes(lines) {
     definitions.get(match[1]).push(match[2]);
   }
 
-  let knownTypes = new Map();
+  let knownTypes = new Map(parameterTypes);
   for (let iteration = 0; iteration <= definitions.size; iteration += 1) {
-    const nextTypes = new Map();
+    const nextTypes = new Map(parameterTypes);
     for (const [name, values] of definitions) {
       const type = resolveDefinitionType(values, knownTypes);
       if (type) nextTypes.set(name, type);
@@ -89,5 +99,42 @@ export function inferDeclarationTypes(lines) {
     knownTypes = nextTypes;
   }
 
-  return new Map([...definitions.keys()].map((name) => [name, knownTypes.get(name) ?? "dynamic"]));
+  return new Map([
+    ...parameterTypes,
+    ...[...definitions.keys()].map((name) => [name, knownTypes.get(name) ?? "dynamic"]),
+  ]);
+}
+
+function inferParameterTypes(lines) {
+  const signature = lines.find((line) => /^\s*fn\s+/.test(line))
+    ?.match(/^\s*fn\s+[A-Za-z_][A-Za-z0-9_]*\((.*?)\)/);
+  if (!signature) return new Map();
+  const parameters = signature[1].split(",").map((parameter) => parameter.trim());
+  const types = new Map();
+  for (const parameter of parameters) {
+    const separator = parameter.indexOf(":");
+    if (separator < 0) {
+      const name = parameter.trim();
+      if (name) types.set(name, "object");
+      continue;
+    }
+    const name = parameter.slice(0, separator).trim();
+    const type = parameter.slice(separator + 1).trim().toLowerCase();
+    if (!name) continue;
+    types.set(name, {
+      void: "void",
+      bool: "bool",
+      boolean: "bool",
+      int: "BigInteger",
+      integer: "BigInteger",
+      string: "string",
+      bytes: "ByteString",
+      bytestring: "ByteString",
+      bytearray: "ByteString",
+      array: "object[]",
+      map: "Map<object, object>",
+      any: "dynamic",
+    }[type] ?? "dynamic");
+  }
+  return types;
 }

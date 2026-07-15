@@ -82,7 +82,9 @@ export function createCSharpCollectionHelpers(rewriteExpression) {
       : null],
     ["convert_to_integer", (args) => args.length === 1 ? `(BigInteger)(${args[0]})` : null],
     ["convert_to_bool", (args) => args.length === 1 ? `(bool)(${args[0]})` : null],
-    ["convert_to_bytestring", (args) => args.length === 1 ? `(ByteString)(${args[0]})` : null],
+    ["convert_to_bytestring", (args) => args.length === 1
+      ? renderByteStringConversion(args[0])
+      : null],
     ["convert_to_buffer", (args) => args.length === 1 ? renderCSharpBufferConversion(args[0]) : null],
     ["convert", (args) => args.length === 1 ? `(object)(${args[0]})` : null],
     ["len", (args, types) => args.length === 1 ? collectionLength(args[0], types) : null],
@@ -112,14 +114,14 @@ export function createCSharpCollectionHelpers(rewriteExpression) {
       ? `BigInteger.Pow(${args[0]}, (int)(${args[1]}))`
       : null],
     ["within", (args) => args.length === 3 ? `Helper.Within(${args.join(", ")})` : null],
-    ["substr", (args) => args.length === 3
-      ? `Helper.Range(${args[0]}, (int)(${args[1]}), (int)(${args[2]}))`
+    ["substr", (args, types) => args.length === 3
+      ? renderSubstr(args, types)
       : null],
-    ["left", (args) => args.length === 2
-      ? `Helper.Take(${args[0]}, (int)(${args[1]}))`
+    ["left", (args, types) => args.length === 2
+      ? renderLeft(args, types)
       : null],
-    ["right", (args) => args.length === 2
-      ? `Helper.Last(${args[0]}, (int)(${args[1]}))`
+    ["right", (args, types) => args.length === 2
+      ? renderRight(args, types)
       : null],
     ["pop_item", (args, types) => {
       if (args.length !== 1) return null;
@@ -158,6 +160,37 @@ function inferredType(expression, types) {
   if (!types) return "";
   const name = expression.trim().replace(/^@/, "");
   return types.get(name) ?? types.get(expression.trim()) ?? "";
+}
+
+function renderByteStringConversion(expression) {
+  const source = expression.trim();
+  if (/^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)) {
+    return `(ByteString)(BigInteger)(${source})`;
+  }
+  return `(ByteString)(${source})`;
+}
+
+function renderSubstr(args, types) {
+  const source = args[0].trim();
+  const type = inferredType(source, types);
+  const receiver = type === "string" ? `(byte[])(ByteString)(${source})` : source;
+  return `Helper.Range(${receiver}, (int)(${args[1]}), (int)(${args[2]}))`;
+}
+
+function renderLeft(args, types) {
+  const source = args[0].trim();
+  if (inferredType(source, types) === "string") {
+    return `${source}.Substring(0, (int)(${args[1]}))`;
+  }
+  return `Helper.Take(${source}, (int)(${args[1]}))`;
+}
+
+function renderRight(args, types) {
+  const source = args[0].trim();
+  if (inferredType(source, types) === "string") {
+    return `${source}.Substring(${source}.Length - (int)(${args[1]}), (int)(${args[1]}))`;
+  }
+  return `Helper.Last(${source}, (int)(${args[1]}))`;
 }
 
 export function renderCSharpTypeTest(name, args) {

@@ -567,6 +567,51 @@ test("C# typed declarations stay scoped to each method", () => {
   assert.doesNotMatch(rendered, /dynamic @value/);
 });
 
+test("C# typed declarations keep VM shifts numeric and cast their counts", () => {
+  const rendered = renderCSharpContract([
+    "contract ShiftTypes {",
+    "fn rotate(value: int, shift: int) -> any {",
+    "    let shifted = value << shift;",
+    "    let restored = shifted >> (shift + 1);",
+    "    return restored;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /BigInteger shifted = @value << \(int\)\(shift\);/);
+  assert.match(rendered, /BigInteger restored = shifted >> \(int\)\(\(shift \+ 1\)\);/);
+});
+
+test("C# rendering casts VM indices and byte-string numeric conversions", () => {
+  const rendered = renderCSharpContract([
+    "contract IndexTypes {",
+    "fn inspect(value: string, index: int) -> any {",
+    "    let item = value[index];",
+    "    let bytes = convert_to_bytestring(32);",
+    "    let slice = convert_to_bytestring(substr(value, index, 1));",
+    "    return slice;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /dynamic item = @value\[\(int\)\(index\)\];/);
+  assert.match(rendered, /ByteString bytes = \(ByteString\)\(BigInteger\)\(32\);/);
+  assert.match(rendered, /ByteString slice = \(ByteString\)\(Helper\.Range\(\(byte\[\]\)\(ByteString\)\(@value\),/);
+});
+
+test("C# rendering keeps mixed VM operators dynamically bindable", () => {
+  const rendered = renderCSharpContract([
+    "contract MixedOperators {",
+    "fn compare(value: any) -> bool {",
+    "    return value == 1;",
+    "}",
+    "fn subtract(left: bool, right: bool) -> any {",
+    "    return left - right;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /return \(\(dynamic\)\(@value\)\) == 1;/);
+  assert.match(rendered, /return \(\(dynamic\)\(left\)\) - right;/);
+});
+
 test("C# typed declarations propagate concrete collection aliases", () => {
   const rendered = renderCSharpContract([
     "contract AliasTypes {",
@@ -1275,7 +1320,7 @@ test("C# rendering lowers THROW and ASSERT forms", () => {
     "}",
     "}",
   ].join("\n"));
-  assert.match(csharp, /ExecutionEngine\.Assert\(\(bool\)\(object\)\(@value > 0\)\);/);
+  assert.match(csharp, /ExecutionEngine\.Assert\(\(bool\)\(object\)\(\(\(dynamic\)\(@value\)\) > 0\)\);/);
   assert.match(csharp, /if \(!\(bool\)\(object\)\(@value\)\) throw new InvalidOperationException/);
   assert.match(csharp, /throw new Exception\(Convert\.ToString\(@value\)\);/);
   assert.doesNotMatch(csharp, /assert\(/);

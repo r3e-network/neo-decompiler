@@ -8,13 +8,25 @@ import {
   renderCSharpTypeTest,
 } from "./csharp-collections.js";
 import {
-  findBracketClose,
   findCallClose,
   findQuotedLiteralClose,
-  isInsideQuotedString,
   nextOutsideMatch,
   splitCallArguments,
 } from "./csharp-expression-scanner.js";
+import {
+  rewriteCollectionLiterals,
+  rewriteEmptyArrayLiterals,
+  rewriteOversizedDecimalLiterals,
+  rewriteOversizedHexLiterals,
+  rewriteUnknownPlaceholders,
+} from "./csharp-expression-literals.js";
+import {
+  rewriteConcatenation,
+  rewriteDynamicOperators,
+  rewriteIndexOperands,
+  rewriteNumericUnaryNot,
+  rewriteShiftCounts,
+} from "./csharp-expression-operators.js";
 
 export { splitCallArguments } from "./csharp-expression-scanner.js";
 
@@ -32,182 +44,24 @@ const CSHARP_COLLECTION_HELPERS = createCSharpCollectionHelpers(
 );
 
 export function rewriteCSharpExpression(line, types = null) {
-  const lowered = rewriteUnknownPlaceholders(rewriteCollectionLiterals(rewriteEmptyArrayLiterals(
-    rewriteConcatenation(
-      rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(
-        rewriteOversizedDecimalLiterals(rewriteOversizedHexLiterals(line)),
-        types,
-      ))),
+  const lowered = rewriteUnknownPlaceholders(
+    rewriteCollectionLiterals(
+      rewriteEmptyArrayLiterals(
+        rewriteConcatenation(
+          rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(
+            rewriteOversizedDecimalLiterals(rewriteOversizedHexLiterals(line)),
+            types,
+          ))),
+        ),
+      ),
+      (element) => rewriteCSharpExpression(element),
     ),
-  )));
-  return rewriteCSharpIdentifiers(rewriteNumericUnaryNot(lowered));
-}
-
-// Neo VM truthiness permits numeric and bitwise values in a NOT operation,
-// while C# requires `!` to receive a bool. Rewrite only compound operands that
-// are visibly value-producing; simple identifiers stay untouched because
-// their parameter/local type may be an already-boolean value.
-function rewriteNumericUnaryNot(line) {
-  let output = "";
-  let cursor = 0;
-  let quote = null;
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index];
-    if (quote) {
-      if (character === "\\") index += 1;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === '"' || character === "'") {
-      quote = character;
-      continue;
-    }
-    if (character === "/" && line[index + 1] === "/") break;
-    if (character !== "!" || line[index + 1] === "=") continue;
-
-    let operandStart = index + 1;
-    while (/\s/.test(line[operandStart] ?? "")) operandStart += 1;
-    if (operandStart >= line.length) continue;
-
-    let operandEnd = operandStart;
-    let operand;
-    if (line[operandStart] === "(") {
-      const close = findCallClose(line, operandStart);
-      if (close < 0) continue;
-      operand = line.slice(operandStart + 1, close).trim();
-      operandEnd = close + 1;
-    } else {
-      while (/[A-Za-z0-9_@.]/.test(line[operandEnd] ?? "")) operandEnd += 1;
-      if (line[operandEnd] === "(") {
-        const close = findCallClose(line, operandEnd);
-        if (close < 0) continue;
-        operandEnd = close + 1;
-      }
-      operand = line.slice(operandStart, operandEnd).trim();
-    }
-    if (!operand || isLikelyBooleanExpression(operand)) continue;
-
-    output += line.slice(cursor, index);
-    output += `!((bool)(dynamic)(${operand}))`;
-    cursor = operandEnd;
-    index = operandEnd - 1;
-  }
-  return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function isLikelyBooleanExpression(expression) {
-  const source = expression.trim();
-  if (/^\(?\s*\(bool\)\s*\(dynamic\)/.test(source)) return true;
-  if (/(?:===?|!==?|<=|>=|<|>|&&|\|\||\bis\s+null\b)/.test(source)) return true;
-  if (/^(?:(?:is_null|is_type_[A-Za-z0-9_]+|within|equals|not_equals|not|is_valid)|Helper\.(?:Within|NumEqual))\s*\(/.test(source)) {
-    return true;
-  }
-  if (/^@?[A-Za-z_][A-Za-z0-9_]*$/.test(source)) {
-    return true;
-  }
-  return false;
-}
-
-function rewriteOversizedHexLiterals(line) {
-  const pattern = /\b0x([0-9a-fA-F]{17,})\b/g;
-  let output = "";
-  let cursor = 0;
-  let match;
-  while ((match = nextOutsideMatch(line, pattern)) !== null) {
-    const paddedLength = match[1].length % 2 === 0 ? match[1].length : match[1].length + 1;
-    const hex = match[1].padStart(paddedLength, "0");
-    const bytes = hex.match(/../g)?.map((value) => `0x${value.toUpperCase()}`) ?? [];
-    output += line.slice(cursor, match.index);
-    output += `(ByteString)new byte[] { ${bytes.join(", ")} }`;
-    cursor = match.index + match[0].length;
-  }
-  return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function rewriteOversizedDecimalLiterals(line) {
-  const pattern = /(?<![A-Za-z0-9_])-?\d{19,}(?![A-Za-z0-9_])/g;
-  const min = -(1n << 63n);
-  const max = (1n << 63n) - 1n;
-  let output = "";
-  let cursor = 0;
-  let match;
-  while ((match = nextOutsideMatch(line, pattern)) !== null) {
-    const value = BigInt(match[0]);
-    output += line.slice(cursor, match.index);
-    output += value < min || value > max
-      ? `BigInteger.Parse("${match[0]}")`
-      : match[0];
-    cursor = match.index + match[0].length;
-  }
-  return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function rewriteUnknownPlaceholders(line) {
-  const marker = /\?\?\?/g;
-  let output = "";
-  let cursor = 0;
-  let match;
-  while ((match = nextOutsideMatch(line, marker)) !== null) {
-    output += line.slice(cursor, match.index) + "default(dynamic)";
-    cursor = match.index + match[0].length;
-  }
-  return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function rewriteEmptyArrayLiterals(line) {
-  const pattern = /\[\]/g;
-  let output = "";
-  let cursor = 0;
-  let match;
-  while ((match = nextOutsideMatch(line, pattern)) !== null) {
-    let previous = match.index - 1;
-    while (previous >= 0 && /\s/.test(line[previous])) previous -= 1;
-    const isTypeSuffix = previous >= 0 && /[A-Za-z0-9_>\]]/.test(line[previous]);
-    output += line.slice(cursor, match.index);
-    output += isTypeSuffix ? "[]" : "new object[] { }";
-    cursor = match.index + 2;
-  }
-  return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function rewriteCollectionLiterals(line) {
-  let output = "";
-  let cursor = 0;
-  for (let index = 0; index < line.length; index += 1) {
-    if (line[index] !== "[" || isInsideQuotedString(line, index) || !isCollectionLiteralStart(line, index)) {
-      continue;
-    }
-    const close = findBracketClose(line, index);
-    if (close < 0) continue;
-    const elements = splitCallArguments(line.slice(index + 1, close))
-      .map((element) => rewriteCSharpExpression(element));
-    output += line.slice(cursor, index);
-    output += `new object[] { ${elements.join(", ")} }`;
-    cursor = close + 1;
-    index = close;
-  }
-  return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function isCollectionLiteralStart(line, index) {
-  let previous = index - 1;
-  while (previous >= 0 && /\s/.test(line[previous])) previous -= 1;
-  if (previous < 0) return true;
-  if (line[previous] === "[") return true;
-  if (line[previous] === "{") {
-    const prefix = line.slice(0, previous).trimEnd();
-    return !prefix.endsWith("new Map<object, object>");
-  }
-  if (line[previous] === ",") {
-    const prefix = line.slice(0, previous).trimEnd();
-    const mapOpen = prefix.lastIndexOf("new Map<object, object> {");
-    const mapClose = prefix.lastIndexOf("}");
-    if (mapOpen > mapClose) return false;
-  }
-  if ("=,(\:{;".includes(line[previous])) return true;
-  if (/[+\-*/%&|!?<>]/.test(line[previous])) return true;
-  const prefix = line.slice(0, previous + 1).match(/[A-Za-z_][A-Za-z0-9_]*$/)?.[0];
-  return prefix === "return" || prefix === "throw";
+  );
+  return rewriteCSharpIdentifiers(
+    rewriteNumericUnaryNot(
+      rewriteDynamicOperators(rewriteIndexOperands(rewriteShiftCounts(lowered), types), types),
+    ),
+  );
 }
 
 function rewriteCSharpIdentifiers(line) {
@@ -265,21 +119,6 @@ function shouldEscapeCSharpIdentifier(line, index, name) {
 function isForHeaderLet(line, index) {
   const prefix = line.slice(0, index);
   return /\bfor\s*\(\s*$/.test(prefix);
-}
-
-function rewriteConcatenation(line) {
-  const pattern = /\bcat\b/g;
-  let output = "";
-  let cursor = 0;
-  while (true) {
-    const match = nextOutsideMatch(line, pattern);
-    if (!match) break;
-    output += line.slice(cursor, match.index).replace(/\s+$/, "") + " + ";
-    cursor = pattern.lastIndex;
-    while (/\s/.test(line[cursor] ?? "")) cursor += 1;
-    pattern.lastIndex = cursor;
-  }
-  return cursor === 0 ? line : output + line.slice(cursor);
 }
 
 function rewriteQualifiedCalls(line) {
