@@ -290,9 +290,11 @@ impl ExprContext {
         match expression {
             Expr::Unknown => ValueType::Unknown,
             Expr::Variable(name) => self
-                .value_types
+                .concrete_types
                 .get(name)
-                .copied()
+                .filter(|type_name| !matches!(type_name.as_str(), "dynamic" | "object"))
+                .and_then(|type_name| types::csharp_type_value_type(type_name))
+                .or_else(|| self.value_types.get(name).copied())
                 .unwrap_or(ValueType::Unknown),
             Expr::Literal(Literal::Int(_) | Literal::BigInt(_)) => ValueType::Integer,
             Expr::Literal(Literal::Bool(_)) => ValueType::Boolean,

@@ -261,6 +261,29 @@ fn framework_object_members_preserve_concrete_types() {
 }
 
 #[test]
+fn validated_csharp_variable_types_refine_unknown_value_types() {
+    let context = ExprContext::default().with_concrete_types(&BTreeMap::from([
+        ("storage".to_string(), "StorageContext".to_string()),
+        ("key".to_string(), "ByteString".to_string()),
+        ("amount".to_string(), "BigInteger".to_string()),
+        ("unknown".to_string(), "dynamic".to_string()),
+        ("opaque".to_string(), "object".to_string()),
+    ]));
+
+    assert_eq!(
+        context.value_type(&Expr::var("storage")),
+        ValueType::InteropInterface
+    );
+    assert_eq!(context.value_type(&Expr::var("key")), ValueType::ByteString);
+    assert_eq!(context.value_type(&Expr::var("amount")), ValueType::Integer);
+    assert_eq!(
+        context.value_type(&Expr::var("unknown")),
+        ValueType::Unknown
+    );
+    assert_eq!(context.value_type(&Expr::var("opaque")), ValueType::Unknown);
+}
+
+#[test]
 fn planned_alias_types_flow_into_member_and_index_inference() {
     let get_contract = Expr::call(
         SemanticCallTarget::MethodToken {

@@ -1353,6 +1353,32 @@ fn storage_syscalls_select_overloads_from_neutral_types() {
 }
 
 #[test]
+fn storage_syscalls_use_validated_csharp_types_when_vm_types_are_unknown() {
+    let context = ExprContext::default().with_concrete_types(&BTreeMap::from([
+        ("storage".to_string(), "StorageContext".to_string()),
+        ("key".to_string(), "ByteString".to_string()),
+        ("value".to_string(), "BigInteger".to_string()),
+    ]));
+    let expression = Expr::call(
+        SemanticCallTarget::Syscall {
+            hash: 0x8418_3FE6,
+            name: Some("System.Storage.Put".to_string()),
+        },
+        vec![
+            Expr::Literal(Literal::String("System.Storage.Put".to_string())),
+            Expr::var("storage"),
+            Expr::var("key"),
+            Expr::var("value"),
+        ],
+    );
+
+    assert_eq!(
+        render_expr(&expression, &context),
+        "Storage.Put((StorageContext)(storage), (ByteString)(key), (BigInteger)(value))"
+    );
+}
+
+#[test]
 fn every_known_syscall_has_an_explicit_csharp_policy() {
     for syscall in crate::syscalls::all() {
         assert!(
