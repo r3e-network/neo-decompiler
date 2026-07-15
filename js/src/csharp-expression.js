@@ -32,14 +32,80 @@ const CSHARP_COLLECTION_HELPERS = createCSharpCollectionHelpers(
 );
 
 export function rewriteCSharpExpression(line, types = null) {
-  return rewriteCSharpIdentifiers(rewriteUnknownPlaceholders(rewriteCollectionLiterals(rewriteEmptyArrayLiterals(
+  const lowered = rewriteUnknownPlaceholders(rewriteCollectionLiterals(rewriteEmptyArrayLiterals(
     rewriteConcatenation(
       rewriteQualifiedCalls(rewriteKnownSyscalls(rewriteKnownHelpers(
         rewriteOversizedDecimalLiterals(rewriteOversizedHexLiterals(line)),
         types,
       ))),
     ),
-  ))));
+  )));
+  return rewriteCSharpIdentifiers(rewriteNumericUnaryNot(lowered));
+}
+
+// Neo VM truthiness permits numeric and bitwise values in a NOT operation,
+// while C# requires `!` to receive a bool. Rewrite only compound operands that
+// are visibly value-producing; simple identifiers stay untouched because
+// their parameter/local type may be an already-boolean value.
+function rewriteNumericUnaryNot(line) {
+  let output = "";
+  let cursor = 0;
+  let quote = null;
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (quote) {
+      if (character === "\\") index += 1;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "/" && line[index + 1] === "/") break;
+    if (character !== "!" || line[index + 1] === "=") continue;
+
+    let operandStart = index + 1;
+    while (/\s/.test(line[operandStart] ?? "")) operandStart += 1;
+    if (operandStart >= line.length) continue;
+
+    let operandEnd = operandStart;
+    let operand;
+    if (line[operandStart] === "(") {
+      const close = findCallClose(line, operandStart);
+      if (close < 0) continue;
+      operand = line.slice(operandStart + 1, close).trim();
+      operandEnd = close + 1;
+    } else {
+      while (/[A-Za-z0-9_@.]/.test(line[operandEnd] ?? "")) operandEnd += 1;
+      if (line[operandEnd] === "(") {
+        const close = findCallClose(line, operandEnd);
+        if (close < 0) continue;
+        operandEnd = close + 1;
+      }
+      operand = line.slice(operandStart, operandEnd).trim();
+    }
+    if (!operand || isLikelyBooleanExpression(operand)) continue;
+
+    output += line.slice(cursor, index);
+    output += `!((bool)(dynamic)(${operand}))`;
+    cursor = operandEnd;
+    index = operandEnd - 1;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function isLikelyBooleanExpression(expression) {
+  const source = expression.trim();
+  if (/^\(?\s*\(bool\)\s*\(dynamic\)/.test(source)) return true;
+  if (/(?:===?|!==?|<=|>=|<|>|&&|\|\||\bis\s+null\b)/.test(source)) return true;
+  if (/^(?:(?:is_null|is_type_[A-Za-z0-9_]+|within|equals|not_equals|not|is_valid)|Helper\.(?:Within|NumEqual))\s*\(/.test(source)) {
+    return true;
+  }
+  if (/^@?[A-Za-z_][A-Za-z0-9_]*$/.test(source)) {
+    return true;
+  }
+  return false;
 }
 
 function rewriteOversizedHexLiterals(line) {

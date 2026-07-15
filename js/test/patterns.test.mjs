@@ -679,6 +679,25 @@ test("C# contract calls normalize numeric call flags", () => {
   assert.match(csharp, /return Contract\.Call\(account, "method", \(CallFlags\)\(15\), args\);/);
 });
 
+test("C# rendering coerces compound VM truthiness for unary NOT", () => {
+  const csharp = renderCSharpContract([
+    "contract Truthiness {",
+    "fn odd(value: int) -> bool {",
+    "    return !(value % 2);",
+    "}",
+    "fn flag(value: bool) -> bool {",
+    "    return !value;",
+    "}",
+    "fn comparison(value: int) -> bool {",
+    "    return !(value > 0);",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /return !\(\(bool\)\(dynamic\)\(@value % 2\)\);/);
+  assert.match(csharp, /public static bool flag\(bool @value\) \{\n\s+return !@value;/);
+  assert.match(csharp, /return !\(@value > 0\);/);
+});
+
 test("C# rendering rewrites nested syscall arguments", () => {
   const csharp = renderCSharpContract([
     "contract Token {",
