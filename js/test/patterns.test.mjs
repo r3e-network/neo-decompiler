@@ -10,6 +10,7 @@ import {
   renderCSharpContract,
 } from "../src/index.js";
 import { inferDeclarationTypes } from "../src/csharp-types.js";
+import { splitCallArguments } from "../src/csharp-expression.js";
 
 function nef(compiler = "", source = "") {
   return { header: { compiler, source } };
@@ -29,6 +30,18 @@ function buildNef(script = [0x40], compiler = "Neo.Compiler.CSharp") {
 function compareCodepoints(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
+
+test("C# expression scanner preserves nested and quoted arguments", () => {
+  assert.deepEqual(
+    splitCallArguments('new object[] { "a,b", nested(1, 2) }, value'),
+    ['new object[] { "a,b", nested(1, 2) }', "value"],
+  );
+  assert.deepEqual(splitCallArguments('"a,b", (left, right), value'), [
+    '"a,b"',
+    "(left, right)",
+    "value",
+  ]);
+});
 
 test("pattern analysis treats declared NEP standards as authoritative", () => {
   const info = identifyPatterns(

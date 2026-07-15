@@ -7,6 +7,16 @@ import {
   createCSharpCollectionHelpers,
   renderCSharpTypeTest,
 } from "./csharp-collections.js";
+import {
+  findBracketClose,
+  findCallClose,
+  findQuotedLiteralClose,
+  isInsideQuotedString,
+  nextOutsideMatch,
+  splitCallArguments,
+} from "./csharp-expression-scanner.js";
+
+export { splitCallArguments } from "./csharp-expression-scanner.js";
 
 const CSHARP_NATIVE_PROPERTIES = new Map([
   ["GasToken::Symbol", "GasToken.Symbol"],
@@ -134,23 +144,6 @@ function isCollectionLiteralStart(line, index) {
   return prefix === "return" || prefix === "throw";
 }
 
-function findBracketClose(text, open) {
-  let depth = 0;
-  let quote = null;
-  for (let index = open; index < text.length; index += 1) {
-    const character = text[index];
-    if (quote) {
-      if (character === "\\") index += 1;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === '"' || character === "'") quote = character;
-    else if (character === "[") depth += 1;
-    else if (character === "]" && --depth === 0) return index;
-  }
-  return -1;
-}
-
 function rewriteCSharpIdentifiers(line) {
   let output = "";
   for (let index = 0; index < line.length;) {
@@ -206,18 +199,6 @@ function shouldEscapeCSharpIdentifier(line, index, name) {
 function isForHeaderLet(line, index) {
   const prefix = line.slice(0, index);
   return /\bfor\s*\(\s*$/.test(prefix);
-}
-
-function findQuotedLiteralClose(text, open) {
-  const quote = text[open];
-  for (let index = open + 1; index < text.length; index += 1) {
-    if (text[index] === "\\") {
-      index += 1;
-    } else if (text[index] === quote) {
-      return index;
-    }
-  }
-  return -1;
 }
 
 function rewriteConcatenation(line) {
@@ -315,74 +296,4 @@ function rewriteKnownSyscalls(line) {
     marker.lastIndex = cursor;
   }
   return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function nextOutsideMatch(text, pattern) {
-  let match;
-  while ((match = pattern.exec(text)) !== null) {
-    if (!isInsideQuotedString(text, match.index)) return match;
-  }
-  return null;
-}
-
-function isInsideQuotedString(text, end) {
-  let quote = null;
-  for (let index = 0; index < end; index += 1) {
-    const character = text[index];
-    if (quote) {
-      if (character === "\\") index += 1;
-      else if (character === quote) quote = null;
-    } else if (character === '"' || character === "'") {
-      quote = character;
-    }
-  }
-  return quote !== null;
-}
-
-function findCallClose(text, open) {
-  if (open < 0) return -1;
-  let depth = 0;
-  let quote = null;
-  for (let index = open; index < text.length; index += 1) {
-    const character = text[index];
-    if (quote) {
-      if (character === "\\") index += 1;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === '"' || character === "'") {
-      quote = character;
-    } else if (character === "(") {
-      depth += 1;
-    } else if (character === ")" && --depth === 0) {
-      return index;
-    }
-  }
-  return -1;
-}
-
-export function splitCallArguments(text) {
-  if (!text) return [];
-  const result = [];
-  let start = 0;
-  let depth = 0;
-  let quote = null;
-  for (let index = 0; index < text.length; index += 1) {
-    const character = text[index];
-    if (quote) {
-      if (character === "\\") index += 1;
-      else if (character === quote) quote = null;
-      continue;
-    }
-    if (character === '"' || character === "'") quote = character;
-    else if ("([{<".includes(character)) depth += 1;
-    else if (")]} >".replace(" ", "").includes(character)) depth -= 1;
-    else if (character === "," && depth === 0) {
-      result.push(text.slice(start, index).trim());
-      start = index + 1;
-    }
-  }
-  const tail = text.slice(start).trim();
-  if (tail) result.push(tail);
-  return result;
 }
