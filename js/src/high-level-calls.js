@@ -52,7 +52,14 @@ export function tryIndirectCall(state, instruction) {
 }
 
 function emitInternalCallResult(state, target, expression) {
-  if (state.context.methodReturnsValueByOffset?.get(target) === false) {
+  if (state.context.methodNeverReturnsByOffset?.get(target) === true) {
+    // C# cannot infer that an arbitrary helper always aborts/throws. Keep the
+    // call visible, then make the proven non-returning edge explicit so a
+    // surrounding non-void branch remains compile-valid.
+    state.statements.push(`${expression};`);
+    state.statements.push("throw();");
+    state.stack.length = 0;
+  } else if (state.context.methodReturnsValueByOffset?.get(target) === false) {
     state.statements.push(`${expression};`);
   } else {
     state.stack.push(expression);

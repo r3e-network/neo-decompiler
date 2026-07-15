@@ -1,4 +1,4 @@
-import { stripOuterParens, wrapExpression } from "./high-level-utils.js";
+import { jumpTarget, stripOuterParens, wrapExpression } from "./high-level-utils.js";
 
 const SIMPLE_CONDITIONAL_SET = new Set([
   "JMPIF",
@@ -36,9 +36,24 @@ export function containsUnsupportedBranchStructure(instructions) {
   );
 }
 
-export function branchTerminates(instructions) {
+export function branchTerminates(instructions, context = null) {
   const last = instructions.at(-1)?.opcode.mnemonic;
-  return ["RET", "THROW", "ABORT", "ABORTMSG"].includes(last);
+  if (["RET", "THROW", "ABORT", "ABORTMSG"].includes(last)) {
+    return true;
+  }
+  const instruction = instructions.at(-1);
+  if (!instruction || !context?.methodNeverReturnsByOffset) {
+    return false;
+  }
+  if (last === "CALL" || last === "CALL_L") {
+    const target = jumpTarget(instruction);
+    return target !== null && context.methodNeverReturnsByOffset.get(target) === true;
+  }
+  if (last === "CALLA") {
+    const target = context.callaTargetsByOffset?.get(instruction.offset);
+    return target !== undefined && context.methodNeverReturnsByOffset.get(target) === true;
+  }
+  return false;
 }
 
 export function popConditionForBranch(stack, mnemonic) {

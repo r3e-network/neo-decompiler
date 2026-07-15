@@ -249,7 +249,7 @@ export function createBranchHelpers(runtime) {
     if (nestedThen === null) {
       executeStraightLine(thenState, thenSlice);
     }
-    const thenTerminates = branchTerminates(thenSlice);
+    const thenTerminates = branchTerminates(thenSlice, context);
     const statements = [...prefixState.statements];
 
     if (elseSlice.length === 0) {

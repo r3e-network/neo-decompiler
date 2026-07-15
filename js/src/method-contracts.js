@@ -24,6 +24,7 @@ export function inferMethodContracts(methodGroups, context, callGraph) {
   const methodReturnsValueByOffset = new Map(
     [...byOffset].map(([offset, contract]) => [offset, contract.returnBehavior !== "void"]),
   );
+  const methodNeverReturnsByOffset = inferNeverReturningMethods(orderedGroups);
   const candidates = new Set(
     (callGraph?.edges ?? [])
       .filter(
@@ -37,6 +38,7 @@ export function inferMethodContracts(methodGroups, context, callGraph) {
     ...context,
     methodContractsByOffset: byOffset,
     methodReturnsValueByOffset,
+    methodNeverReturnsByOffset,
   };
 
   while (true) {
@@ -73,5 +75,37 @@ export function inferMethodContracts(methodGroups, context, callGraph) {
     methodContracts: { methods: [...byOffset.values()] },
     methodContractsByOffset: byOffset,
     methodReturnsValueByOffset,
+    methodNeverReturnsByOffset,
   };
 }
+
+// A private helper whose decoded method slice ends in a VM terminator without
+// any RET cannot produce a normal value. Keep this fact separate from the
+// public tri-state return contract: a manifest can still declare an integer
+// return type even though every execution path aborts or throws.
+function inferNeverReturningMethods(groups) {
+  const neverReturns = new Map();
+  for (const group of groups) {
+    const instructions = group.instructions ?? [];
+    const lastMnemonic = instructions.at(-1)?.opcode?.mnemonic;
+    if (
+      instructions.length > 0 &&
+      !instructions.some((instruction) => instruction.opcode.mnemonic === "RET") &&
+      !instructions.some((instruction) => NON_RETURNING_BRANCHES.has(instruction.opcode.mnemonic)) &&
+      ["THROW", "ABORT", "ABORTMSG"].includes(lastMnemonic)
+    ) {
+      neverReturns.set(group.start, true);
+    }
+  }
+  return neverReturns;
+}
+
+// Only classify straight-line terminal helpers here. A branch or exception
+// context could reach a normal continuation that this small summary cannot
+// prove, so those methods remain conservative.
+const NON_RETURNING_BRANCHES = new Set([
+  "JMP", "JMP_L", "JMPIF", "JMPIF_L", "JMPIFNOT", "JMPIFNOT_L",
+  "JMPEQ", "JMPEQ_L", "JMPNE", "JMPNE_L", "JMPGT", "JMPGT_L",
+  "JMPGE", "JMPGE_L", "JMPLT", "JMPLT_L", "JMPLE", "JMPLE_L",
+  "TRY", "TRY_L", "ENDTRY", "ENDTRY_L", "ENDFINALLY",
+]);

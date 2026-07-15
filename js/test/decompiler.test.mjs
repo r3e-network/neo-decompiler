@@ -1091,6 +1091,47 @@ test("internal call with insufficient stack values emits `???` placeholder + war
   );
 });
 
+test("proven non-returning internal calls terminate both C# branch paths", () => {
+  // main(bool) calls helper() on either branch. The helper ends in ABORT and
+  // has no RET, so the call is a proven non-returning edge even though its
+  // manifest return type is Integer.
+  const script = new Uint8Array([
+    0x57, 0x00, 0x01, // 0x00 INITSLOT 0 locals, 1 arg
+    0x78,             // 0x03 LDARG0
+    0x26, 0x04,       // 0x04 JMPIFNOT +4 -> 0x08
+    0x34, 0x04,       // 0x06 CALL +4 -> helper at 0x0A
+    0x34, 0x02,       // 0x08 CALL +2 -> helper at 0x0A
+    0x57, 0x00, 0x00, // 0x0A helper INITSLOT 0 locals, 0 args
+    0x38,             // 0x0D ABORT
+  ]);
+  const manifest = {
+    name: "NoReturnCall",
+    abi: {
+      methods: [
+        {
+          name: "main",
+          parameters: [{ name: "abortMsg", type: "Boolean" }],
+          returntype: "Integer",
+          offset: 0,
+        },
+        { name: "helper", parameters: [], returntype: "Integer", offset: 10 },
+      ],
+      events: [],
+    },
+  };
+  const result = decompileHighLevelBytesWithManifest(buildNefFromScript(script), manifest);
+
+  assert.match(result.highLevel, /if abortMsg \{/);
+  assert.match(result.highLevel, /helper\(\);\n\s*throw\(\);/);
+  assert.match(result.highLevel, /\} else \{/);
+  assert.match(result.csharp, /helper\(\);\n\s*throw new Exception\(\);/);
+  assert.equal(
+    result.methodContracts.methods.find(({ method }) => method.offset === 10)?.returnBehavior,
+    "value",
+    "manifest return behavior remains authoritative",
+  );
+});
+
 test("DUP on a call result materialises a temp instead of double-evaluating", () => {
   // SYSCALL System.Runtime.GetTime; DUP; DROP; DROP; RET. The second
   // DUP'd reference used to render as a second call, which is
