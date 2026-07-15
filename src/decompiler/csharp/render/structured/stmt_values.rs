@@ -4,6 +4,7 @@ use crate::decompiler::native_method_types;
 use crate::instruction::OpCode;
 
 use super::super::expr::render_expr;
+use super::super::expr_values::render_object_array_literal;
 use super::super::plan::{csharp_type, DeclarationKind, ScopeId};
 use super::{line, typed_array_csharp_type, StatementRenderer};
 
@@ -164,6 +165,11 @@ impl StatementRenderer<'_> {
             )
         {
             return rendered;
+        }
+        if target_type == "object[]" && source_type == ValueType::Array {
+            if let Expr::Array(elements) = value {
+                return render_object_array_literal(elements, &self.expressions);
+            }
         }
         let cast = match (target_type, source_type) {
             ("dynamic" | "object", _) => None,

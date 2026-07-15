@@ -17,6 +17,14 @@ pub(super) fn render_expr_list(
         .join(", ")
 }
 
+pub(super) fn render_object_array_literal(elements: &[Expr], context: &ExprContext) -> String {
+    let mut expanding = BTreeSet::new();
+    format!(
+        "new object[] {{ {} }}",
+        render_expr_list(elements, context, &mut expanding)
+    )
+}
+
 pub(super) fn int_cast(
     expression: &Expr,
     context: &ExprContext,

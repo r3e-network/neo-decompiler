@@ -689,6 +689,31 @@ fn typed_boundaries_bridge_incompatible_known_types() {
 }
 
 #[test]
+fn typed_boundaries_box_value_array_literals_into_object_arrays() {
+    let body = Block::from(vec![Stmt::assign(
+        "static0",
+        Expr::Array(vec![Expr::int(1), Expr::int(2)]),
+    )]);
+    let symbols = BTreeMap::from([(
+        "static0".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Static(0),
+            value_type: ValueType::Array,
+        },
+    )]);
+    let plan =
+        plan_declarations(&body, &symbols, true).with_static_field_types(&BTreeMap::from([(
+            "static0".to_string(),
+            "object[]".to_string(),
+        )]));
+
+    assert_eq!(
+        render_block(&body, &plan, &symbols, ReturnBehavior::Void, false),
+        "static0 = new object[] { 1, 2 };"
+    );
+}
+
+#[test]
 fn inlines_only_pure_single_use_temporaries() {
     let pure = "pure_0";
     let call = "call_0";
