@@ -40,10 +40,22 @@ pub(super) fn render_intrinsic(
         OpCode::Modmul => call("Helper.ModMultiply", expanding),
         OpCode::Modpow => call("BigInteger.ModPow", expanding),
         OpCode::Sqrt => call("Helper.Sqrt", expanding),
-        OpCode::Nz => RenderedExpr::new(
-            format!("(BigInteger)(dynamic)({}) != 0", arg_at(0, 0, expanding)),
-            PREC_EQUALITY,
-        ),
+        OpCode::Nz => {
+            let value = args
+                .first()
+                .map(|expression| render_expr_prec(expression, 0, context, expanding))
+                .unwrap_or_else(|| "default".to_string());
+            let source = if args
+                .first()
+                .and_then(|expression| context.exact_csharp_type(expression))
+                == Some("BigInteger")
+            {
+                value
+            } else {
+                format!("(BigInteger)(dynamic)({value})")
+            };
+            RenderedExpr::new(format!("{source} != 0"), PREC_EQUALITY)
+        }
         OpCode::Size => {
             match args
                 .first()
@@ -402,13 +414,16 @@ fn render_byte_concat(
 
     let left = render_expr_prec(left, 0, context, expanding);
     let left = match left_type {
+        ValueType::ByteString if context.exact_csharp_type(&args[0]) == Some("ByteString") => left,
         ValueType::ByteString => format!("(ByteString)({left})"),
+        ValueType::Buffer if context.exact_csharp_type(&args[0]) == Some("byte[]") => left,
         ValueType::Buffer => format!("(byte[])({left})"),
         _ => format!("(ByteString)(dynamic)({left})"),
     };
     let right_type = context.value_type(right);
     let right = render_expr_prec(right, 0, context, expanding);
     let right = match right_type {
+        ValueType::ByteString if context.exact_csharp_type(&args[1]) == Some("ByteString") => right,
         ValueType::Boolean
         | ValueType::Array
         | ValueType::Struct

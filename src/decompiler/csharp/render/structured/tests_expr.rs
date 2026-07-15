@@ -622,6 +622,26 @@ fn collection_intrinsics_use_the_receiver_container_type() {
             "{expression:?}"
         );
     }
+
+    let exact_context = ExprContext::default().with_concrete_types(&BTreeMap::from([
+        ("text".to_string(), "ByteString".to_string()),
+        ("buffer".to_string(), "byte[]".to_string()),
+        ("number".to_string(), "BigInteger".to_string()),
+    ]));
+    assert_eq!(
+        render_expr(
+            &intrinsic(OpCode::Cat, vec![Expr::var("text"), Expr::var("buffer")]),
+            &exact_context,
+        ),
+        "Helper.Concat(text, (ByteString)(buffer))"
+    );
+    assert_eq!(
+        render_expr(
+            &intrinsic(OpCode::Nz, vec![Expr::var("number")]),
+            &exact_context,
+        ),
+        "number != 0"
+    );
 }
 
 #[test]
