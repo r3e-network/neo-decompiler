@@ -2,6 +2,7 @@ import { sanitizeIdentifier } from "./manifest.js";
 import { nullableParametersForMethod } from "./csharp/nullability.js";
 import { buildCSharpScopePlans } from "./csharp-scopes.js";
 import {
+  inferStaticSlotTypes,
   renderStaticSlotDeclarations,
   renderStaticSlotLine,
 } from "./csharp-slots.js";
@@ -68,6 +69,9 @@ export function renderCSharpContract(
   const declarationTypesByLine = options.typedDeclarations === false
     ? null
     : inferDeclarationTypesByLine(sourceLines, sourceDepthByLine);
+  const staticSlotTypes = options.typedDeclarations === false
+    ? null
+    : inferStaticSlotTypes(sourceLines, declarationTypesByLine);
   const returnTypesByLine = inferReturnTypesByLine(sourceLines, sourceDepthByLine);
   const nullableParametersByLine = new Map();
   for (const [lineIndex, line] of sourceLines.entries()) {
@@ -103,7 +107,7 @@ export function renderCSharpContract(
     if (contract) {
       for (const attribute of renderManifestAttributes(manifest)) output.push(attribute);
       output.push(`public class ${csharpIdentifier(contract[1])} : SmartContract {`);
-      output.push(...renderStaticSlotDeclarations(sourceLines));
+      output.push(...renderStaticSlotDeclarations(sourceLines, staticSlotTypes));
       classSeen = true;
       continue;
     }

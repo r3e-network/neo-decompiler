@@ -16,9 +16,42 @@ export function staticSlotIndices(lines) {
   return [...slots].sort((left, right) => left - right);
 }
 
-export function renderStaticSlotDeclarations(lines) {
+export function renderStaticSlotDeclarations(lines, types = null) {
   return staticSlotIndices(lines)
-    .map((slot) => `    private static dynamic ${staticSlotName(slot)};`);
+    .map((slot) => `    private static ${types?.get(slot) ?? "dynamic"} ${staticSlotName(slot)};`);
+}
+
+/**
+ * Infer a stable C# type for each VM static slot from the already-computed
+ * per-line declaration maps. A static is promoted only when every assignment
+ * is concrete and agrees; reads-only, unknown, null-mixed, and conflicting
+ * slots remain dynamic so a VM value is never forced through an invented ABI.
+ */
+export function inferStaticSlotTypes(lines, typesByLine = null) {
+  const states = new Map();
+  for (const [lineIndex, line] of lines.entries()) {
+    if (line.trimStart().startsWith("//")) continue;
+    const assignment = line.trim().match(
+      /^(?:let\s+)?static(\d+)\s*=\s*.+;(?:\s*\/\/.*)?$/u,
+    );
+    if (!assignment) continue;
+    const slot = Number(assignment[1]);
+    const inferred = typesByLine?.get(lineIndex)?.get(`static${assignment[1]}`) ?? null;
+    const state = states.get(slot) ?? { type: null, uncertain: false };
+    if (!inferred || inferred === "dynamic" || inferred === "null") {
+      state.uncertain = true;
+    } else if (state.type && state.type !== inferred) {
+      state.uncertain = true;
+    } else {
+      state.type = inferred;
+    }
+    states.set(slot, state);
+  }
+  return new Map(
+    [...states.entries()]
+      .filter(([, state]) => state.type && !state.uncertain)
+      .map(([slot, state]) => [slot, state.type]),
+  );
 }
 
 /**

@@ -1522,9 +1522,23 @@ test("C# rendering declares referenced static VM slots", () => {
     "}",
   ].join("\n"));
 
-  assert.match(csharp, /private static dynamic __neoStatic0;/);
-  assert.match(csharp, /private static dynamic __neoStatic1;/);
+  assert.match(csharp, /private static BigInteger __neoStatic0;/);
+  assert.match(csharp, /private static BigInteger __neoStatic1;/);
   assert.match(csharp, /__neoStatic0 = __neoStatic1;/);
   assert.match(csharp, /return __neoStatic0;/);
   assert.doesNotMatch(csharp, /\bstatic[01]\b/);
+});
+
+test("C# static slot inference stays dynamic for conflicting writes", () => {
+  const csharp = renderCSharpContract([
+    "contract ConflictingStaticSlots {",
+    "    fn write() {",
+    "        let static0 = 1;",
+    "        static0 = \"later\";",
+    "        return;",
+    "    }",
+    "}",
+  ].join("\n"));
+
+  assert.match(csharp, /private static dynamic __neoStatic0;/);
 });
