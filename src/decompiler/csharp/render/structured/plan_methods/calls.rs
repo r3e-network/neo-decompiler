@@ -24,6 +24,10 @@ pub(super) fn attach_call_plans(
     call_graph: &CallGraph,
     method_contracts: &MethodContracts,
 ) {
+    let instructions_by_offset = instructions
+        .iter()
+        .map(|instruction| (instruction.offset, instruction))
+        .collect::<BTreeMap<_, _>>();
     let mut calls_and_issues = Vec::with_capacity(plans.len());
     for plan in plans.iter() {
         let mut calls_by_offset = BTreeMap::new();
@@ -33,10 +37,7 @@ pub(super) fn attach_call_plans(
             .iter()
             .filter(|edge| edge.call_offset >= plan.start && edge.call_offset < plan.end)
         {
-            let Some(instruction) = instructions
-                .iter()
-                .find(|instruction| instruction.offset == edge.call_offset)
-            else {
+            let Some(instruction) = instructions_by_offset.get(&edge.call_offset) else {
                 continue;
             };
             let contract = match &edge.target {
