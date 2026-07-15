@@ -1137,6 +1137,8 @@ test("C# rendering lowers native qualified calls outside literals", () => {
     "    let neoDecimals = NeoToken::Decimals();",
     "    let blockHash = LedgerContract::CurrentHash();",
     "    let blockIndex = LedgerContract::CurrentIndex();",
+    "    let price = OracleContract::GetPrice(url);",
+    "    let blocked = PolicyContract::IsBlocked(account);",
     '    return "GasToken::Transfer(x)";',
     "}",
     "}",
@@ -1146,6 +1148,8 @@ test("C# rendering lowers native qualified calls outside literals", () => {
   assert.match(csharp, /NeoToken\.Decimals;/);
   assert.match(csharp, /LedgerContract\.CurrentHash;/);
   assert.match(csharp, /LedgerContract\.CurrentIndex;/);
+  assert.match(csharp, /OracleContract\.GetPrice\(url\)/);
+  assert.match(csharp, /PolicyContract\.IsBlocked\(account\)/);
   assert.doesNotMatch(
     csharp,
     /(?:GasToken\.Symbol|NeoToken\.Decimals|LedgerContract\.CurrentHash|LedgerContract\.CurrentIndex)\(\)/,

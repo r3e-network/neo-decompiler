@@ -34,6 +34,8 @@ export function renderCSharpContract(
     "using LedgerContract = Neo.SmartContract.Framework.Native.Ledger;",
     "using NeoToken = Neo.SmartContract.Framework.Native.NEO;",
     "using GasToken = Neo.SmartContract.Framework.Native.GAS;",
+    "using OracleContract = Neo.SmartContract.Framework.Native.Oracle;",
+    "using PolicyContract = Neo.SmartContract.Framework.Native.Policy;",
     "",
   ];
   let classSeen = false;
