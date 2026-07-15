@@ -4,9 +4,12 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::decompiler::cfg::method_body::Fidelity;
 use crate::decompiler::csharp::render_csharp;
 use crate::decompiler::output_format::{OutputFormat, RenderOptions};
 use crate::{ContractManifest, Decompiler};
+
+const PINNED_DEVPACK_COMMIT: &str = "5b0b63880b6201ae3f974cc845e93a90462d8043";
 
 fn collect_nef_files(path: &Path, files: &mut Vec<PathBuf>) -> io::Result<()> {
     for entry in fs::read_dir(path)? {
@@ -133,6 +136,7 @@ fn csharp_corpus_has_zero_structured_fallback() {
     let mut status_counts = BTreeMap::new();
     let mut issue_classes = BTreeMap::new();
     let mut issue_locations = BTreeMap::<_, BTreeSet<String>>::new();
+    let mut incomplete_locations = BTreeSet::new();
     let expected_invalid = load_expected_invalid(&root);
     let mut invalid_seen = HashSet::new();
 
@@ -201,6 +205,9 @@ fn csharp_corpus_has_zero_structured_fallback() {
         }
         for (start, methods) in &rendered.coverage.methods {
             for coverage in methods.values() {
+                if coverage.fidelity.status == Fidelity::Incomplete {
+                    incomplete_locations.insert(format!("{id}@0x{start:04X}"));
+                }
                 *status_counts
                     .entry(coverage.fidelity.status)
                     .or_insert(0usize) += 1;
@@ -245,6 +252,7 @@ fn csharp_corpus_has_zero_structured_fallback() {
         );
     }
     assert!(decompiled > 0, "no repository NEF corpus artifacts found");
+    assert_pinned_incomplete_baseline(&root, &incomplete_locations);
     eprintln!(
         "C# fidelity census: {decompiled} contracts, statuses={status_counts:?}, issues={issue_classes:?}"
     );
@@ -258,5 +266,26 @@ fn csharp_corpus_has_zero_structured_fallback() {
         failures.is_empty(),
         "structured C# fallback corpus:\n{}",
         failures.join("\n")
+    );
+}
+
+fn assert_pinned_incomplete_baseline(root: &Path, incomplete_locations: &BTreeSet<String>) {
+    let Ok(provenance_text) = fs::read_to_string(root.join("provenance.json")) else {
+        return;
+    };
+    let provenance: serde_json::Value = serde_json::from_str(&provenance_text)
+        .unwrap_or_else(|error| panic!("parse corpus provenance.json: {error}"));
+    if provenance
+        .pointer("/source/commit")
+        .and_then(serde_json::Value::as_str)
+        != Some(PINNED_DEVPACK_COMMIT)
+    {
+        return;
+    }
+
+    let expected = BTreeSet::from(["Contract_Foreach@0x04AC".to_string()]);
+    assert_eq!(
+        incomplete_locations, &expected,
+        "pinned v3.10.0 C# incomplete-method baseline changed"
     );
 }

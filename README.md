@@ -122,7 +122,7 @@ intermediate views remain available when needed for analysis.
 | SSA Skeleton               | ✅     | Structural SSA form: dominance info + versioned `PUSH0`–`PUSH16` assignments  |
 | Dominance Analysis         | ✅     | Immediate dominators, dominator tree, dominance frontiers                    |
 | SSA Rendering              | ✅     | Human-readable SSA output with statistics (blocks, φ nodes, vars)            |
-| Full φ-node Placement      | 🚧     | φ-node data model present; cross-block def/use tracking + placement is WIP    |
+| Full φ-node Placement      | ✅     | Cross-block stack def/use tracking and φ placement are implemented in SSA    |
 | Strict Manifest Validation | ✅     | Global `--strict-manifest` flag plus strict manifest parser APIs             |
 | Entry-Offset Safety        | ✅     | Synthetic script-entry emission when ABI method offsets don't match entry    |
 | Disassembly Fast Path      | ✅     | `disasm` command decodes instruction streams without full decompile analysis |
@@ -647,6 +647,13 @@ into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
   and `do { } while` loops (including `break`/`continue` branches). Full
   source-level reconstruction is intentionally out of scope; CFG and type
   inference are best-effort analysis outputs and may be incomplete.
+- Generated source is intentionally limited to Neo C#. Pseudocode, high-level,
+  structured IR, and SSA are analysis views rather than alternate source
+  backends. The pinned neo-devpack-dotnet v3.10.0 corpus has one known
+  incomplete method: `Contract_Foreach@0x04AC` calls a compiler-generated
+  helper with four required stack values while the caller provides none. The
+  C# renderer preserves that underflow warning and uses compile-safe dynamic
+  placeholders instead of inventing tuple values.
 
 ## Troubleshooting
 
