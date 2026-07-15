@@ -264,7 +264,8 @@ pub(in crate::decompiler::csharp::render) fn csharp_type_value_type(
         | "NamedCurveHash"
         | "Role"
         | "TransactionAttributeType"
-        | "TriggerType" => Some(ValueType::Integer),
+        | "TriggerType"
+        | "WitnessScope" => Some(ValueType::Integer),
         "bool" => Some(ValueType::Boolean),
         "string" => Some(ValueType::ByteString),
         "ByteString" => Some(ValueType::ByteString),
@@ -278,6 +279,7 @@ pub(in crate::decompiler::csharp::render) fn csharp_type_value_type(
         | "UInt160[]"
         | "UInt256[]"
         | "ByteString[]"
+        | "WitnessRule[]"
         | "string[]"
         | "byte[][]"
         | "object[][]"
@@ -294,8 +296,10 @@ pub(in crate::decompiler::csharp::render) fn csharp_type_value_type(
         | "Iterator<(int, UInt160)>"
         | "NeoAccountState"
         | "Notification"
+        | "ContractManifest"
         | "StorageContext"
         | "Signer"
+        | "WitnessRule"
         | "Transaction"
         | "object" => Some(ValueType::InteropInterface),
         _ => None,
@@ -326,6 +330,46 @@ pub(in crate::decompiler::csharp::render) fn csharp_array_element_type(
         "string[]" => Some("string"),
         "UInt160[]" => Some("UInt160"),
         "UInt256[]" => Some("UInt256"),
+        "WitnessRule[]" => Some("WitnessRule"),
+        _ => None,
+    }
+}
+
+pub(in crate::decompiler::csharp::render) fn csharp_member_type(
+    base_type: &str,
+    member: &str,
+) -> Option<&'static str> {
+    match (base_type, member) {
+        ("Transaction", "Hash") => Some("UInt256"),
+        ("Transaction", "Version") => Some("byte"),
+        ("Transaction", "Nonce") => Some("uint"),
+        ("Transaction", "Sender") => Some("UInt160"),
+        ("Transaction", "SystemFee" | "NetworkFee") => Some("long"),
+        ("Transaction", "ValidUntilBlock") => Some("uint"),
+        ("Transaction", "Script") => Some("ByteString"),
+        ("Block", "Hash" | "PrevHash" | "MerkleRoot") => Some("UInt256"),
+        ("Block", "Version" | "Index") => Some("uint"),
+        ("Block", "Timestamp" | "Nonce") => Some("ulong"),
+        ("Block", "PrimaryIndex") => Some("byte"),
+        ("Block", "NextConsensus") => Some("UInt160"),
+        ("Block", "TransactionsCount") => Some("int"),
+        ("Notification", "ScriptHash") => Some("UInt160"),
+        ("Notification", "EventName") => Some("string"),
+        ("Notification", "State") => Some("object[]"),
+        ("Contract", "Id") => Some("int"),
+        ("Contract", "UpdateCounter") => Some("ushort"),
+        ("Contract", "Hash") => Some("UInt160"),
+        ("Contract", "Nef") => Some("ByteString"),
+        ("Contract", "Manifest") => Some("ContractManifest"),
+        ("Signer", "Account") => Some("UInt160"),
+        ("Signer", "Scopes") => Some("WitnessScope"),
+        ("Signer", "AllowedContracts") => Some("UInt160[]"),
+        ("Signer", "AllowedGroups") => Some("ECPoint[]"),
+        ("Signer", "Rules") => Some("WitnessRule[]"),
+        ("NeoAccountState", "Balance" | "Height" | "LastGasPerVote") => Some("BigInteger"),
+        ("NeoAccountState", "VoteTo") => Some("ECPoint"),
+        ("Iterator<(ECPoint, BigInteger)>", "Value") => Some("(ECPoint, BigInteger)"),
+        ("Iterator<(int, UInt160)>", "Value") => Some("(int, UInt160)"),
         _ => None,
     }
 }
@@ -350,6 +394,7 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
             | "Role"
             | "TransactionAttributeType"
             | "TriggerType"
+            | "WitnessScope"
             | "bool"
             | "ByteString"
             | "BigInteger[]"
@@ -368,6 +413,7 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
             | "UInt160[]"
             | "UInt256[]"
             | "ByteString[]"
+            | "WitnessRule[]"
             | "byte[][]"
             | "object[][]"
             | "Map<object, object>[]"
@@ -380,8 +426,10 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
             | "Iterator<(int, UInt160)>"
             | "NeoAccountState"
             | "Notification"
+            | "ContractManifest"
             | "StorageContext"
             | "Signer"
+            | "WitnessRule"
             | "Transaction"
             | "object"
             | "(ECPoint, BigInteger)"
@@ -414,6 +462,7 @@ pub(super) fn concrete_type_matches_value_type(type_name: &str, value_type: Valu
                 | "Role"
                 | "TransactionAttributeType"
                 | "TriggerType"
+                | "WitnessScope"
         ),
         ValueType::ByteString => matches!(
             type_name,
@@ -435,8 +484,10 @@ pub(super) fn concrete_type_matches_value_type(type_name: &str, value_type: Valu
                 | "Iterator<(int, UInt160)>"
                 | "NeoAccountState"
                 | "Notification"
+                | "ContractManifest"
                 | "StorageContext"
                 | "Signer"
+                | "WitnessRule"
                 | "Transaction"
                 | "object"
         ),

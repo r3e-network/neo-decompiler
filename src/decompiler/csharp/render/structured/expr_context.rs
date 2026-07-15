@@ -201,6 +201,9 @@ impl ExprContext {
             Expr::Index { base, .. } => self
                 .exact_csharp_type(base)
                 .and_then(types::csharp_array_element_type),
+            Expr::Member { base, name } => self
+                .exact_csharp_type(base)
+                .and_then(|base_type| types::csharp_member_type(base_type, name)),
             _ => None,
         }
     }
@@ -312,7 +315,10 @@ impl ExprContext {
                 }
             }
             Expr::Member { name, .. } if name.eq_ignore_ascii_case("Length") => ValueType::Integer,
-            Expr::Member { .. } => ValueType::Unknown,
+            Expr::Member { .. } => self
+                .exact_csharp_type(expression)
+                .and_then(types::csharp_type_value_type)
+                .unwrap_or(ValueType::Unknown),
             Expr::Ternary {
                 then_expr,
                 else_expr,

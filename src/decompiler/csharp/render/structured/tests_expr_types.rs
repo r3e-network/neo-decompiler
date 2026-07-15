@@ -225,6 +225,42 @@ fn native_array_returns_preserve_index_element_types() {
 }
 
 #[test]
+fn framework_object_members_preserve_concrete_types() {
+    let context = ExprContext::default();
+    let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());
+    let transaction = Expr::Member {
+        base: Box::new(syscall(0x3008_512D)),
+        name: "Sender".to_string(),
+    };
+    assert_eq!(context.exact_csharp_type(&transaction), Some("UInt160"));
+    assert_eq!(context.value_type(&transaction), ValueType::ByteString);
+
+    let notifications = Expr::index(syscall(0xF135_4327), Expr::int(0));
+    let state = Expr::Member {
+        base: Box::new(notifications),
+        name: "State".to_string(),
+    };
+    assert_eq!(context.exact_csharp_type(&state), Some("object[]"));
+    assert_eq!(context.value_type(&state), ValueType::Array);
+
+    let signers = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 0,
+            name: "getTransactionSigners".to_string(),
+            hash_le: Some("BEF2043140362A77C15099C7E64C12F700B665DA".to_string()),
+            call_flags: Some(0x0F),
+        },
+        Vec::new(),
+    );
+    let account = Expr::Member {
+        base: Box::new(Expr::index(signers, Expr::int(0))),
+        name: "Account".to_string(),
+    };
+    assert_eq!(context.exact_csharp_type(&account), Some("UInt160"));
+    assert_eq!(context.value_type(&account), ValueType::ByteString);
+}
+
+#[test]
 fn known_syscalls_drive_exact_csharp_expression_types() {
     let context = ExprContext::default();
     let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());

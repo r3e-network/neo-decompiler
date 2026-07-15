@@ -8,6 +8,7 @@ use crate::decompiler::ir::Expr;
 use super::super::expr_inline::InlineCollector;
 pub(super) use super::super::plan::csharp_array_element_type;
 pub(super) use super::super::plan::csharp_array_element_value_type;
+pub(super) use super::super::plan::csharp_member_type;
 pub(super) use super::super::plan::csharp_type_value_type;
 
 pub(super) fn collect_array_values(collector: &InlineCollector) -> BTreeMap<String, Vec<Expr>> {

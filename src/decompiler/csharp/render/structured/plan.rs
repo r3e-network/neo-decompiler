@@ -11,6 +11,7 @@ mod declaration_types;
 pub(in crate::decompiler::csharp::render) use declaration_types::concrete_definition_type_with_symbols_and_known_types;
 pub(in crate::decompiler::csharp::render) use declaration_types::csharp_array_element_type;
 pub(in crate::decompiler::csharp::render) use declaration_types::csharp_array_element_value_type;
+pub(in crate::decompiler::csharp::render) use declaration_types::csharp_member_type;
 pub(in crate::decompiler::csharp::render) use declaration_types::csharp_type_value_type;
 #[cfg(test)]
 pub(in crate::decompiler::csharp::render) use declaration_types::{
