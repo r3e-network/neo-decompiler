@@ -13,5 +13,9 @@ pub(super) mod plan;
 pub(super) mod plan_activity;
 pub(super) mod stmt;
 
+pub(crate) fn is_exact_syscall(hash: u32) -> bool {
+    expr_syscalls::is_exact_syscall(hash)
+}
+
 #[cfg(test)]
 mod tests;

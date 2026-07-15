@@ -197,7 +197,7 @@ fn reported_build_records_fixed_reorder_underflow_at_the_instruction() {
 }
 
 #[test]
-fn reported_build_marks_known_syscall_conservative() {
+fn reported_build_keeps_uncertain_syscall_overloads_conservative() {
     let instructions = vec![
         instr(30, OpCode::Push1),
         Instruction::new(31, OpCode::Syscall, Some(Operand::Syscall(0x8CEC_27F8))),
@@ -213,6 +213,24 @@ fn reported_build_marks_known_syscall_conservative() {
             && issue.opcode == OpCode::Syscall
             && issue.fidelity == Fidelity::Conservative
     }));
+}
+
+#[test]
+fn reported_build_does_not_warn_for_exact_csharp_syscall_bindings() {
+    let instructions = vec![
+        Instruction::new(30, OpCode::Syscall, Some(Operand::Syscall(0x0388_C3B7))),
+        instr(35, OpCode::Ret),
+    ];
+    let cfg = CfgBuilder::new(&instructions).build();
+
+    let built = SsaBuilder::new(&cfg, &instructions).build_with_report();
+
+    assert_eq!(built.fidelity.status, Fidelity::Exact);
+    assert!(!built
+        .fidelity
+        .issues
+        .iter()
+        .any(|issue| { issue.offset == 30 && issue.opcode == OpCode::Syscall }));
 }
 
 #[test]

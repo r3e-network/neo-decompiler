@@ -12,6 +12,12 @@ use super::expr::{
 mod catalog;
 use catalog::{known_syscall_api, SyscallApi, SyscallArgument};
 
+/// Return whether the catalog entry can render without an argument-type
+/// decision that depends on uncertain VM provenance.
+pub(crate) fn is_exact_syscall(hash: u32) -> bool {
+    known_syscall_api(hash).is_some_and(SyscallApi::is_exact_binding)
+}
+
 pub(super) fn render_syscall(
     hash: u32,
     args: &[Expr],

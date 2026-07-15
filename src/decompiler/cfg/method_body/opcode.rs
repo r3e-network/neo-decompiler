@@ -1,5 +1,5 @@
 use crate::decompiler::cfg::method_body::LoweringIssueKind;
-use crate::instruction::OpCode;
+use crate::instruction::{Instruction, OpCode, Operand};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OpcodeFidelity {
@@ -38,4 +38,19 @@ pub(crate) fn classify_opcode(opcode: OpCode) -> OpcodeFidelity {
             OpcodeFidelity::Exact
         }
     }
+}
+
+/// Classify an instruction after considering metadata that is not encoded in
+/// the opcode itself. Known framework-backed C# syscalls are exact when their
+/// catalog entry has no uncertain overload selection; all other syscall forms
+/// retain the conservative ceiling from [`classify_opcode`].
+pub(crate) fn classify_instruction(instruction: &Instruction) -> OpcodeFidelity {
+    if instruction.opcode == OpCode::Syscall {
+        if let Some(Operand::Syscall(hash)) = instruction.operand.as_ref() {
+            if crate::decompiler::is_exact_csharp_syscall(*hash) {
+                return OpcodeFidelity::Exact;
+            }
+        }
+    }
+    classify_opcode(instruction.opcode)
 }

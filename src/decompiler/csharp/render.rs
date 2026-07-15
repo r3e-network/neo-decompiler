@@ -30,6 +30,10 @@ mod structured;
 
 pub(crate) use body::BodyBackend;
 
+pub(crate) fn is_exact_syscall(hash: u32) -> bool {
+    structured::is_exact_syscall(hash)
+}
+
 #[derive(Debug, Clone)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct MethodBodyCoverage {

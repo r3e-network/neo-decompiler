@@ -24,7 +24,9 @@ mod types;
 mod validation;
 
 use names::collect_block_names;
-pub(crate) use opcode::{classify_opcode, OpcodeFidelity};
+#[cfg(test)]
+pub(crate) use opcode::classify_opcode;
+pub(crate) use opcode::{classify_instruction, OpcodeFidelity};
 use symbols::allocate_source_symbols;
 use types::{intrinsic_result_type, merge_value_types};
 

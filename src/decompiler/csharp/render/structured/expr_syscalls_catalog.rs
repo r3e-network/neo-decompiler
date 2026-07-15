@@ -30,6 +30,30 @@ pub(super) enum SyscallArgument {
     Witness,
 }
 
+impl SyscallArgument {
+    fn is_always_renderable(self) -> bool {
+        matches!(
+            self,
+            Self::Cast(_) | Self::Int | Self::LongInteger | Self::Enum(_)
+        )
+    }
+}
+
+impl SyscallApi {
+    pub(super) fn is_exact_binding(self) -> bool {
+        match self {
+            Self::StaticMethod { arguments, .. } | Self::InstanceMethod { arguments, .. } => {
+                arguments
+                    .iter()
+                    .copied()
+                    .all(SyscallArgument::is_always_renderable)
+            }
+            Self::StaticProperty(_) | Self::InstanceProperty { .. } => true,
+            Self::LowLevel => false,
+        }
+    }
+}
+
 pub(super) fn known_syscall_api(hash: u32) -> Option<SyscallApi> {
     Some(match hash {
         0x0287_99CF => SyscallApi::StaticMethod {

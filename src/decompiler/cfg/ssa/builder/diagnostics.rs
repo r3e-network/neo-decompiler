@@ -1,7 +1,7 @@
 //! Instruction fidelity and stack-loss diagnostics for SSA lowering.
 
 use crate::decompiler::cfg::method_body::{
-    classify_opcode, Fidelity, LoweringIssue, LoweringIssueKind, OpcodeFidelity,
+    classify_instruction, Fidelity, LoweringIssue, LoweringIssueKind, OpcodeFidelity,
 };
 use crate::instruction::{Instruction, OpCode, Operand, OperandEncoding};
 
@@ -9,7 +9,7 @@ pub(super) fn record_instruction_ceiling(
     instruction: &Instruction,
     issues: &mut Vec<LoweringIssue>,
 ) {
-    match classify_opcode(instruction.opcode) {
+    match classify_instruction(instruction) {
         OpcodeFidelity::Exact => {}
         OpcodeFidelity::Conservative => {
             let detail = if matches!(instruction.opcode, OpCode::Abort | OpCode::Abortmsg) {
