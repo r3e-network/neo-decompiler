@@ -1,5 +1,9 @@
 import { renderCSharpSyscall } from "./csharp-syscalls.js";
 import {
+  csharpIdentifier,
+  isCSharpContextualKeyword,
+} from "./csharp-identifiers.js";
+import {
   createCSharpCollectionHelpers,
   renderCSharpTypeTest,
 } from "./csharp-collections.js";
@@ -148,17 +152,72 @@ function findBracketClose(text, open) {
 }
 
 function rewriteCSharpIdentifiers(line) {
-  const pattern = /\bthrow\b/g;
   let output = "";
-  let cursor = 0;
-  let match;
-  while ((match = nextOutsideMatch(line, pattern)) !== null) {
-    const tail = line.slice(match.index + match[0].length).trimStart();
-    output += line.slice(cursor, match.index);
-    output += tail.startsWith("new") ? "throw" : "@throw";
-    cursor = match.index + match[0].length;
+  for (let index = 0; index < line.length;) {
+    const character = line[index];
+    if (character === '"' || character === "'") {
+      const close = findQuotedLiteralClose(line, index);
+      output += line.slice(index, close < 0 ? line.length : close + 1);
+      if (close < 0) break;
+      index = close + 1;
+      continue;
+    }
+    if (line.startsWith("//", index)) {
+      output += line.slice(index);
+      break;
+    }
+    if (line.startsWith("/*", index)) {
+      const close = line.indexOf("*/", index + 2);
+      output += line.slice(index, close < 0 ? line.length : close + 2);
+      if (close < 0) break;
+      index = close + 2;
+      continue;
+    }
+    if (!/[A-Za-z_]/.test(character)) {
+      output += character;
+      index += 1;
+      continue;
+    }
+    let end = index + 1;
+    while (end < line.length && /[A-Za-z0-9_]/.test(line[end])) end += 1;
+    const name = line.slice(index, end);
+    const escaped = shouldEscapeCSharpIdentifier(line, index, name)
+      ? csharpIdentifier(name)
+      : name;
+    output += escaped;
+    index = end;
   }
-  return cursor === 0 ? line : output + line.slice(cursor);
+  return output;
+}
+
+function shouldEscapeCSharpIdentifier(line, index, name) {
+  if (index > 0 && line[index - 1] === "@") return false;
+  if (name === "throw") {
+    const tail = line.slice(index + name.length).trimStart();
+    return !tail.startsWith("new");
+  }
+  if (!isCSharpContextualKeyword(name)) return false;
+  if (name === "dynamic") return false;
+  if (name === "global" && line.slice(index + name.length).startsWith("::")) return false;
+  if (name === "let" && isForHeaderLet(line, index)) return false;
+  return true;
+}
+
+function isForHeaderLet(line, index) {
+  const prefix = line.slice(0, index);
+  return /\bfor\s*\(\s*$/.test(prefix);
+}
+
+function findQuotedLiteralClose(text, open) {
+  const quote = text[open];
+  for (let index = open + 1; index < text.length; index += 1) {
+    if (text[index] === "\\") {
+      index += 1;
+    } else if (text[index] === quote) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function rewriteConcatenation(line) {

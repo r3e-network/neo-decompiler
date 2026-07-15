@@ -674,7 +674,7 @@ test("C# rendering lowers iterator and local storage syscalls", () => {
   assert.match(csharp, /iterator\.Value/);
   assert.match(csharp, /Storage\.Get\(key\)/);
   assert.match(csharp, /context\.AsReadOnly/);
-  assert.match(csharp, /Storage\.Put\(key, value\)/);
+  assert.match(csharp, /Storage\.Put\(key, @value\)/);
 });
 
 test("C# rendering preserves ABI events as framework events", () => {
@@ -742,9 +742,35 @@ test("C# rendering preserves raw names for sanitized ABI methods", () => {
 
 test("C# rendering escapes contextual and newer keyword identifiers", () => {
   const csharp = renderCSharpContract(
-    "contract Token {\nfn record(await: int) -> void {\n}\n}",
+    [
+      "contract Token {",
+      "fn record(await: int) -> int {",
+      "    let value = 1;",
+      "    return value + await;",
+      "}",
+      "}",
+    ].join("\n"),
   );
-  assert.match(csharp, /public static void @record\(BigInteger @await\)/);
+  assert.match(csharp, /public static BigInteger @record\(BigInteger @await\)/);
+  assert.match(csharp, /BigInteger @value = 1;/);
+  assert.match(csharp, /return @value \+ @await;/);
+});
+
+test("C# identifier rewriting preserves literals, comments, and loop syntax", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn loop(await: int) -> int {",
+    "    for (let index = 0; index < await; index = index + 1) {",
+    '        let value = "await value"; // await value',
+    "        return await; // await value",
+    "    }",
+    "    return 0;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /for \(var index = 0; index < @await; index = index \+ 1\) \{/);
+  assert.match(csharp, /dynamic @value = "await value"; \/\/ await value/);
+  assert.match(csharp, /return @await; \/\/ await value/);
 });
 
 test("C# rendering accepts canonical ABI type aliases in direct high-level input", () => {
@@ -768,7 +794,7 @@ test("C# rendering lowers unambiguous collection helpers", () => {
     "}",
   ].join("\n"), null, { typedDeclarations: false });
   assert.match(csharp, /new object\[\(int\)\(2\)\]/);
-  assert.match(csharp, /\(\(dynamic\)items\)\.Add\(value\)/);
+  assert.match(csharp, /\(\(dynamic\)items\)\.Add\(@value\)/);
   assert.match(csharp, /\(\(dynamic\)map\)\.HasKey\(key\)/);
 });
 
@@ -788,7 +814,7 @@ test("C# rendering lowers VM array, type-test, and memory helpers", () => {
   assert.match(csharp, /BigInteger count = items\.Length;/);
   assert.match(csharp, /bool isArray = \(\(object\)\(items\)\) is object\[\];/);
   assert.match(csharp, /Array\.Copy\(items, \(int\)\(0\), items, \(int\)\(0\), \(int\)\(count\)\);/);
-  assert.match(csharp, /return \(object\)\(value\);/);
+  assert.match(csharp, /return \(object\)\(@value\);/);
   assert.doesNotMatch(csharp, /\b(?:len|is_type_array|memcpy|convert)\(/);
 });
 
@@ -802,7 +828,7 @@ test("C# rendering lowers dynamic unpack helpers to indexable values", () => {
     "}",
     "}",
   ].join("\n"), null, { typedDeclarations: false });
-  assert.match(csharp, /var values = \(\(dynamic\)value\);/);
+  assert.match(csharp, /var values = \(\(dynamic\)@value\);/);
   assert.match(csharp, /var first = \(\(dynamic\)values\)\[\(int\)\(0\)\];/);
   assert.doesNotMatch(csharp, /\b(?:unpack|unpack_item)\(/);
 });
@@ -919,9 +945,9 @@ test("C# rendering adapts high-level control syntax", () => {
     "}",
     "}",
   ].join("\n"));
-  assert.match(csharp, /if \(\(bool\)\(dynamic\)\(value\)\) \{ goto label_0x000A; \}/);
+  assert.match(csharp, /if \(\(bool\)\(dynamic\)\(@value\)\) \{ goto label_0x000A; \}/);
   assert.match(csharp, /while \(1 != 0\) \{/);
-  assert.match(csharp, /\} while \(\(bool\)\(dynamic\)\(value\)\);/);
+  assert.match(csharp, /\} while \(\(bool\)\(dynamic\)\(@value\)\);/);
   assert.match(csharp, /goto label_0x000A;/);
   assert.doesNotMatch(csharp, /\b(?:if value|while 1|leave label_)/);
 });
@@ -1025,7 +1051,7 @@ test("C# rendering preserves typed array element types for mutations", () => {
     "}",
     "}",
   ].join("\n"), null, { typedDeclarations: true });
-  assert.match(csharp, /List<BigInteger>\)items\)\.Add\(value\)/);
+  assert.match(csharp, /List<BigInteger>\)items\)\.Add\(@value\)/);
   assert.match(csharp, /List<BigInteger>\)items\)\.RemoveAt/);
   assert.match(csharp, /List<BigInteger>\)items\)\.PopItem/);
   assert.doesNotMatch(csharp, /List<object>\)items\)/);
@@ -1070,7 +1096,7 @@ test("C# rendering lowers the NEWSTRUCT high-level spelling", () => {
     "}",
     "}",
   ].join("\n"));
-  assert.match(csharp, /new object\[\] \{ value \}/);
+  assert.match(csharp, /new object\[\] \{ @value \}/);
   assert.doesNotMatch(csharp, /new_struct\(/);
 });
 
@@ -1163,9 +1189,9 @@ test("C# rendering lowers THROW and ASSERT forms", () => {
     "}",
     "}",
   ].join("\n"));
-  assert.match(csharp, /ExecutionEngine\.Assert\(\(bool\)\(object\)\(value > 0\)\);/);
-  assert.match(csharp, /if \(!\(bool\)\(object\)\(value\)\) throw new InvalidOperationException/);
-  assert.match(csharp, /throw new Exception\(Convert\.ToString\(value\)\);/);
+  assert.match(csharp, /ExecutionEngine\.Assert\(\(bool\)\(object\)\(@value > 0\)\);/);
+  assert.match(csharp, /if \(!\(bool\)\(object\)\(@value\)\) throw new InvalidOperationException/);
+  assert.match(csharp, /throw new Exception\(Convert\.ToString\(@value\)\);/);
   assert.doesNotMatch(csharp, /assert\(/);
   assert.doesNotMatch(csharp, /throw\(value\)/);
 });
@@ -1185,7 +1211,7 @@ test("C# rendering lowers native qualified calls outside literals", () => {
     "}",
     "}",
   ].join("\n"));
-  assert.match(csharp, /GasToken\.Transfer\(from, to, amount\)/);
+  assert.match(csharp, /GasToken\.Transfer\(@from, to, amount\)/);
   assert.match(csharp, /GasToken\.Symbol;/);
   assert.match(csharp, /NeoToken\.Decimals;/);
   assert.match(csharp, /LedgerContract\.CurrentHash;/);
