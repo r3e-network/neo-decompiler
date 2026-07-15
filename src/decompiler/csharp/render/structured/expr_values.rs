@@ -22,10 +22,12 @@ pub(super) fn int_cast(
     context: &ExprContext,
     expanding: &mut BTreeSet<String>,
 ) -> String {
-    format!(
-        "(int)({})",
-        render_expr_prec(expression, 0, context, expanding)
-    )
+    let rendered = render_expr_prec(expression, 0, context, expanding);
+    if context.exact_csharp_type(expression) == Some("int") {
+        rendered
+    } else {
+        format!("(int)({rendered})")
+    }
 }
 
 pub(super) fn render_new_array(

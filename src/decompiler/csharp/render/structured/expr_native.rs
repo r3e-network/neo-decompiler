@@ -102,10 +102,12 @@ fn render_native_args(
         .enumerate()
         .map(|(index, expression)| {
             if contract == "RoleManagement" && method == "GetDesignatedByRole" && index == 0 {
-                format!(
-                    "(Role)(int)({})",
-                    render_expr_prec(expression, 0, context, expanding)
-                )
+                let rendered = render_expr_prec(expression, 0, context, expanding);
+                if context.exact_csharp_type(expression) == Some("Role") {
+                    rendered
+                } else {
+                    format!("(Role)(int)({rendered})")
+                }
             } else if contract == "StdLib"
                 && method == "MemorySearch"
                 && index == 1
@@ -121,18 +123,22 @@ fn render_native_args(
                 && matches!(method, "GetAttributeFee" | "getAttributeFee")
                 && index == 0
             {
-                format!(
-                    "(TransactionAttributeType)(int)({})",
-                    render_expr_prec(expression, 0, context, expanding)
-                )
+                let rendered = render_expr_prec(expression, 0, context, expanding);
+                if context.exact_csharp_type(expression) == Some("TransactionAttributeType") {
+                    rendered
+                } else {
+                    format!("(TransactionAttributeType)(int)({rendered})")
+                }
             } else if contract == "CryptoLib"
                 && matches!(method, "VerifyWithECDsa" | "verifyWithECDsa")
                 && index == 3
             {
-                format!(
-                    "(NamedCurveHash)(int)({})",
-                    render_expr_prec(expression, 0, context, expanding)
-                )
+                let rendered = render_expr_prec(expression, 0, context, expanding);
+                if context.exact_csharp_type(expression) == Some("NamedCurveHash") {
+                    rendered
+                } else {
+                    format!("(NamedCurveHash)(int)({rendered})")
+                }
             } else {
                 render_expr_prec(expression, 0, context, expanding)
             }

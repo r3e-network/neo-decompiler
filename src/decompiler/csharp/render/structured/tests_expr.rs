@@ -344,6 +344,15 @@ fn renders_all_expression_variants() {
         render_expr(&memory_search_call, &typed_memory_context),
         "StdLib.MemorySearch(items, (ByteString)(value), (int)(index))"
     );
+    let exact_memory_context = ExprContext::default().with_concrete_types(&BTreeMap::from([
+        ("items".to_string(), "ByteString".to_string()),
+        ("value".to_string(), "ByteString".to_string()),
+        ("index".to_string(), "int".to_string()),
+    ]));
+    assert_eq!(
+        render_expr(&memory_search_call, &exact_memory_context),
+        "StdLib.MemorySearch(items, value, index)"
+    );
     let role_call = Expr::call(
         SemanticCallTarget::MethodToken {
             index: 8,
@@ -356,6 +365,23 @@ fn renders_all_expression_variants() {
     assert_eq!(
         render_expr(&role_call, &context),
         "RoleManagement.GetDesignatedByRole((Role)(int)(8), 0)"
+    );
+    let exact_role_context = ExprContext::default().with_concrete_types(&BTreeMap::from([
+        ("role".to_string(), "Role".to_string()),
+        ("index".to_string(), "int".to_string()),
+    ]));
+    let typed_role_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 8,
+            name: "getDesignatedByRole".to_string(),
+            hash_le: Some("E295E391544C178AD94F03EC4DCDFF78534ECF49".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![Expr::var("role"), Expr::var("index")],
+    );
+    assert_eq!(
+        render_expr(&typed_role_call, &exact_role_context),
+        "RoleManagement.GetDesignatedByRole(role, index)"
     );
     let oracle_call = Expr::call(
         SemanticCallTarget::MethodToken {
@@ -396,6 +422,23 @@ fn renders_all_expression_variants() {
         render_expr(&policy_enum_call, &context),
         "PolicyContract.GetAttributeFee((TransactionAttributeType)(int)(1))"
     );
+    let exact_policy_context = ExprContext::default().with_concrete_types(&BTreeMap::from([(
+        "attribute_type".to_string(),
+        "TransactionAttributeType".to_string(),
+    )]));
+    let typed_policy_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 13,
+            name: "getAttributeFee".to_string(),
+            hash_le: Some("7BC681C0A1F71D543457B68BBA8D5F9FDD4E5ECC".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![Expr::var("attribute_type")],
+    );
+    assert_eq!(
+        render_expr(&typed_policy_call, &exact_policy_context),
+        "PolicyContract.GetAttributeFee(attribute_type)"
+    );
     let crypto_enum_call = Expr::call(
         SemanticCallTarget::MethodToken {
             index: 14,
@@ -413,6 +456,28 @@ fn renders_all_expression_variants() {
     assert_eq!(
         render_expr(&crypto_enum_call, &context),
         "CryptoLib.VerifyWithECDsa(message, pubkey, signature, (NamedCurveHash)(int)(22))"
+    );
+    let exact_crypto_context = ExprContext::default().with_concrete_types(&BTreeMap::from([(
+        "curve_hash".to_string(),
+        "NamedCurveHash".to_string(),
+    )]));
+    let typed_crypto_call = Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 14,
+            name: "verifyWithECDsa".to_string(),
+            hash_le: Some("1BF575AB1189688413610A35A12886CDE0B66C72".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![
+            Expr::var("message"),
+            Expr::var("pubkey"),
+            Expr::var("signature"),
+            Expr::var("curve_hash"),
+        ],
+    );
+    assert_eq!(
+        render_expr(&typed_crypto_call, &exact_crypto_context),
+        "CryptoLib.VerifyWithECDsa(message, pubkey, signature, curve_hash)"
     );
     let missing_oracle_method = Expr::call(
         SemanticCallTarget::MethodToken {
