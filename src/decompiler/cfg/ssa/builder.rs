@@ -1,7 +1,8 @@
 //! Stack-effect SSA construction from a CFG and instruction stream.
 //!
 //! This replaces the earlier PUSH-only skeleton with a genuine stack-machine
-//! SSA: every opcode's `(pop, push)` effect is modelled (see [`effects`]), the
+//! SSA: every opcode's `(pop, push)` effect is modelled (see the `effects`
+//! module), the
 //! eval stack is tracked symbolically as `Vec<SsaVariable>`, and φ nodes are
 //! placed at control-flow joins where predecessors disagree on a stack slot.
 //!

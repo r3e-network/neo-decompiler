@@ -298,3 +298,28 @@ mod irreducible_phi;
 mod terminal_loops;
 #[path = "tests_try_regions.rs"]
 mod try_regions;
+
+#[test]
+fn pathological_dense_jmpif_cfg_structures_promptly() {
+    // Fuzz-found inputs that previously spent ~25s in structure recovery via
+    // thousands of stack φ nodes / dense block graphs. Must complete quickly.
+    for data in [
+        include_bytes!("testdata/pathological_jmpif_stack.bin").as_slice(),
+        include_bytes!("testdata/pathological_dense_blocks.bin").as_slice(),
+    ] {
+        let instructions = crate::Disassembler::new()
+            .disassemble(data)
+            .expect("disassemble");
+        let cfg = crate::CfgBuilder::new(&instructions).build();
+        let mut ssa = crate::SsaBuilder::new(&cfg, &instructions).build();
+        crate::optimize_ssa(&mut ssa);
+        let start = std::time::Instant::now();
+        let structured = super::structure(&ssa);
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(500),
+            "structure took {:?}",
+            start.elapsed()
+        );
+        assert!(!structured.stmts.is_empty());
+    }
+}

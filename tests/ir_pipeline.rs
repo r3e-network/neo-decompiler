@@ -611,7 +611,8 @@ fn ir_pipeline_recovers_loopif_counting_loop() {
     );
     assert!(
         ir.contains("for (loc0 = 0;")
-            || (ir.contains("loc0 = 0;") && (ir.contains("while ((loc0") || ir.contains("while (loc0"))),
+            || (ir.contains("loc0 = 0;")
+                && (ir.contains("while ((loc0") || ir.contains("while (loc0"))),
         "expected for/while counting loop on loc0:\n{ir}"
     );
     assert!(

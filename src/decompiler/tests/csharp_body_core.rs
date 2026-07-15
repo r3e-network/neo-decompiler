@@ -38,16 +38,14 @@ fn csharp_typed_declarations_preserve_loop_counter_type() {
 
     let untyped = render_csharp_with_coverage(&nef, Some(manifest.clone()), true, false, false);
     assert!(
-        untyped.source.contains("dynamic loc0 = 0")
-            || untyped.source.contains("dynamic loc0;"),
+        untyped.source.contains("dynamic loc0 = 0") || untyped.source.contains("dynamic loc0;"),
         "{}",
         untyped.source
     );
 
     let typed = render_csharp_with_coverage(&nef, Some(manifest), true, false, true);
     assert!(
-        typed.source.contains("BigInteger loc0 = 0")
-            || typed.source.contains("BigInteger loc0;"),
+        typed.source.contains("BigInteger loc0 = 0") || typed.source.contains("BigInteger loc0;"),
         "{}",
         typed.source
     );
@@ -109,10 +107,7 @@ fn csharp_loopif_recovers_counting_loop_without_defeated_condition() {
     );
     let has_for = source.contains("for (") && source.contains("loc0");
     let has_while = source.contains("while (") && source.contains("loc0");
-    assert!(
-        has_for || has_while,
-        "expected for/while on loc0: {source}"
-    );
+    assert!(has_for || has_while, "expected for/while on loc0: {source}");
     // Body must not re-assign the zero initializer after the loop header opens.
     let header_markers = ["for (", "while ("];
     let header_at = header_markers

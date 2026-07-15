@@ -721,8 +721,5 @@ fn rewrite_header_init_loops_lifts_defeated_counting_loop() {
     );
     HighLevelEmitter::rewrite_for_loops(&mut statements);
     let joined = statements.join("\n");
-    assert!(
-        joined.contains("for ("),
-        "expected for promotion: {joined}"
-    );
+    assert!(joined.contains("for ("), "expected for promotion: {joined}");
 }

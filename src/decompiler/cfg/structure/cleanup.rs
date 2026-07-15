@@ -1,6 +1,4 @@
-use crate::decompiler::ir::{
-    BinOp, Block as IrBlock, ControlFlow, Expr, Literal, Stmt, UnaryOp,
-};
+use crate::decompiler::ir::{BinOp, Block as IrBlock, ControlFlow, Expr, Literal, Stmt, UnaryOp};
 use std::collections::BTreeSet;
 
 pub(super) fn simplify_unreachable_control(block: &mut IrBlock) {
@@ -117,9 +115,7 @@ fn promote_adjacent_for_loops(block: &mut IrBlock) {
     let mut index = 0;
     while index < block.stmts.len() {
         if index > 0 {
-            if let Some(promoted) =
-                try_promote_while_at(&block.stmts, index)
-            {
+            if let Some(promoted) = try_promote_while_at(&block.stmts, index) {
                 block.stmts[index - 1] = promoted;
                 block.stmts.remove(index);
                 continue;
@@ -272,11 +268,12 @@ fn unit_update_shape(statement: &Stmt) -> Option<(Expr, String)> {
         }
         Stmt::Assign {
             target,
-            value: Expr::Binary {
-                op: BinOp::Add,
-                left,
-                right,
-            },
+            value:
+                Expr::Binary {
+                    op: BinOp::Add,
+                    left,
+                    right,
+                },
         } => match (left.as_ref(), right.as_ref()) {
             (Expr::Variable(variable), step) | (step, Expr::Variable(variable))
                 if is_one_literal(step) && symbol_base(target) == symbol_base(variable) =>
@@ -290,11 +287,12 @@ fn unit_update_shape(statement: &Stmt) -> Option<(Expr, String)> {
         },
         Stmt::Assign {
             target,
-            value: Expr::Binary {
-                op: BinOp::Sub,
-                left,
-                right,
-            },
+            value:
+                Expr::Binary {
+                    op: BinOp::Sub,
+                    left,
+                    right,
+                },
         } => match (left.as_ref(), right.as_ref()) {
             (Expr::Variable(variable), step)
                 if is_one_literal(step) && symbol_base(target) == symbol_base(variable) =>
@@ -401,10 +399,13 @@ fn expr_mentions_base(expression: &Expr, base: &str) -> bool {
         Expr::Call { args, .. } | Expr::Array(args) | Expr::Struct(args) => {
             args.iter().any(|arg| expr_mentions_base(arg, base))
         }
-        Expr::Index { base: container, index } => {
-            expr_mentions_base(container, base) || expr_mentions_base(index, base)
-        }
-        Expr::Member { base: container, .. } => expr_mentions_base(container, base),
+        Expr::Index {
+            base: container,
+            index,
+        } => expr_mentions_base(container, base) || expr_mentions_base(index, base),
+        Expr::Member {
+            base: container, ..
+        } => expr_mentions_base(container, base),
         Expr::NewArray { length, .. } => expr_mentions_base(length, base),
         Expr::Map(entries) => entries
             .iter()
@@ -460,9 +461,7 @@ fn block_assigns_base(block: &IrBlock, base: &str) -> bool {
                         .is_some_and(|body| block_assigns_base(body, base))
             }
             ControlFlow::Switch { cases, default, .. } => {
-                cases
-                    .iter()
-                    .any(|(_, body)| block_assigns_base(body, base))
+                cases.iter().any(|(_, body)| block_assigns_base(body, base))
                     || default
                         .as_ref()
                         .is_some_and(|body| block_assigns_base(body, base))

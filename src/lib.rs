@@ -33,10 +33,11 @@ pub use crate::decompiler::analysis::types::{MethodTypes, TypeInfo, ValueType};
 pub use crate::decompiler::analysis::xrefs::{MethodXrefs, SlotKind, SlotXref, Xrefs};
 pub use crate::decompiler::analysis::MethodRef;
 pub use crate::decompiler::cfg::ssa::{
-    DominanceInfo, PhiNode, SsaBlock, SsaBuilder, SsaExpr, SsaForm, SsaStats, SsaStmt, SsaVariable,
+    optimize_ssa, DominanceInfo, PhiNode, SsaBlock, SsaBuilder, SsaExpr, SsaForm, SsaStats,
+    SsaStmt, SsaVariable,
 };
 pub use crate::decompiler::cfg::{
-    BasicBlock, BlockId, Cfg, CfgBuilder, Edge, EdgeKind, Terminator,
+    structure_cfg, BasicBlock, BlockId, Cfg, CfgBuilder, Edge, EdgeKind, Terminator,
 };
 pub use crate::decompiler::{Decompilation, Decompiler, OutputFormat};
 pub use crate::disassembler::{Disassembler, UnknownHandling};

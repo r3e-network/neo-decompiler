@@ -129,7 +129,15 @@ impl<'a> SsaBuilder<'a> {
             .map(|(_, stack)| stack.len())
             .max()
             .unwrap_or(0);
-        let max_depth = predecessor_depth.max(initial_arguments.len());
+        // Cap symbolic stack joins. Pathological bytecode (dense JMPIF nets)
+        // can otherwise invent thousands of φ nodes and hang structure recovery
+        // for tens of seconds. Real Neo contracts stay well below this; the VM
+        // hard-caps the eval stack at 2048, and decompilation only needs a
+        // modest live prefix to recover readable control flow.
+        const MAX_SYMBOLIC_STACK_DEPTH: usize = 16;
+        let max_depth = predecessor_depth
+            .max(initial_arguments.len())
+            .min(MAX_SYMBOLIC_STACK_DEPTH);
         let entry_source = BlockId::from(usize::MAX);
         let recovered_dup_value = self.recover_dup_join_value(bid, &incoming_stacks);
         for depth in 0..max_depth {

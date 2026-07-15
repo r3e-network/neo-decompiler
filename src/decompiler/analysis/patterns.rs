@@ -407,10 +407,14 @@ mod tests {
         .expect("manifest fixture");
         let info = identify_patterns(&nef("evnt", ""), &[], Some(&manifest));
         assert!(info.patterns.iter().any(|pattern| pattern == "events"));
-        assert!(info.evidence.iter().any(|entry| {
-            entry.source == "manifest.abi.events" && entry.value == "2"
-        }));
-        assert!(info.confidence == PatternConfidence::Medium || info.confidence == PatternConfidence::High);
+        assert!(info
+            .evidence
+            .iter()
+            .any(|entry| { entry.source == "manifest.abi.events" && entry.value == "2" }));
+        assert!(
+            info.confidence == PatternConfidence::Medium
+                || info.confidence == PatternConfidence::High
+        );
     }
 
     #[test]

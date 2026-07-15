@@ -11,7 +11,8 @@ fn is_numeric_literal(value: &str) -> bool {
 
 fn condition_mentions_ident(condition: &str, ident: &str) -> bool {
     // Word-boundary style check so `loc10` does not match `loc1`.
-    condition.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+    condition
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
         .any(|token| token == ident)
 }
 
@@ -21,7 +22,7 @@ impl HighLevelEmitter {
     /// promote counting shapes. Matches LoopIf-class back-edges that re-enter
     /// the initializer and would otherwise leave a defeated condition inside
     /// an infinite loop.
-    pub(crate) fn rewrite_header_init_loops(statements: &mut Vec<String>) {
+    pub(crate) fn rewrite_header_init_loops(statements: &mut [String]) {
         let mut index = 0;
         while index < statements.len() {
             if statements[index].trim() != "loop {" {
@@ -59,9 +60,11 @@ impl HighLevelEmitter {
                 continue;
             };
             let init_pos = code.iter().position(|&i| i == init_idx).unwrap_or(0);
-            let Some(if_idx) = code[init_pos + 1..].iter().copied().find(|&i| {
-                statements[i].trim().starts_with("if ")
-            }) else {
+            let Some(if_idx) = code[init_pos + 1..]
+                .iter()
+                .copied()
+                .find(|&i| statements[i].trim().starts_with("if "))
+            else {
                 index += 1;
                 continue;
             };
@@ -102,20 +105,15 @@ impl HighLevelEmitter {
 
             // Body of the if must update the induction variable.
             let body_updates = (if_idx + 1..if_end).any(|i| {
-                Self::parse_assignment(&statements[i])
-                    .is_some_and(|a| a.lhs == init.lhs)
+                Self::parse_assignment(&statements[i]).is_some_and(|a| a.lhs == init.lhs)
                     || statements[i]
                         .trim()
                         .starts_with(&format!("{} +=", init.lhs))
                     || statements[i]
                         .trim()
                         .starts_with(&format!("{} -=", init.lhs))
-                    || statements[i]
-                        .trim()
-                        .starts_with(&format!("{}++", init.lhs))
-                    || statements[i]
-                        .trim()
-                        .starts_with(&format!("{}--", init.lhs))
+                    || statements[i].trim().starts_with(&format!("{}++", init.lhs))
+                    || statements[i].trim().starts_with(&format!("{}--", init.lhs))
             });
             if !body_updates {
                 index += 1;

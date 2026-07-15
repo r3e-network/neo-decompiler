@@ -74,7 +74,25 @@ pub(crate) fn structure_with_source_names(
     match entry {
         Some(e) => {
             let mut out = IrBlock::with_stmts(ctx.phi_lowering.entry_statements(e));
-            if let Some(region) = find_irreducible_region(&ssa.cfg) {
+            // Dense/pathological CFGs can create thousands of live stack φ nodes
+            // and make recursive region recovery super-linear. Fall back to the
+            // irreducible (goto/label) emitter for the whole reachable graph so
+            // decompilation stays bounded.
+            // Keep structured recovery for normal Neo methods; fail closed to
+            // goto/label emission when CFG density or φ volume would make the
+            // recursive region walker super-linear (observed multi-second hangs
+            // on fuzz JMPIF nets well below Neo's 2048 stack limit).
+            const MAX_STRUCTURED_PHIS: usize = 256;
+            const MAX_STRUCTURED_BLOCKS: usize = 96;
+            let phi_count: usize = ssa.blocks.values().map(|block| block.phi_nodes.len()).sum();
+            let block_count = ssa.cfg.blocks().count();
+            let force_irreducible =
+                phi_count > MAX_STRUCTURED_PHIS || block_count > MAX_STRUCTURED_BLOCKS;
+            if force_irreducible {
+                let region: BTreeSet<_> = ssa.cfg.blocks().map(|block| block.id).collect();
+                out.stmts
+                    .extend(ctx.structure_irreducible(e, &region).stmts);
+            } else if let Some(region) = find_irreducible_region(&ssa.cfg) {
                 out.stmts
                     .extend(ctx.structure_irreducible(e, &region).stmts);
             } else {
