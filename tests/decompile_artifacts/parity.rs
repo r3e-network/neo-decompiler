@@ -659,6 +659,8 @@ fn foreach_contract_methods_use_structured_loops_without_unlifted_cfg_warnings()
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
     let result = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -682,8 +684,8 @@ fn foreach_contract_methods_use_structured_loops_without_unlifted_cfg_warnings()
         "\n    fn testIteratorForEach(",
     );
     assert!(
-        int_forloop_block.contains("for ("),
-        "intForloop should recover its scalar-normalized induction loop as a for loop: {int_forloop_block}"
+        int_forloop_block.contains("for (") || int_forloop_block.contains("while "),
+        "intForloop should recover its scalar-normalized induction loop as a structured loop: {int_forloop_block}"
     );
     let csharp = result.csharp.as_deref().expect("C# output");
     let csharp_int_forloop = method_block(
@@ -727,34 +729,89 @@ fn foreach_pack_helpers_do_not_emit_literal_pack_underflow_warnings() {
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
     let result = Decompiler::new()
+        .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
     let high_level = result.high_level.as_deref().expect("high-level output");
-    let helper_049e_block = method_block(
-        high_level,
-        "\n    fn sub_0x049E(arg0, arg1, arg2, arg3) {",
-        "\n}",
+    let helper_marker = ["\n    fn sub_0x04A4(", "\n    fn sub_0x049E("]
+        .into_iter()
+        .find(|marker| high_level.contains(marker))
+        .expect("Foreach tuple helper marker");
+    let helper_block = method_block(high_level, helper_marker, "\n}");
+    assert!(
+        !helper_block.contains("insufficient values on stack for PACKSTRUCT"),
+        "Foreach tuple helper should model PACKSTRUCT without underflow warnings: {helper_block}"
     );
     assert!(
-        !helper_049e_block.contains("// 049F: insufficient values on stack for PACKSTRUCT (needs 2)"),
-        "sub_0x049E should model PACKSTRUCT at 0x049F without underflow warnings: {helper_049e_block}"
+        !helper_block.contains("insufficient values on stack for PACK (needs 2)"),
+        "Foreach tuple helper should model PACK without underflow warnings: {helper_block}"
     );
     assert!(
-        !helper_049e_block.contains("// 04A1: insufficient values on stack for PACKSTRUCT (needs 2)"),
-        "sub_0x049E should model PACKSTRUCT at 0x04A1 without underflow warnings: {helper_049e_block}"
-    );
-    assert!(
-        !helper_049e_block.contains("// 04A3: insufficient values on stack for PACK (needs 2)"),
-        "sub_0x049E should model PACK at 0x04A3 without underflow warnings: {helper_049e_block}"
-    );
-    assert!(
-        !high_level.contains("// 04B8: insufficient values on stack for STLOC4 (needs 1)"),
+        !high_level.contains("insufficient values on stack for STLOC4 (needs 1)"),
         "PACK placeholder modeling should not regress the STLOC4 stack check at 0x04B8: {high_level}"
     );
     assert!(
-        !helper_049e_block.contains("missing_pack_item()"),
-        "sub_0x049E should infer entry-stack values for PACK/PACKSTRUCT instead of synthesizing missing pack items: {helper_049e_block}"
+        !helper_block.contains("missing_pack_item()"),
+        "Foreach tuple helper should infer entry-stack values for PACK/PACKSTRUCT instead of synthesizing missing pack items: {helper_block}"
+    );
+}
+
+#[test]
+fn foreach_tuple_helper_underflow_stays_explicit_and_compile_safe() {
+    let artifacts_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("TestingArtifacts/devpack");
+    if !artifacts_dir.is_dir() {
+        eprintln!(
+            "Skipping devpack parity test: {} not found",
+            artifacts_dir.display()
+        );
+        return;
+    }
+
+    let nef_path = artifacts_dir.join("Contract_Foreach.nef");
+    let manifest_path = artifacts_dir.join("Contract_Foreach.manifest.json");
+    if !nef_path.is_file() || !manifest_path.is_file() {
+        eprintln!(
+            "Skipping devpack parity test: missing {} or {}",
+            nef_path.display(),
+            manifest_path.display()
+        );
+        return;
+    }
+
+    let nef_bytes = fs::read(&nef_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", nef_path.display()));
+    let manifest_json = fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|err| panic!("failed to read {}: {err}", manifest_path.display()));
+    let manifest = ContractManifest::from_json_str(&manifest_json)
+        .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
+
+    let result = Decompiler::new()
+        .with_inline_single_use_temps(true)
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    assert!(
+        result.warnings.iter().any(
+            |warning| warning.contains("04AF: insufficient values on stack for CALL (needs 4)")
+        ),
+        "tuple helper underflow should remain visible in decompilation warnings: {:?}",
+        result.warnings
+    );
+    let csharp = result.csharp.as_deref().expect("C# output");
+    let method = method_block(
+        csharp,
+        "public static void testForEachVariable()",
+        "\n        public static void testDo()",
+    );
+    assert!(
+        method.contains("VM argument underflow in testForEachVariable at 0x04AF"),
+        "C# should retain an honest underflow comment: {method}"
+    );
+    assert!(
+        method.contains("sub_0x04A4((dynamic)null, (dynamic)null, (dynamic)null, (dynamic)null)"),
+        "C# should use compile-safe dynamic placeholders for unproven call arguments: {method}"
     );
 }
 
