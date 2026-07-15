@@ -8,7 +8,7 @@ use crate::decompiler::ir::Block;
 use crate::instruction::OpCode;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use super::declaration_types::concrete_type_matches_value_type;
+use super::declaration_type_catalog::concrete_type_matches_value_type;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(not(test), allow(dead_code))]
 pub(in crate::decompiler::csharp::render) struct ScopeId(u32);

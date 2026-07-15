@@ -6,13 +6,15 @@ use crate::decompiler::cfg::method_body::{LoweringIssue, MethodSymbolTypes, Symb
 use crate::decompiler::cfg::ssa::MethodContext;
 
 use super::super::super::helpers::CSharpParameter;
+#[path = "declaration_type_catalog.rs"]
+mod declaration_type_catalog;
 #[path = "declaration_types.rs"]
 mod declaration_types;
+pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_array_element_type;
+pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_array_element_value_type;
+pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_member_type;
+pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_type_value_type;
 pub(in crate::decompiler::csharp::render) use declaration_types::concrete_definition_type_with_symbols_and_known_types;
-pub(in crate::decompiler::csharp::render) use declaration_types::csharp_array_element_type;
-pub(in crate::decompiler::csharp::render) use declaration_types::csharp_array_element_value_type;
-pub(in crate::decompiler::csharp::render) use declaration_types::csharp_member_type;
-pub(in crate::decompiler::csharp::render) use declaration_types::csharp_type_value_type;
 #[cfg(test)]
 pub(in crate::decompiler::csharp::render) use declaration_types::{
     concrete_definition_type, concrete_definition_type_with_symbols,
