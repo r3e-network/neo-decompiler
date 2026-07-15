@@ -518,6 +518,17 @@ test("C# rendering widens parameters checked with the VM null helper", () => {
   assert.match(rendered, /BigInteger valueOrDefault\(dynamic @value\)/);
 });
 
+test("C# rendering boxes VM null-check operands", () => {
+  const rendered = renderCSharpContract([
+    "contract NullLiteral {",
+    "    fn check() -> bool {",
+    "        return is_null(1);",
+    "    }",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /return \(\(\(object\)\(1\)\) is null\);/);
+});
+
 test("C# rendering uses conservative typed declarations by default", () => {
   const source = [
     "contract Typed {",

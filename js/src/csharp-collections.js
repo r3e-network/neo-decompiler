@@ -42,7 +42,9 @@ export function createCSharpCollectionHelpers(rewriteExpression) {
     ["Struct", (args, types) => args.length === 0
       ? "new object[] { }"
       : `new object[] { ${args.map((arg) => rewriteExpression(arg, types)).join(", ")} }`],
-    ["is_null", (args) => args.length === 1 ? `(((${args[0]}) is null))` : null],
+    // Box the operand before the null test so literals and value-like Neo
+    // types remain valid C# expressions (`long is null` is not legal C#).
+    ["is_null", (args) => args.length === 1 ? `(((object)(${args[0]})) is null)` : null],
     ["clear_items", (args, types) => {
       if (args.length !== 1) return null;
       const kind = collectionKind(args[0], types);
