@@ -70,13 +70,21 @@ fn unsupported_source_metadata_is_not_claimed_as_a_renderer() {
 
 #[test]
 fn short_csharp_compiler_tags_infer_language() {
-    for compiler in ["cs", "cs__", "cs 3.7", "CSharp"] {
+    for compiler in ["cs", "cs__", "cs 3.7", "CSharp", "Neo.Compiler.CSharp 3"] {
         let info = identify_patterns(&nef(compiler, ""), &[], None);
         assert_eq!(
             info.language.as_deref(),
             Some("C#"),
             "compiler tag {compiler:?}"
         );
+    }
+}
+
+#[test]
+fn compiler_tags_require_explicit_csharp_tokens() {
+    for compiler in ["notcsharp", "CSharpX", "Neo.Compiler.CSharpX", "cscompiler"] {
+        let info = identify_patterns(&nef(compiler, ""), &[], None);
+        assert_eq!(info.language, None, "compiler tag {compiler:?}");
     }
 }
 

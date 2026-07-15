@@ -241,13 +241,8 @@ function inferLanguage(compiler) {
   const value = String(compiler).trim().toLowerCase();
   if (!value) return null;
   // Fixed-width NEF compiler tags may be short (`cs`, `cs__`) rather than full names.
-  if (
-    value.includes("csharp") ||
-    value === "cs" ||
-    value.startsWith("cs_") ||
-    value.startsWith("cs ") ||
-    (value.startsWith("cs") && (value.length === 2 || !/[a-z]/.test(value[2] ?? "")))
-  ) {
+  // Match complete tokens so values such as `notcsharp` cannot claim C# support.
+  if (value.split(/[^a-z0-9]+/).some((token) => token === "csharp" || token === "cs")) {
     return "C#";
   }
   return null;

@@ -362,6 +362,12 @@ fn csharp_manifest_void_internal_call_underflow_keeps_call_visible() {
         csharp.contains("helper((dynamic)null);"),
         "argument underflow must remain a typed structured call: {csharp}"
     );
+    assert!(
+        csharp.contains(
+            "// VM argument underflow in caller at 0x0004: requires 1 stack values, but only 0 are available; missing values are rendered as (dynamic)null."
+        ),
+        "argument underflow must be explicit in generated C#: {csharp}"
+    );
 }
 
 #[test]

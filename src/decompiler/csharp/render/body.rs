@@ -134,6 +134,7 @@ pub(super) fn render_method_body(
         context.event_signatures,
     );
     let source = ensure_non_void_termination(source, &lowered.body, method_plan.return_behavior);
+    let source = prepend_argument_underflow_comment(source, method_plan, &fidelity);
     if source.trim().is_empty() && method_plan.return_behavior != ReturnBehavior::Void {
         fidelity.issues.push(fidelity_issue(
             method_plan.start,
@@ -188,6 +189,7 @@ fn recovered_result(
             context.event_signatures,
         );
         let structured = ensure_non_void_termination(structured, body, method_plan.return_behavior);
+        let structured = prepend_argument_underflow_comment(structured, method_plan, &fidelity);
         if !structured.trim().is_empty() {
             return BodyRenderResult {
                 source: indent_body(&structured),
@@ -202,6 +204,12 @@ fn recovered_result(
         .issues
         .iter()
         .any(|issue| issue.detail.starts_with("requires "));
+    let argument_underflow_detail = fidelity
+        .issues
+        .iter()
+        .find(|issue| issue.detail.starts_with("requires "))
+        .map(|issue| issue.detail.as_str())
+        .unwrap_or("missing stack arguments");
 
     for instruction in instructions {
         let target = match instruction.operand {
@@ -234,16 +242,16 @@ fn recovered_result(
         let call = format!("{target_name}({args})");
         match instruction.opcode {
             OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::Jmp | OpCode::Jmp_L => {
+                if argument_underflow {
+                    writeln!(
+                        source,
+                        "            // VM argument underflow: {target_name}: {argument_underflow_detail}; substituted (dynamic)null arguments."
+                    )
+                    .unwrap();
+                }
                 if method_plan.return_behavior == ReturnBehavior::Void {
                     writeln!(source, "            {call};").unwrap();
                 } else {
-                    if argument_underflow || argument_count > 0 {
-                        writeln!(
-                            source,
-                            "            // VM argument underflow: return {target_name}(???);"
-                        )
-                        .unwrap();
-                    }
                     writeln!(source, "            return {call};").unwrap();
                 }
                 rendered = true;
@@ -329,6 +337,26 @@ fn ensure_non_void_termination(
             .push_str("throw new InvalidOperationException(\"Unreachable Neo VM fallthrough.\");");
     }
     source
+}
+
+fn prepend_argument_underflow_comment(
+    source: String,
+    method_plan: &CSharpMethodPlan,
+    fidelity: &FidelityReport,
+) -> String {
+    let Some(issue) = fidelity.issues.iter().find(|issue| {
+        issue.kind == LoweringIssueKind::LostStackValue
+            && matches!(
+                issue.opcode,
+                OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::Jmp | OpCode::Jmp_L
+            )
+    }) else {
+        return source;
+    };
+    format!(
+        "// VM argument underflow in {} at 0x{:04X}: {}; missing values are rendered as (dynamic)null.\n{}",
+        method_plan.emitted_name, issue.offset, issue.detail, source
+    )
 }
 
 #[cfg(test)]

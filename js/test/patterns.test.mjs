@@ -97,6 +97,13 @@ test("pattern analysis does not claim unsupported source renderers", () => {
   }
 });
 
+test("pattern analysis requires explicit C# compiler tokens", () => {
+  for (const compiler of ["notcsharp", "CSharpX", "Neo.Compiler.CSharpX", "cscompiler"]) {
+    const info = identifyPatterns(nef(compiler), [], null);
+    assert.equal(info.language, null, compiler);
+  }
+});
+
 test("pattern analysis identifies signature and multisig syscalls", () => {
   const info = identifyPatterns(
     nef(),
