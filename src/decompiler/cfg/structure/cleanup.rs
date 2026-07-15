@@ -2,6 +2,7 @@ use crate::decompiler::ir::{Block as IrBlock, ControlFlow, Expr, Literal, Stmt};
 use std::collections::BTreeSet;
 
 mod int_normalization;
+mod int_normalization_uses;
 mod loops;
 
 pub(super) fn simplify_unreachable_control(block: &mut IrBlock) {

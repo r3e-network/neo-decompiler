@@ -12,6 +12,8 @@ use crate::decompiler::ir::{
 };
 use crate::instruction::OpCode;
 
+use super::int_normalization_uses::statement_uses_variable;
+
 const I32_MIN: i64 = -2_147_483_648;
 const I32_MAX: i64 = 2_147_483_647;
 const U32_MAX: i64 = 4_294_967_295;
@@ -30,22 +32,20 @@ pub(super) fn collapse_int32_wrappers(block: &mut IrBlock) {
             )
             .map(|replacement| (2, replacement))
         });
-        let (consumed, replacement) = full_match
-            .flatten()
-            .or_else(|| {
-                match_int32_wrapper(&block.stmts[index], &block.stmts[index + 1], None)
-                    .map(|replacement| (1, replacement))
-            })
-            .unwrap_or_else(|| {
-                index += 1;
-                (0, Vec::new())
-            });
-        if consumed == 0 {
+        let Some((consumed, replacement)) = full_match.flatten().or_else(|| {
+            match_int32_wrapper(&block.stmts[index], &block.stmts[index + 1], None)
+                .map(|replacement| (1, replacement))
+        }) else {
+            index += 1;
             continue;
         };
 
         // Keep the original arithmetic assignment. Only the branch wrapper
         // and its phi-like copy are replaced by the normalized sequence.
+        let preserve_normalized = block.stmts[index + 1 + consumed..]
+            .iter()
+            .any(|statement| statement_uses_variable(statement, &replacement.normalized_var));
+        let replacement = replacement.render(preserve_normalized);
         let replacement_len = replacement.len();
         block
             .stmts
@@ -109,7 +109,72 @@ fn collapse_children(block: &mut IrBlock) {
     }
 }
 
-fn match_int32_wrapper(operation: &Stmt, wrapper: &Stmt, copy: Option<&Stmt>) -> Option<Vec<Stmt>> {
+struct WrapperMatch {
+    operation_var: String,
+    normalized_var: String,
+    mask_var: String,
+    final_statement: FinalStatement,
+}
+
+impl WrapperMatch {
+    fn render(self, preserve_normalized: bool) -> Vec<Stmt> {
+        let Self {
+            operation_var,
+            normalized_var,
+            mask_var,
+            final_statement,
+        } = self;
+        let mut replacement = vec![
+            Stmt::assign(
+                mask_var.clone(),
+                Expr::binary(BinOp::And, Expr::var(operation_var), Expr::int(U32_MAX)),
+            ),
+            Stmt::ControlFlow(Box::new(ControlFlow::if_then(
+                Expr::binary(BinOp::Gt, Expr::var(mask_var.clone()), Expr::int(I32_MAX)),
+                IrBlock::with_stmts(vec![Stmt::assign(
+                    mask_var.clone(),
+                    Expr::binary(
+                        BinOp::Sub,
+                        Expr::var(mask_var.clone()),
+                        Expr::int(U32_MODULUS),
+                    ),
+                )]),
+            ))),
+        ];
+        match final_statement {
+            FinalStatement::Assign(destination) => {
+                replacement.push(Stmt::assign(
+                    destination.clone(),
+                    Expr::var(mask_var.clone()),
+                ));
+                if preserve_normalized && destination != normalized_var {
+                    replacement.push(Stmt::assign(normalized_var, Expr::var(mask_var)));
+                }
+            }
+            FinalStatement::Return => {
+                replacement.push(Stmt::Return(Some(Expr::var(mask_var))));
+            }
+            FinalStatement::SetItem { target, mut args } => {
+                *args.last_mut().expect("setitem has three arguments") =
+                    Expr::var(mask_var.clone());
+                replacement.push(Stmt::ExprStmt(Expr::Call { target, args }));
+                if preserve_normalized {
+                    // SETITEM consumes the collection/key/value triple but
+                    // leaves the duplicated normalized value available to RET
+                    // or later consumers. Keep an explicit IR name for it.
+                    replacement.push(Stmt::assign(normalized_var, Expr::var(mask_var)));
+                }
+            }
+        }
+        replacement
+    }
+}
+
+fn match_int32_wrapper(
+    operation: &Stmt,
+    wrapper: &Stmt,
+    copy: Option<&Stmt>,
+) -> Option<WrapperMatch> {
     let Stmt::Assign {
         target: operation_var,
         ..
@@ -177,25 +242,12 @@ fn match_int32_wrapper(operation: &Stmt, wrapper: &Stmt, copy: Option<&Stmt>) ->
         Some(_) => return None,
     };
 
-    let mask_var = outer_path.mask_var;
-    Some(vec![
-        Stmt::assign(
-            mask_var.clone(),
-            Expr::binary(BinOp::And, Expr::var(operation_var), Expr::int(U32_MAX)),
-        ),
-        Stmt::ControlFlow(Box::new(ControlFlow::if_then(
-            Expr::binary(BinOp::Gt, Expr::var(mask_var.clone()), Expr::int(I32_MAX)),
-            IrBlock::with_stmts(vec![Stmt::assign(
-                mask_var.clone(),
-                Expr::binary(
-                    BinOp::Sub,
-                    Expr::var(mask_var.clone()),
-                    Expr::int(U32_MODULUS),
-                ),
-            )]),
-        ))),
-        final_statement.render(mask_var),
-    ])
+    Some(WrapperMatch {
+        operation_var: operation_var.clone(),
+        normalized_var,
+        mask_var: outer_path.mask_var,
+        final_statement,
+    })
 }
 
 enum FinalStatement {
@@ -205,19 +257,6 @@ enum FinalStatement {
         target: SemanticCallTarget,
         args: Vec<Expr>,
     },
-}
-
-impl FinalStatement {
-    fn render(self, value: String) -> Stmt {
-        match self {
-            Self::Assign(target) => Stmt::assign(target, Expr::var(value)),
-            Self::Return => Stmt::Return(Some(Expr::var(value))),
-            Self::SetItem { target, mut args } => {
-                *args.last_mut().expect("setitem has three arguments") = Expr::var(value);
-                Stmt::ExprStmt(Expr::Call { target, args })
-            }
-        }
-    }
 }
 
 fn direct_copy_target(block: &IrBlock, source: &str) -> Option<String> {
@@ -444,12 +483,39 @@ mod tests {
         });
         collapse_int32_wrappers(&mut block);
 
+        assert_eq!(block.stmts.len(), 4);
         assert!(matches!(
             &block.stmts[3],
             Stmt::ExprStmt(Expr::Call {
                 target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Setitem)),
                 args,
             }) if matches!(args.last(), Some(Expr::Variable(name)) if name == "t_19")
+        ));
+    }
+
+    #[test]
+    fn preserves_normalized_value_after_slot_assignment() {
+        let mut block = wrapper();
+        block.stmts[2] = assign("loc0", v("p6_0"));
+        block.stmts.push(Stmt::Assert {
+            condition: v("p6_0"),
+            message: None,
+        });
+        collapse_int32_wrappers(&mut block);
+
+        assert!(matches!(
+            &block.stmts[3],
+            Stmt::Assign { target, value: Expr::Variable(name) }
+                if target == "loc0" && name == "t_19"
+        ));
+        assert!(matches!(
+            &block.stmts[4],
+            Stmt::Assign { target, value: Expr::Variable(name) }
+                if target == "p6_0" && name == "t_19"
+        ));
+        assert!(matches!(
+            &block.stmts[5],
+            Stmt::Assert { condition: Expr::Variable(name), .. } if name == "p6_0"
         ));
     }
 }
