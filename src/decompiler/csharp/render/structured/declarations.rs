@@ -1,5 +1,5 @@
 use super::super::super::super::helpers::sanitize_csharp_identifier;
-use super::super::plan_activity::ActivityCollector;
+use super::super::plan_activity::{is_nullable_csharp_type, ActivityCollector};
 use crate::decompiler::analysis::types::{TypeInfo, ValueType};
 use crate::decompiler::cfg::method_body::{
     Fidelity, LoweringIssue, LoweringIssueKind, SymbolInfo, SymbolOrigin,
@@ -271,7 +271,12 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
             .concrete_definition_types
             .get(name)
             .filter(|candidate| {
-                typed && concrete_type_matches_value_type(candidate, symbol.value_type)
+                typed
+                    && (concrete_type_matches_value_type(candidate, symbol.value_type)
+                        || (symbol.value_type == ValueType::Null
+                            && collector.nullable_concrete_definitions.contains(name)
+                            && is_nullable_csharp_type(candidate)
+                            && *candidate == "object[]"))
             })
             .cloned();
         declarations.insert(

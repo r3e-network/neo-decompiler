@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::cfg::method_body::SymbolInfo;
 use crate::decompiler::ir::{Expr, Intrinsic, Literal, SemanticCallTarget};
 use crate::instruction::OpCode;
@@ -33,6 +34,7 @@ pub(super) struct ActivityCollector<'a> {
     symbol_types: Option<&'a BTreeMap<String, SymbolInfo>>,
     definition_values: BTreeMap<String, Vec<Expr>>,
     non_concrete_definitions: HashSet<String>,
+    pub(super) nullable_concrete_definitions: BTreeSet<String>,
     direct_index_definitions: HashSet<String>,
     copy_definitions: Vec<(String, String)>,
     indexed_base_symbols: HashSet<String>,
@@ -51,6 +53,7 @@ impl<'a> ActivityCollector<'a> {
             symbol_types: None,
             definition_values: BTreeMap::new(),
             non_concrete_definitions: HashSet::new(),
+            nullable_concrete_definitions: BTreeSet::new(),
             direct_index_definitions: HashSet::new(),
             copy_definitions: Vec::new(),
             indexed_base_symbols: HashSet::new(),
@@ -71,6 +74,7 @@ impl<'a> ActivityCollector<'a> {
             symbol_types: Some(symbol_types),
             definition_values: self.definition_values,
             non_concrete_definitions: self.non_concrete_definitions,
+            nullable_concrete_definitions: self.nullable_concrete_definitions,
             direct_index_definitions: self.direct_index_definitions,
             copy_definitions: self.copy_definitions,
             indexed_base_symbols: self.indexed_base_symbols,
@@ -118,11 +122,14 @@ impl<'a> ActivityCollector<'a> {
         let mut derived_types = BTreeMap::new();
         let mut known_nulls = BTreeSet::new();
         let mut derived_nulls = BTreeSet::new();
+        let mut known_nullable = BTreeSet::new();
+        let mut derived_nullable = BTreeSet::new();
         let iterations = self.definition_values.len().saturating_add(1);
 
         for _ in 0..iterations {
             let mut next_types = BTreeMap::new();
             let mut next_nulls = BTreeSet::new();
+            let mut next_nullable = BTreeSet::new();
             let mut non_concrete = HashSet::new();
             for (name, definitions) in &self.definition_values {
                 let mut candidate = None;
@@ -132,6 +139,9 @@ impl<'a> ActivityCollector<'a> {
                     if is_null_definition(definition, &known_nulls) {
                         saw_null = true;
                         continue;
+                    }
+                    if is_nullable_definition(definition, &known_nullable) {
+                        saw_null = true;
                     }
                     let definition_type =
                         concrete_definition_type_with_symbols_and_known_types_and_calls(
@@ -156,6 +166,9 @@ impl<'a> ActivityCollector<'a> {
                 if consistent {
                     if let Some(candidate) = candidate {
                         if !saw_null || is_nullable_csharp_type(&candidate) {
+                            if saw_null {
+                                next_nullable.insert(name.clone());
+                            }
                             next_types.insert(name.clone(), candidate);
                         } else {
                             non_concrete.insert(name.clone());
@@ -168,16 +181,22 @@ impl<'a> ActivityCollector<'a> {
                 }
             }
 
-            if next_types == derived_types && next_nulls == derived_nulls {
+            if next_types == derived_types
+                && next_nulls == derived_nulls
+                && next_nullable == derived_nullable
+            {
                 self.concrete_definition_types = next_types;
                 self.non_concrete_definitions = non_concrete;
+                self.nullable_concrete_definitions = next_nullable;
                 return;
             }
             derived_types = next_types;
             derived_nulls = next_nulls.clone();
+            derived_nullable = next_nullable.clone();
             known_types = initial_known_types.clone();
             known_types.extend(derived_types.clone());
             known_nulls = next_nulls;
+            known_nullable = next_nullable;
         }
 
         self.concrete_definition_types = derived_types;
@@ -187,6 +206,7 @@ impl<'a> ActivityCollector<'a> {
             .filter(|name| !self.concrete_definition_types.contains_key(*name))
             .cloned()
             .collect();
+        self.nullable_concrete_definitions = derived_nullable;
     }
 
     fn record_use(&mut self, name: &str, scope: ScopeId) {
@@ -251,12 +271,45 @@ impl<'a> ActivityCollector<'a> {
     }
 }
 
-fn is_nullable_csharp_type(type_name: &str) -> bool {
+pub(super) fn is_nullable_csharp_type(type_name: &str) -> bool {
     type_name.ends_with("[]")
         || matches!(
             type_name,
             "ByteString" | "Map<object, object>" | "string" | "object"
         )
+}
+
+fn is_nullable_definition(expression: &Expr, known_nullable: &BTreeSet<String>) -> bool {
+    match expression {
+        Expr::Variable(name) => known_nullable.contains(name),
+        Expr::Cast { expr, target_type } => {
+            is_nullable_csharp_type(target_type) && is_nullable_definition(expr, known_nullable)
+        }
+        Expr::Convert {
+            value: expr,
+            target,
+        } => is_nullable_value_type(*target) && is_nullable_definition(expr, known_nullable),
+        Expr::Ternary {
+            then_expr,
+            else_expr,
+            ..
+        } => {
+            is_nullable_definition(then_expr, known_nullable)
+                || is_nullable_definition(else_expr, known_nullable)
+        }
+        _ => false,
+    }
+}
+
+fn is_nullable_value_type(value_type: ValueType) -> bool {
+    matches!(
+        value_type,
+        ValueType::Array
+            | ValueType::Struct
+            | ValueType::Map
+            | ValueType::ByteString
+            | ValueType::Buffer
+    )
 }
 
 fn is_null_definition(expression: &Expr, known_nulls: &BTreeSet<String>) -> bool {

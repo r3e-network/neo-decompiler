@@ -387,6 +387,135 @@ fn repeated_nullable_reference_definitions_keep_the_reference_type() {
 }
 
 #[test]
+fn nullable_reference_aliases_keep_the_proven_reference_type() {
+    let body = Block::from(vec![
+        Stmt::assign("source", Expr::Struct(vec![Expr::int(1)])),
+        Stmt::assign("source", Expr::Literal(Literal::Null)),
+        Stmt::assign("alias", Expr::var("source")),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "source".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "alias".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["source"].csharp_type, "object[]");
+    assert_eq!(plan.declarations["alias"].csharp_type, "object[]");
+}
+
+#[test]
+fn nullable_reference_aliases_can_start_with_a_null_slot_type() {
+    let body = Block::from(vec![
+        Stmt::assign("source", Expr::Struct(vec![Expr::int(1)])),
+        Stmt::assign("source", Expr::Literal(Literal::Null)),
+        Stmt::assign("alias", Expr::var("source")),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "source".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "alias".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Null,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["alias"].csharp_type, "object[]");
+}
+
+#[test]
+fn nullable_typed_array_aliases_stay_dynamic_at_unknown_mutation_boundaries() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "source",
+            Expr::NewArray {
+                length: Box::new(Expr::int(1)),
+                element_type: Some(ValueType::Integer),
+            },
+        ),
+        Stmt::assign("source", Expr::Literal(Literal::Null)),
+        Stmt::assign("alias", Expr::var("source")),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "source".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "alias".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Null,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["alias"].csharp_type, "dynamic");
+}
+
+#[test]
+fn nullable_reference_provenance_does_not_cross_boolean_type_checks() {
+    let body = Block::from(vec![
+        Stmt::assign("source", Expr::Struct(vec![Expr::int(1)])),
+        Stmt::assign("source", Expr::Literal(Literal::Null)),
+        Stmt::assign(
+            "is_array",
+            Expr::IsType {
+                value: Box::new(Expr::var("source")),
+                target: ValueType::Array,
+            },
+        ),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "source".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "is_array".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Null,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["is_array"].csharp_type, "dynamic");
+}
+
+#[test]
 fn nullable_value_definitions_remain_dynamic() {
     let body = Block::from(vec![
         Stmt::assign("value", Expr::int(1)),
