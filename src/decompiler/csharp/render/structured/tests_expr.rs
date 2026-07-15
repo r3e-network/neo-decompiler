@@ -1204,6 +1204,32 @@ fn check_witness_requires_explicit_framework_overload_evidence() {
 }
 
 #[test]
+fn check_witness_uses_proven_address_types_without_redundant_casts() {
+    let context = ExprContext::default().with_concrete_types(&BTreeMap::from([
+        ("account".to_string(), "UInt160".to_string()),
+        ("group".to_string(), "ECPoint".to_string()),
+    ]));
+    let check_witness = |argument| {
+        Expr::call(
+            SemanticCallTarget::Syscall {
+                hash: 0x8CEC_27F8,
+                name: Some("System.Runtime.CheckWitness".to_string()),
+            },
+            vec![argument],
+        )
+    };
+
+    assert_eq!(
+        render_expr(&check_witness(Expr::var("account")), &context),
+        "Runtime.CheckWitness(account)"
+    );
+    assert_eq!(
+        render_expr(&check_witness(Expr::var("group")), &context),
+        "Runtime.CheckWitness(group)"
+    );
+}
+
+#[test]
 fn syscall_arguments_match_framework_signatures() {
     let context = ExprContext::default();
     let syscall = |hash, name: &str, args: Vec<Expr>| {

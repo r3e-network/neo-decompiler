@@ -162,14 +162,19 @@ fn render_syscall_arguments(
                     ValueType::ByteString => format!("(ByteString)({rendered})"),
                     _ => return None,
                 },
-                SyscallArgument::Witness => match expression {
-                    Expr::Cast { target_type, .. }
-                        if matches!(target_type.as_str(), "UInt160" | "ECPoint") =>
-                    {
+                SyscallArgument::Witness => {
+                    let exact_type = context.exact_csharp_type(expression);
+                    let explicit_cast = matches!(
+                        expression,
+                        Expr::Cast { target_type, .. }
+                            if matches!(target_type.as_str(), "UInt160" | "ECPoint")
+                    );
+                    if explicit_cast || matches!(exact_type, Some("UInt160" | "ECPoint")) {
                         rendered
+                    } else {
+                        return None;
                     }
-                    _ => return None,
-                },
+                }
             })
         })
         .collect::<Option<Vec<_>>>()
