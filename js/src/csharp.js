@@ -20,7 +20,7 @@ import {
   renderPatternComments,
   renderSignature,
 } from "./csharp-render.js";
-import { rewriteCSharpMethodTokenCalls } from "./csharp-expression.js";
+import { rewriteCSharpMethodTokenCalls } from "./csharp-framework.js";
 
 export function renderCSharpContract(
   highLevel,
