@@ -1,6 +1,6 @@
 import { sanitizeIdentifier } from "./manifest.js";
 import { splitCallArguments } from "./csharp-expression.js";
-export { inferDeclarationTypes, renderBodyLine } from "./csharp-body.js";
+export { coerceCSharpReturn, inferDeclarationTypes, renderBodyLine } from "./csharp-body.js";
 import { inferDeclarationTypes, renderBodyLine } from "./csharp-body.js";
 export { csharpIdentifier } from "./csharp-identifiers.js";
 import { csharpIdentifier } from "./csharp-identifiers.js";

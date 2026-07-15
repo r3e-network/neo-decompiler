@@ -97,7 +97,8 @@ export function rewriteIndexOperands(line, types = null) {
     const close = findBracketClose(line, index);
     if (close < 0) continue;
     const operand = line.slice(index + 1, close).trim();
-    if (!operand || /^\s*\(\s*int\s*\)/.test(operand)) {
+    const hasIntCast = /^\s*\(\s*int\s*\)/.test(operand);
+    if (!operand) {
       index = close;
       continue;
     }
@@ -105,6 +106,10 @@ export function rewriteIndexOperands(line, types = null) {
     // index operand and must remain unchanged.
     const prefix = line.slice(0, index).trimEnd();
     const previous = prefix.slice(-1);
+    if (/\bnew\s+[A-Za-z_][A-Za-z0-9_.]*(?:<[^>]*>)?\s*$/.test(prefix)) {
+      index = close;
+      continue;
+    }
     if (previous === "{" || previous === ",") {
       const mapOpen = prefix.lastIndexOf("new Map<object, object> {");
       const mapClose = prefix.lastIndexOf("}");
@@ -118,13 +123,36 @@ export function rewriteIndexOperands(line, types = null) {
       continue;
     }
     const base = indexBase(line, index);
-    if (base && needsDynamicIndexBase(base.expression, types)) {
-      output += line.slice(cursor, base.start);
-      output += `((dynamic)(${base.expression}))[`;
+    const mapBase = base && isMapIndexBase(base.expression, types);
+    const dynamicBase = base && (
+      needsDynamicIndexBase(base.expression, types)
+      || isDynamicIndexBase(base.expression)
+      || isCallIndexBase(base.expression)
+    );
+    if (dynamicBase) {
+      if (base.start < cursor) {
+        const innerBase = stripBalancedOuterParens(base.expression);
+        const rewrittenInnerBase = rewriteIndexOperands(innerBase, types);
+        const renderedBase = output.lastIndexOf(innerBase) >= 0 ? innerBase : rewrittenInnerBase;
+        const marker = output.lastIndexOf(renderedBase);
+        if (marker < 0) {
+          output += line.slice(cursor, index + 1);
+        } else {
+          output = `${output.slice(0, marker)}((dynamic)(${renderedBase}))${output.slice(marker + renderedBase.length)}`;
+          output += line.slice(cursor, index + 1);
+        }
+      } else {
+        output += line.slice(cursor, base.start);
+        output += `((dynamic)(${base.expression}))[`;
+      }
     } else {
       output += line.slice(cursor, index + 1);
     }
-    output += `(int)(${operand})`;
+    output += dynamicBase && isDynamicIndexBase(base?.expression)
+      ? stripIntIndexCast(operand)
+      : mapBase
+      ? stripIntIndexCast(operand)
+      : hasIntCast ? operand : `(int)(${operand})`;
     output += line.slice(close, close + 1);
     cursor = close + 1;
     index = close;
@@ -133,28 +161,93 @@ export function rewriteIndexOperands(line, types = null) {
 }
 
 function indexBase(line, index) {
-  const prefix = line.slice(0, index);
-  const match = prefix.match(/((?:@?[A-Za-z_][A-Za-z0-9_]*)(?:\s*\[[^\]]+\])+|@?[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\s*$/);
-  if (!match) return null;
+  let end = index - 1;
+  while (end >= 0 && /\s/.test(line[end])) end -= 1;
+  if (end < 0) return null;
+  let start;
+  if (line[end] === ")") {
+    const open = findMatchingOpen(line, end, "(", ")");
+    if (open < 0) return null;
+    start = open;
+    let prefix = open - 1;
+    while (prefix >= 0 && /\s/.test(line[prefix])) prefix -= 1;
+    if (prefix >= 0 && /[A-Za-z0-9_.]/.test(line[prefix])) {
+      const candidate = scanIdentifierPathStart(line, prefix);
+      const name = line.slice(candidate, open).trim();
+      if (!/^(?:if|while|for|switch|catch|return|throw)$/.test(name)) {
+        start = candidate;
+      }
+    }
+  } else if (line[end] === "]") {
+    start = findMatchingOpen(line, end, "[", "]");
+  } else if (/[A-Za-z0-9_@]/.test(line[end])) {
+    start = scanIdentifierPathStart(line, end);
+  }
+  if (start === undefined || start < 0) return null;
   return {
-    expression: match[1].trim(),
-    start: match.index,
+    expression: line.slice(start, index).trim(),
+    start,
   };
 }
 
 function needsDynamicIndexBase(expression, types) {
   if (!types) return false;
-  const root = expression.match(/^@?([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
+  let source = expression.trim();
+  while (source.startsWith("(") && source.endsWith(")") && hasBalancedOuterParens(source)) {
+    source = source.slice(1, -1).trim();
+  }
+  const root = source.match(/^@?([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
   if (!root) return false;
   let type = types.get(root) ?? null;
-  const indexes = expression.match(/\[/g)?.length ?? 0;
+  // `expression` is the base before the bracket currently being rendered;
+  // include that bracket when walking the inferred element type.
+  const indexes = (expression.match(/\[/g)?.length ?? 0) + 1;
   for (let index = 0; index < indexes; index += 1) {
     if (type === "dynamic") return false;
+    if (/^Map(?:<|$)/.test(type ?? "")) return false;
     if (/\[\]$/.test(type ?? "")) type = type.slice(0, -2);
     else if (type === "ByteString" || type === "string") type = "value";
     else type = "object";
   }
   return type === "object" || type === "Block" || type === "BigInteger";
+}
+
+function isMapIndexBase(expression, types) {
+  if (!types) return false;
+  const source = stripBalancedOuterParens(expression).replace(/^@/, "");
+  const root = source.match(/^([A-Za-z_][A-Za-z0-9_]*)/)?.[1];
+  return /^Map(?:<|$)/.test(types.get(root) ?? "");
+}
+
+function isDynamicIndexBase(expression) {
+  return /^\(?\s*default\s*\(\s*dynamic\s*\)\s*\)?$/.test(expression.trim());
+}
+
+function isCallIndexBase(expression) {
+  const source = stripBalancedOuterParens(expression);
+  return !/^new\s+/.test(source) && /^[A-Za-z_][A-Za-z0-9_.]*\s*\(/.test(source);
+}
+
+function stripIntIndexCast(operand) {
+  return operand.replace(/^\(\s*int\s*\)\s*\((.*)\)$/s, "$1").trim();
+}
+
+function hasBalancedOuterParens(source) {
+  let depth = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    if (source[index] === "(") depth += 1;
+    else if (source[index] === ")") depth -= 1;
+    if (depth === 0 && index < source.length - 1) return false;
+  }
+  return depth === 0;
+}
+
+function stripBalancedOuterParens(source) {
+  let value = source.trim();
+  while (value.startsWith("(") && value.endsWith(")") && hasBalancedOuterParens(value)) {
+    value = value.slice(1, -1).trim();
+  }
+  return value;
 }
 
 // VM equality and arithmetic accept mixed stack item types. When inference
@@ -181,7 +274,143 @@ export function rewriteDynamicOperators(line, types = null) {
     cursor = match.index + match[0].length;
     pattern.lastIndex = cursor;
   }
-  return cursor === 0 ? line : output + line.slice(cursor);
+  const rewritten = cursor === 0 ? line : output + line.slice(cursor);
+  return rewriteDynamicCompoundOperators(rewritten, types);
+}
+
+// Dynamic lowering must not leave a cast expression on the left-hand side of
+// a compound assignment (`((dynamic)(value)) += 1` is not assignable in C#).
+// Rebind the original slot while keeping the VM arithmetic dynamic.
+export function rewriteDynamicCompoundAssignments(line) {
+  const match = line.match(
+    /^(\s*)(@?[A-Za-z_][A-Za-z0-9_]*)\s*(<<|>>|[+\-*/%&|^])=\s*(.+?);\s*(\/\/.*)?$/,
+  );
+  if (!match) return line;
+  const [, indentation, target, operator, value, comment = ""] = match;
+  return `${indentation}${target} = ((dynamic)(${target})) ${operator} ${value};${comment ? ` ${comment}` : ""}`;
+}
+
+// The fast path above intentionally handles the common identifier form. VM
+// values also arrive through nested calls, indexes, and parenthesized
+// comparisons, which cannot be matched safely with one regular expression.
+// Find those complete left operands lexically and bind them dynamically when
+// their static C# operator pair is not trustworthy.
+function rewriteDynamicCompoundOperators(line, types) {
+  const replacements = [];
+  let blockComment = false;
+  for (let index = 0; index < line.length; index += 1) {
+    if (blockComment) {
+      if (line.startsWith("*/", index)) {
+        blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+    if (line.startsWith("//", index)) break;
+    if (line.startsWith("/*", index)) {
+      blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (isInsideQuotedString(line, index)) continue;
+    const operator = operatorAt(line, index);
+    if (!operator) continue;
+    const start = findLeftOperandStart(line, index);
+    if (start < 0) continue;
+    const left = line.slice(start, index).trim();
+    if (!left || /^\(*\s*\(?\s*dynamic\s*\)/.test(left)) continue;
+    if (!isDynamicCompoundOperand(left, types)) continue;
+    replacements.push({
+      start,
+      end: index,
+      text: `((dynamic)(${left})) `,
+    });
+  }
+  if (replacements.length === 0) return line;
+
+  // Inner operators can produce overlapping candidates with an outer
+  // parenthesized expression. Keep the widest non-overlapping candidate so
+  // `(a > b) - (c > d)` becomes one dynamic subtraction expression.
+  replacements.sort((left, right) =>
+    left.start - right.start || right.end - left.end,
+  );
+  const selected = [];
+  for (const replacement of replacements) {
+    if (selected.some((entry) => replacement.start < entry.end && entry.start < replacement.end)) {
+      continue;
+    }
+    selected.push(replacement);
+  }
+  selected.sort((left, right) => left.start - right.start);
+  let output = "";
+  let cursor = 0;
+  for (const replacement of selected) {
+    output += line.slice(cursor, replacement.start) + replacement.text;
+    cursor = replacement.end;
+  }
+  return output + line.slice(cursor);
+}
+
+function operatorAt(line, index) {
+  for (const candidate of ["===", "!==", "==", "!=", "<=", ">=", "<<", ">>"]) {
+    if (line.startsWith(candidate, index)) return candidate;
+  }
+  if ("<>+-*/%&|^".includes(line[index])) return line[index];
+  return null;
+}
+
+function findLeftOperandStart(line, operatorIndex) {
+  let end = operatorIndex - 1;
+  while (end >= 0 && /\s/.test(line[end])) end -= 1;
+  if (end < 0) return -1;
+  if (line[end] === ")") {
+    const open = findMatchingOpen(line, end, "(", ")");
+    if (open < 0) return -1;
+    let start = open;
+    let prefix = open - 1;
+    while (prefix >= 0 && /\s/.test(line[prefix])) prefix -= 1;
+    if (prefix >= 0 && /[A-Za-z0-9_.]/.test(line[prefix])) {
+      const candidate = scanIdentifierPathStart(line, prefix);
+      const name = line.slice(candidate, open).trim();
+      if (!/^(?:if|while|for|switch|catch|return|throw)$/.test(name)) start = candidate;
+    }
+    return start;
+  }
+  if (line[end] === "]") {
+    const open = findMatchingOpen(line, end, "[", "]");
+    if (open < 0) return -1;
+    let prefix = open - 1;
+    while (prefix >= 0 && /\s/.test(line[prefix])) prefix -= 1;
+    return prefix >= 0 ? scanIdentifierPathStart(line, prefix) : open;
+  }
+  if (/[A-Za-z0-9_@]/.test(line[end])) return scanIdentifierPathStart(line, end);
+  return -1;
+}
+
+function scanIdentifierPathStart(line, end) {
+  let cursor = end;
+  while (cursor >= 0 && /[A-Za-z0-9_@.]/.test(line[cursor])) cursor -= 1;
+  return cursor + 1;
+}
+
+function findMatchingOpen(line, close, openCharacter, closeCharacter) {
+  let depth = 0;
+  for (let index = close; index >= 0; index -= 1) {
+    if (line[index] === closeCharacter) depth += 1;
+    else if (line[index] === openCharacter && --depth === 0) return index;
+  }
+  return -1;
+}
+
+function isDynamicCompoundOperand(left, types) {
+  const normalized = left.replace(/\s+/g, "");
+  const type = expressionType(left, types);
+  if (isDynamicOperatorType(type)) return true;
+  if (/(?:===|!==|==|!=|<=|>=|(?<!<)<(?!<)|(?<!>)>(?!>))/.test(left)) return true;
+  if (!/[([]/.test(left)) return false;
+  // Keep ordinary numeric framework calls statically typed where possible.
+  if (/^(?:BigInteger|Math)\./.test(normalized)) return false;
+  return true;
 }
 
 function expressionType(expression, types) {

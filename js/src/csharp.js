@@ -1,11 +1,14 @@
 import { sanitizeIdentifier } from "./manifest.js";
 import { nullableParametersForMethod } from "./csharp/nullability.js";
+import { buildCSharpScopePlans } from "./csharp-scopes.js";
 import {
   renderStaticSlotDeclarations,
   renderStaticSlotLine,
 } from "./csharp-slots.js";
 import {
   csharpIdentifier,
+  csharpType,
+  coerceCSharpReturn,
   escapeCSharpString,
   inferDeclarationTypes,
   isSafeManifestMethod,
@@ -17,6 +20,7 @@ import {
   renderPatternComments,
   renderSignature,
 } from "./csharp-render.js";
+import { rewriteCSharpMethodTokenCalls } from "./csharp-expression.js";
 
 export function renderCSharpContract(
   highLevel,
@@ -56,9 +60,15 @@ export function renderCSharpContract(
     sourceDepthByLine,
   );
   const fallthroughGuardsByLine = nonVoidMethodInfo.guards;
+  const scopePlans = buildCSharpScopePlans(
+    sourceLines,
+    sourceDepthByLine,
+    options.typedDeclarations !== false,
+  );
   const declarationTypesByLine = options.typedDeclarations === false
     ? null
     : inferDeclarationTypesByLine(sourceLines, sourceDepthByLine);
+  const returnTypesByLine = inferReturnTypesByLine(sourceLines, sourceDepthByLine);
   const nullableParametersByLine = new Map();
   for (const [lineIndex, line] of sourceLines.entries()) {
     if (/^\s*fn\s+/.test(line)) {
@@ -142,17 +152,29 @@ export function renderCSharpContract(
         output.push(`${indentation}[Safe]`);
       }
       output.push(signature);
+      for (const declaration of scopePlans.declarationsByStart.get(lineIndex) ?? []) {
+        output.push(`${indentation}    ${declaration.type} ${csharpIdentifier(declaration.name)} = default;`);
+      }
       continue;
     }
     const metadata = renderMetadataLine(line);
     const orphanElse = /^\s*}\s*else\s*\{\s*$/.test(line) && sourceDepthByLine[lineIndex] <= 2;
+    const scopedLine = rewriteCSharpMethodTokenCalls(
+      scopePlans.plansByLine.get(lineIndex) ?? line,
+      options.methodTokens,
+    );
     const renderedBody = renderBodyLine(
-      renderCSharpCatchClause(renderStaticSlotLine(line)),
+      renderCSharpCatchClause(renderStaticSlotLine(scopedLine)),
+      declarationTypesByLine?.get(lineIndex) ?? null,
+    );
+    const returnedBody = coerceCSharpReturn(
+      renderedBody,
+      returnTypesByLine.get(lineIndex) ?? null,
       declarationTypesByLine?.get(lineIndex) ?? null,
     );
     output.push(metadata ?? (orphanElse
       ? `${line.match(/^\s*/)?.[0] ?? ""}// orphaned else branch`
-      : rewriteUnresolvedGotos(renderedBody, labelsByLine.get(lineIndex))));
+      : rewriteUnresolvedGotos(returnedBody, labelsByLine.get(lineIndex))));
     if (/^\s*(?:features|groups|permissions)\s*\{\s*$/.test(line)) {
       metadataBlock = true;
     }
@@ -239,6 +261,21 @@ function inferDeclarationTypesByLine(lines, depths) {
     start = end;
   }
   return typesByLine;
+}
+
+function inferReturnTypesByLine(lines, depths) {
+  const returnTypes = new Map();
+  for (let start = 0; start < lines.length; start += 1) {
+    if (!/^\s*fn\s+.*\{\s*$/.test(lines[start])) continue;
+    const methodDepth = depths[start];
+    const end = findMethodEnd(lines, depths, start, methodDepth);
+    if (end < 0) continue;
+    const raw = lines[start].match(/->\s*([^\s{]+)/)?.[1] ?? "void";
+    const expected = raw.toLowerCase() === "any" ? "object" : csharpType(raw);
+    for (let line = start + 1; line < end; line += 1) returnTypes.set(line, expected);
+    start = end;
+  }
+  return returnTypes;
 }
 
 function isContractHeaderLine(line) {

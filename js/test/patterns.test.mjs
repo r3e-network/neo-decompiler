@@ -612,6 +612,87 @@ test("C# rendering keeps mixed VM operators dynamically bindable", () => {
   assert.match(rendered, /return \(\(dynamic\)\(left\)\) - right;/);
 });
 
+test("C# rendering hoists VM slots that cross source block scopes", () => {
+  const rendered = renderCSharpContract([
+    "contract ScopeSlots {",
+    "fn sample() -> any {",
+    "    let loc0 = 0;",
+    "    do {",
+    "        let loc1 = 1;",
+    "    } while (loc1 != 2);",
+    "    loc1 = 3;",
+    "    return loc1;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /BigInteger loc1 = default;/);
+  assert.doesNotMatch(rendered, /let loc1/);
+  assert.doesNotMatch(rendered, /BigInteger loc1 = 1;/);
+});
+
+test("C# rendering dynamically binds compound VM call and comparison operands", () => {
+  const rendered = renderCSharpContract([
+    "contract CompoundOperators {",
+    "fn check() -> bool {",
+    "    return syscall(\"System.Storage.Local.Get\", 1) == 1;",
+    "}",
+    "fn compare(a: int, b: int) -> any {",
+    "    return (a > b) - (b > a);",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /return \(\(dynamic\)\(Storage.Get\(/);
+  assert.match(rendered, /return \(\(dynamic\)\(\(a > b\)\)\) - \(b > a\);/);
+});
+
+test("C# rendering keeps dynamic compound assignments assignable", () => {
+  const rendered = renderCSharpContract([
+    "contract CompoundAssignments {",
+    "fn update(value: int) -> any {",
+    "    value += 1;",
+    "    return value;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /@value = \(\(dynamic\)\(@value\)\) \+ 1;/);
+  assert.doesNotMatch(rendered, /\(\(dynamic\)\(@value\)\) \+=/);
+});
+
+test("C# rendering lowers VM function-pointer markers", () => {
+  const rendered = renderCSharpContract([
+    "contract FunctionPointers {",
+    "fn invoke() -> any {",
+    "    let callback = &sub_0x0010;",
+    "    return call(callback, &sub_0x0020);",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.doesNotMatch(rendered, /(?:=|,)\s*&sub_0x/);
+  assert.match(rendered, /default\(dynamic\) \/\* unresolved VM function pointer &sub_0x0010 \*\//);
+  assert.match(rendered, /default\(dynamic\) \/\* unresolved VM function pointer &sub_0x0020 \*\//);
+});
+
+test("C# rendering lowers method-token calls through Contract.Call", () => {
+  const rendered = renderCSharpContract([
+    "contract MethodTokens {",
+    "fn invoke() -> any {",
+    "    return testArgs1(4);",
+    "}",
+    "}",
+  ].join("\n"), null, {
+    methodTokens: [{
+      hash: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]),
+      method: "testArgs1",
+      callFlags: 15,
+      parametersCount: 1,
+      hasReturnValue: true,
+    }],
+  });
+  assert.match(rendered, /return Contract\.Call\(\(UInt160\)new byte\[\] \{ 0x01, 0x02, 0x03/);
+  assert.match(rendered, /"testArgs1", \(CallFlags\)\(15\), new object\[\] \{ 4 \}\)/);
+  assert.doesNotMatch(rendered, /return testArgs1\(4\);/);
+});
+
 test("C# typed declarations propagate concrete collection aliases", () => {
   const rendered = renderCSharpContract([
     "contract AliasTypes {",

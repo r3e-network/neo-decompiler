@@ -51,6 +51,33 @@ export function rewriteUnknownPlaceholders(line) {
   return cursor === 0 ? line : output + line.slice(cursor);
 }
 
+// High-level VM notation represents a function pointer as `&method`. C# only
+// permits method groups in delegate/function-pointer contexts, while the
+// generated contract intentionally keeps VM values dynamic. Lower the marker
+// to a compile-safe dynamic value and retain the original target in a comment
+// so the recovered control-flow fact is still visible to readers.
+export function rewriteFunctionPointers(line) {
+  const pattern = /&([A-Za-z_][A-Za-z0-9_]*)/g;
+  let output = "";
+  let cursor = 0;
+  let match;
+  while ((match = nextOutsideMatch(line, pattern)) !== null) {
+    if (!isFunctionPointerContext(line, match.index)) continue;
+    output += line.slice(cursor, match.index);
+    output += `default(dynamic) /* unresolved VM function pointer &${match[1]} */`;
+    cursor = match.index + match[0].length;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function isFunctionPointerContext(line, index) {
+  let previous = index - 1;
+  while (previous >= 0 && /\s/.test(line[previous])) previous -= 1;
+  if (previous < 0 || "([{,=:".includes(line[previous])) return true;
+  const prefix = line.slice(0, previous + 1);
+  return /\breturn\s*$/.test(prefix);
+}
+
 export function rewriteEmptyArrayLiterals(line) {
   const pattern = /\[\]/g;
   let output = "";

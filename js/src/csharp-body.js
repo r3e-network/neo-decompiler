@@ -53,6 +53,50 @@ export function renderBodyLine(line, declarationTypes = null) {
   );
 }
 
+// Manifest signatures describe the VM value crossing the public method
+// boundary. Keep that contract explicit in generated C# when the body still
+// contains a conservative object/ByteString/array expression.
+export function coerceCSharpReturn(line, expectedType, declarationTypes = null) {
+  if (!expectedType || expectedType === "void" || expectedType === "object" || expectedType === "dynamic") {
+    return line;
+  }
+  const match = line.match(/^(\s*)return\s+(.+);$/);
+  if (!match) return line;
+  const indentation = match[1];
+  const expression = match[2].trim();
+  const actualType = renderedExpressionType(expression, declarationTypes);
+  if (actualType === expectedType) return line;
+
+  if (expectedType === "object[]" && /^new\s+[A-Za-z_][A-Za-z0-9_.]*\[\]\s*\{/.test(expression)) {
+    return `${indentation}return ${expression.replace(/^new\s+[A-Za-z_][A-Za-z0-9_.]*\[\]/, "new object[]")};`;
+  }
+  if (/^[A-Za-z_][A-Za-z0-9_.<>\[\]]*$/.test(expectedType)) {
+    return `${indentation}return (${expectedType})(dynamic)(${expression});`;
+  }
+  return line;
+}
+
+function renderedExpressionType(expression, declarationTypes) {
+  if (/^new\s+object\[\]/.test(expression)) return "object[]";
+  const array = expression.match(/^new\s+([A-Za-z_][A-Za-z0-9_.]*)\[\]/)?.[1];
+  if (array) return `${array}[]`;
+  if (/^"(?:[^"\\]|\\.)*"$/.test(expression)) return "string";
+  if (/^-?\d+$/.test(expression)) return "BigInteger";
+  if (/^(?:true|false)$/.test(expression)) return "bool";
+  if (/^\(\s*ByteString\s*\)/.test(expression)) return "ByteString";
+  if (/^!/.test(expression) || /^\(\s*bool\s*\)/.test(expression)) return "bool";
+  if (/^BigInteger\./.test(expression)) return "BigInteger";
+  if (/^(?:StdLib\.Itoa|Helper\.Concat)/.test(expression)) return "string";
+  if (/(?:===|!==|==|!=|<=|>=|<|>|\bis\s+null\b)/.test(expression)) return "bool";
+  const operands = expression.match(/@?[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
+  const operandTypes = [...new Set(operands
+    .map((name) => declarationTypes?.get(name.replace(/^@/, "")))
+    .filter(Boolean))];
+  if (operandTypes.length === 1 && operands.length > 1) return operandTypes[0];
+  const identifier = expression.match(/^@?([A-Za-z_][A-Za-z0-9_]*)$/)?.[1];
+  return identifier ? declarationTypes?.get(identifier) ?? null : null;
+}
+
 // Stack lifting can leave a pure value on its own line when the VM later
 // consumes it along another path. Such lines are meaningful in the lifted
 // trace but are not legal C# expression statements (`null;`, `1;`, or

@@ -34,6 +34,10 @@ function inferExpressionType(expression, knownTypes = new Map()) {
   if (/^convert_to_bytestring\s*\(/i.test(value)) return "ByteString";
   const syscall = value.match(/^syscall\s*\(\s*\"([^\"]+)\"/i);
   if (syscall) return csharpSyscallReturnType(syscall[1]) ?? "dynamic";
+  // Operators inside call arguments (for example `hanoiTower(n - 1, ...)`)
+  // do not describe the call's result. Keep unknown method calls dynamic
+  // instead of falsely inferring a numeric return from an argument expression.
+  if (/^[A-Za-z_][A-Za-z0-9_.]*\s*\(/.test(value)) return "dynamic";
   const identifier = value.match(/^@?([A-Za-z_][A-Za-z0-9_]*)$/)?.[1];
   if (identifier) return knownTypes.get(identifier) ?? "dynamic";
   if (hasComparisonOperator(value)) return "bool";
