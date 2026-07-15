@@ -54,6 +54,127 @@ fn resolved_boolean_internal_call_avoids_dynamic_truthiness_cast() {
 }
 
 #[test]
+fn proven_literal_array_indexes_preserve_selected_element_types() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "items",
+            Expr::Array(vec![
+                Expr::int(7),
+                Expr::Literal(Literal::String("ready".to_string())),
+            ]),
+        ),
+        Stmt::assign("alias", Expr::var("items")),
+        Stmt::assign("index", Expr::int(1)),
+        Stmt::assign(
+            "selected",
+            Expr::index(Expr::var("alias"), Expr::var("index")),
+        ),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "items".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "alias".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "index".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Integer,
+            },
+        ),
+        (
+            "selected".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+    let context = ExprContext::for_block(&body, &symbols, true);
+
+    assert_eq!(
+        context.exact_csharp_type(&Expr::index(Expr::var("alias"), Expr::var("index"))),
+        Some("ByteString")
+    );
+    assert_eq!(
+        context.exact_csharp_type(&Expr::index(Expr::var("items"), Expr::int(0))),
+        Some("BigInteger")
+    );
+}
+
+#[test]
+fn literal_array_index_provenance_stays_conservative_at_invalid_indexes() {
+    let body = Block::from(vec![Stmt::assign(
+        "items",
+        Expr::Array(vec![Expr::int(7), Expr::int(8)]),
+    )]);
+    let symbols = BTreeMap::from([(
+        "items".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Temporary,
+            value_type: ValueType::Array,
+        },
+    )]);
+    let context = ExprContext::for_block(&body, &symbols, false);
+
+    assert_eq!(
+        context.exact_csharp_type(&Expr::index(Expr::var("items"), Expr::int(-1))),
+        None
+    );
+    assert_eq!(
+        context.exact_csharp_type(&Expr::index(Expr::var("items"), Expr::int(2))),
+        None
+    );
+}
+
+#[test]
+fn object_array_literal_indexes_are_runtime_typed_but_not_static_exact() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "items",
+            Expr::Array(vec![
+                Expr::int(7),
+                Expr::Literal(Literal::String("ready".to_string())),
+            ]),
+        ),
+        Stmt::assign("selected", Expr::index(Expr::var("items"), Expr::int(0))),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "items".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Array,
+            },
+        ),
+        (
+            "selected".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+    let context = ExprContext::for_block(&body, &symbols, false).with_concrete_types(
+        &BTreeMap::from([("items".to_string(), "object[]".to_string())]),
+    );
+    let expression = Expr::index(Expr::var("items"), Expr::int(0));
+
+    assert_eq!(context.exact_csharp_type(&expression), Some("BigInteger"));
+    assert!(!context.is_statically_exact_csharp_type(&expression, "BigInteger"));
+}
+
+#[test]
 fn known_native_method_tokens_drive_exact_csharp_expression_types() {
     let context = ExprContext::default();
     let call = |name: &str| {

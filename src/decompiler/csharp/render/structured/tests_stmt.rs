@@ -313,6 +313,49 @@ fn typed_boundaries_render_valid_explicit_conversions() {
 }
 
 #[test]
+fn runtime_typed_literal_indexes_keep_object_array_cast_boundaries() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "items",
+            Expr::Array(vec![
+                Expr::int(7),
+                Expr::Literal(Literal::String("ready".to_string())),
+            ]),
+        ),
+        Stmt::ret(Expr::index(Expr::var("items"), Expr::int(0))),
+    ]);
+    let symbols = BTreeMap::from([(
+        "items".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Temporary,
+            value_type: ValueType::Array,
+        },
+    )]);
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(
+        super::super::stmt::render_block_with_trace(
+            &body,
+            &plan,
+            &symbols,
+            ReturnBehavior::Value,
+            false,
+            "__assert",
+            "__NeoDecompilerVmException",
+            None,
+            None,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            Some("BigInteger"),
+            None,
+            &[],
+            &BTreeMap::new(),
+        ),
+        "object[] items = new object[] { 7, \"ready\" };\nreturn (BigInteger)(dynamic)(items[0]);"
+    );
+}
+
+#[test]
 fn typed_internal_call_boundaries_use_exact_resolved_return_types() {
     let call = Expr::call(
         SemanticCallTarget::Internal {

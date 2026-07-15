@@ -9,6 +9,8 @@ use crate::decompiler::syscall_types;
 use crate::instruction::OpCode;
 
 use super::expr_inline::{is_inline_pure, InlineCollector};
+#[path = "expr_context_index.rs"]
+mod index_types;
 #[path = "expr_context_intrinsics.rs"]
 mod intrinsic_types;
 #[path = "expr_context_patterns.rs"]
@@ -228,10 +230,12 @@ impl ExprContext {
             } => args
                 .first()
                 .and_then(|base| self.exact_csharp_type(base))
-                .and_then(types::csharp_array_element_type),
-            Expr::Index { base, .. } => self
+                .and_then(types::csharp_array_element_type)
+                .or_else(|| self.exact_literal_index_type(args.first()?, args.get(1)?)),
+            Expr::Index { base, index } => self
                 .exact_csharp_type(base)
-                .and_then(types::csharp_array_element_type),
+                .and_then(types::csharp_array_element_type)
+                .or_else(|| self.exact_literal_index_type(base, index)),
             Expr::Member { base, name } => self
                 .exact_csharp_type(base)
                 .and_then(|base_type| types::csharp_member_type(base_type, name)),

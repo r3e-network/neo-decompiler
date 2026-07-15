@@ -142,7 +142,10 @@ impl StatementRenderer<'_> {
 
     pub(super) fn render_typed_value(&self, value: &Expr, target_type: &str) -> String {
         let rendered = render_expr(value, &self.expressions);
-        if self.expressions.exact_csharp_type(value) == Some(target_type) {
+        if self
+            .expressions
+            .is_statically_exact_csharp_type(value, target_type)
+        {
             return rendered;
         }
         if let Expr::Variable(name) = value {

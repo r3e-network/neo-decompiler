@@ -27,16 +27,24 @@ pub(super) fn render_byte_concat(
 
     let left = render_expr_prec(left, 0, context, expanding);
     let left = match left_type {
-        ValueType::ByteString if context.exact_csharp_type(&args[0]) == Some("ByteString") => left,
+        ValueType::ByteString
+            if context.is_statically_exact_csharp_type(&args[0], "ByteString") =>
+        {
+            left
+        }
         ValueType::ByteString => format!("(ByteString)({left})"),
-        ValueType::Buffer if context.exact_csharp_type(&args[0]) == Some("byte[]") => left,
+        ValueType::Buffer if context.is_statically_exact_csharp_type(&args[0], "byte[]") => left,
         ValueType::Buffer => format!("(byte[])({left})"),
         _ => format!("(ByteString)(dynamic)({left})"),
     };
     let right_type = context.value_type(right);
     let right = render_expr_prec(right, 0, context, expanding);
     let right = match right_type {
-        ValueType::ByteString if context.exact_csharp_type(&args[1]) == Some("ByteString") => right,
+        ValueType::ByteString
+            if context.is_statically_exact_csharp_type(&args[1], "ByteString") =>
+        {
+            right
+        }
         ValueType::Boolean
         | ValueType::Array
         | ValueType::Struct

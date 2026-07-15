@@ -103,7 +103,7 @@ fn render_native_args(
         .map(|(index, expression)| {
             if contract == "RoleManagement" && method == "GetDesignatedByRole" && index == 0 {
                 let rendered = render_expr_prec(expression, 0, context, expanding);
-                if context.exact_csharp_type(expression) == Some("Role") {
+                if context.is_statically_exact_csharp_type(expression, "Role") {
                     rendered
                 } else {
                     format!("(Role)(int)({rendered})")
@@ -124,7 +124,7 @@ fn render_native_args(
                 && index == 0
             {
                 let rendered = render_expr_prec(expression, 0, context, expanding);
-                if context.exact_csharp_type(expression) == Some("TransactionAttributeType") {
+                if context.is_statically_exact_csharp_type(expression, "TransactionAttributeType") {
                     rendered
                 } else {
                     format!("(TransactionAttributeType)(int)({rendered})")
@@ -134,7 +134,7 @@ fn render_native_args(
                 && index == 3
             {
                 let rendered = render_expr_prec(expression, 0, context, expanding);
-                if context.exact_csharp_type(expression) == Some("NamedCurveHash") {
+                if context.is_statically_exact_csharp_type(expression, "NamedCurveHash") {
                     rendered
                 } else {
                     format!("(NamedCurveHash)(int)({rendered})")

@@ -48,11 +48,9 @@ pub(super) fn render_intrinsic(
                 .first()
                 .map(|expression| render_expr_prec(expression, 0, context, expanding))
                 .unwrap_or_else(|| "default".to_string());
-            let source = if args
-                .first()
-                .and_then(|expression| context.exact_csharp_type(expression))
-                == Some("BigInteger")
-            {
+            let source = if args.first().is_some_and(|expression| {
+                context.is_statically_exact_csharp_type(expression, "BigInteger")
+            }) {
                 value
             } else {
                 format!("(BigInteger)(dynamic)({value})")

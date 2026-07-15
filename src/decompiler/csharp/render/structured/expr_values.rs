@@ -31,7 +31,7 @@ pub(super) fn int_cast(
     expanding: &mut BTreeSet<String>,
 ) -> String {
     let rendered = render_expr_prec(expression, 0, context, expanding);
-    if context.exact_csharp_type(expression) == Some("int") {
+    if context.is_statically_exact_csharp_type(expression, "int") {
         rendered
     } else {
         format!("(int)({rendered})")

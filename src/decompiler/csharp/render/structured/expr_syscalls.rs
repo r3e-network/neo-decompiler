@@ -146,14 +146,14 @@ fn render_syscall_arguments(
                 }
                 SyscallArgument::Int => render_exact_or_cast(expression, "int", rendered, context),
                 SyscallArgument::LongInteger => {
-                    if context.exact_csharp_type(expression) == Some("long") {
+                    if context.is_statically_exact_csharp_type(expression, "long") {
                         rendered
                     } else {
                         format!("(long)(BigInteger)({rendered})")
                     }
                 }
                 SyscallArgument::Enum(target_type) => {
-                    if context.exact_csharp_type(expression) == Some(*target_type) {
+                    if context.is_statically_exact_csharp_type(expression, target_type) {
                         rendered
                     } else {
                         format!("({target_type})(int)({rendered})")
@@ -181,13 +181,15 @@ fn render_syscall_arguments(
                     _ => return None,
                 },
                 SyscallArgument::Witness => {
-                    let exact_type = context.exact_csharp_type(expression);
                     let explicit_cast = matches!(
                         expression,
                         Expr::Cast { target_type, .. }
                             if matches!(target_type.as_str(), "UInt160" | "ECPoint")
                     );
-                    if explicit_cast || matches!(exact_type, Some("UInt160" | "ECPoint")) {
+                    if explicit_cast
+                        || context.is_statically_exact_csharp_type(expression, "UInt160")
+                        || context.is_statically_exact_csharp_type(expression, "ECPoint")
+                    {
                         rendered
                     } else {
                         return None;
@@ -206,7 +208,7 @@ fn render_typed_receiver(
     expanding: &mut BTreeSet<String>,
 ) -> String {
     let rendered = render_expr_prec(expression, PREC_UNARY, context, expanding);
-    if context.exact_csharp_type(expression) == Some(target_type) {
+    if context.is_statically_exact_csharp_type(expression, target_type) {
         rendered
     } else {
         format!("(({target_type}){rendered})")
@@ -219,7 +221,7 @@ fn render_exact_or_cast(
     rendered: String,
     context: &ExprContext,
 ) -> String {
-    if context.exact_csharp_type(expression) == Some(target_type) {
+    if context.is_statically_exact_csharp_type(expression, target_type) {
         rendered
     } else {
         format!("({target_type})({rendered})")
