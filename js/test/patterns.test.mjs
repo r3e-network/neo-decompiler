@@ -313,7 +313,7 @@ test("pattern analysis ignores malformed manifest collections", () => {
     [],
     {
       supportedStandards: "NEP-17",
-      abi: { methods: [null, 42], events: [null, {}] },
+      abi: { methods: [null, 42], events: [null, {}, { name: 42 }] },
       permissions: [null, { contract: "*" }],
     },
   );

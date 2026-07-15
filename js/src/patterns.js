@@ -91,7 +91,9 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     patterns.add("events");
     evidence.push({ source: "manifest.abi.events", value: String(events.length) });
   }
-  const hasTransferEvent = events.some((event) => event?.name?.toLowerCase() === "transfer");
+  const hasTransferEvent = events.some((event) =>
+    typeof event?.name === "string" && event.name.toLowerCase() === "transfer",
+  );
   if (hasTransferEvent) {
     evidence.push({ source: "manifest.abi.events", value: "Transfer" });
     if (methodNames.has("transfer")) {
