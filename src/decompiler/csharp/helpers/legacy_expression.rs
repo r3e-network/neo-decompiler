@@ -7,6 +7,17 @@
 /// the rewrites apply uniformly whether the helper appears in a
 /// statement position or inside a control header.
 #[cfg(test)]
+#[path = "legacy_expression_scanner.rs"]
+mod scanner;
+#[cfg(test)]
+pub(super) use scanner::split_top_level_comma;
+#[cfg(test)]
+use scanner::{
+    find_matching_close_paren, matching_paren, rewrite_cat_operator, split_top_level_args,
+    split_top_level_colon,
+};
+
+#[cfg(test)]
 pub(super) fn legacy_expression_to_csharp(text: &str) -> String {
     rewrite_numeric_helpers(&rewrite_cat_operator(text))
 }
@@ -205,73 +216,6 @@ fn match_map_literal(rest: &str) -> Option<(String, usize)> {
         format!("new Map<object, object> {{ {} }}", entries.join(", ")),
         consumed,
     ))
-}
-
-/// Index of the `)` that closes an already-opened paren at the start of `s`
-/// (i.e. `s` is the text *after* the opening `(`). String- and nesting-aware
-/// over `()[]{}`. Returns `None` if unbalanced.
-#[cfg(test)]
-fn matching_paren(s: &str) -> Option<usize> {
-    let bytes = s.as_bytes();
-    let mut depth = 0i32;
-    let mut in_string: Option<u8> = None;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(quote) = in_string {
-            if b == b'\\' && i + 1 < bytes.len() {
-                i += 2;
-                continue;
-            }
-            if b == quote {
-                in_string = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'"' | b'\'' => in_string = Some(b),
-            b')' if depth == 0 => return Some(i),
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' => depth -= 1,
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Split a single map entry `key: value` at its first top-level `:`
-/// (string/nesting aware). Returns `None` when no top-level `:` is present.
-#[cfg(test)]
-fn split_top_level_colon(entry: &str) -> Option<(&str, &str)> {
-    let bytes = entry.as_bytes();
-    let mut depth = 0i32;
-    let mut in_string: Option<u8> = None;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(quote) = in_string {
-            if b == b'\\' && i + 1 < bytes.len() {
-                i += 2;
-                continue;
-            }
-            if b == quote {
-                in_string = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'"' | b'\'' => in_string = Some(b),
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' => depth -= 1,
-            b':' if depth == 0 => return Some((&entry[..i], &entry[i + 1..])),
-            _ => {}
-        }
-        i += 1;
-    }
-    None
 }
 
 /// Rewrite an oversized `0x…` hex blob into a C# `new byte[] { … }` literal.
@@ -622,185 +566,4 @@ fn format_helper_with_casts(rest: &str, rule: &HelperRule) -> Option<HelperRewri
         consumed: rule.needle_len + close_index + 1,
         body,
     })
-}
-
-/// Split a top-level argument list — like `split_top_level_comma` but
-/// returns every comma-separated piece, not just the first split.
-#[cfg(test)]
-fn split_top_level_args(args: &str) -> Vec<&str> {
-    let bytes = args.as_bytes();
-    let mut parts = Vec::new();
-    let mut start = 0usize;
-    let mut depth = 0i32;
-    let mut in_string: Option<u8> = None;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(quote) = in_string {
-            // Skip the escaped character so an escaped quote (`\"`) inside a
-            // string literal does not prematurely terminate the string.
-            if b == b'\\' && i + 1 < bytes.len() {
-                i += 2;
-                continue;
-            }
-            if b == quote {
-                in_string = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'"' | b'\'' => in_string = Some(b),
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' => depth -= 1,
-            b',' if depth == 0 => {
-                parts.push(&args[start..i]);
-                start = i + 1;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    if !args.is_empty() {
-        parts.push(&args[start..]);
-    }
-    parts
-}
-
-#[cfg(test)]
-fn find_matching_close_paren(bytes: &[u8]) -> Option<usize> {
-    let mut depth: i32 = 0;
-    let mut in_string: Option<u8> = None;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(quote) = in_string {
-            // Skip the escaped character (see split_top_level_args).
-            if b == b'\\' && i + 1 < bytes.len() {
-                i += 2;
-                continue;
-            }
-            if b == quote {
-                in_string = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'"' | b'\'' => in_string = Some(b),
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' => {
-                if depth == 0 {
-                    return Some(i);
-                }
-                depth -= 1;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Split a comma-separated argument list at the first top-level comma —
-/// i.e. ignore commas inside parens / brackets / strings. Used by the
-/// C#-ize pass to peel `assert(cond, message);` into its two pieces.
-#[cfg(test)]
-pub(super) fn split_top_level_comma(args: &str) -> Option<(&str, &str)> {
-    let bytes = args.as_bytes();
-    let mut depth = 0i32;
-    let mut in_string: Option<u8> = None;
-    let mut i = 0;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(quote) = in_string {
-            // Skip the escaped character (see split_top_level_args).
-            if b == b'\\' && i + 1 < bytes.len() {
-                i += 2;
-                continue;
-            }
-            if b == quote {
-                in_string = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'"' | b'\'' => in_string = Some(b),
-            b'(' | b'[' | b'{' => depth += 1,
-            b')' | b']' | b'}' => depth -= 1,
-            b',' if depth == 0 => return Some((&args[..i], &args[i + 1..])),
-            _ => {}
-        }
-        i += 1;
-    }
-    None
-}
-
-/// Translate the high-level `cat` (CAT / string-concat) operator to C#'s
-/// `+`. The replacement only fires for ` cat ` tokens that sit outside
-/// string literals so contents like `"a cat b"` are preserved verbatim.
-#[cfg(test)]
-fn rewrite_cat_operator(line: &str) -> String {
-    if !line.contains(" cat ") {
-        return line.to_string();
-    }
-    let bytes = line.as_bytes();
-    let mut out = String::with_capacity(line.len());
-    let mut i = 0;
-    let mut in_string: Option<u8> = None;
-    while i < bytes.len() {
-        let b = bytes[i];
-        // Copy any non-ASCII (multibyte UTF-8) character verbatim. ` cat ` and
-        // the quote/escape markers are all ASCII, so multibyte bytes only ever
-        // need pass-through; `b as char` would re-encode them as Latin-1 and
-        // corrupt the UTF-8. The is_char_boundary guard keeps this panic-free.
-        if !b.is_ascii() {
-            if line.is_char_boundary(i) {
-                let ch = line[i..].chars().next().unwrap_or('\u{FFFD}');
-                out.push(ch);
-                i += ch.len_utf8();
-            } else {
-                i += 1;
-            }
-            continue;
-        }
-        if let Some(quote) = in_string {
-            out.push(b as char);
-            if b == b'\\' && i + 1 < bytes.len() {
-                // Copy the escaped character whole in case it is multibyte.
-                let esc = line[i + 1..].chars().next().unwrap_or('\u{FFFD}');
-                out.push(esc);
-                i += 1 + esc.len_utf8();
-                continue;
-            }
-            if b == quote {
-                in_string = None;
-            }
-            i += 1;
-            continue;
-        }
-        if b == b'"' || b == b'\'' {
-            in_string = Some(b);
-            out.push(b as char);
-            i += 1;
-            continue;
-        }
-        if b == b' '
-            && i + 4 < bytes.len()
-            && &bytes[i..i + 5] == b" cat "
-            // Only treat ` cat ` as the operator when both flanks are
-            // already part of expression context (something on the
-            // left). At i==0 we'd have `cat ` at the start of a line,
-            // which is more likely to be an identifier — leave alone.
-            && i > 0
-        {
-            out.push_str(" + ");
-            i += 5;
-            continue;
-        }
-        out.push(b as char);
-        i += 1;
-    }
-    out
 }
