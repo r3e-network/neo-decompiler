@@ -4,7 +4,9 @@ use crate::decompiler::cfg::method_body::SymbolInfo;
 use crate::decompiler::ir::{Block, ControlFlow, Expr, Intrinsic, SemanticCallTarget, Stmt};
 use crate::instruction::OpCode;
 
-use super::plan::{concrete_definition_type_with_symbols_and_known_types, ScopeId, ScopeTree};
+use super::plan::{
+    concrete_definition_type_with_symbols_and_known_types_and_calls, ScopeId, ScopeTree,
+};
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -100,9 +102,10 @@ impl<'a> ActivityCollector<'a> {
         }
     }
 
-    pub(super) fn resolve_concrete_definition_types_with_known_types(
+    pub(super) fn resolve_concrete_definition_types_with_known_types_and_calls(
         &mut self,
         initial_known_types: &BTreeMap<String, String>,
+        known_call_types: &BTreeMap<usize, String>,
     ) {
         let empty_symbols = BTreeMap::new();
         let mut known_types = initial_known_types.clone();
@@ -116,11 +119,13 @@ impl<'a> ActivityCollector<'a> {
                 let mut candidate = None;
                 let mut consistent = true;
                 for definition in definitions {
-                    let definition_type = concrete_definition_type_with_symbols_and_known_types(
-                        definition,
-                        self.symbol_types.unwrap_or(&empty_symbols),
-                        &known_types,
-                    );
+                    let definition_type =
+                        concrete_definition_type_with_symbols_and_known_types_and_calls(
+                            definition,
+                            self.symbol_types.unwrap_or(&empty_symbols),
+                            &known_types,
+                            known_call_types,
+                        );
                     let Some(definition_type) = definition_type else {
                         consistent = false;
                         break;

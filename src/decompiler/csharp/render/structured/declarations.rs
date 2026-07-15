@@ -160,10 +160,30 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types(
     typed: bool,
     known_types: &BTreeMap<String, String>,
 ) -> DeclarationPlan {
+    plan_declarations_with_known_types_and_calls(
+        body,
+        symbols,
+        typed,
+        known_types,
+        &BTreeMap::new(),
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_and_calls(
+    body: &Block,
+    symbols: &BTreeMap<String, SymbolInfo>,
+    typed: bool,
+    known_types: &BTreeMap<String, String>,
+    known_call_types: &BTreeMap<usize, String>,
+) -> DeclarationPlan {
     let mut collector = ActivityCollector::new().with_symbol_types(symbols);
     let root = collector.scopes.root();
     collector.visit_block(body, root);
-    collector.resolve_concrete_definition_types_with_known_types(known_types);
+    collector.resolve_concrete_definition_types_with_known_types_and_calls(
+        known_types,
+        known_call_types,
+    );
     let index_defined_symbols = collector.index_defined_symbols();
 
     let mut declarations = BTreeMap::new();

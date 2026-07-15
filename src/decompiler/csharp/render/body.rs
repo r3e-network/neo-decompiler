@@ -11,7 +11,7 @@ use crate::instruction::Operand;
 
 use super::super::helpers::VM_ASSERT_MESSAGE_HELPER;
 use super::structured::plan::{
-    plan_declarations_with_known_types, CSharpMethodPlan, DeclarationPlan,
+    plan_declarations_with_known_types_and_calls, CSharpMethodPlan, DeclarationPlan,
 };
 use super::structured::stmt;
 
@@ -298,8 +298,14 @@ fn plan_method_declarations(
         })
         .map(|parameter| (parameter.name.clone(), parameter.ty.clone()))
         .collect::<BTreeMap<_, _>>();
-    plan_declarations_with_known_types(body, symbols, context.typed_declarations, &parameter_types)
-        .with_static_field_types(context.static_field_types)
+    plan_declarations_with_known_types_and_calls(
+        body,
+        symbols,
+        context.typed_declarations,
+        &parameter_types,
+        context.method_return_types_by_offset,
+    )
+    .with_static_field_types(context.static_field_types)
 }
 
 fn indent_body(source: &str) -> String {

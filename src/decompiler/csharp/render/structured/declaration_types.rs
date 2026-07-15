@@ -25,13 +25,33 @@ pub(in crate::decompiler::csharp::render) fn concrete_definition_type_with_symbo
     concrete_definition_type_with_symbols_and_known_types(expression, symbols, &BTreeMap::new())
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(in crate::decompiler::csharp::render) fn concrete_definition_type_with_symbols_and_known_types(
     expression: &Expr,
     symbols: &BTreeMap<String, SymbolInfo>,
     known_types: &BTreeMap<String, String>,
 ) -> Option<String> {
+    concrete_definition_type_with_symbols_and_known_types_and_calls(
+        expression,
+        symbols,
+        known_types,
+        &BTreeMap::new(),
+    )
+}
+
+pub(in crate::decompiler::csharp::render) fn concrete_definition_type_with_symbols_and_known_types_and_calls(
+    expression: &Expr,
+    symbols: &BTreeMap<String, SymbolInfo>,
+    known_types: &BTreeMap<String, String>,
+    known_call_types: &BTreeMap<usize, String>,
+) -> Option<String> {
     concrete_call_type(expression).or_else(|| {
-        concrete_expression_type_with_symbols_and_known(expression, Some(symbols), known_types)
+        concrete_expression_type_with_symbols_and_known(
+            expression,
+            Some(symbols),
+            known_types,
+            known_call_types,
+        )
     })
 }
 
@@ -55,14 +75,29 @@ fn concrete_call_type(expression: &Expr) -> Option<String> {
 
 #[cfg_attr(not(test), allow(dead_code))]
 fn concrete_expression_type(expression: &Expr) -> Option<String> {
-    concrete_expression_type_with_symbols_and_known(expression, None, &BTreeMap::new())
+    concrete_expression_type_with_symbols_and_known(
+        expression,
+        None,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+    )
 }
 
 fn concrete_expression_type_with_symbols_and_known(
     expression: &Expr,
     symbols: Option<&BTreeMap<String, SymbolInfo>>,
     known_types: &BTreeMap<String, String>,
+    known_call_types: &BTreeMap<usize, String>,
 ) -> Option<String> {
+    if let Expr::Call {
+        target: SemanticCallTarget::Internal { offset, .. },
+        ..
+    } = expression
+    {
+        if let Some(call_type) = known_call_types.get(offset) {
+            return Some(call_type.clone());
+        }
+    }
     if let Some(call_type) = concrete_call_type(expression) {
         return Some(call_type);
     }
@@ -94,10 +129,21 @@ fn concrete_expression_type_with_symbols_and_known(
             ) {
                 return Some("bool".to_string());
             }
-            (concrete_expression_type_with_symbols_and_known(left, symbols, known_types).as_deref()
+            (concrete_expression_type_with_symbols_and_known(
+                left,
+                symbols,
+                known_types,
+                known_call_types,
+            )
+            .as_deref()
                 == Some("BigInteger")
-                && concrete_expression_type_with_symbols_and_known(right, symbols, known_types)
-                    .as_deref()
+                && concrete_expression_type_with_symbols_and_known(
+                    right,
+                    symbols,
+                    known_types,
+                    known_call_types,
+                )
+                .as_deref()
                     == Some("BigInteger"))
             .then(|| "BigInteger".to_string())
         }
@@ -105,14 +151,19 @@ fn concrete_expression_type_with_symbols_and_known(
             if *op == UnaryOp::LogicalNot {
                 Some("bool".to_string())
             } else {
-                concrete_expression_type_with_symbols_and_known(operand, symbols, known_types)
-                    .filter(|type_name| type_name == "BigInteger")
+                concrete_expression_type_with_symbols_and_known(
+                    operand,
+                    symbols,
+                    known_types,
+                    known_call_types,
+                )
+                .filter(|type_name| type_name == "BigInteger")
             }
         }
         Expr::Call { target, args } => match target {
             SemanticCallTarget::Intrinsic(Intrinsic::Opcode(opcode)) => match opcode {
                 OpCode::Cat | OpCode::Substr | OpCode::Left | OpCode::Right => {
-                    byte_container_result_type(args, symbols, known_types)
+                    byte_container_result_type(args, symbols, known_types, known_call_types)
                 }
                 OpCode::Within | OpCode::Haskey | OpCode::Isnull | OpCode::Istype | OpCode::Nz => {
                     Some("bool".to_string())
@@ -124,7 +175,9 @@ fn concrete_expression_type_with_symbols_and_known(
                 | OpCode::Max
                 | OpCode::Modmul
                 | OpCode::Modpow => Some("BigInteger".to_string()),
-                OpCode::Pickitem => pickitem_result_type(args, symbols, known_types),
+                OpCode::Pickitem => {
+                    pickitem_result_type(args, symbols, known_types, known_call_types)
+                }
                 OpCode::Newbuffer => Some("byte[]".to_string()),
                 OpCode::Newarray0
                 | OpCode::Newarray
@@ -153,18 +206,25 @@ fn concrete_expression_type_with_symbols_and_known(
             {
                 return csharp_type_for_value_type(*element_type).map(str::to_string);
             }
-            let base_type =
-                concrete_expression_type_with_symbols_and_known(base, symbols, known_types);
+            let base_type = concrete_expression_type_with_symbols_and_known(
+                base,
+                symbols,
+                known_types,
+                known_call_types,
+            );
             array_element_type(base_type.as_deref())
         }
         Expr::Member { name, .. } if name.eq_ignore_ascii_case("Length") => {
             Some("BigInteger".to_string())
         }
-        Expr::Member { base, name } => {
-            concrete_expression_type_with_symbols_and_known(base, symbols, known_types)
-                .as_deref()
-                .and_then(|base_type| csharp_member_type(base_type, name).map(str::to_string))
-        }
+        Expr::Member { base, name } => concrete_expression_type_with_symbols_and_known(
+            base,
+            symbols,
+            known_types,
+            known_call_types,
+        )
+        .as_deref()
+        .and_then(|base_type| csharp_member_type(base_type, name).map(str::to_string)),
         Expr::Cast { target_type, .. } => concrete_csharp_type_name(target_type),
         Expr::Convert { target, .. } => csharp_type_for_value_type(*target).map(str::to_string),
         Expr::IsType { .. } => Some("bool".to_string()),
@@ -172,7 +232,12 @@ fn concrete_expression_type_with_symbols_and_known(
             csharp_type_for_value_type(element_type).map(|element_type| format!("{element_type}[]"))
         }),
         Expr::Array(elements) => homogeneous_csharp_array_type(elements.iter().map(|element| {
-            concrete_expression_type_with_symbols_and_known(element, symbols, known_types)
+            concrete_expression_type_with_symbols_and_known(
+                element,
+                symbols,
+                known_types,
+                known_call_types,
+            )
         }))
         .map(str::to_string)
         .or_else(|| Some("object[]".to_string())),
@@ -183,10 +248,19 @@ fn concrete_expression_type_with_symbols_and_known(
             else_expr,
             ..
         } => {
-            let then_type =
-                concrete_expression_type_with_symbols_and_known(then_expr, symbols, known_types)?;
-            (concrete_expression_type_with_symbols_and_known(else_expr, symbols, known_types)
-                .as_deref()
+            let then_type = concrete_expression_type_with_symbols_and_known(
+                then_expr,
+                symbols,
+                known_types,
+                known_call_types,
+            )?;
+            (concrete_expression_type_with_symbols_and_known(
+                else_expr,
+                symbols,
+                known_types,
+                known_call_types,
+            )
+            .as_deref()
                 == Some(then_type.as_str()))
             .then_some(then_type)
         }
@@ -197,9 +271,15 @@ fn byte_container_result_type(
     args: &[Expr],
     symbols: Option<&BTreeMap<String, SymbolInfo>>,
     known_types: &BTreeMap<String, String>,
+    known_call_types: &BTreeMap<usize, String>,
 ) -> Option<String> {
     let source_type = args.first().and_then(|source| {
-        concrete_expression_type_with_symbols_and_known(source, symbols, known_types)
+        concrete_expression_type_with_symbols_and_known(
+            source,
+            symbols,
+            known_types,
+            known_call_types,
+        )
     });
     if source_type.as_deref() == Some("byte[]") {
         Some("byte[]".to_string())
@@ -212,9 +292,15 @@ fn pickitem_result_type(
     args: &[Expr],
     symbols: Option<&BTreeMap<String, SymbolInfo>>,
     known_types: &BTreeMap<String, String>,
+    known_call_types: &BTreeMap<usize, String>,
 ) -> Option<String> {
     let base_type = args.first().and_then(|base| {
-        concrete_expression_type_with_symbols_and_known(base, symbols, known_types)
+        concrete_expression_type_with_symbols_and_known(
+            base,
+            symbols,
+            known_types,
+            known_call_types,
+        )
     });
     array_element_type(base_type.as_deref())
 }

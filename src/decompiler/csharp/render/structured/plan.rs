@@ -15,7 +15,7 @@ pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_a
 pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_member_type;
 pub(in crate::decompiler::csharp::render) use declaration_type_catalog::csharp_type_value_type;
 pub(in crate::decompiler::csharp::render) use declaration_type_catalog::homogeneous_csharp_array_type;
-pub(in crate::decompiler::csharp::render) use declaration_types::concrete_definition_type_with_symbols_and_known_types;
+pub(in crate::decompiler::csharp::render) use declaration_types::concrete_definition_type_with_symbols_and_known_types_and_calls;
 #[cfg(test)]
 pub(in crate::decompiler::csharp::render) use declaration_types::{
     concrete_definition_type, concrete_definition_type_with_symbols,
@@ -24,10 +24,12 @@ pub(in crate::decompiler::csharp::render) use declaration_types::{
 mod declarations;
 #[cfg(test)]
 pub(in crate::decompiler::csharp::render) use declarations::plan_declarations;
+#[cfg(test)]
+pub(in crate::decompiler::csharp::render) use declarations::plan_declarations_with_known_types;
 pub(in crate::decompiler::csharp::render) use declarations::{
     collect_index_defined_symbols, csharp_type, plan_contract_symbols,
-    plan_declarations_with_known_types, CSharpContractSymbols, DeclarationKind, DeclarationPlan,
-    ScopeId, ScopeTree,
+    plan_declarations_with_known_types_and_calls, CSharpContractSymbols, DeclarationKind,
+    DeclarationPlan, ScopeId, ScopeTree,
 };
 
 #[allow(dead_code)]

@@ -183,6 +183,50 @@ fn framework_native_aliases_are_accepted_for_typed_declarations() {
 }
 
 #[test]
+fn internal_call_return_types_drive_typed_local_aliases() {
+    let body = Block::from(vec![
+        Stmt::assign(
+            "context",
+            Expr::call(
+                SemanticCallTarget::Internal {
+                    offset: 12,
+                    name: "getContext".to_string(),
+                },
+                Vec::new(),
+            ),
+        ),
+        Stmt::assign("alias", Expr::var("context")),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "context".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::InteropInterface,
+            },
+        ),
+        (
+            "alias".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::InteropInterface,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations_with_known_types_and_calls(
+        &body,
+        &symbols,
+        true,
+        &BTreeMap::new(),
+        &BTreeMap::from([(12, "StorageContext".to_string())]),
+    );
+
+    assert_eq!(plan.declarations["context"].csharp_type, "StorageContext");
+    assert_eq!(plan.declarations["alias"].csharp_type, "StorageContext");
+}
+
+#[test]
 fn typed_array_element_types_survive_aliases_but_unknown_arrays_stay_dynamic() {
     let body = Block::from(vec![
         Stmt::assign(
