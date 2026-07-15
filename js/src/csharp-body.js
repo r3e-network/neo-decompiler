@@ -1,61 +1,7 @@
 import { rewriteCSharpExpression, splitCallArguments } from "./csharp-expression.js";
 import { csharpIdentifier } from "./csharp-identifiers.js";
-import { csharpSyscallReturnType } from "./csharp-syscalls.js";
-
-function inferExpressionType(expression) {
-  let value = expression.trim();
-  while (value.startsWith("(") && value.endsWith(")")) {
-    value = value.slice(1, -1).trim();
-  }
-  if (/^(?:true|false)$/i.test(value)) return "bool";
-  if (/^-?\d+$/.test(value)) return "BigInteger";
-  if (/^"(?:[^"\\]|\\.)*"$/.test(value)) return "string";
-  if (/^new_array_t\s*\(/i.test(value)) {
-    const type = value.match(/,\s*"?([a-z]+)"?\s*\)\s*$/i)?.[1]?.toLowerCase();
-    return {
-      bool: "bool[]",
-      boolean: "bool[]",
-      int: "BigInteger[]",
-      integer: "BigInteger[]",
-      buffer: "byte[]",
-      bytes: "ByteString[]",
-      bytestring: "ByteString[]",
-    }[type] ?? "object[]";
-  }
-  if (/^(?:new_array|pack)\s*\(/i.test(value)) return "object[]";
-  if (/^\[.*\]$/s.test(value)) return "object[]";
-  if (/^Map\s*\(/i.test(value)) return "Map<object, object>";
-  if (/^(?:is_null|is_type(?:_[A-Za-z0-9_]+)?|has_key|within|equals|not_equals|not|is_valid)\s*\(/i.test(value)) {
-    return "bool";
-  }
-  if (/^(?:len|size|abs|sqrt|min|max|sign|convert_to_integer)\s*\(/i.test(value)) {
-    return "BigInteger";
-  }
-  if (/^convert_to_bool\s*\(/i.test(value)) return "bool";
-  if (/^convert_to_bytestring\s*\(/i.test(value)) return "ByteString";
-  const syscall = value.match(/^syscall\s*\(\s*"([^"]+)"/i);
-  if (syscall) return csharpSyscallReturnType(syscall[1]) ?? "dynamic";
-  if (/[<>=!]=?|&&|\|\|/.test(value)) return "bool";
-  if (/[+\-*\/%]|\b(?:and|or|xor|shl|shr)\b/.test(value)) return "BigInteger";
-  return "dynamic";
-}
-
-export function inferDeclarationTypes(lines) {
-  const observed = new Map();
-  for (const line of lines) {
-    const match = line.trim().match(/^(?:let\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);$/);
-    if (!match) continue;
-    const type = inferExpressionType(match[2]);
-    if (!observed.has(match[1])) observed.set(match[1], new Set());
-    observed.get(match[1]).add(type);
-  }
-  return new Map(
-    [...observed].map(([name, types]) => [
-      name,
-      types.size === 1 && !types.has("dynamic") ? [...types][0] : "dynamic",
-    ]),
-  );
-}
+export { inferDeclarationTypes } from "./csharp-types.js";
+import { inferDeclarationTypes } from "./csharp-types.js";
 
 export function renderBodyLine(line, declarationTypes = null) {
   const indentation = line.match(/^\s*/)?.[0] ?? "";

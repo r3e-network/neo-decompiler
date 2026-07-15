@@ -9,6 +9,7 @@ import {
   identifyPatterns,
   renderCSharpContract,
 } from "../src/index.js";
+import { inferDeclarationTypes } from "../src/csharp-types.js";
 
 function nef(compiler = "", source = "") {
   return { header: { compiler, source } };
@@ -526,6 +527,51 @@ test("C# typed declarations stay scoped to each method", () => {
   assert.match(rendered, /BigInteger @value = 1;/);
   assert.match(rendered, /bool @value = true;/);
   assert.doesNotMatch(rendered, /dynamic @value/);
+});
+
+test("C# typed declarations propagate concrete collection aliases", () => {
+  const rendered = renderCSharpContract([
+    "contract AliasTypes {",
+    "fn inspect() -> any {",
+    "    let source = [1, 2];",
+    "    let copy = source;",
+    "    let count = len(copy);",
+    "    return count;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /object\[\] source = new object\[\] \{ 1, 2 \};/);
+  assert.match(rendered, /object\[\] copy = source;/);
+  assert.match(rendered, /BigInteger count = copy\.Length;/);
+  assert.doesNotMatch(rendered, /dynamic copy/);
+  assert.doesNotMatch(rendered, /\(\(dynamic\)copy\)\.Count/);
+});
+
+test("C# declaration aliases keep unresolved definitions conservative", () => {
+  const types = inferDeclarationTypes([
+    "let source = unknown_call();",
+    "let copy = source;",
+  ]);
+  assert.equal(types.get("source"), "dynamic");
+  assert.equal(types.get("copy"), "dynamic");
+});
+
+test("C# declaration aliases only join neutral nulls with generic arrays", () => {
+  const generic = inferDeclarationTypes([
+    "let source = [1];",
+    "let source = null;",
+    "let copy = source;",
+  ]);
+  assert.equal(generic.get("source"), "object[]");
+  assert.equal(generic.get("copy"), "object[]");
+
+  const typed = inferDeclarationTypes([
+    'let source = new_array_t(size, "int");',
+    "let source = null;",
+    "let copy = source;",
+  ]);
+  assert.equal(typed.get("source"), "dynamic");
+  assert.equal(typed.get("copy"), "dynamic");
 });
 
 test("C# typed declarations use catalog syscall return types", () => {
