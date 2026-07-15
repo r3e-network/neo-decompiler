@@ -1,5 +1,6 @@
 use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::ir::{Expr, Intrinsic, SemanticCallTarget, Stmt, UnaryOp};
+use crate::decompiler::native_method_types;
 use crate::instruction::OpCode;
 
 use super::super::expr::render_expr;
@@ -40,9 +41,16 @@ impl StatementRenderer<'_> {
                 ..
             } => true,
             Expr::Call {
-                target: SemanticCallTarget::MethodToken { .. },
+                target:
+                    SemanticCallTarget::MethodToken {
+                        name,
+                        hash_le,
+                        call_flags,
+                        ..
+                    },
                 ..
-            } => false,
+            } => native_method_types::returns_value(hash_le.as_deref(), name, *call_flags)
+                .is_some_and(|returns_value| !returns_value),
             Expr::Call {
                 target: SemanticCallTarget::Syscall { hash, .. },
                 ..

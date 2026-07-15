@@ -432,6 +432,25 @@ fn concrete_native_reference_arrays_flow_into_object_array_storage() {
 }
 
 #[test]
+fn known_native_void_calls_render_as_statements() {
+    let body = Block::from(vec![Stmt::expr(Expr::call(
+        SemanticCallTarget::MethodToken {
+            index: 0,
+            name: "destroy".to_string(),
+            hash_le: Some("FDA3FA4346EA532A258FC497DDADDB6437C9FDFF".to_string()),
+            call_flags: Some(0x0F),
+        },
+        vec![],
+    ))]);
+    let plan = plan_declarations(&body, &BTreeMap::new(), true);
+
+    assert_eq!(
+        render_block(&body, &plan, &BTreeMap::new(), ReturnBehavior::Void, false),
+        "ContractManagement.Destroy();"
+    );
+}
+
+#[test]
 fn compiler_debug_notify_omits_the_packed_state_temp() {
     let body = Block::from(vec![
         Stmt::assign(

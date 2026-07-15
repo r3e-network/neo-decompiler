@@ -75,6 +75,29 @@ pub(crate) fn lookup(
     }
 }
 
+/// Return whether a fully resolved native method produces a VM value.
+///
+/// `lookup` intentionally only describes value-producing methods. Statement
+/// rendering still needs to distinguish a known framework `void` method from
+/// an unresolved token so it can avoid assigning the result of a void call.
+pub(crate) fn returns_value(
+    hash_le: Option<&str>,
+    method: &str,
+    call_flags: Option<u8>,
+) -> Option<bool> {
+    if call_flags != Some(0x0F) {
+        return None;
+    }
+    let hash = parse_hash(hash_le?)?;
+    let hint = native_contracts::describe_method_token(&hash, method)?;
+    let method = hint.canonical_method?;
+    match (hint.contract, method) {
+        ("ContractManagement", "Destroy" | "Update") | ("OracleContract", "Request") => Some(false),
+        _ if lookup(hash_le, method, call_flags).is_some() => Some(true),
+        _ => None,
+    }
+}
+
 fn return_type(value_type: ValueType, csharp_type: &'static str) -> NativeMethodReturnType {
     NativeMethodReturnType {
         value_type,
@@ -150,5 +173,19 @@ mod tests {
         let designated = lookup(Some(ROLE_MANAGEMENT), "getDesignatedByRole", Some(0x0F)).unwrap();
         assert_eq!(designated.value_type, ValueType::Array);
         assert_eq!(designated.csharp_type, "ECPoint[]");
+    }
+
+    #[test]
+    fn distinguishes_known_native_void_methods_from_values() {
+        let management = "FDA3FA4346EA532A258FC497DDADDB6437C9FDFF";
+        assert_eq!(
+            returns_value(Some(management), "destroy", Some(0x0F)),
+            Some(false)
+        );
+        assert_eq!(
+            returns_value(Some(management), "hasMethod", Some(0x0F)),
+            Some(true)
+        );
+        assert_eq!(returns_value(Some(management), "destroy", Some(0x01)), None);
     }
 }
