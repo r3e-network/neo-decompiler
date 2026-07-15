@@ -49,7 +49,10 @@ impl Default for WebDecompileOptions {
             fail_on_unknown_opcodes: false,
             inline_single_use_temps: true,
             emit_trace_comments: false,
-            output_format: OutputFormat::All,
+            // The browser-facing decompile API produces the generated C#
+            // contract by default. Analysis views remain available through
+            // an explicit `output_format` selection.
+            output_format: OutputFormat::CSharp,
         }
     }
 }
@@ -270,7 +273,7 @@ where
 
 #[cfg(target_arch = "wasm32")]
 fn parse_output_format(value: Option<&str>) -> std::result::Result<OutputFormat, String> {
-    match value.unwrap_or("all") {
+    match value.unwrap_or("csharp") {
         "all" => Ok(OutputFormat::All),
         "pseudocode" => Ok(OutputFormat::Pseudocode),
         "high_level" | "highLevel" => Ok(OutputFormat::HighLevel),

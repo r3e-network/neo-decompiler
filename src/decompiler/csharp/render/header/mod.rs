@@ -160,8 +160,8 @@ pub(super) fn write_contract_open(
     writeln!(output).unwrap();
 }
 
-/// Render the inferred contract standards, behavior patterns, and source
-/// language as comments so a generated C# file remains self-describing even
+/// Render the inferred contract standards and C# target metadata as comments
+/// so a generated C# file remains self-describing even
 /// when it is viewed without the JSON analysis report.
 pub(super) fn write_pattern_comments(output: &mut String, info: &PatternInfo) {
     let mut wrote = false;
@@ -185,7 +185,11 @@ pub(super) fn write_pattern_comments(output: &mut String, info: &PatternInfo) {
         writeln!(output, "        // inferred patterns: {patterns}").unwrap();
         wrote = true;
     }
-    if let Some(language) = info.language.as_deref() {
+    if let Some(language) = info
+        .language
+        .as_deref()
+        .filter(|language| *language == "C#")
+    {
         writeln!(
             output,
             "        // inferred language: {}",

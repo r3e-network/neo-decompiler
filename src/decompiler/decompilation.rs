@@ -28,7 +28,7 @@ pub struct Decompilation {
     pub call_graph: CallGraph,
     /// Declared and conservatively inferred stack-call contracts by method.
     pub method_contracts: MethodContracts,
-    /// Conservative contract-standard and source-language pattern summary.
+    /// Conservative contract-standard and C# target pattern summary.
     pub patterns: PatternInfo,
     /// Best-effort cross-reference information for locals/args/statics.
     pub xrefs: Xrefs,

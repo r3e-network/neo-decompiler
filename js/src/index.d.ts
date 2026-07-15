@@ -309,6 +309,7 @@ export interface PatternEvidence {
 export interface PatternInfo {
   standards: string[];
   patterns: string[];
+  /** C# target hint; other source-language backends are not supported. */
   language: string | null;
   compiler: string | null;
   confidence: PatternConfidence;
@@ -354,7 +355,7 @@ export interface DecompileResult {
   instructions: Instruction[];
   warnings: string[];
   pseudocode: string;
-  /** Conservative standard, behavior-pattern, and language identification. */
+  /** Conservative standard, behavior-pattern, and C# target identification. */
   patterns: PatternInfo;
 }
 
@@ -367,7 +368,7 @@ export interface DecompileWithManifestResult extends DecompileResult {
 export interface HighLevelResult extends DecompileResult {
   methodGroups: MethodGroup[];
   methodContracts: MethodContracts;
-  /** Conservative standard, behavior-pattern, and language identification. */
+  /** Conservative standard, behavior-pattern, and C# target identification. */
   patterns: PatternInfo;
   highLevel: string;
   /** Readable C#-style rendering of the high-level surface. */

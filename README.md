@@ -14,7 +14,8 @@ This project provides a small, well-tested Rust crate and CLI for inspecting
 Neo N3 NEF bytecode packages. It focuses on the essential pieces that are easy
 to run locally: parsing the NEF container (header, method tokens, checksum),
 loading the companion contract manifest, decoding a useful slice of Neo VM
-opcodes, and rendering both pseudocode and a high-level contract skeleton.
+opcodes, and rendering a manifest-aware Neo C# contract. Pseudocode and other
+intermediate views remain available when needed for analysis.
 
 ## Supported Features
 
@@ -222,7 +223,7 @@ opcodes, and rendering both pseudocode and a high-level contract skeleton.
 - A C# contract skeleton view (`--format csharp`) that mirrors the manifest
   entry point, emits stubs for additional ABI methods, declares ABI events,
   and adds `[DisplayName]`/`[Safe]` attributes when available; its header also
-  records inferred standards, behavior patterns, source language, and
+  records inferred standards, behavior patterns, and the supported C# target,
   confidence for readers who only have the generated contract
 - Label-based control-transfer placeholders use `label_0xNNNN` targets in the high-level view and C# when the target is method-scoped; unrecoverable C# transfers are retained as explicit comments (high-level may emit `leave label_...` for exceptional flow)
 - A single binary (`neo-decompiler`) and a reusable library (`neo_decompiler`)
@@ -346,7 +347,7 @@ wrapper, it does not call into Rust at runtime.
 
 Both implementations currently generate one source target: Neo C#. The
 pseudocode, high-level, IR, and SSA views are analysis/intermediate views, not
-additional source-language backends.
+alternate source-language backends.
 
 Current JS scope:
 

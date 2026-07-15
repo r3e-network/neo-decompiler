@@ -1,5 +1,7 @@
 #![cfg(feature = "web")]
 
+use neo_decompiler::OutputFormat;
+
 use serde_json::Value;
 
 const GAS_TOKEN_HASH: [u8; 20] = [
@@ -185,6 +187,7 @@ fn web_decompile_report_exposes_high_level_and_csharp_outputs() {
         &build_sample_nef(),
         neo_decompiler::web::WebDecompileOptions {
             manifest_json: Some(SAMPLE_MANIFEST.to_string()),
+            output_format: OutputFormat::All,
             ..Default::default()
         },
     )
@@ -266,6 +269,7 @@ fn web_decompile_report_emit_trace_comments_re_enables_per_instruction_comments(
         neo_decompiler::web::WebDecompileOptions {
             manifest_json: Some(SAMPLE_MANIFEST.to_string()),
             emit_trace_comments: true,
+            output_format: OutputFormat::All,
             ..Default::default()
         },
     )
@@ -277,4 +281,24 @@ fn web_decompile_report_emit_trace_comments_re_enables_per_instruction_comments(
         high_level.contains("// 0000:"),
         "emit_trace_comments=true should re-introduce trace comments:\n{high_level}",
     );
+}
+
+#[test]
+fn web_decompile_report_defaults_to_csharp_output() {
+    let report = neo_decompiler::web::decompile_report(
+        &build_sample_nef(),
+        neo_decompiler::web::WebDecompileOptions {
+            manifest_json: Some(SAMPLE_MANIFEST.to_string()),
+            ..Default::default()
+        },
+    )
+    .expect("decompile report");
+
+    let value = serde_json::to_value(&report).expect("serializable");
+    assert!(value["csharp"]
+        .as_str()
+        .expect("csharp")
+        .contains("public class"));
+    assert_eq!(value["high_level"], Value::String(String::new()));
+    assert_eq!(value["pseudocode"], Value::String(String::new()));
 }

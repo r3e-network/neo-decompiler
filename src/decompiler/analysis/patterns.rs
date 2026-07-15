@@ -1,4 +1,4 @@
-//! Conservative contract and source-language pattern identification.
+//! Conservative contract and C# target metadata identification.
 //!
 //! Manifest declarations are authoritative. Bytecode and ABI names are useful
 //! hints, but they are reported with lower confidence and retained as evidence
@@ -19,7 +19,7 @@ mod language;
 mod native_patterns;
 mod syscall_patterns;
 
-/// Confidence assigned to an identified pattern or language hint.
+/// Confidence assigned to an identified pattern or C# target hint.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PatternConfidence {
@@ -44,7 +44,7 @@ pub struct PatternEvidence {
     pub value: String,
 }
 
-/// Best-effort contract standard and source-language summary.
+/// Best-effort contract standard and C# target summary.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PatternInfo {
@@ -53,7 +53,8 @@ pub struct PatternInfo {
     /// Contract behavior patterns such as `storage`, `storage_writes`, or
     /// `notifications`.
     pub patterns: Vec<String>,
-    /// Inferred source language, when compiler/source metadata supports it.
+    /// Inferred source target. This is currently limited to C# because C# is
+    /// the only generated source backend.
     pub language: Option<String>,
     /// Raw compiler identifier from the NEF header.
     pub compiler: Option<String>,
@@ -63,7 +64,7 @@ pub struct PatternInfo {
     pub evidence: Vec<PatternEvidence>,
 }
 
-/// Identify standards, common contract shapes, and compiler language hints.
+/// Identify standards, common contract shapes, and C# compiler hints.
 #[must_use]
 pub fn identify_patterns(
     nef: &NefFile,

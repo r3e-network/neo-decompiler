@@ -93,7 +93,7 @@ export function renderPatternComments(patternInfo, indentation = "    ") {
   if (patterns.length > 0) {
     lines.push(`${indentation}// inferred patterns: ${patterns.join(", ")}`);
   }
-  if (typeof patternInfo.language === "string" && patternInfo.language.trim()) {
+  if (patternInfo.language === "C#") {
     lines.push(`${indentation}// inferred language: ${escapeCSharpComment(patternInfo.language)}`);
   }
   const confidence = String(patternInfo.confidence ?? "").toLowerCase();

@@ -4,7 +4,7 @@ import { inferNativePatterns } from "./patterns-native.js";
 import { inferSyscallPatterns } from "./patterns-syscalls.js";
 
 /**
- * Conservative contract-standard and source-language pattern identification.
+ * Conservative contract-standard and C# target metadata identification.
  * Manifest declarations are authoritative; ABI and bytecode signals remain
  * explicit evidence instead of being presented as certain facts.
  */
@@ -233,6 +233,9 @@ function compareCodepoints(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+// C# is the only generated source target. Keep language metadata for report
+// parity, but do not claim support for other compiler families without a
+// corresponding renderer.
 function inferLanguage(compiler) {
   if (!compiler) return null;
   const value = String(compiler).trim().toLowerCase();
@@ -248,11 +251,6 @@ function inferLanguage(compiler) {
   ) {
     return "C#";
   }
-  if (value.includes("boa") || value.includes("python")) return "Python";
-  if (value.includes("neogo") || value.includes("neo-go")) return "Go";
-  if (value.includes("rust")) return "Rust";
-  if (value.includes("typescript") || value.includes("javascript")) return "TypeScript/JavaScript";
-  if (value.includes("java")) return "Java";
   return null;
 }
 
@@ -261,15 +259,5 @@ function inferLanguageFromSource(source) {
   const withoutSuffix = value.split(/[?#]/, 1)[0];
   const filename = withoutSuffix.split(/[\\/]/).at(-1) ?? withoutSuffix;
   if (filename.endsWith(".cs") || filename.endsWith(".csproj")) return "C#";
-  if (filename.endsWith(".py")) return "Python";
-  if (filename.endsWith(".go")) return "Go";
-  if (filename.endsWith(".rs")) return "Rust";
-  if (filename.endsWith(".java")) return "Java";
-  if (
-    filename.endsWith(".ts") ||
-    filename.endsWith(".tsx") ||
-    filename.endsWith(".js") ||
-    filename.endsWith(".jsx")
-  ) return "TypeScript/JavaScript";
   return null;
 }

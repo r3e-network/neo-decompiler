@@ -70,42 +70,29 @@ test("basic JS decompile APIs expose the same pattern summary", () => {
 test("pattern analysis keeps weak source metadata explainable", () => {
   const info = identifyPatterns(nef("", "contract.py"), [], null);
   assert.deepEqual(info.standards, []);
-  assert.equal(info.language, "Python");
+  assert.equal(info.language, null);
   assert.equal(info.confidence, "low");
   assert.ok(info.evidence.some((entry) => entry.source === "nef.header.source"));
 });
 
-test("pattern analysis normalizes source paths and URI suffixes", () => {
-  for (const [source, expected] of [
-    ["C:\\contracts\\Token.cs", "C#"],
-    ["/contracts/Token.csproj", "C#"],
-    ["/contracts/Token.py?build=42", "Python"],
-    ["src/token.go#source", "Go"],
-    ["src/token.rs#source", "Rust"],
-    ["src/token.java#source", "Java"],
-    ["src/token.tsx?source=embedded", "TypeScript/JavaScript"],
-    ["src/token.jsx#source", "TypeScript/JavaScript"],
-  ]) {
+test("pattern analysis recognizes only supported C# source paths", () => {
+  for (const source of ["C:\\contracts\\Token.cs", "/contracts/Token.csproj"]) {
     const info = identifyPatterns(nef("", source), [], null);
-    assert.equal(info.language, expected);
+    assert.equal(info.language, "C#");
   }
 });
 
-test("pattern analysis infers Rust from compiler metadata", () => {
-  const info = identifyPatterns(nef("neo-rustc 1"), [], null);
-  assert.equal(info.language, "Rust");
-  assert.equal(info.confidence, "medium");
-});
-
-test("pattern analysis infers Java from compiler metadata", () => {
-  const info = identifyPatterns(nef("neo-java-compiler 1"), [], null);
-  assert.equal(info.language, "Java");
-  assert.equal(info.confidence, "medium");
-});
-
-test("pattern analysis keeps JavaScript ahead of the Java substring", () => {
-  const info = identifyPatterns(nef("neo-javascript-compiler 1"), [], null);
-  assert.equal(info.language, "TypeScript/JavaScript");
+test("pattern analysis does not claim unsupported source renderers", () => {
+  for (const [compiler, source] of [
+    ["boa 1", "contract.py"],
+    ["neo-go 1", "contract.go"],
+    ["neo-rustc 1", "contract.rs"],
+    ["neo-java-compiler 1", "contract.java"],
+    ["neo-javascript-compiler 1", "contract.ts"],
+  ]) {
+    const info = identifyPatterns(nef(compiler, source), [], null);
+    assert.equal(info.language, null, `${compiler} ${source}`);
+  }
 });
 
 test("pattern analysis identifies signature and multisig syscalls", () => {

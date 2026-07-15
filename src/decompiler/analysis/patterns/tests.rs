@@ -36,7 +36,7 @@ fn manifest_standard_is_high_confidence() {
 fn weak_metadata_does_not_claim_a_standard() {
     let info = identify_patterns(&nef("", "contract.py"), &[], None);
     assert!(info.standards.is_empty());
-    assert_eq!(info.language.as_deref(), Some("Python"));
+    assert_eq!(info.language, None);
     assert_eq!(info.confidence, PatternConfidence::Low);
     assert!(info
         .evidence
@@ -45,40 +45,25 @@ fn weak_metadata_does_not_claim_a_standard() {
 }
 
 #[test]
-fn source_paths_and_uri_suffixes_still_infer_language() {
-    for (source, expected) in [
-        (r"C:\contracts\Token.cs", "C#"),
-        ("/contracts/Token.csproj", "C#"),
-        ("/contracts/Token.py?build=42", "Python"),
-        ("src/token.go#source", "Go"),
-        ("src/token.rs#source", "Rust"),
-        ("src/token.java#source", "Java"),
-        ("src/token.tsx?source=embedded", "TypeScript/JavaScript"),
-        ("src/token.jsx#source", "TypeScript/JavaScript"),
-    ] {
+fn csharp_source_paths_infer_only_the_supported_target() {
+    for source in [r"C:\contracts\Token.cs", "/contracts/Token.csproj"] {
         let info = identify_patterns(&nef("", source), &[], None);
-        assert_eq!(info.language.as_deref(), Some(expected));
+        assert_eq!(info.language.as_deref(), Some("C#"));
     }
 }
 
 #[test]
-fn rust_compiler_metadata_infers_rust_language() {
-    let info = identify_patterns(&nef("neo-rustc 1", ""), &[], None);
-    assert_eq!(info.language.as_deref(), Some("Rust"));
-    assert_eq!(info.confidence, PatternConfidence::Medium);
-}
-
-#[test]
-fn java_compiler_metadata_infers_java_language() {
-    let info = identify_patterns(&nef("neo-java-compiler 1", ""), &[], None);
-    assert_eq!(info.language.as_deref(), Some("Java"));
-    assert_eq!(info.confidence, PatternConfidence::Medium);
-}
-
-#[test]
-fn javascript_compiler_metadata_precedes_java_substring() {
-    let info = identify_patterns(&nef("neo-javascript-compiler 1", ""), &[], None);
-    assert_eq!(info.language.as_deref(), Some("TypeScript/JavaScript"));
+fn unsupported_source_metadata_is_not_claimed_as_a_renderer() {
+    for (compiler, source) in [
+        ("boa 1", "contract.py"),
+        ("neo-go 1", "contract.go"),
+        ("neo-rustc 1", "contract.rs"),
+        ("neo-java-compiler 1", "contract.java"),
+        ("neo-javascript-compiler 1", "contract.ts"),
+    ] {
+        let info = identify_patterns(&nef(compiler, source), &[], None);
+        assert_eq!(info.language, None, "metadata {compiler:?} {source:?}");
+    }
 }
 
 #[test]

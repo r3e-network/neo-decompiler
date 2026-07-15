@@ -103,9 +103,9 @@ same `options` object.
 expressions remain visible when they do not have a direct C# translation; the
 field is source-oriented and is not a guarantee of framework compilation.
 When produced by the high-level APIs, its contract header also records the
-inferred standards, behavior patterns, source language, and confidence from
-`patterns`. Direct `renderCSharpContract` callers can pass that `PatternInfo`
-as its optional fourth argument.
+inferred standards, behavior patterns, supported C# target hint, and confidence
+from `patterns`. Direct `renderCSharpContract` callers can pass that
+`PatternInfo` as its optional fourth argument.
 The JavaScript port deliberately targets C# only; pseudocode and high-level
 text remain intermediate analysis views rather than alternate language output.
 Runtime-variable stack rearrangements such as `PICK` and `ROLL` lower to
@@ -130,10 +130,10 @@ lifting calls.
 contract calls (including `oracle`, `governance`, `role_management`,
 `policy_management`, `token_management`, `ledger`, `notary`, `treasury`,
 `contract_management`, and `upgradeable`),
-compiler/source metadata hints,
+the supported C# compiler/source metadata hint,
 an aggregate confidence, and the evidence signals behind each result. Generated
-source output is intentionally focused on readable Neo C# contracts; language
-metadata is secondary analysis only. Manifest standards are high confidence; bytecode-only hints remain conservative. ABI
+source output is intentionally focused on readable Neo C# contracts; the target
+hint is secondary analysis only. Manifest standards are high confidence; bytecode-only hints remain conservative. ABI
 method signatures can infer NEP-17, NEP-11, and NEP-24 (`royaltyInfo`) when
 the manifest does not declare a standard.
 
