@@ -504,6 +504,20 @@ test("C# rendering widens direct nullable parameter aliases", () => {
   assert.match(rendered, /BigInteger valueOrDefault\(dynamic @value\)/);
 });
 
+test("C# rendering widens parameters checked with the VM null helper", () => {
+  const rendered = renderCSharpContract([
+    "contract NullableVmCheck {",
+    "    fn valueOrDefault(value: int) -> int {",
+    "        if is_null(value) {",
+    "            return 0;",
+    "        }",
+    "        return value;",
+    "    }",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /BigInteger valueOrDefault\(dynamic @value\)/);
+});
+
 test("C# rendering uses conservative typed declarations by default", () => {
   const source = [
     "contract Typed {",
@@ -1227,6 +1241,21 @@ test("C# rendering guards non-void VM fallthrough after structured blocks", () =
   assert.match(csharp, /public static BigInteger abortInFinally\(bool flag\)/);
   assert.match(csharp, /\/\/ unreachable VM fallthrough\n\s+throw new InvalidOperationException\("Unreachable Neo VM fallthrough\."\);/);
   assert.doesNotMatch(csharp, /public static void run\(\)[\s\S]*Unreachable Neo VM fallthrough/);
+});
+
+test("C# rendering converts value-less returns only in non-void methods", () => {
+  const csharp = renderCSharpContract([
+    "contract ValueLessReturn {",
+    "    fn value() -> bool {",
+    "        return;",
+    "    }",
+    "    fn run() {",
+    "        return;",
+    "    }",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /public static bool @value\(\)[\s\S]*throw new InvalidOperationException\("Unreachable Neo VM fallthrough\."\);/);
+  assert.match(csharp, /public static void run\(\)[\s\S]*return;/);
 });
 
 test("C# rendering lowers native qualified calls outside literals", () => {

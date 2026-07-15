@@ -41,12 +41,12 @@ export function nullableParametersForMethod(lines, signatureIndex) {
       aliases.set(assignment[1], assignment[2]);
     }
     for (const [alias, parameter] of aliases) {
-      if (new RegExp(`\\b${escapeRegex(alias)}\\s+is\\s+null\\b`).test(line)) {
+      if (containsNullCheck(line, alias)) {
         nullable.add(parameter);
       }
     }
     for (const parameter of parameterNames) {
-      if (new RegExp(`\\b${escapeRegex(parameter)}\\s+is\\s+null\\b`).test(line)) {
+      if (containsNullCheck(line, parameter)) {
         nullable.add(parameter);
       }
     }
@@ -54,4 +54,11 @@ export function nullableParametersForMethod(lines, signatureIndex) {
     depth -= (line.match(/\}/g) ?? []).length;
   }
   return nullable;
+}
+
+function containsNullCheck(line, identifier) {
+  const escaped = escapeRegex(identifier);
+  return new RegExp(
+    `(?:\\b${escaped}\\s+is\\s+null\\b|\\bis_null\\s*\\(\\s*${escaped}\\s*\\))`,
+  ).test(line);
 }
