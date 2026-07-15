@@ -43,7 +43,7 @@ import {
   removeOrphanedLabels,
   rewriteLabelGotoToLoop,
 } from "./postprocess/labels.js";
-import { rewriteForLoops } from "./postprocess/for-loops.js";
+import { rewriteForLoops, rewriteHeaderInitLoops } from "./postprocess/for-loops.js";
 
 // ─── Pass 7: inline_condition_temps ────────────────────────────────────────
 
@@ -223,6 +223,10 @@ export function postprocess(statements, options = {}) {
   eliminateIdentityTemps(statements);
   // Pass 16
   collapseTempIntoStore(statements);
+  // Pass 16b: after temps are cleaned, lift LoopIf-class header-init loops
+  // and re-run for promotion (mirrors Rust core.rs finish order).
+  rewriteHeaderInitLoops(statements);
+  rewriteForLoops(statements);
   // Pass 17
   rewriteSwitchStatements(statements);
   // Pass 18
