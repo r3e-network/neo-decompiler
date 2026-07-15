@@ -59,6 +59,70 @@ export function pointerTargetFromSlotFlow(previous, instruction, localValues, st
   return null;
 }
 
+function previousNonNopIndex(instructions, index) {
+  let cursor = index - 1;
+  while (cursor >= 0 && instructions[cursor]?.opcode?.mnemonic === "NOP") {
+    cursor -= 1;
+  }
+  return cursor >= 0 ? cursor : null;
+}
+
+function constantPointerTargetBeforeStore(instructions, storeIndex) {
+  let cursor = previousNonNopIndex(instructions, storeIndex);
+  while (cursor !== null) {
+    const instruction = instructions[cursor];
+    const mnemonic = instruction?.opcode?.mnemonic;
+    if (mnemonic === "DUP") {
+      cursor = previousNonNopIndex(instructions, cursor);
+      continue;
+    }
+    if (mnemonic === "PUSHA" && instruction.operand?.kind === "I32") {
+      return relativePointerTarget(instruction);
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Recover static function pointers initialized outside the caller's range.
+ * A slot is returned only when every write is a direct, identical PUSHA value;
+ * dynamic or conflicting writes intentionally remain unresolved.
+ */
+export function inferConstantStaticPointerValues(instructions) {
+  const states = new Map();
+  for (let index = 0; index < instructions.length; index += 1) {
+    const instruction = instructions[index];
+    const mnemonic = instruction?.opcode?.mnemonic;
+    if (!isStoreStatic(mnemonic)) {
+      continue;
+    }
+    const slot = slotIndex(mnemonic, instruction);
+    if (slot === null) {
+      continue;
+    }
+    const candidate = constantPointerTargetBeforeStore(instructions, index);
+    const state = states.get(slot);
+    if (candidate === null) {
+      states.set(slot, { valid: false, target: null });
+      continue;
+    }
+    if (!state) {
+      states.set(slot, { valid: true, target: candidate });
+    } else if (!state.valid || state.target !== candidate) {
+      states.set(slot, { valid: false, target: null });
+    }
+  }
+
+  const values = new Map();
+  for (const [slot, state] of states) {
+    if (state.valid) {
+      values.set(slot, pointerValue(state.target));
+    }
+  }
+  return values;
+}
+
 export function isJumpOperand(operand) {
   return operand?.kind === "Jump" || operand?.kind === "Jump32";
 }

@@ -24,7 +24,7 @@ export function buildCallGraph(nef, instructions, methodGroups) {
 
   const edges = [];
   const localValues = new Map();
-  const staticValues = new Map();
+  const staticValues = inferConstantStaticPointerValues(instructions);
   let valueStack = [];
   let currentMethodOffset = methods[0]?.offset ?? 0;
   let currentArgValues = methodArgValues.get(currentMethodOffset) ?? [];
@@ -314,6 +314,7 @@ export function buildCallGraph(nef, instructions, methodGroups) {
 }
 import {
   ensureArgValueArray,
+  inferConstantStaticPointerValues,
   inferMethodArgCount,
   integerValue,
   isImmediateInteger,

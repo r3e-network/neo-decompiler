@@ -16,6 +16,7 @@ import test from "node:test";
 import { createHash } from "node:crypto";
 
 import {
+  analyzeBytes,
   buildMethodGroups,
   decompileBytes,
   decompileHighLevelBytes,
@@ -156,6 +157,32 @@ test("PUSHA signed offset: forward pointer works normally", () => {
   const nef = buildNef({ script });
   const result = decompileHighLevelBytes(nef);
   assert.ok(result.highLevel, "forward PUSHA should produce output");
+});
+
+test("late static PUSHA initialization resolves an earlier CALLA", () => {
+  // The public method reads static0 before the compiler-generated initializer
+  // writes it. The call graph prepass should recover only this unambiguous
+  // constant pointer assignment.
+  const script = new Uint8Array([
+    0x57, 0x00, 0x01, // INITSLOT 0,1
+    0x78, // LDARG0
+    0x58, // LDSFLD0
+    0x36, // CALLA
+    0x40, // RET
+    0x0A, 0x06, 0x00, 0x00, 0x00, // PUSHA +6 (target=0x000D)
+    0x60, // STSFLD0
+    0x57, 0x00, 0x00, // INITSLOT 0,0
+    0x40, // RET
+  ]);
+  const result = analyzeBytes(buildNef({ script }));
+  const edge = result.callGraph.edges.find(
+    (candidate) => candidate.opcode === "CALLA" && candidate.callOffset === 5,
+  );
+  assert.ok(edge, "CALLA edge should be present");
+  assert.deepEqual(edge.target, {
+    kind: "Internal",
+    method: { offset: 13, name: "sub_0x000D" },
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -266,6 +266,51 @@ fn decompilation_includes_indirect_calls() {
 }
 
 #[test]
+fn call_graph_resolves_static_pointer_initialized_after_caller() {
+    // Compiler-generated `_initialize` methods can populate a static delegate
+    // after every public method that consumes it. The resolver must recover
+    // this only when the complete script contains one unambiguous PUSHA store.
+    // 0x0000: INITSLOT 0,1
+    // 0x0003: LDARG0
+    // 0x0004: LDSFLD0
+    // 0x0005: CALLA
+    // 0x0006: RET
+    // 0x0007: PUSHA +6 (target=0x000D)
+    // 0x000C: STSFLD0
+    // 0x000D: INITSLOT 0,0
+    // 0x0010: RET
+    let script = [
+        0x57, 0x00, 0x01, // INITSLOT 0,1
+        0x78, // LDARG0
+        0x58, // LDSFLD0
+        0x36, // CALLA
+        0x40, // RET
+        0x0A, 0x06, 0x00, 0x00, 0x00, // PUSHA +6
+        0x60, // STSFLD0
+        0x57, 0x00, 0x00, // INITSLOT 0,0
+        0x40, // RET
+    ];
+    let nef_bytes = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::Pseudocode)
+        .expect("decompile succeeds");
+
+    let edge = decompilation
+        .call_graph
+        .edges
+        .iter()
+        .find(|edge| edge.opcode == "CALLA" && edge.call_offset == 5)
+        .expect("CALLA edge present");
+    match &edge.target {
+        CallTarget::Internal { method } => {
+            assert_eq!(method.offset, 0x000D);
+            assert_eq!(method.name, "sub_0x000D");
+        }
+        other => panic!("expected late static PUSHA store to resolve CALLA, got: {other:?}"),
+    }
+}
+
+#[test]
 fn decompilation_resolves_pusha_calla_to_internal_call_edge() {
     // Script layout:
     // 0x0000: PUSHA +10 (target = 0x000A)
