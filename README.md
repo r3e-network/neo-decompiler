@@ -255,13 +255,12 @@ cargo build --release
 # script hash, and instruction count — useful for multi-CFG canvases.
 ./target/release/neo-decompiler cfg path/to/contract.nef > cfg.dot
 
-# Emit the high-level contract view (auto-detects `*.manifest.json` if present).
-# Defaults to clean rendering: no per-instruction trace comments, single-use
-# temporaries inlined, dead let-bindings dropped. Recommended when reading the
-# result as source rather than tracing it back to raw bytecode.
+# Emit the C# contract view (the default; auto-detects `*.manifest.json`).
+# Defaults to clean rendering: no per-instruction trace comments and
+# single-use temporaries inlined.
 ./target/release/neo-decompiler decompile path/to/contract.nef
 
-# Use inferred C# types for body-local declarations where the analysis is
+# Add inferred C# types for body-local declarations where the analysis is
 # confident (for example, `BigInteger loc0` instead of `dynamic loc0`).
 ./target/release/neo-decompiler decompile --typed-declarations path/to/contract.nef
 
@@ -293,7 +292,7 @@ cargo build --release
 ./target/release/neo-decompiler decompile --format json path/to/contract.nef
 
 # `--format` selects the view that is printed. The optional `--output-format`
-# (default: all) limits which views are computed, as a performance hint:
+# (default: csharp) limits which views are computed, as a performance hint:
 #   --output-format pseudocode | high-level | csharp | all
 # `--format` always wins — if the requested view is not covered by
 # `--output-format`, all views are generated so the output is never empty.

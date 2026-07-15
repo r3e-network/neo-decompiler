@@ -162,8 +162,8 @@ impl Decompilation {
     /// (`cfg::structure`) to recover `if` / `if-else` constructs as typed
     /// `ir::ControlFlow` nodes — the structural alternative to the legacy
     /// string-pattern postprocess. Straight-line bodies carry the optimized
-    /// SSA data-flow. This is the Phase-4 IR-spine path (additive; the legacy
-    /// high-level view remains the default).
+    /// SSA data-flow. This is an additive analysis view; the CLI's primary
+    /// decompile output is the manifest-aware C# contract.
     #[must_use]
     pub fn render_structured_ir(&mut self) -> String {
         // Per-method + envelope render. Fall back to the single-CFG render if

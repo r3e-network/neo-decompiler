@@ -3,9 +3,9 @@ use clap::ValueEnum;
 #[derive(Debug, Clone, Copy, ValueEnum, Default)]
 pub(in crate::cli) enum DecompileFormat {
     Pseudocode,
-    #[default]
     HighLevel,
     Both,
+    #[default]
     Csharp,
     Json,
     /// Structured IR view (CFG → ir::ControlFlow), the Phase-4 spine path.

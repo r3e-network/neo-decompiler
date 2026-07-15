@@ -8,7 +8,7 @@ use crate::common::{
 };
 
 #[test]
-fn decompile_command_outputs_high_level_by_default() {
+fn decompile_command_outputs_csharp_by_default() {
     let dir = tempdir().expect("tempdir");
     let nef_path = dir.path().join("contract.nef");
     std::fs::write(&nef_path, build_sample_nef()).unwrap();
@@ -18,12 +18,12 @@ fn decompile_command_outputs_high_level_by_default() {
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(contains("contract NeoContract"))
-        .stdout(contains("GasToken::Transfer"));
+        .stdout(contains("namespace NeoDecompiler.Generated"))
+        .stdout(contains("public class NeoContract : SmartContract"));
 
     let stdout = String::from_utf8(assert.get_output().stdout.clone()).expect("utf-8 stdout");
-    // Default output should be clean: no per-instruction trace
-    // comments. A trace comment looks like `// 0000: PUSH2`.
+    // Default C# output should be clean: no per-instruction trace comments.
+    // A trace comment looks like `// 0000: PUSH2`.
     assert!(
         !stdout.lines().any(|line| {
             let trimmed = line.trim_start();
@@ -47,6 +47,8 @@ fn decompile_command_accepts_inline_single_use_temps_flag() {
     // smoke test still asserts the flag is accepted by clap.
     neo_decompiler_cmd()
         .arg("decompile")
+        .arg("--format")
+        .arg("high-level")
         .arg("--inline-single-use-temps")
         .arg(&nef_path)
         .assert()
@@ -77,6 +79,8 @@ fn decompile_no_inline_temps_keeps_let_t_lines_visible() {
 
     neo_decompiler_cmd()
         .arg("decompile")
+        .arg("--format")
+        .arg("high-level")
         .arg("--no-inline-temps")
         .arg(&nef_path)
         .assert()
@@ -265,9 +269,9 @@ fn decompile_command_uses_manifest_when_provided() {
         .arg(&nef_path)
         .assert()
         .success()
-        .stdout(contains("contract SampleToken"))
-        .stdout(contains("permissions {"))
-        .stdout(contains("trusts = ["));
+        .stdout(contains("public class SampleToken : SmartContract"))
+        .stdout(contains("// permissions:"))
+        .stdout(contains("// trusts = ["));
 }
 
 #[test]

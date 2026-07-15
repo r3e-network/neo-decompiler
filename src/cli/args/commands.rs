@@ -53,12 +53,12 @@ pub(in crate::cli) enum Command {
         /// is auto-discovered when not passed via `--manifest`.
         path: PathBuf,
 
-        /// Choose the output view
-        #[arg(long, value_enum, default_value_t = DecompileFormat::HighLevel)]
+        /// Choose the output view (default: C# contract)
+        #[arg(long, value_enum, default_value_t = DecompileFormat::Csharp)]
         format: DecompileFormat,
 
-        /// Choose which outputs to generate (default: all)
-        #[arg(long, value_enum, default_value_t = OutputFormat::All)]
+        /// Choose which outputs to generate (default: C# only)
+        #[arg(long, value_enum, default_value_t = OutputFormat::CSharp)]
         output_format: OutputFormat,
 
         /// Fail fast if an unknown opcode is encountered (default: tolerate and emit UNKNOWN_0x..)
