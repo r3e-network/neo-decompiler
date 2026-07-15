@@ -59,7 +59,7 @@ pub(super) fn recover_with_compatibility(fidelity: &FidelityReport) -> bool {
     fidelity.issues.iter().any(|issue| {
         issue.fidelity == Fidelity::Incomplete
             && ((issue.detail.starts_with("requires ")
-                && matches!(issue.opcode, OpCode::Call | OpCode::CallA))
+                && matches!(issue.opcode, OpCode::Call | OpCode::Call_L | OpCode::CallA))
                 || issue
                     .detail
                     .starts_with("structured output contains an unresolved control transfer")

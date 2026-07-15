@@ -371,6 +371,60 @@ fn csharp_manifest_void_internal_call_underflow_keeps_call_visible() {
 }
 
 #[test]
+fn csharp_manifest_long_internal_call_underflow_keeps_call_visible() {
+    // The long relative CALL_L form must take the same compatibility path as
+    // the short CALL form when a helper argument is missing at runtime.
+    let nef_bytes = build_nef(&[
+        0x57, 0x00, 0x01, // helper@0: INITSLOT 0 locals, 1 arg
+        0x40, // helper RET
+        0x35, 0xFC, 0xFF, 0xFF, 0xFF, // caller@4: CALL_L -4 -> helper@0
+        0x40, // caller RET
+    ]);
+    let manifest = ContractManifest::from_json_str(
+        r#"
+            {
+                "name": "LongVoidCallUnderflow",
+                "abi": {
+                    "methods": [
+                        {
+                            "name": "helper",
+                            "parameters": [{ "name": "value", "type": "Integer" }],
+                            "returntype": "Void",
+                            "offset": 0
+                        },
+                        {
+                            "name": "caller",
+                            "parameters": [],
+                            "returntype": "Void",
+                            "offset": 4
+                        }
+                    ],
+                    "events": []
+                },
+                "permissions": [],
+                "trusts": "*"
+            }
+            "#,
+    )
+    .expect("manifest parsed");
+
+    let csharp = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds")
+        .csharp
+        .expect("csharp output");
+
+    assert!(
+        csharp.contains("helper((dynamic)null);"),
+        "long-call argument underflow must retain the helper call: {csharp}"
+    );
+    assert!(
+        csharp.contains("VM argument underflow in caller at 0x0004"),
+        "long-call underflow must remain explicit in generated C#: {csharp}"
+    );
+}
+
+#[test]
 fn csharp_manifest_value_tail_call_underflow_still_returns_call() {
     // caller@4 tail-jumps to helper@0 without supplying helper's declared
     // argument. Underflow must not be mistaken for a void return contract.

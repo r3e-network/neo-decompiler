@@ -362,7 +362,23 @@ fn prepend_argument_underflow_comment(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::decompiler::cfg::method_body::{LoweringIssue, LoweringIssueKind};
     use crate::decompiler::ir::{Block, Expr, Stmt};
+
+    #[test]
+    fn long_relative_call_underflow_uses_compatibility_recovery() {
+        let mut fidelity = FidelityReport::exact(1);
+        fidelity.issues.push(LoweringIssue {
+            offset: 0x20,
+            opcode: OpCode::Call_L,
+            kind: LoweringIssueKind::LostStackValue,
+            fidelity: Fidelity::Incomplete,
+            detail: "requires 2 stack values, but only 0 are available".to_string(),
+        });
+        fidelity.finish();
+
+        assert!(recover_with_compatibility(&fidelity));
+    }
 
     #[test]
     fn non_void_partial_body_gets_fail_closed_fallthrough() {
