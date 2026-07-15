@@ -191,6 +191,16 @@ impl ExprContext {
                 target: SemanticCallTarget::Syscall { hash, .. },
                 ..
             } => syscall_types::lookup(*hash).map(|return_type| return_type.csharp_type),
+            Expr::Call {
+                target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Pickitem)),
+                args,
+            } => args
+                .first()
+                .and_then(|base| self.exact_csharp_type(base))
+                .and_then(types::csharp_array_element_type),
+            Expr::Index { base, .. } => self
+                .exact_csharp_type(base)
+                .and_then(types::csharp_array_element_type),
             _ => None,
         }
     }
@@ -280,20 +290,27 @@ impl ExprContext {
             Expr::NewArray { .. } | Expr::Array(_) => ValueType::Array,
             Expr::Struct(_) => ValueType::Struct,
             Expr::Map(_) => ValueType::Map,
-            Expr::Index { base, .. } => match base.as_ref() {
-                Expr::NewArray {
+            Expr::Index { base, .. } => {
+                if let Expr::NewArray {
                     element_type: Some(element_type),
                     ..
-                } => *element_type,
-                _ if matches!(
+                } = base.as_ref()
+                {
+                    *element_type
+                } else if let Some(element_type) = self
+                    .exact_csharp_type(base)
+                    .and_then(types::csharp_array_element_value_type)
+                {
+                    element_type
+                } else if matches!(
                     self.value_type(base),
                     ValueType::ByteString | ValueType::Buffer
-                ) =>
-                {
+                ) {
                     ValueType::Integer
+                } else {
+                    ValueType::Unknown
                 }
-                _ => ValueType::Unknown,
-            },
+            }
             Expr::Member { name, .. } if name.eq_ignore_ascii_case("Length") => ValueType::Integer,
             Expr::Member { .. } => ValueType::Unknown,
             Expr::Ternary {
@@ -326,6 +343,12 @@ impl ExprContext {
                     } = base
                     {
                         return *element_type;
+                    }
+                    if let Some(element_type) = self
+                        .exact_csharp_type(base)
+                        .and_then(types::csharp_array_element_value_type)
+                    {
+                        return element_type;
                     }
                     match self.value_type(base) {
                         ValueType::ByteString | ValueType::Buffer => ValueType::Integer,

@@ -181,6 +181,50 @@ fn additional_framework_returns_remain_concrete_in_expression_context() {
 }
 
 #[test]
+fn native_array_returns_preserve_index_element_types() {
+    let context = ExprContext::default();
+    let call = |hash: &str, name: &str| {
+        Expr::call(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: name.to_string(),
+                hash_le: Some(hash.to_string()),
+                call_flags: Some(0x0F),
+            },
+            Vec::new(),
+        )
+    };
+    let candidates = call("F563EA40BC283D4D0E05C48EA305B3F2A07340EF", "getCandidates");
+    assert_eq!(
+        context.value_type(&Expr::index(candidates.clone(), Expr::int(0))),
+        ValueType::Struct
+    );
+    assert_eq!(
+        context.exact_csharp_type(&Expr::index(candidates.clone(), Expr::int(0))),
+        Some("(ECPoint, BigInteger)")
+    );
+
+    let pickitem = Expr::call(
+        SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Pickitem)),
+        vec![candidates, Expr::int(0)],
+    );
+    assert_eq!(context.value_type(&pickitem), ValueType::Struct);
+    assert_eq!(
+        context.exact_csharp_type(&pickitem),
+        Some("(ECPoint, BigInteger)")
+    );
+
+    let signers = call(
+        "BEF2043140362A77C15099C7E64C12F700B665DA",
+        "getTransactionSigners",
+    );
+    assert_eq!(
+        context.value_type(&Expr::index(signers, Expr::int(0))),
+        ValueType::InteropInterface
+    );
+}
+
+#[test]
 fn known_syscalls_drive_exact_csharp_expression_types() {
     let context = ExprContext::default();
     let syscall = |hash| Expr::call(SemanticCallTarget::Syscall { hash, name: None }, Vec::new());

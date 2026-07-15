@@ -215,6 +215,8 @@ fn array_element_type(base_type: Option<&str>) -> Option<String> {
         Some("ECPoint[]") => Some("ECPoint".to_string()),
         Some("Signer[]") => Some("Signer".to_string()),
         Some("Notification[]") => Some("Notification".to_string()),
+        Some("UInt160[]") => Some("UInt160".to_string()),
+        Some("UInt256[]") => Some("UInt256".to_string()),
         Some("byte[][]") => Some("byte[]".to_string()),
         Some("object[][]") => Some("object[]".to_string()),
         Some("(ECPoint, BigInteger)[]") => Some("(ECPoint, BigInteger)".to_string()),
@@ -267,16 +269,24 @@ pub(in crate::decompiler::csharp::render) fn csharp_type_value_type(
         "string" => Some(ValueType::ByteString),
         "ByteString" => Some(ValueType::ByteString),
         "byte[]" => Some(ValueType::Buffer),
-        "object[]"
+        "BigInteger[]"
+        | "bool[]"
+        | "object[]"
         | "ECPoint[]"
         | "Signer[]"
         | "Notification[]"
+        | "UInt160[]"
+        | "UInt256[]"
         | "ByteString[]"
         | "string[]"
         | "byte[][]"
-        | "(ECPoint, BigInteger)[]" => Some(ValueType::Array),
+        | "object[][]"
+        | "Map<object, object>[]"
+        | "(ECPoint, BigInteger)[]"
+        | "(int, UInt160)[]" => Some(ValueType::Array),
         "Map<object, object>" => Some(ValueType::Map),
         "UInt160" | "UInt256" | "ECPoint" => Some(ValueType::ByteString),
+        "(ECPoint, BigInteger)" | "(int, UInt160)" => Some(ValueType::Struct),
         "Block"
         | "Contract"
         | "Iterator"
@@ -285,8 +295,37 @@ pub(in crate::decompiler::csharp::render) fn csharp_type_value_type(
         | "NeoAccountState"
         | "Notification"
         | "StorageContext"
+        | "Signer"
         | "Transaction"
         | "object" => Some(ValueType::InteropInterface),
+        _ => None,
+    }
+}
+
+pub(in crate::decompiler::csharp::render) fn csharp_array_element_value_type(
+    csharp_type: &str,
+) -> Option<ValueType> {
+    csharp_array_element_type(csharp_type).and_then(csharp_type_value_type)
+}
+
+pub(in crate::decompiler::csharp::render) fn csharp_array_element_type(
+    csharp_type: &str,
+) -> Option<&'static str> {
+    match csharp_type {
+        "BigInteger[]" => Some("BigInteger"),
+        "bool[]" => Some("bool"),
+        "byte[][]" => Some("byte[]"),
+        "ByteString[]" => Some("ByteString"),
+        "ECPoint[]" => Some("ECPoint"),
+        "Map<object, object>[]" => Some("Map<object, object>"),
+        "Notification[]" => Some("Notification"),
+        "object[][]" => Some("object[]"),
+        "(ECPoint, BigInteger)[]" => Some("(ECPoint, BigInteger)"),
+        "(int, UInt160)[]" => Some("(int, UInt160)"),
+        "Signer[]" => Some("Signer"),
+        "string[]" => Some("string"),
+        "UInt160[]" => Some("UInt160"),
+        "UInt256[]" => Some("UInt256"),
         _ => None,
     }
 }
@@ -313,7 +352,9 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
             | "TriggerType"
             | "bool"
             | "ByteString"
+            | "BigInteger[]"
             | "byte[]"
+            | "bool[]"
             | "object[]"
             | "Map<object, object>"
             | "string"
@@ -324,9 +365,14 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
             | "ECPoint[]"
             | "Signer[]"
             | "Notification[]"
+            | "UInt160[]"
+            | "UInt256[]"
             | "ByteString[]"
             | "byte[][]"
+            | "object[][]"
+            | "Map<object, object>[]"
             | "(ECPoint, BigInteger)[]"
+            | "(int, UInt160)[]"
             | "Block"
             | "Contract"
             | "Iterator"
@@ -335,8 +381,11 @@ fn concrete_csharp_type_name(type_name: &str) -> Option<String> {
             | "NeoAccountState"
             | "Notification"
             | "StorageContext"
+            | "Signer"
             | "Transaction"
             | "object"
+            | "(ECPoint, BigInteger)"
+            | "(int, UInt160)"
     )
     .then(|| type_name.to_string())
 }
@@ -372,7 +421,10 @@ pub(super) fn concrete_type_matches_value_type(type_name: &str, value_type: Valu
         ),
         ValueType::Buffer => type_name == "byte[]",
         ValueType::Array => type_name.ends_with("[]"),
-        ValueType::Struct => type_name == "object[]",
+        ValueType::Struct => matches!(
+            type_name,
+            "object[]" | "(ECPoint, BigInteger)" | "(int, UInt160)"
+        ),
         ValueType::Map => type_name == "Map<object, object>",
         ValueType::InteropInterface => matches!(
             type_name,
@@ -384,6 +436,7 @@ pub(super) fn concrete_type_matches_value_type(type_name: &str, value_type: Valu
                 | "NeoAccountState"
                 | "Notification"
                 | "StorageContext"
+                | "Signer"
                 | "Transaction"
                 | "object"
         ),
