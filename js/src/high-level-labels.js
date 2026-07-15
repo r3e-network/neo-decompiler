@@ -1,4 +1,5 @@
 import { isSimpleConditional, popConditionForLoop } from "./high-level-control-flow-shared.js";
+import { recordStackSnapshot, restoreStackAtLabel } from "./high-level-stack-flow.js";
 import { jumpTarget } from "./high-level-utils.js";
 import { hexOffset } from "./util.js";
 
@@ -31,6 +32,7 @@ export function emitLabelIfNeeded(state, offset) {
   if (!state.labelTargets.has(offset) || state.emittedLabels.has(offset)) {
     return;
   }
+  restoreStackAtLabel(state, offset);
   state.statements.push(`${labelName(offset)}:`);
   state.emittedLabels.add(offset);
 }
@@ -47,11 +49,13 @@ export function tryControlTransferFallback(state, instruction) {
     if (condition === null) {
       return false;
     }
+    recordStackSnapshot(state, target);
     state.statements.push(`if ${condition} { goto ${labelName(target)}; }`);
     return true;
   }
 
   if (mnemonic === "JMP" || mnemonic === "JMP_L") {
+    recordStackSnapshot(state, target);
     state.statements.push(`goto ${labelName(target)};`);
     state.stack.length = 0;
     return true;

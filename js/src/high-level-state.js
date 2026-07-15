@@ -43,6 +43,10 @@ export function createState(
     pointerTargetsBySlot: new Map(),
     packedValuesByExpression: new Map(),
     packedValuesBySlot: new Map(),
+    // Forward jumps are emitted by the linear fallback while the statement
+    // walk continues through the skipped instructions. Keep the stack that
+    // reaches each target so the label can restore it when encountered.
+    stackSnapshotsByLabel: new Map(),
     previousInstruction: null,
     previousStoreInfo: null,
     labelTargets: collectLabelTargets(instructions),
@@ -66,6 +70,12 @@ export function cloneState(state) {
     pointerTargetsBySlot: new Map(state.pointerTargetsBySlot),
     packedValuesByExpression: new Map(state.packedValuesByExpression),
     packedValuesBySlot: new Map(state.packedValuesBySlot),
+    stackSnapshotsByLabel: new Map(
+      [...state.stackSnapshotsByLabel].map(([offset, snapshot]) => [
+        offset,
+        snapshot === null ? null : [...snapshot],
+      ]),
+    ),
     previousInstruction: state.previousInstruction,
     previousStoreInfo: state.previousStoreInfo,
     labelTargets: new Set(state.labelTargets),

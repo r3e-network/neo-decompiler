@@ -159,6 +159,40 @@ test("PUSHA signed offset: forward pointer works normally", () => {
   assert.ok(result.highLevel, "forward PUSHA should produce output");
 });
 
+test("high-level forward jumps restore and merge stack values", () => {
+  // This is the compiler-generated int32 normalization shape used by the
+  // devpack contracts. The value duplicated before JMPGE remains on both
+  // paths, then the masked/sign-extended value merges at STARG0. A linear
+  // emitter that clears the stack on JMP loses those values and emits ???.
+  const script = new Uint8Array([
+    0x57, 0x00, 0x02, // INITSLOT 0 locals, 2 args
+    0x78, // LDARG0
+    0x9C, 0x9C, // INC, INC
+    0x4A, // DUP
+    0x02, 0x00, 0x00, 0x00, 0x80, // PUSHINT32 -2147483648
+    0x2E, 0x04, // JMPGE -> DUP at the upper-bound check
+    0x22, 0x0A, // JMP -> PUSHINT64 mask (the false path)
+    0x4A, // DUP
+    0x02, 0xFF, 0xFF, 0xFF, 0x7F, // PUSHINT32 2147483647
+    0x32, 0x1E, // JMPLE -> STARG0
+    0x03, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, // PUSHINT64 4294967295
+    0x91, // AND
+    0x4A, // DUP
+    0x02, 0xFF, 0xFF, 0xFF, 0x7F, // PUSHINT32 2147483647
+    0x32, 0x0C, // JMPLE -> STARG0
+    0x03, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, // PUSHINT64 4294967296
+    0x9F, // SUB
+    0x80, // STARG0
+    0x78, // LDARG0
+    0x40, // RET
+  ]);
+  const { highLevel } = decompileHighLevelBytes(buildNef({ script }));
+  assert.doesNotMatch(highLevel, /\?\?\?/);
+  assert.match(highLevel, /let t\d+ = t\d+ & 4294967295;/);
+  assert.match(highLevel, /t\d+ = t\d+ - 4294967296;/);
+  assert.match(highLevel, /return arg0;/);
+});
+
 test("late static PUSHA initialization resolves an earlier CALLA", () => {
   // The public method reads static0 before the compiler-generated initializer
   // writes it. The call graph prepass should recover only this unambiguous
