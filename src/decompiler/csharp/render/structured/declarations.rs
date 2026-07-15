@@ -300,6 +300,15 @@ pub(in crate::decompiler::csharp::render) fn collect_index_defined_symbols(
     collector.index_defined_symbols()
 }
 
+pub(in crate::decompiler::csharp::render) fn collect_indexed_base_symbols(
+    body: &Block,
+) -> HashSet<String> {
+    let mut collector = ActivityCollector::new();
+    let root = collector.scopes.root();
+    collector.visit_block(body, root);
+    collector.indexed_base_symbols()
+}
+
 pub(in crate::decompiler::csharp::render) fn plan_contract_symbols(
     types: &TypeInfo,
     method_symbols: &[&BTreeMap<String, SymbolInfo>],

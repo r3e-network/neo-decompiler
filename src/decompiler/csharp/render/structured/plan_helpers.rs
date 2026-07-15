@@ -11,6 +11,7 @@ use crate::decompiler::helpers::{initslot_argument_count_at, next_inferred_metho
 use crate::instruction::{Instruction, OpCode, Operand};
 use crate::manifest::ManifestMethod;
 
+use super::csharp_type_value_type;
 use super::MethodPlanDraft;
 
 pub(super) fn draft_method_context(
@@ -171,7 +172,9 @@ pub(super) fn method_symbol_types(
         .unwrap_or_default();
     parameters.resize(csharp_parameters.len(), ValueType::Unknown);
     for (value_type, parameter) in parameters.iter_mut().zip(csharp_parameters) {
-        if *value_type == ValueType::Unknown && parameter.ty == "object" {
+        if let Some(parameter_type) = csharp_type_value_type(&parameter.ty) {
+            *value_type = parameter_type;
+        } else if *value_type == ValueType::Unknown && parameter.ty == "object" {
             *value_type = ValueType::Any;
         }
     }

@@ -24,9 +24,14 @@ use super::MethodPlanDraft;
 
 #[path = "plan_methods/calls.rs"]
 mod calls;
+#[path = "plan_methods/parameter_calls.rs"]
+mod parameter_calls;
+#[path = "plan_methods/parameter_types.rs"]
+mod parameter_types;
 #[path = "plan_methods/return_types.rs"]
 mod return_types;
 use calls::attach_call_plans;
+use parameter_types::infer_private_parameter_types;
 use return_types::infer_private_return_types;
 
 pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
@@ -245,12 +250,38 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
         method_contracts,
     );
 
-    infer_private_return_types(
-        &mut plans,
-        &inferred_methods,
-        &plans_by_offset,
-        instructions,
-    );
+    // Return and parameter types can feed one another through private helper
+    // chains. Iterate the two conservative refinements to a small fixed point
+    // before applying the later indexed-parameter safety widening.
+    let iteration_limit = inferred_methods.len().saturating_mul(2).saturating_add(1);
+    let mut parameter_types_changed = false;
+    for _ in 0..iteration_limit {
+        let return_types_before = plans
+            .iter()
+            .map(|plan| (plan.start, plan.return_type.clone()))
+            .collect::<BTreeMap<_, _>>();
+        infer_private_return_types(
+            &mut plans,
+            &inferred_methods,
+            &plans_by_offset,
+            instructions,
+        );
+        parameter_types_changed |= infer_private_parameter_types(
+            &mut plans,
+            &inferred_methods,
+            &plans_by_offset,
+            instructions,
+            call_graph,
+        );
+        let return_types_changed = plans.iter().any(|plan| {
+            return_types_before
+                .get(&plan.start)
+                .is_some_and(|return_type| return_type != &plan.return_type)
+        });
+        if !parameter_types_changed && !return_types_changed {
+            break;
+        }
+    }
 
     let mut parameter_index_definitions: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
     let mut index_defined_statics = BTreeSet::new();
@@ -281,7 +312,6 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
         }
     }
 
-    let mut parameter_types_changed = false;
     for (plan_index, indices) in parameter_index_definitions {
         let plan = &mut plans[plan_index];
         for index in indices {

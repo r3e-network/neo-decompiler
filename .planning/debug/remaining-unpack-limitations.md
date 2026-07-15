@@ -2,7 +2,7 @@
 status: narrowed
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-15T03:03:09+08:00
+updated: 2026-07-15T14:01:11+08:00
 ---
 
 ## Current Focus
@@ -122,6 +122,11 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   checked: Typed static-field boundary conversions, the Contract_RefSupport Roslyn regression, focused structured-renderer tests, the pinned fidelity census, and both representative plus full pinned net10 Roslyn suites.
   found: Static slots whose neutral method symbol table omits the global field type now receive the contract-level C# field type during assignment rendering. Unknown compatibility values are emitted through an explicit `(TargetType)(dynamic)(...)` boundary; Contract_RefSupport no longer produces `object`-to-`BigInteger` CS0266 errors. The census remains Exact 1101 / Conservative 70 / Incomplete 1, and Roslyn compiles 103/103 contracts with zero errors.
   implication: Typed C# output remains compile-valid when conservative low-level calls write known static fields, without weakening the fail-closed Foreach limitation or assigning arbitrary external-call types.
+
+- timestamp: 2026-07-15T14:01:11+08:00
+  checked: Conservative private-helper parameter inference, indexed/nullability safety guards, focused planner regressions, and all default/no-default Rust gates.
+  found: An inferred helper parameter is promoted from `dynamic` only when every resolved internal incoming call supplies the same concrete C# type. Conflicting, incomplete, indirect/unresolved, null-checked, and directly indexed parameters remain dynamic; recursive IR walkers are isolated in `parameter_calls.rs` and `parameter_index.rs`. The focused suite covers unanimous promotion plus conflicting, null-checked, and indexed negatives; all Rust tests and both Clippy configurations pass.
+  implication: Private C# helper signatures are more readable without inventing an ABI type or weakening the existing fail-closed indexed/nullability boundaries. The pinned corpus and Roslyn gates remain unavailable in this environment (`TestingArtifacts/devpack` and `NEO_CSHARP_CORPUS_DIR` are absent).
 
 ## Resolution
 

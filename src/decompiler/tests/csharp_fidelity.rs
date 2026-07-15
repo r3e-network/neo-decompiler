@@ -312,7 +312,7 @@ fn csharp_private_void_call_preserves_ambient_return_value() {
         "private void call must preserve the caller's ambient value: {csharp}"
     );
     assert!(
-        csharp.contains("private static void sub_0x0007(dynamic arg0)")
+        csharp.contains("private static void sub_0x0007(BigInteger arg0)")
             && !csharp.contains("return sub_0x0007(1)"),
         "private helper must have a void C# signature: {csharp}"
     );

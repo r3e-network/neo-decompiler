@@ -27,9 +27,9 @@ pub(in crate::decompiler::csharp::render) use declarations::plan_declarations;
 #[cfg(test)]
 pub(in crate::decompiler::csharp::render) use declarations::plan_declarations_with_known_types;
 pub(in crate::decompiler::csharp::render) use declarations::{
-    collect_index_defined_symbols, csharp_type, plan_contract_symbols,
-    plan_declarations_with_known_types_and_calls, CSharpContractSymbols, DeclarationKind,
-    DeclarationPlan, ScopeId, ScopeTree,
+    collect_index_defined_symbols, collect_indexed_base_symbols, csharp_type,
+    plan_contract_symbols, plan_declarations_with_known_types_and_calls, CSharpContractSymbols,
+    DeclarationKind, DeclarationPlan, ScopeId, ScopeTree,
 };
 
 #[allow(dead_code)]

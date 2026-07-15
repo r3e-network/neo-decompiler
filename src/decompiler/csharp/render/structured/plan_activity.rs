@@ -32,6 +32,7 @@ pub(super) struct ActivityCollector<'a> {
     non_concrete_definitions: HashSet<String>,
     direct_index_definitions: HashSet<String>,
     copy_definitions: Vec<(String, String)>,
+    indexed_base_symbols: HashSet<String>,
     pub(super) implicit_declarations: HashSet<String>,
     pub(super) stack_placeholders: BTreeSet<usize>,
     next_order: usize,
@@ -49,6 +50,7 @@ impl<'a> ActivityCollector<'a> {
             non_concrete_definitions: HashSet::new(),
             direct_index_definitions: HashSet::new(),
             copy_definitions: Vec::new(),
+            indexed_base_symbols: HashSet::new(),
             implicit_declarations: HashSet::new(),
             stack_placeholders: BTreeSet::new(),
             next_order: 0,
@@ -68,6 +70,7 @@ impl<'a> ActivityCollector<'a> {
             non_concrete_definitions: self.non_concrete_definitions,
             direct_index_definitions: self.direct_index_definitions,
             copy_definitions: self.copy_definitions,
+            indexed_base_symbols: self.indexed_base_symbols,
             implicit_declarations: self.implicit_declarations,
             stack_placeholders: self.stack_placeholders,
             next_order: self.next_order,
@@ -191,12 +194,35 @@ impl<'a> ActivityCollector<'a> {
         symbols
     }
 
+    pub(super) fn indexed_base_symbols(&self) -> HashSet<String> {
+        let mut symbols = self.indexed_base_symbols.clone();
+        self.propagate_indexed_base_symbols(&mut symbols);
+        symbols
+    }
+
     fn propagate_copy_definitions(&self, symbols: &mut HashSet<String>) {
         loop {
             let mut changed = false;
             for (target, source) in &self.copy_definitions {
                 if symbols.contains(source) {
                     changed |= symbols.insert(target.clone());
+                }
+            }
+            if !changed {
+                return;
+            }
+        }
+    }
+
+    fn propagate_indexed_base_symbols(&self, symbols: &mut HashSet<String>) {
+        loop {
+            let mut changed = false;
+            for (target, source) in &self.copy_definitions {
+                if symbols.contains(source) {
+                    changed |= symbols.insert(target.clone());
+                }
+                if symbols.contains(target) {
+                    changed |= symbols.insert(source.clone());
                 }
             }
             if !changed {
@@ -327,12 +353,26 @@ impl<'a> ActivityCollector<'a> {
                 self.visit_expr(right, scope);
             }
             Expr::Unary { operand, .. } => self.visit_expr(operand, scope),
-            Expr::Call { args, .. } | Expr::Array(args) => {
+            Expr::Call { target, args } => {
+                if matches!(
+                    target,
+                    SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Pickitem))
+                ) {
+                    if let Some(base) = args.first() {
+                        self.record_index_base_symbols(base);
+                    }
+                }
+                for argument in args {
+                    self.visit_expr(argument, scope);
+                }
+            }
+            Expr::Array(args) => {
                 for argument in args {
                     self.visit_expr(argument, scope);
                 }
             }
             Expr::Index { base, index } => {
+                self.record_index_base_symbols(base);
                 self.visit_expr(base, scope);
                 self.visit_expr(index, scope);
             }
@@ -366,6 +406,37 @@ impl<'a> ActivityCollector<'a> {
                 self.stack_placeholders.insert(*index);
             }
             Expr::Literal(_) => {}
+        }
+    }
+
+    fn record_index_base_symbols(&mut self, expression: &Expr) {
+        match expression {
+            Expr::Variable(name) => {
+                self.indexed_base_symbols.insert(name.clone());
+            }
+            Expr::Cast { expr, .. }
+            | Expr::Convert { value: expr, .. }
+            | Expr::IsType { value: expr, .. } => self.record_index_base_symbols(expr),
+            Expr::Index { base, .. } => self.record_index_base_symbols(base),
+            Expr::Ternary {
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                self.record_index_base_symbols(then_expr);
+                self.record_index_base_symbols(else_expr);
+            }
+            Expr::Unknown
+            | Expr::Literal(_)
+            | Expr::Binary { .. }
+            | Expr::Unary { .. }
+            | Expr::Call { .. }
+            | Expr::Member { .. }
+            | Expr::NewArray { .. }
+            | Expr::Array(_)
+            | Expr::Struct(_)
+            | Expr::Map(_)
+            | Expr::StackTemp(_) => {}
         }
     }
 }
