@@ -403,6 +403,56 @@ fn null_checked_private_parameter_stays_dynamic() {
 }
 
 #[test]
+fn null_checked_private_array_parameter_uses_the_proven_reference_type() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Newarray0, None),
+        Instruction::new(1, OpCode::Call, Some(Operand::Jump(3))),
+        Instruction::new(2, OpCode::Ret, None),
+        Instruction::new(4, OpCode::Ldarg0, None),
+        Instruction::new(5, OpCode::Dup, None),
+        Instruction::new(6, OpCode::Isnull, None),
+        Instruction::new(7, OpCode::Ret, None),
+    ];
+    let entry = MethodRef {
+        offset: 0,
+        name: "sub_0x0000".to_string(),
+    };
+    let helper = MethodRef {
+        offset: 4,
+        name: "sub_0x0004".to_string(),
+    };
+    let call_graph = CallGraph {
+        methods: vec![entry.clone(), helper.clone()],
+        edges: vec![CallEdge {
+            caller: entry,
+            call_offset: 1,
+            opcode: "CALL".to_string(),
+            target: CallTarget::Internal { method: helper },
+        }],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "sub_0x0000", 0, ReturnBehavior::Unknown),
+            method_contract(4, "sub_0x0004", 1, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        None,
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 4],
+    );
+
+    let helper_plan = plans.inferred_method(4).expect("private helper plan");
+    assert_eq!(helper_plan.parameters[0].ty, "object[]");
+    assert_eq!(helper_plan.symbol_types.parameters[0], ValueType::Array);
+}
+
+#[test]
 fn indexed_private_parameter_stays_dynamic() {
     let instructions = vec![
         Instruction::new(0, OpCode::Push1, None),
@@ -455,6 +505,56 @@ fn indexed_private_parameter_stays_dynamic() {
             .ty,
         "dynamic"
     );
+}
+
+#[test]
+fn indexed_private_array_parameter_uses_the_proven_array_type() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Newarray0, None),
+        Instruction::new(1, OpCode::Call, Some(Operand::Jump(3))),
+        Instruction::new(2, OpCode::Ret, None),
+        Instruction::new(4, OpCode::Ldarg0, None),
+        Instruction::new(5, OpCode::Push0, None),
+        Instruction::new(6, OpCode::Pickitem, None),
+        Instruction::new(7, OpCode::Ret, None),
+    ];
+    let entry = MethodRef {
+        offset: 0,
+        name: "sub_0x0000".to_string(),
+    };
+    let helper = MethodRef {
+        offset: 4,
+        name: "sub_0x0004".to_string(),
+    };
+    let call_graph = CallGraph {
+        methods: vec![entry.clone(), helper.clone()],
+        edges: vec![CallEdge {
+            caller: entry,
+            call_offset: 1,
+            opcode: "CALL".to_string(),
+            target: CallTarget::Internal { method: helper },
+        }],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "sub_0x0000", 0, ReturnBehavior::Unknown),
+            method_contract(4, "sub_0x0004", 1, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        None,
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 4],
+    );
+
+    let helper_plan = plans.inferred_method(4).expect("private helper plan");
+    assert_eq!(helper_plan.parameters[0].ty, "object[]");
+    assert_eq!(helper_plan.symbol_types.parameters[0], ValueType::Array);
 }
 
 #[test]

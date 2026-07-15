@@ -172,7 +172,9 @@ pub(super) fn infer_private_parameter_types(
             let Some(candidate) = candidate.filter(|candidate| !candidate.is_empty()) else {
                 continue;
             };
-            if null_checked.contains(&index) || indexed.contains(&index) {
+            if (null_checked.contains(&index) && !is_nullable_csharp_type(&candidate))
+                || (indexed.contains(&index) && !is_indexable_csharp_type(&candidate))
+            {
                 continue;
             }
             let Some(parameter) = target_plan.parameters.get_mut(index) else {
@@ -287,4 +289,21 @@ fn invalidate(candidates: &mut [Option<String>]) {
 fn is_concrete_type(type_name: &str) -> bool {
     !matches!(type_name, "" | "dynamic" | "object" | "void")
         && csharp_type_value_type(type_name).is_some()
+}
+
+/// A proven concrete parameter may still be indexed when its C# type exposes
+/// the same family of index operation as the VM value. Unknown or scalar
+/// candidates remain dynamic so an invalid VM call is not turned into a C#
+/// compile-time type error.
+fn is_indexable_csharp_type(type_name: &str) -> bool {
+    type_name.ends_with("[]")
+        || matches!(type_name, "ByteString" | "Map<object, object>" | "string")
+}
+
+fn is_nullable_csharp_type(type_name: &str) -> bool {
+    type_name.ends_with("[]")
+        || matches!(
+            type_name,
+            "ByteString" | "Map<object, object>" | "string" | "object"
+        )
 }

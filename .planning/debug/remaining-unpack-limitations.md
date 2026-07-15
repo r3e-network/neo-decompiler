@@ -133,6 +133,11 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   found: A typed `BigInteger[]` array literal assigned to a VM `object[]` boundary now renders as `new object[]` with boxed elements; the focused renderer regression passes. The pinned census remains Exact 1101 / Conservative 70 / Incomplete 1, with Roslyn compiling all 103 contracts and zero errors.
   implication: C# output no longer emits an invalid value-array-to-object-array assignment in `Contract_Array`; typed arrays remain concrete where their target is typed. `Contract_Foreach@0x04AC` remains the sole intentionally incomplete method.
 
+- timestamp: 2026-07-15T18:47:06+08:00
+  checked: Conservative private-helper parameter inference for proven indexable and nullable-reference arguments, focused planner regressions, the pinned C# census, and the net10 Roslyn corpus gate.
+  found: Private helper parameters are promoted when every resolved caller supplies the same concrete indexable/reference type, including `object[]` parameters used by `PICKITEM` and array validators guarded by `ISNULL`. Proven scalar candidates still remain dynamic when indexed or null-checked. The typed census moved from 1,719 to 1,498 dynamic occurrences, while fidelity stayed Exact 1101 / Conservative 70 / Incomplete 1 and Roslyn remained 103/103.
+  implication: C# helper signatures now expose proven collection contracts without turning VM-invalid scalar calls into compile-time failures; the indexed/nullability fail-closed boundaries remain for ambiguous or non-indexable values.
+
 ## Resolution
 
 root_cause: Fixed collection shape was lost across resolved call returns, content-only argument mutation, constructor field writes, static storage, and private method entry. Method-global invalidation also let later calls poison earlier facts, while Record exposed stale typed declarations for runtime index values.
