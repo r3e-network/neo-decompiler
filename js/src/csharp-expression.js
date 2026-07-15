@@ -4,6 +4,15 @@ import {
   renderCSharpTypeTest,
 } from "./csharp-collections.js";
 
+const CSHARP_NATIVE_PROPERTIES = new Map([
+  ["GasToken::Symbol", "GasToken.Symbol"],
+  ["GasToken::Decimals", "GasToken.Decimals"],
+  ["NeoToken::Symbol", "NeoToken.Symbol"],
+  ["NeoToken::Decimals", "NeoToken.Decimals"],
+  ["LedgerContract::CurrentHash", "LedgerContract.CurrentHash"],
+  ["LedgerContract::CurrentIndex", "LedgerContract.CurrentIndex"],
+]);
+
 const CSHARP_COLLECTION_HELPERS = createCSharpCollectionHelpers(
   (expression, types) => rewriteCSharpExpression(expression, types),
 );
@@ -173,6 +182,17 @@ function rewriteQualifiedCalls(line) {
   let cursor = 0;
   let match;
   while ((match = nextOutsideMatch(line, pattern)) !== null) {
+    const property = CSHARP_NATIVE_PROPERTIES.get(`${match[1]}::${match[2]}`);
+    if (property) {
+      const open = line.indexOf("(", match.index);
+      const close = findCallClose(line, open);
+      if (close >= 0 && !line.slice(open + 1, close).trim()) {
+        output += line.slice(cursor, match.index) + property;
+        cursor = close + 1;
+        pattern.lastIndex = cursor;
+        continue;
+      }
+    }
     output += line.slice(cursor, match.index);
     output += `${match[1]}.${match[2]}(`;
     cursor = pattern.lastIndex;

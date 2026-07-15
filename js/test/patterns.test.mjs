@@ -1116,10 +1116,22 @@ test("C# rendering lowers native qualified calls outside literals", () => {
     "contract Token {",
     "fn call() -> any {",
     "    let value = GasToken::Transfer(from, to, amount);",
+    "    let gasSymbol = GasToken::Symbol();",
+    "    let neoDecimals = NeoToken::Decimals();",
+    "    let blockHash = LedgerContract::CurrentHash();",
+    "    let blockIndex = LedgerContract::CurrentIndex();",
     '    return "GasToken::Transfer(x)";',
     "}",
     "}",
   ].join("\n"));
   assert.match(csharp, /GasToken\.Transfer\(from, to, amount\)/);
+  assert.match(csharp, /GasToken\.Symbol;/);
+  assert.match(csharp, /NeoToken\.Decimals;/);
+  assert.match(csharp, /LedgerContract\.CurrentHash;/);
+  assert.match(csharp, /LedgerContract\.CurrentIndex;/);
+  assert.doesNotMatch(
+    csharp,
+    /(?:GasToken\.Symbol|NeoToken\.Decimals|LedgerContract\.CurrentHash|LedgerContract\.CurrentIndex)\(\)/,
+  );
   assert.match(csharp, /GasToken::Transfer\(x\)/);
 });
