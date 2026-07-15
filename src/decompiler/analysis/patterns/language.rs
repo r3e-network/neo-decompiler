@@ -1,6 +1,21 @@
 pub(super) fn infer_language(compiler: &str) -> Option<&'static str> {
-    let compiler = compiler.to_ascii_lowercase();
-    if compiler.contains("csharp") || compiler.contains("neo.compiler") {
+    let compiler = compiler.trim().to_ascii_lowercase();
+    if compiler.is_empty() {
+        return None;
+    }
+    // Neo stores a fixed-width compiler field; fixtures and older toolchains
+    // sometimes emit short tags (`cs`, `cs__`) instead of the full product name.
+    if compiler.contains("csharp")
+        || compiler.contains("neo.compiler")
+        || compiler == "cs"
+        || compiler.starts_with("cs_")
+        || compiler.starts_with("cs ")
+        || (compiler.starts_with("cs")
+            && compiler
+                .chars()
+                .nth(2)
+                .is_none_or(|ch| !ch.is_ascii_alphabetic()))
+    {
         Some("C#")
     } else if compiler.contains("boa") || compiler.contains("python") {
         Some("Python")

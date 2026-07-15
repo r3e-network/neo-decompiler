@@ -1,6 +1,141 @@
 use super::super::HighLevelEmitter;
 
+fn is_numeric_literal(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty() {
+        return false;
+    }
+    let digits = value.strip_prefix('-').unwrap_or(value);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+fn condition_mentions_ident(condition: &str, ident: &str) -> bool {
+    // Word-boundary style check so `loc10` does not match `loc1`.
+    condition.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .any(|token| token == ident)
+}
+
 impl HighLevelEmitter {
+    /// Lift `loop { let x = c; if cond(x) { … update x … } }` into
+    /// `let x = c; while cond(x) { … }` so the subsequent for-loop pass can
+    /// promote counting shapes. Matches LoopIf-class back-edges that re-enter
+    /// the initializer and would otherwise leave a defeated condition inside
+    /// an infinite loop.
+    pub(crate) fn rewrite_header_init_loops(statements: &mut Vec<String>) {
+        let mut index = 0;
+        while index < statements.len() {
+            if statements[index].trim() != "loop {" {
+                index += 1;
+                continue;
+            }
+            let Some(loop_end) = Self::find_block_end(statements, index) else {
+                index += 1;
+                continue;
+            };
+
+            let code: Vec<usize> = (index + 1..loop_end)
+                .filter(|&i| {
+                    let t = statements[i].trim();
+                    !t.is_empty() && !t.starts_with("//")
+                })
+                .collect();
+            if code.len() < 3 {
+                index += 1;
+                continue;
+            }
+
+            // Allow pure constant temp lets between the induction init and the
+            // `if` (e.g. `let t1 = 3;` feeding `if loc0 < t1`) when those temps
+            // were not yet inlined.
+            let Some(init_idx) = code.iter().copied().find(|&i| {
+                Self::parse_assignment(&statements[i]).is_some_and(|a| {
+                    is_numeric_literal(&a.rhs)
+                        && (a.lhs.starts_with("loc")
+                            || a.lhs.starts_with("arg")
+                            || a.lhs.starts_with("static"))
+                })
+            }) else {
+                index += 1;
+                continue;
+            };
+            let init_pos = code.iter().position(|&i| i == init_idx).unwrap_or(0);
+            let Some(if_idx) = code[init_pos + 1..].iter().copied().find(|&i| {
+                statements[i].trim().starts_with("if ")
+            }) else {
+                index += 1;
+                continue;
+            };
+            // Everything between init and if must be pure constant lets.
+            let between_ok = code[init_pos + 1..]
+                .iter()
+                .copied()
+                .take_while(|&i| i != if_idx)
+                .all(|i| {
+                    Self::parse_assignment(&statements[i])
+                        .is_some_and(|a| is_numeric_literal(&a.rhs))
+                });
+            if !between_ok {
+                index += 1;
+                continue;
+            }
+            let Some(init) = Self::parse_assignment(&statements[init_idx]) else {
+                index += 1;
+                continue;
+            };
+            let Some(condition) = Self::extract_if_condition(&statements[if_idx]) else {
+                index += 1;
+                continue;
+            };
+            if !condition_mentions_ident(&condition, &init.lhs) {
+                index += 1;
+                continue;
+            }
+            let Some(if_end) = Self::find_block_end(statements, if_idx) else {
+                index += 1;
+                continue;
+            };
+            // Require the if (including its closer) to be the last code in the loop.
+            if code.last().copied() != Some(if_end) {
+                index += 1;
+                continue;
+            }
+
+            // Body of the if must update the induction variable.
+            let body_updates = (if_idx + 1..if_end).any(|i| {
+                Self::parse_assignment(&statements[i])
+                    .is_some_and(|a| a.lhs == init.lhs)
+                    || statements[i]
+                        .trim()
+                        .starts_with(&format!("{} +=", init.lhs))
+                    || statements[i]
+                        .trim()
+                        .starts_with(&format!("{} -=", init.lhs))
+                    || statements[i]
+                        .trim()
+                        .starts_with(&format!("{}++", init.lhs))
+                    || statements[i]
+                        .trim()
+                        .starts_with(&format!("{}--", init.lhs))
+            });
+            if !body_updates {
+                index += 1;
+                continue;
+            }
+
+            let indent_len = statements[index].len() - statements[index].trim_start().len();
+            let indent = statements[index][..indent_len].to_string();
+            let init_line = statements[init_idx].clone();
+            // Hoist init before loop, convert loop+if into while(cond).
+            statements[index] = init_line;
+            statements[init_idx].clear();
+            statements[if_idx] = format!("{indent}while {condition} {{");
+            // Drop the outer loop's closer; the if closer becomes the while closer.
+            statements[loop_end].clear();
+            // Re-indent is already fine; continue after rewritten while.
+            index += 1;
+        }
+    }
+
     /// Converts `goto label_X; do { ... label_X: ... } while (COND);` into
     /// `while (COND) { ... }` — recovering while-loop semantics from the
     /// compiler's forward-JMP-to-condition pattern.

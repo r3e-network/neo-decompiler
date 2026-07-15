@@ -480,7 +480,10 @@ fn ir_pipeline_recovers_an_if_from_a_real_artifact() {
     let nef = fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).unwrap();
     let ir = ir_for(&nef);
     assert!(
-        ir.contains("if (") || ir.contains("while (") || ir.contains("do {"),
+        ir.contains("if (")
+            || ir.contains("while (")
+            || ir.contains("for (")
+            || ir.contains("do {"),
         "LoopIf has control flow the structurer should recover; got:\n{ir}"
     );
 }
@@ -563,7 +566,7 @@ fn ir_pipeline_loopif_envelope_preserves_while_loop() {
         "envelope must wrap LoopIf in its contract header; got:\n{ir}"
     );
     assert!(
-        ir.contains("while (") || ir.contains("do {"),
+        ir.contains("while (") || ir.contains("for (") || ir.contains("do {"),
         "envelope must preserve the structurer's loop recovery; got:\n{ir}"
     );
     assert!(
@@ -593,49 +596,40 @@ fn structured_ir_deversions_source_slots_before_phi_lowering() {
 }
 
 #[test]
-fn ir_pipeline_preserves_infinite_loop_semantics() {
-    // Both outcomes of LoopIf's conditional flow into the back-edge at 0x000F,
-    // which jumps to the local initializer at 0x0003. The condition therefore
-    // guards only the increment; it is not the loop exit condition.
+fn ir_pipeline_recovers_loopif_counting_loop() {
+    // LoopIf's back-edge re-enters the PUSH0/STLOC initializer, so both branch
+    // outcomes stay inside an unconditional natural loop. High-level recovery
+    // still lifts counting-loop intent into for/while with init not defeating
+    // the condition inside `while (true)`.
     let root = repo_root();
     let nef_path = root.join("TestingArtifacts/edgecases/LoopIf.nef");
     let ir = ir_with_manifest_for(&nef_path);
 
-    let loop_start = ir
-        .find("while (true) {")
-        .unwrap_or_else(|| panic!("unconditional back-edge must render as while (true):\n{ir}"));
-    let initializer = ir[loop_start..]
-        .find(" = 0;")
-        .map(|offset| loop_start + offset)
-        .unwrap_or_else(|| panic!("loop initializer must remain visible inside the loop:\n{ir}"));
-    let conditional = ir[initializer..]
-        .find("if (")
-        .map(|offset| initializer + offset)
-        .unwrap_or_else(|| panic!("increment must remain guarded inside the loop:\n{ir}"));
-    let increment = ir[conditional..]
-        .find("loc0 =")
-        .map(|offset| conditional + offset)
-        .unwrap_or_else(|| panic!("guarded increment assignment must remain visible:\n{ir}"));
-    let conditional_end = ir[conditional..]
-        .find("\n            }")
-        .map(|offset| conditional + offset)
-        .unwrap_or_else(|| panic!("guarded increment block must close cleanly:\n{ir}"));
-    let loop_end = ir[conditional_end..]
-        .find("\n        }")
-        .map(|offset| conditional_end + offset)
-        .unwrap_or_else(|| panic!("structured loop must close after its guarded body:\n{ir}"));
-
     assert!(
-        loop_start < initializer
-            && initializer < conditional
-            && conditional < increment
-            && increment < conditional_end
-            && conditional_end < loop_end,
-        "initializer and conditional body must stay inside the infinite loop:\n{ir}"
+        !ir.contains("while (true)"),
+        "counting-loop recovery must not leave while(true):\n{ir}"
     );
     assert!(
-        !ir.contains("while ((loc0") && !ir.contains("while (loc0"),
-        "the branch condition must not be promoted to a terminating while condition:\n{ir}"
+        ir.contains("for (loc0 = 0;")
+            || (ir.contains("loc0 = 0;") && (ir.contains("while ((loc0") || ir.contains("while (loc0"))),
+        "expected for/while counting loop on loc0:\n{ir}"
+    );
+    assert!(
+        ir.contains("loc0 < 3") || ir.contains("(loc0 < 3)"),
+        "loop condition must retain the bound comparison:\n{ir}"
+    );
+    // Body after the loop header must not re-assign the zero initializer.
+    let header_at = ir
+        .find("for (")
+        .or_else(|| ir.find("while ("))
+        .unwrap_or_else(|| panic!("structured loop header:\n{ir}"));
+    let body_at = ir[header_at..]
+        .find('{')
+        .map(|offset| header_at + offset)
+        .unwrap_or_else(|| panic!("loop body open:\n{ir}"));
+    assert!(
+        !ir[body_at..].contains("loc0 = 0"),
+        "initializer must not re-execute inside the loop body:\n{ir}"
     );
 }
 

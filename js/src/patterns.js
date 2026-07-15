@@ -153,6 +153,54 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     inferSyscallPatterns(name, patterns, evidence);
   }
 
+  // Backward relative jumps are a structural signal for loop / iteration shapes.
+  const jumpOpcodes = new Set([
+    "JMP",
+    "JMP_L",
+    "JMPIF",
+    "JMPIF_L",
+    "JMPIFNOT",
+    "JMPIFNOT_L",
+    "JMPEQ",
+    "JMPEQ_L",
+    "JMPNE",
+    "JMPNE_L",
+    "JMPLT",
+    "JMPLT_L",
+    "JMPLE",
+    "JMPLE_L",
+    "JMPGT",
+    "JMPGT_L",
+    "JMPGE",
+    "JMPGE_L",
+  ]);
+  if (
+    Array.isArray(instructions) &&
+    instructions.some((instruction) => {
+      const opcodeName =
+        typeof instruction?.opcode === "string"
+          ? instruction.opcode
+          : instruction?.opcode?.mnemonic ?? "";
+      if (!jumpOpcodes.has(String(opcodeName).toUpperCase())) {
+        return false;
+      }
+      const operand = instruction.operand;
+      if (typeof operand === "number") return operand < 0;
+      if (
+        operand &&
+        typeof operand === "object" &&
+        (operand.kind === "Jump" || operand.kind === "Jump32") &&
+        typeof operand.value === "number"
+      ) {
+        return operand.value < 0;
+      }
+      return false;
+    })
+  ) {
+    patterns.add("loops");
+    evidence.push({ source: "bytecode.control_flow", value: "backward jump" });
+  }
+
   const compiler = nef?.header?.compiler?.trim() || null;
   if (compiler) evidence.push({ source: "nef.header.compiler", value: compiler });
   if (nef?.header?.source?.trim()) {
@@ -187,8 +235,19 @@ function compareCodepoints(left, right) {
 
 function inferLanguage(compiler) {
   if (!compiler) return null;
-  const value = compiler.toLowerCase();
-  if (value.includes("csharp") || value.includes("neo.compiler")) return "C#";
+  const value = String(compiler).trim().toLowerCase();
+  if (!value) return null;
+  // Fixed-width NEF compiler tags may be short (`cs`, `cs__`) rather than full names.
+  if (
+    value.includes("csharp") ||
+    value.includes("neo.compiler") ||
+    value === "cs" ||
+    value.startsWith("cs_") ||
+    value.startsWith("cs ") ||
+    (value.startsWith("cs") && (value.length === 2 || !/[a-z]/.test(value[2] ?? "")))
+  ) {
+    return "C#";
+  }
   if (value.includes("boa") || value.includes("python")) return "Python";
   if (value.includes("neogo") || value.includes("neo-go")) return "Go";
   if (value.includes("rust")) return "Rust";

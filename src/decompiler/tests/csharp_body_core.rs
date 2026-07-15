@@ -38,14 +38,16 @@ fn csharp_typed_declarations_preserve_loop_counter_type() {
 
     let untyped = render_csharp_with_coverage(&nef, Some(manifest.clone()), true, false, false);
     assert!(
-        untyped.source.contains("dynamic loc0;"),
+        untyped.source.contains("dynamic loc0 = 0")
+            || untyped.source.contains("dynamic loc0;"),
         "{}",
         untyped.source
     );
 
     let typed = render_csharp_with_coverage(&nef, Some(manifest), true, false, true);
     assert!(
-        typed.source.contains("BigInteger loc0;"),
+        typed.source.contains("BigInteger loc0 = 0")
+            || typed.source.contains("BigInteger loc0;"),
         "{}",
         typed.source
     );
@@ -62,7 +64,7 @@ fn csharp_loopif_deversions_local_slot() {
     let rendered = render_csharp_with_coverage(&nef, Some(manifest), true, false, true);
 
     assert_eq!(
-        rendered.source.matches("BigInteger loc0;").count(),
+        rendered.source.matches("BigInteger loc0").count(),
         1,
         "mutable local must be declared exactly once: {}",
         rendered.source
@@ -72,6 +74,59 @@ fn csharp_loopif_deversions_local_slot() {
         !rendered.source.contains("t_4"),
         "adjacent copy temporary must be inlined: {}",
         rendered.source
+    );
+    assert_eq!(
+        rendered
+            .coverage
+            .method(0, "main")
+            .expect("main coverage")
+            .backend,
+        crate::decompiler::csharp::BodyBackend::Structured
+    );
+}
+
+#[test]
+fn csharp_loopif_recovers_counting_loop_without_defeated_condition() {
+    // Real LoopIf NEF: back-edge re-enters PUSH0/STLOC. Production C# path must
+    // still emit a structured counting loop (for/while) with init outside the
+    // body so `loc0 = 0` does not defeat `loc0 < 3`.
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let nef = fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).expect("LoopIf NEF");
+    let manifest = fs::read_to_string(root.join("TestingArtifacts/edgecases/LoopIf.manifest.json"))
+        .expect("LoopIf manifest");
+    let manifest = ContractManifest::from_json_str(&manifest).expect("manifest parsed");
+
+    let rendered = render_csharp_with_coverage(&nef, Some(manifest), true, false, true);
+    let source = &rendered.source;
+
+    assert!(
+        source.contains("class LoopIf : SmartContract"),
+        "envelope required: {source}"
+    );
+    assert!(
+        !source.contains("while (true)"),
+        "counting loop must not remain while(true): {source}"
+    );
+    let has_for = source.contains("for (") && source.contains("loc0");
+    let has_while = source.contains("while (") && source.contains("loc0");
+    assert!(
+        has_for || has_while,
+        "expected for/while on loc0: {source}"
+    );
+    // Body must not re-assign the zero initializer after the loop header opens.
+    let header_markers = ["for (", "while ("];
+    let header_at = header_markers
+        .iter()
+        .filter_map(|marker| source.find(marker))
+        .min()
+        .expect("loop header");
+    let body_start = source[header_at..]
+        .find('{')
+        .map(|offset| header_at + offset)
+        .expect("loop body");
+    assert!(
+        !source[body_start..].contains("loc0 = 0"),
+        "initializer must not re-execute inside loop body: {source}"
     );
     assert_eq!(
         rendered

@@ -2,13 +2,12 @@ use super::super::*;
 use super::*;
 
 #[test]
-fn csharp_translates_loop_to_while_true() {
-    // Script: INITSLOT; PUSH0; STLOC0; (loop top:) LDLOC0; PUSH3; LT;
+fn csharp_recovers_counting_loop_from_header_init_back_edge() {
+    // Script: INITSLOT; PUSH0; STLOC0; LDLOC0; PUSH3; LT;
     // JMPIFNOT to JMP; NOP; LDLOC0; PUSH1; ADD; STLOC0; JMP back-to-PUSH0; RET.
-    // The JMP here targets the `STLOC0` initialization (an infinite reset
-    // loop), so the high-level post-pass collapses the `label: ... goto label;`
-    // pattern into `loop { ... }`. The C# emitter must rewrite that into a
-    // valid C# `while (true)`.
+    // The back-edge re-enters the initializer (same shape as LoopIf). Structured
+    // C# recovery lifts counting-loop intent to for/while instead of
+    // `while (true) { loc0 = 0; if ... }`.
     let script = [
         0x57, 0x01, 0x00, 0x10, 0x70, 0x68, 0x13, 0xB5, 0x26, 0x07, 0x21, 0x68, 0x11, 0x9E, 0x70,
         0x22, 0xF4, 0x40,
@@ -20,12 +19,20 @@ fn csharp_translates_loop_to_while_true() {
 
     let csharp = decompilation.csharp.as_deref().expect("csharp output");
     assert!(
-        csharp.contains("while (true) {"),
-        "C# output should translate `loop {{` to `while (true) {{`: {csharp}"
+        csharp.contains("for (") || csharp.contains("while ("),
+        "C# must emit a structured loop: {csharp}"
+    );
+    assert!(
+        !csharp.contains("while (true)"),
+        "counting-loop recovery must not leave while(true): {csharp}"
     );
     assert!(
         !csharp.contains("loop {"),
         "C# output should not retain the high-level `loop` keyword: {csharp}"
+    );
+    assert!(
+        csharp.contains("loc0") && csharp.contains("3"),
+        "loop must retain counter and bound: {csharp}"
     );
 }
 

@@ -693,3 +693,36 @@ fn rewrite_switch_folds_standalone_ifs_when_bodies_terminate() {
         "terminator-ending standalone ifs should fold into a switch: {statements:?}"
     );
 }
+
+#[test]
+fn rewrite_header_init_loops_lifts_defeated_counting_loop() {
+    let mut statements = vec![
+        "        loop {".to_string(),
+        "            let loc0 = 0;".to_string(),
+        "            if loc0 < 3 {".to_string(),
+        "                loc0 += 1;".to_string(),
+        "            }".to_string(),
+        "        }".to_string(),
+        "        return;".to_string(),
+    ];
+    HighLevelEmitter::rewrite_header_init_loops(&mut statements);
+    let joined = statements.join("\n");
+    assert!(
+        !joined.contains("loop {"),
+        "loop must be rewritten: {joined}"
+    );
+    assert!(
+        joined.contains("while loc0 < 3") || joined.contains("while (loc0 < 3)"),
+        "expected while condition: {joined}"
+    );
+    assert!(
+        joined.contains("let loc0 = 0"),
+        "init must be hoisted: {joined}"
+    );
+    HighLevelEmitter::rewrite_for_loops(&mut statements);
+    let joined = statements.join("\n");
+    assert!(
+        joined.contains("for ("),
+        "expected for promotion: {joined}"
+    );
+}

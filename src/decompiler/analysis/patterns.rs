@@ -197,6 +197,42 @@ pub fn identify_patterns(
         syscall_patterns::infer_syscall_patterns(name, &mut patterns, &mut evidence);
     }
 
+    // Backward relative jumps are a reliable structural signal for recovered
+    // loop / iteration shapes (while/for/do-while), independent of rendering.
+    if instructions.iter().any(|instruction| {
+        matches!(
+            instruction.opcode,
+            OpCode::Jmp
+                | OpCode::Jmpif
+                | OpCode::Jmpifnot
+                | OpCode::JmpEq
+                | OpCode::JmpNe
+                | OpCode::JmpLt
+                | OpCode::JmpLe
+                | OpCode::JmpGt
+                | OpCode::JmpGe
+                | OpCode::Jmp_L
+                | OpCode::Jmpif_L
+                | OpCode::Jmpifnot_L
+                | OpCode::JmpEq_L
+                | OpCode::JmpNe_L
+                | OpCode::JmpLt_L
+                | OpCode::JmpLe_L
+                | OpCode::JmpGt_L
+                | OpCode::JmpGe_L
+        ) && match &instruction.operand {
+            Some(Operand::Jump(delta)) => *delta < 0,
+            Some(Operand::Jump32(delta)) => *delta < 0,
+            _ => false,
+        }
+    }) {
+        patterns.insert("loops".to_string());
+        evidence.push(PatternEvidence {
+            source: "bytecode.control_flow".to_string(),
+            value: "backward jump".to_string(),
+        });
+    }
+
     let compiler = (!nef.header.compiler.trim().is_empty()).then(|| nef.header.compiler.clone());
     if let Some(compiler) = compiler.as_deref() {
         evidence.push(PatternEvidence {
@@ -323,6 +359,58 @@ mod tests {
     fn javascript_compiler_metadata_precedes_java_substring() {
         let info = identify_patterns(&nef("neo-javascript-compiler 1", ""), &[], None);
         assert_eq!(info.language.as_deref(), Some("TypeScript/JavaScript"));
+    }
+
+    #[test]
+    fn short_csharp_compiler_tags_infer_language() {
+        for compiler in ["cs", "cs__", "cs 3.7", "CSharp"] {
+            let info = identify_patterns(&nef(compiler, ""), &[], None);
+            assert_eq!(
+                info.language.as_deref(),
+                Some("C#"),
+                "compiler tag {compiler:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn backward_jump_reports_loops_pattern() {
+        let info = identify_patterns(
+            &nef("", ""),
+            &[Instruction::new(0, OpCode::Jmp, Some(Operand::Jump(-4)))],
+            None,
+        );
+        assert!(info.patterns.iter().any(|pattern| pattern == "loops"));
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "bytecode.control_flow" && entry.value == "backward jump"
+        }));
+    }
+
+    #[test]
+    fn events_manifest_reports_events_pattern_with_evidence() {
+        let manifest: ContractManifest = serde_json::from_str(
+            r#"{
+                "name":"Events",
+                "abi":{
+                    "methods":[{"name":"main","parameters":[],"returntype":"Integer","offset":0}],
+                    "events":[
+                        {"name":"Transfer","parameters":[
+                            {"name":"from","type":"Hash160"},
+                            {"name":"to","type":"Hash160"},
+                            {"name":"amount","type":"Integer"}
+                        ]},
+                        {"name":"Notify","parameters":[{"name":"value","type":"Any"}]}
+                    ]
+                }
+            }"#,
+        )
+        .expect("manifest fixture");
+        let info = identify_patterns(&nef("evnt", ""), &[], Some(&manifest));
+        assert!(info.patterns.iter().any(|pattern| pattern == "events"));
+        assert!(info.evidence.iter().any(|entry| {
+            entry.source == "manifest.abi.events" && entry.value == "2"
+        }));
+        assert!(info.confidence == PatternConfidence::Medium || info.confidence == PatternConfidence::High);
     }
 
     #[test]

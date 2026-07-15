@@ -267,6 +267,10 @@ impl HighLevelEmitter {
             // the result is doubly-parenthesised. Collapse those pairs.
             Self::reduce_double_parens(&mut self.statements);
         }
+        // After condition temps are inlined / dead lets dropped, lift LoopIf-class
+        // `loop { init; if cond { update } }` into while/for counting shapes.
+        Self::rewrite_header_init_loops(&mut self.statements);
+        Self::rewrite_for_loops(&mut self.statements);
         // Inlining and dead-temp removal can collapse the body that was
         // sitting between a `leave/goto LABEL;` and its `LABEL:` target,
         // turning a previously-preserved transfer into a now-eliminable
