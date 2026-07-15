@@ -7,7 +7,10 @@
 //! complete, side-effect-free shape and replaces it with the equivalent mask
 //! and sign-extension expression.
 
-use crate::decompiler::ir::{BinOp, Block as IrBlock, ControlFlow, Expr, Literal, Stmt};
+use crate::decompiler::ir::{
+    BinOp, Block as IrBlock, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt,
+};
+use crate::instruction::OpCode;
 
 const I32_MIN: i64 = -2_147_483_648;
 const I32_MAX: i64 = 2_147_483_647;
@@ -18,21 +21,35 @@ pub(super) fn collapse_int32_wrappers(block: &mut IrBlock) {
     collapse_children(block);
 
     let mut index = 0;
-    while index + 2 < block.stmts.len() {
-        let replacement = match_int32_wrapper(
-            &block.stmts[index],
-            &block.stmts[index + 1],
-            &block.stmts[index + 2],
-        );
-        let Some(replacement) = replacement else {
-            index += 1;
+    while index + 1 < block.stmts.len() {
+        let full_match = (index + 2 < block.stmts.len()).then(|| {
+            match_int32_wrapper(
+                &block.stmts[index],
+                &block.stmts[index + 1],
+                Some(&block.stmts[index + 2]),
+            )
+            .map(|replacement| (2, replacement))
+        });
+        let (consumed, replacement) = full_match
+            .flatten()
+            .or_else(|| {
+                match_int32_wrapper(&block.stmts[index], &block.stmts[index + 1], None)
+                    .map(|replacement| (1, replacement))
+            })
+            .unwrap_or_else(|| {
+                index += 1;
+                (0, Vec::new())
+            });
+        if consumed == 0 {
             continue;
         };
 
         // Keep the original arithmetic assignment. Only the branch wrapper
         // and its phi-like copy are replaced by the normalized sequence.
         let replacement_len = replacement.len();
-        block.stmts.splice(index + 1..index + 3, replacement);
+        block
+            .stmts
+            .splice(index + 1..index + 1 + consumed, replacement);
         index += replacement_len + 1;
     }
 }
@@ -92,7 +109,7 @@ fn collapse_children(block: &mut IrBlock) {
     }
 }
 
-fn match_int32_wrapper(operation: &Stmt, wrapper: &Stmt, copy: &Stmt) -> Option<Vec<Stmt>> {
+fn match_int32_wrapper(operation: &Stmt, wrapper: &Stmt, copy: Option<&Stmt>) -> Option<Vec<Stmt>> {
     let Stmt::Assign {
         target: operation_var,
         ..
@@ -138,14 +155,26 @@ fn match_int32_wrapper(operation: &Stmt, wrapper: &Stmt, copy: &Stmt) -> Option<
     }
 
     let final_statement = match copy {
-        Stmt::Assign {
+        Some(Stmt::Assign {
             target: destination,
             value: Expr::Variable(copied_var),
-        } if copied_var == &normalized_var => FinalStatement::Assign(destination.clone()),
-        Stmt::Return(Some(Expr::Variable(copied_var))) if copied_var == &normalized_var => {
+        }) if copied_var == &normalized_var => FinalStatement::Assign(destination.clone()),
+        Some(Stmt::Return(Some(Expr::Variable(copied_var)))) if copied_var == &normalized_var => {
             FinalStatement::Return
         }
-        _ => return None,
+        Some(Stmt::ExprStmt(Expr::Call {
+            target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Setitem)),
+            args,
+        })) if args.len() == 3
+            && matches!(args.last(), Some(Expr::Variable(copied_var)) if copied_var == &normalized_var) =>
+        {
+            FinalStatement::SetItem {
+                target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Setitem)),
+                args: args.clone(),
+            }
+        }
+        None => FinalStatement::Assign(normalized_var.clone()),
+        Some(_) => return None,
     };
 
     let mask_var = outer_path.mask_var;
@@ -172,6 +201,10 @@ fn match_int32_wrapper(operation: &Stmt, wrapper: &Stmt, copy: &Stmt) -> Option<
 enum FinalStatement {
     Assign(String),
     Return,
+    SetItem {
+        target: SemanticCallTarget,
+        args: Vec<Expr>,
+    },
 }
 
 impl FinalStatement {
@@ -179,6 +212,10 @@ impl FinalStatement {
         match self {
             Self::Assign(target) => Stmt::assign(target, Expr::var(value)),
             Self::Return => Stmt::Return(Some(Expr::var(value))),
+            Self::SetItem { target, mut args } => {
+                *args.last_mut().expect("setitem has three arguments") = Expr::var(value);
+                Stmt::ExprStmt(Expr::Call { target, args })
+            }
         }
     }
 }
@@ -396,5 +433,23 @@ mod tests {
         assert!(
             matches!(block.stmts[3], Stmt::Return(Some(Expr::Variable(ref name))) if name == "t_19")
         );
+    }
+
+    #[test]
+    fn rewrites_setitem_value_after_normalization() {
+        let mut block = wrapper();
+        block.stmts[2] = Stmt::ExprStmt(Expr::Call {
+            target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Setitem)),
+            args: vec![v("loc0"), Expr::int(1), v("p6_0")],
+        });
+        collapse_int32_wrappers(&mut block);
+
+        assert!(matches!(
+            &block.stmts[3],
+            Stmt::ExprStmt(Expr::Call {
+                target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Setitem)),
+                args,
+            }) if matches!(args.last(), Some(Expr::Variable(name)) if name == "t_19")
+        ));
     }
 }
