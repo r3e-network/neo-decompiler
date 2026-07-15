@@ -366,3 +366,41 @@ fn repeated_conflicting_definitions_remain_dynamic() {
 
     assert_eq!(plan.declarations["value"].csharp_type, "dynamic");
 }
+
+#[test]
+fn repeated_nullable_reference_definitions_keep_the_reference_type() {
+    let body = Block::from(vec![
+        Stmt::assign("value", Expr::Struct(vec![Expr::int(1)])),
+        Stmt::assign("value", Expr::Literal(Literal::Null)),
+    ]);
+    let symbols = BTreeMap::from([(
+        "value".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Temporary,
+            value_type: ValueType::Unknown,
+        },
+    )]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["value"].csharp_type, "object[]");
+}
+
+#[test]
+fn nullable_value_definitions_remain_dynamic() {
+    let body = Block::from(vec![
+        Stmt::assign("value", Expr::int(1)),
+        Stmt::assign("value", Expr::Literal(Literal::Null)),
+    ]);
+    let symbols = BTreeMap::from([(
+        "value".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Temporary,
+            value_type: ValueType::Unknown,
+        },
+    )]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+
+    assert_eq!(plan.declarations["value"].csharp_type, "dynamic");
+}

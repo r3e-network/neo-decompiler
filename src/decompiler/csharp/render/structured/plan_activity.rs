@@ -1,12 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::decompiler::cfg::method_body::SymbolInfo;
-use crate::decompiler::ir::{Block, ControlFlow, Expr, Intrinsic, SemanticCallTarget, Stmt};
+use crate::decompiler::ir::{Expr, Intrinsic, Literal, SemanticCallTarget};
 use crate::instruction::OpCode;
 
 use super::plan::{
     concrete_definition_type_with_symbols_and_known_types_and_calls, ScopeId, ScopeTree,
 };
+
+#[path = "plan_activity/visitor.rs"]
+mod visitor;
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(not(test), allow(dead_code))]
@@ -113,15 +116,23 @@ impl<'a> ActivityCollector<'a> {
         let empty_symbols = BTreeMap::new();
         let mut known_types = initial_known_types.clone();
         let mut derived_types = BTreeMap::new();
+        let mut known_nulls = BTreeSet::new();
+        let mut derived_nulls = BTreeSet::new();
         let iterations = self.definition_values.len().saturating_add(1);
 
         for _ in 0..iterations {
             let mut next_types = BTreeMap::new();
+            let mut next_nulls = BTreeSet::new();
             let mut non_concrete = HashSet::new();
             for (name, definitions) in &self.definition_values {
                 let mut candidate = None;
                 let mut consistent = true;
+                let mut saw_null = false;
                 for definition in definitions {
+                    if is_null_definition(definition, &known_nulls) {
+                        saw_null = true;
+                        continue;
+                    }
                     let definition_type =
                         concrete_definition_type_with_symbols_and_known_types_and_calls(
                             definition,
@@ -144,21 +155,29 @@ impl<'a> ActivityCollector<'a> {
                 }
                 if consistent {
                     if let Some(candidate) = candidate {
-                        next_types.insert(name.clone(), candidate);
+                        if !saw_null || is_nullable_csharp_type(&candidate) {
+                            next_types.insert(name.clone(), candidate);
+                        } else {
+                            non_concrete.insert(name.clone());
+                        }
+                    } else if saw_null {
+                        next_nulls.insert(name.clone());
                     }
                 } else {
                     non_concrete.insert(name.clone());
                 }
             }
 
-            if next_types == derived_types {
+            if next_types == derived_types && next_nulls == derived_nulls {
                 self.concrete_definition_types = next_types;
                 self.non_concrete_definitions = non_concrete;
                 return;
             }
             derived_types = next_types;
+            derived_nulls = next_nulls.clone();
             known_types = initial_known_types.clone();
             known_types.extend(derived_types.clone());
+            known_nulls = next_nulls;
         }
 
         self.concrete_definition_types = derived_types;
@@ -230,213 +249,17 @@ impl<'a> ActivityCollector<'a> {
             }
         }
     }
+}
 
-    pub(super) fn visit_block(&mut self, block: &Block, scope: ScopeId) {
-        for statement in &block.stmts {
-            self.visit_statement(statement, scope);
-        }
-    }
+fn is_nullable_csharp_type(type_name: &str) -> bool {
+    type_name.ends_with("[]")
+        || matches!(
+            type_name,
+            "ByteString" | "Map<object, object>" | "string" | "object"
+        )
+}
 
-    fn visit_statement(&mut self, statement: &Stmt, scope: ScopeId) {
-        match statement {
-            Stmt::Assign { target, value } => {
-                self.visit_expr(value, scope);
-                self.record_definition(target, value, scope);
-            }
-            Stmt::Return(value) => {
-                if let Some(value) = value {
-                    self.visit_expr(value, scope);
-                }
-            }
-            Stmt::Throw(value) | Stmt::Abort(value) => {
-                if let Some(value) = value {
-                    self.visit_expr(value, scope);
-                }
-            }
-            Stmt::Assert { condition, message } => {
-                self.visit_expr(condition, scope);
-                if let Some(message) = message {
-                    self.visit_expr(message, scope);
-                }
-            }
-            Stmt::ExprStmt(value) => self.visit_expr(value, scope),
-            Stmt::Comment(_) | Stmt::Break | Stmt::Continue | Stmt::Label(_) | Stmt::Goto(_) => {}
-            Stmt::ControlFlow(control) => self.visit_control(control, scope),
-        }
-    }
-
-    fn visit_control(&mut self, control: &ControlFlow, scope: ScopeId) {
-        match control {
-            ControlFlow::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                self.visit_expr(condition, scope);
-                self.visit_child_block(then_branch, scope);
-                if let Some(branch) = else_branch {
-                    self.visit_child_block(branch, scope);
-                }
-            }
-            ControlFlow::While { condition, body } => {
-                self.visit_expr(condition, scope);
-                self.visit_child_block(body, scope);
-            }
-            ControlFlow::DoWhile { body, condition } => {
-                self.visit_child_block(body, scope);
-                self.visit_expr(condition, scope);
-            }
-            ControlFlow::For {
-                init,
-                condition,
-                update,
-                body,
-            } => {
-                let loop_scope = self.scopes.add_child(scope);
-                if let Some(init) = init {
-                    self.visit_statement(init, loop_scope);
-                }
-                if let Some(condition) = condition {
-                    self.visit_expr(condition, loop_scope);
-                }
-                self.visit_child_block(body, loop_scope);
-                if let Some(update) = update {
-                    self.visit_expr(update, loop_scope);
-                }
-            }
-            ControlFlow::TryCatch {
-                try_body,
-                catch_var,
-                catch_body,
-                finally_body,
-            } => {
-                self.visit_child_block(try_body, scope);
-                if let Some(body) = catch_body {
-                    let catch_scope = self.scopes.add_child(scope);
-                    if let Some(catch_var) = catch_var {
-                        self.implicit_declarations.insert(catch_var.clone());
-                    }
-                    self.visit_block(body, catch_scope);
-                }
-                if let Some(body) = finally_body {
-                    self.visit_child_block(body, scope);
-                }
-            }
-            ControlFlow::Switch {
-                expr,
-                cases,
-                default,
-            } => {
-                self.visit_expr(expr, scope);
-                for (value, body) in cases {
-                    self.visit_expr(value, scope);
-                    self.visit_child_block(body, scope);
-                }
-                if let Some(body) = default {
-                    self.visit_child_block(body, scope);
-                }
-            }
-        }
-    }
-
-    fn visit_child_block(&mut self, block: &Block, parent: ScopeId) {
-        let scope = self.scopes.add_child(parent);
-        self.visit_block(block, scope);
-    }
-
-    fn visit_expr(&mut self, expression: &Expr, scope: ScopeId) {
-        match expression {
-            Expr::Unknown => {}
-            Expr::Variable(name) => self.record_use(name, scope),
-            Expr::Binary { left, right, .. } => {
-                self.visit_expr(left, scope);
-                self.visit_expr(right, scope);
-            }
-            Expr::Unary { operand, .. } => self.visit_expr(operand, scope),
-            Expr::Call { target, args } => {
-                if matches!(
-                    target,
-                    SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Pickitem))
-                ) {
-                    if let Some(base) = args.first() {
-                        self.record_index_base_symbols(base);
-                    }
-                }
-                for argument in args {
-                    self.visit_expr(argument, scope);
-                }
-            }
-            Expr::Array(args) => {
-                for argument in args {
-                    self.visit_expr(argument, scope);
-                }
-            }
-            Expr::Index { base, index } => {
-                self.record_index_base_symbols(base);
-                self.visit_expr(base, scope);
-                self.visit_expr(index, scope);
-            }
-            Expr::Member { base, .. } => self.visit_expr(base, scope),
-            Expr::Cast { expr, .. } => self.visit_expr(expr, scope),
-            Expr::Convert { value, .. } | Expr::IsType { value, .. } => {
-                self.visit_expr(value, scope);
-            }
-            Expr::NewArray { length, .. } => self.visit_expr(length, scope),
-            Expr::Map(pairs) => {
-                for (key, value) in pairs {
-                    self.visit_expr(key, scope);
-                    self.visit_expr(value, scope);
-                }
-            }
-            Expr::Struct(values) => {
-                for value in values {
-                    self.visit_expr(value, scope);
-                }
-            }
-            Expr::Ternary {
-                condition,
-                then_expr,
-                else_expr,
-            } => {
-                self.visit_expr(condition, scope);
-                self.visit_expr(then_expr, scope);
-                self.visit_expr(else_expr, scope);
-            }
-            Expr::StackTemp(index) => {
-                self.stack_placeholders.insert(*index);
-            }
-            Expr::Literal(_) => {}
-        }
-    }
-
-    fn record_index_base_symbols(&mut self, expression: &Expr) {
-        match expression {
-            Expr::Variable(name) => {
-                self.indexed_base_symbols.insert(name.clone());
-            }
-            Expr::Cast { expr, .. }
-            | Expr::Convert { value: expr, .. }
-            | Expr::IsType { value: expr, .. } => self.record_index_base_symbols(expr),
-            Expr::Index { base, .. } => self.record_index_base_symbols(base),
-            Expr::Ternary {
-                then_expr,
-                else_expr,
-                ..
-            } => {
-                self.record_index_base_symbols(then_expr);
-                self.record_index_base_symbols(else_expr);
-            }
-            Expr::Unknown
-            | Expr::Literal(_)
-            | Expr::Binary { .. }
-            | Expr::Unary { .. }
-            | Expr::Call { .. }
-            | Expr::Member { .. }
-            | Expr::NewArray { .. }
-            | Expr::Array(_)
-            | Expr::Struct(_)
-            | Expr::Map(_)
-            | Expr::StackTemp(_) => {}
-        }
-    }
+fn is_null_definition(expression: &Expr, known_nulls: &BTreeSet<String>) -> bool {
+    matches!(expression, Expr::Literal(Literal::Null))
+        || matches!(expression, Expr::Variable(name) if known_nulls.contains(name))
 }
