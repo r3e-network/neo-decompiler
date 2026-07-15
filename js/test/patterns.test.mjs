@@ -89,6 +89,8 @@ test("pattern analysis does not claim unsupported source renderers", () => {
     ["neo-rustc 1", "contract.rs"],
     ["neo-java-compiler 1", "contract.java"],
     ["neo-javascript-compiler 1", "contract.ts"],
+    ["Neo.Compiler.Rust 1", "contract.rs"],
+    ["Neo.Compiler.Java 1", "contract.java"],
   ]) {
     const info = identifyPatterns(nef(compiler, source), [], null);
     assert.equal(info.language, null, `${compiler} ${source}`);

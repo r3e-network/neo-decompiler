@@ -11,7 +11,6 @@ pub(super) fn infer_language(compiler: &str) -> Option<&'static str> {
     // Neo stores a fixed-width compiler field; fixtures and older toolchains
     // sometimes emit short tags (`cs`, `cs__`) instead of the full product name.
     if compiler.contains("csharp")
-        || compiler.contains("neo.compiler")
         || compiler == "cs"
         || compiler.starts_with("cs_")
         || compiler.starts_with("cs ")

@@ -60,6 +60,8 @@ fn unsupported_source_metadata_is_not_claimed_as_a_renderer() {
         ("neo-rustc 1", "contract.rs"),
         ("neo-java-compiler 1", "contract.java"),
         ("neo-javascript-compiler 1", "contract.ts"),
+        ("Neo.Compiler.Rust 1", "contract.rs"),
+        ("Neo.Compiler.Java 1", "contract.java"),
     ] {
         let info = identify_patterns(&nef(compiler, source), &[], None);
         assert_eq!(info.language, None, "metadata {compiler:?} {source:?}");

@@ -243,7 +243,6 @@ function inferLanguage(compiler) {
   // Fixed-width NEF compiler tags may be short (`cs`, `cs__`) rather than full names.
   if (
     value.includes("csharp") ||
-    value.includes("neo.compiler") ||
     value === "cs" ||
     value.startsWith("cs_") ||
     value.startsWith("cs ") ||
