@@ -11,6 +11,14 @@ function findMnemonicFrom(instructions, start, mnemonic) {
   return -1;
 }
 
+function findTryIndex(instructions, start) {
+  for (let i = start; i < instructions.length; i++) {
+    const mnemonic = instructions[i]?.opcode?.mnemonic;
+    if (mnemonic === "TRY" || mnemonic === "TRY_L") return i;
+  }
+  return -1;
+}
+
 export function createTryHelpers(runtime) {
   const { createState, cloneState, forkStateForSlice, executeStraightLine } = runtime;
 
@@ -21,7 +29,7 @@ export function createTryHelpers(runtime) {
     methodOffset,
     initialState = null,
   ) {
-    const tryIndex = findMnemonicFrom(instructions, 0, "TRY");
+    const tryIndex = findTryIndex(instructions, 0);
     if (tryIndex < 0) {
       return null;
     }
@@ -43,7 +51,12 @@ export function createTryHelpers(runtime) {
       return null;
     }
 
-    const endtryGlobalIndex = findMnemonicFrom(instructions, bodyStartIndex, "ENDTRY");
+    const endtryGlobalIndex = findBodyEndtryIndex(
+      instructions,
+      bodyStartIndex,
+      catchTarget ?? finallyTarget,
+      indexByOffset,
+    );
     if (endtryGlobalIndex < 0) {
       return null;
     }
@@ -180,6 +193,28 @@ export function createTryHelpers(runtime) {
   }
 
   return { tryLiftSimpleTryBlock };
+}
+
+// Compiler-generated nested try blocks place the outer handler immediately
+// after the ENDTRY that closes the outer body. Searching from the body start
+// for the first ENDTRY instead selects an inner handler transfer and slices
+// the outer catch/finally regions at the wrong offsets.
+function findBodyEndtryIndex(instructions, bodyStartIndex, firstHandlerTarget, indexByOffset) {
+  if (firstHandlerTarget === null || firstHandlerTarget === undefined) {
+    return findMnemonicFrom(instructions, bodyStartIndex, "ENDTRY");
+  }
+  const handlerIndex = indexByOffset.get(firstHandlerTarget);
+  // Keep compatibility with the compact synthetic fixtures used by the JS
+  // API, whose relative catch offset points at the body start. Real compiler
+  // handlers are strictly after the body and use the boundary scan below.
+  if (handlerIndex === undefined || handlerIndex <= bodyStartIndex) {
+    return findMnemonicFrom(instructions, bodyStartIndex, "ENDTRY");
+  }
+  for (let index = handlerIndex - 1; index >= bodyStartIndex; index -= 1) {
+    const mnemonic = instructions[index]?.opcode?.mnemonic;
+    if (mnemonic === "ENDTRY" || mnemonic === "ENDTRY_L") return index;
+  }
+  return -1;
 }
 
 function tryHandlerTargets(instruction) {

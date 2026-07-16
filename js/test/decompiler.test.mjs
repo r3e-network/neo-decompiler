@@ -2293,6 +2293,27 @@ test("lifts simple try-catch-finally blocks", () => {
   assert.match(result.highLevel, /finally \{/);
 });
 
+test("matches an outer TRY_L body past a nested ENDTRY", () => {
+  // The outer handler starts after the ENDTRY that closes the outer body;
+  // the inner ENDTRY must not become the outer slice boundary.
+  const script = new Uint8Array([
+    0x3c, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // TRY_L, catch at 0x14
+    0x3b, 0x06, 0x00, // nested TRY, catch at 0x0F
+    0x11, // nested try body
+    0x3d, 0x04, // nested ENDTRY -> nested resume
+    0x12, // nested catch body
+    0x3d, 0x02, // nested catch ENDTRY -> outer ENDTRY
+    0x3d, 0x02, // outer ENDTRY -> outer catch at 0x14
+    0x13, // outer catch body
+    0x3d, 0x02, // outer catch ENDTRY -> RET
+    0x40,
+  ]);
+  const result = decompileHighLevelBytes(buildNefFromScript(script));
+  assert.match(result.highLevel, /try \{/);
+  assert.match(result.highLevel, /catch \{/);
+  assert.doesNotMatch(result.highLevel, /TRY_L .*not yet translated/);
+});
+
 test("models catch entry stack with exception value", () => {
   const script = new Uint8Array([
     0x3b, 0x06, 0x00, // TRY catch=+6
