@@ -26,6 +26,8 @@ import { inlineSingleUseTemps } from "./postprocess/inlining.js";
 import { rewriteElseIfChains } from "./postprocess/conditionals.js";
 import { collapseOverflowChecks } from "./postprocess/overflow.js";
 import { collapseSizeNormalizations } from "./postprocess/size-normalization.js";
+import { collapseNegateNormalization } from "./postprocess/negate-normalization.js";
+import { collapseLoopNormalizations } from "./postprocess/loop-normalization.js";
 import { rewriteGotoDoWhile, rewriteIfGotoToWhile } from "./postprocess/loops.js";
 import {
   collapseIfTrue,
@@ -189,6 +191,8 @@ export function postprocess(statements, options = {}) {
   collapseOverflowChecks(statements);
   // Pass 2a
   collapseSizeNormalizations(statements);
+  // Pass 2b
+  collapseNegateNormalization(statements);
   // Pass 3
   rewriteGotoDoWhile(statements);
   // Pass 4
@@ -201,6 +205,9 @@ export function postprocess(statements, options = {}) {
   removeOrphanedLabels(statements);
   // Pass 6
   rewriteForLoops(statements);
+  // Pass 6a: repair signed normalization before increment-temp inlining can
+  // move the mask expression into the `for` header.
+  collapseLoopNormalizations(statements);
   // Pass 7
   inlineConditionTemps(statements);
   // Pass 8
@@ -237,6 +244,9 @@ export function postprocess(statements, options = {}) {
   // and re-run for promotion (mirrors Rust core.rs finish order).
   rewriteHeaderInitLoops(statements);
   rewriteForLoops(statements);
+  // A header-init loop can become a `for` only in this late pass; repair its
+  // signed increment before final switch cleanup.
+  collapseLoopNormalizations(statements);
   // Pass 17
   rewriteSwitchStatements(statements);
   // Pass 18

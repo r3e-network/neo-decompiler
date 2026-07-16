@@ -336,6 +336,76 @@ test("postprocess: leaves unrelated SIZE bounds untouched", async () => {
   assert.deepEqual(statements, before);
 });
 
+test("postprocess: recovers the unchecked i32 negate tail", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "let t3 = normalized;",
+    "if t3 != -2147483648 {",
+    "    goto label_0x013E;",
+    "}",
+    "return t3;",
+    "return -(???);",
+  ];
+
+  postprocess(statements);
+
+  assert.deepEqual(statements, [
+    "let t3 = normalized;",
+    "if t3 == -2147483648 {",
+    "    return t3;",
+    "}",
+    "return -t3;",
+  ]);
+});
+
+test("postprocess: recovers the unchecked i64 negate tail", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "if t7 != -9223372036854775808 {",
+    "    goto label_0x019F;",
+    "}",
+    "return t7;",
+    "return -(???);",
+  ];
+
+  postprocess(statements);
+
+  assert.deepEqual(statements, [
+    "if t7 == -9223372036854775808 {",
+    "    return t7;",
+    "}",
+    "return -t7;",
+  ]);
+});
+
+test("postprocess: repairs a signed normalization hidden in a for increment", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "for (let loc0 = 0; loc0 < 5; loc0 = t3 - 4294967296) {",
+    "    syscall(\"System.Runtime.Log\", loc0);",
+    "    let t0 = loc0 + 1;",
+    "    let t3 = t0 & 4294967295;",
+    "}",
+    "return;",
+  ];
+
+  postprocess(statements);
+
+  assert.deepEqual(statements, [
+    "let loc0 = 0;",
+    "while loc0 < 5 {",
+    "    syscall(\"System.Runtime.Log\", loc0);",
+    "    let t0 = loc0 + 1;",
+    "    let t3 = t0 & 4294967295;",
+    "    if t3 > 2147483647 {",
+    "        t3 -= 4294967296;",
+    "    }",
+    "    loc0 = t3;",
+    "}",
+    "return;",
+  ]);
+});
+
 test("nested structured branches inherit the parent stack", () => {
   // Checked arithmetic has a second conditional nested in the false path of
   // the first one. The nested slice must start with the duplicated operation
