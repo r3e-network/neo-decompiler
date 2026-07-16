@@ -2,7 +2,7 @@
 status: narrowed
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-16T14:24:00+08:00
+updated: 2026-07-16T16:04:39+08:00
 ---
 
 ## Current Focus
@@ -142,6 +142,11 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   checked: Structured symbol refinement for compiler-generated Phi assignments, focused common-type/conflict regressions, the pinned C# fidelity census, and the net10 Roslyn corpus gate.
   found: Phi values materialized as assignments now retain a concrete C# type when every observed arm agrees; conflicting arms remain `Any` and therefore render as `dynamic`. The corpus fidelity boundary is unchanged at Exact 1126 / Conservative 52 / Incomplete 1, while the generated C# corpus compiles 103/103 contracts with zero errors.
   implication: Address-taken and branch-merged numeric helpers no longer needlessly expose `dynamic` return values; unresolved or mixed Phi provenance remains conservative, and `Contract_Foreach@0x04AC` is still intentionally fail-closed.
+
+- timestamp: 2026-07-16T16:04:39+08:00
+  checked: C# local/static slot refinement, unknown/conflicting/null negative paths, PUSHA pointer provenance, all-target Rust tests with and without default features, both Clippy configurations, and the pinned C# fidelity census.
+  found: Local and static symbols are refined only when every observed structured definition agrees; unknown, conflicting, and null-plus-concrete paths widen to `Any`. PUSHA targets are tracked from the exact method slice so integer-looking function pointers remain `Pointer`/`dynamic` instead of being mislabeled as `BigInteger`. The census remains Exact 1126 / Conservative 52 / Incomplete 1, with `Contract_Foreach` as the sole incomplete contract. Roslyn could not run because no `Neo.SmartContract.Framework.dll` is installed in this environment.
+  implication: Readable C# declarations improve for proven compiler-generated locals without weakening fail-closed behavior or changing the known Foreach limitation; the existing compile gate remains required when the framework assembly is available.
 
 ## Resolution
 

@@ -13,6 +13,8 @@ use crate::decompiler::ir::{
 use crate::instruction::{Instruction, OpCode, Operand};
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::types::register_structured_temporaries_with_call_types;
+
 fn instruction(offset: usize, opcode: OpCode) -> Instruction {
     Instruction::new(offset, opcode, None)
 }
@@ -305,6 +307,105 @@ fn phi_assignments_keep_conflicting_value_types_dynamic() {
     register_structured_temporaries(&body, &mut symbols);
 
     assert_eq!(symbols["p3_0"].value_type, ValueType::Any);
+}
+
+#[test]
+fn local_and_static_assignments_refine_only_unanimous_types() {
+    let body = Block::from(vec![
+        Stmt::assign("loc0", Expr::int(1)),
+        Stmt::assign("loc0", Expr::int(2)),
+        Stmt::assign(
+            "static0",
+            Expr::Literal(Literal::String("value".to_string())),
+        ),
+        Stmt::assign(
+            "static0",
+            Expr::Literal(Literal::String("other".to_string())),
+        ),
+    ]);
+    let mut symbols = BTreeMap::from([
+        (
+            "loc0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(0),
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "static0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Static(0),
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+
+    register_structured_temporaries(&body, &mut symbols);
+
+    assert_eq!(symbols["loc0"].value_type, ValueType::Integer);
+    assert_eq!(symbols["static0"].value_type, ValueType::ByteString);
+}
+
+#[test]
+fn local_assignments_with_conflicting_or_unknown_paths_stay_dynamic() {
+    let body = Block::from(vec![
+        Stmt::assign("conflicting", Expr::int(1)),
+        Stmt::assign("conflicting", Expr::Literal(Literal::Bool(true))),
+        Stmt::assign("unknown_path", Expr::int(1)),
+        Stmt::assign("unknown_path", Expr::Unknown),
+        Stmt::assign("nullable", Expr::Literal(Literal::Null)),
+        Stmt::assign("nullable", Expr::int(1)),
+    ]);
+    let mut symbols = BTreeMap::from([
+        (
+            "conflicting".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(0),
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "unknown_path".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(1),
+                value_type: ValueType::Unknown,
+            },
+        ),
+        (
+            "nullable".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(2),
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+
+    register_structured_temporaries(&body, &mut symbols);
+
+    assert_eq!(symbols["conflicting"].value_type, ValueType::Any);
+    assert_eq!(symbols["unknown_path"].value_type, ValueType::Any);
+    assert_eq!(symbols["nullable"].value_type, ValueType::Any);
+}
+
+#[test]
+fn pusha_literal_values_remain_pointer_typed_for_csharp_refinement() {
+    let body = Block::from(vec![Stmt::assign("loc0", Expr::int(52))]);
+    let mut symbols = BTreeMap::from([(
+        "loc0".to_string(),
+        SymbolInfo {
+            origin: SymbolOrigin::Local(0),
+            value_type: ValueType::Unknown,
+        },
+    )]);
+
+    register_structured_temporaries_with_call_types(
+        &body,
+        &mut symbols,
+        &BTreeMap::new(),
+        &BTreeSet::from([52]),
+    );
+
+    assert_eq!(symbols["loc0"].value_type, ValueType::Pointer);
 }
 
 #[test]
