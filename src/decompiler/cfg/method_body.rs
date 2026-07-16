@@ -408,7 +408,12 @@ fn refine_statement_temporary_types(
             let Some(symbol) = symbols.get_mut(target) else {
                 return false;
             };
-            if symbol.origin != SymbolOrigin::Temporary {
+            // Phi values are materialized as assignments in the structured
+            // body. Refine them the same way as temporaries so a value that
+            // receives one concrete type on every reachable arm can retain
+            // that type in the C# declaration. Conflicting arms still merge
+            // to Any and therefore remain dynamic at the renderer boundary.
+            if !matches!(symbol.origin, SymbolOrigin::Temporary | SymbolOrigin::Phi) {
                 return false;
             }
             let merged = merge_value_types(symbol.value_type, inferred);

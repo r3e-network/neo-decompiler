@@ -2,7 +2,7 @@
 status: narrowed
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-15T16:05:31+08:00
+updated: 2026-07-16T14:24:00+08:00
 ---
 
 ## Current Focus
@@ -138,9 +138,14 @@ started: Remaining after the 2026-07-13 structured C# corpus fixes at commit 858
   found: Private helper parameters are promoted when every resolved caller supplies the same concrete indexable/reference type, including `object[]` parameters used by `PICKITEM` and array validators guarded by `ISNULL`. Proven scalar candidates still remain dynamic when indexed or null-checked. The typed census moved from 1,719 to 1,498 dynamic occurrences, while fidelity stayed Exact 1101 / Conservative 70 / Incomplete 1 and Roslyn remained 103/103.
   implication: C# helper signatures now expose proven collection contracts without turning VM-invalid scalar calls into compile-time failures; the indexed/nullability fail-closed boundaries remain for ambiguous or non-indexable values.
 
+- timestamp: 2026-07-16T14:24:00+08:00
+  checked: Structured symbol refinement for compiler-generated Phi assignments, focused common-type/conflict regressions, the pinned C# fidelity census, and the net10 Roslyn corpus gate.
+  found: Phi values materialized as assignments now retain a concrete C# type when every observed arm agrees; conflicting arms remain `Any` and therefore render as `dynamic`. The corpus fidelity boundary is unchanged at Exact 1126 / Conservative 52 / Incomplete 1, while the generated C# corpus compiles 103/103 contracts with zero errors.
+  implication: Address-taken and branch-merged numeric helpers no longer needlessly expose `dynamic` return values; unresolved or mixed Phi provenance remains conservative, and `Contract_Foreach@0x04AC` is still intentionally fail-closed.
+
 ## Resolution
 
 root_cause: Fixed collection shape was lost across resolved call returns, content-only argument mutation, constructor field writes, static storage, and private method entry. Method-global invalidation also let later calls poison earlier facts, while Record exposed stale typed declarations for runtime index values.
-fix: Added flow-sensitive content-versus-shape invalidation, unanimous Array/Struct return summaries, escape-aware read-only/shape-preserving effects, bounded constant-index postconditions, unanimous static/private-entry fixed points, flow-sensitive static alias invalidation, runtime Index expansion, and fixed-point typed-index safety for locals plus live parameter/static storage.
-verification: Focused positive/negative shape, escape, field, static, entry, mutation, DUP-join, direct uniform-element, and interprocedural return-fact tests pass; native C# renderer tests pass; the env-enabled pinned census is Exact 1101 / Conservative 70 / Incomplete 1; pinned Roslyn is 103 passed / 0 failed / 0 errors. Foreach@0x04AC remains fail-closed by design because its call entry values and tuple element shape are not statically proven.
+fix: Added flow-sensitive content-versus-shape invalidation, unanimous Array/Struct return summaries, escape-aware read-only/shape-preserving effects, bounded constant-index postconditions, unanimous static/private-entry fixed points, flow-sensitive static alias invalidation, runtime Index expansion, fixed-point typed-index safety for locals plus live parameter/static storage, and conservative common-type refinement for structured Phi assignments.
+verification: Focused positive/negative shape, escape, field, static, entry, mutation, DUP-join, direct uniform-element, interprocedural return-fact, and Phi-type tests pass; native C# renderer tests pass; the env-enabled pinned census is Exact 1126 / Conservative 52 / Incomplete 1; pinned Roslyn is 103 passed / 0 failed / 0 errors. Foreach@0x04AC remains fail-closed by design because its call entry values and tuple element shape are not statically proven.
 files_changed: [src/decompiler.rs, src/decompiler/analysis/method_contracts.rs, src/decompiler/cfg/method_view.rs, src/decompiler/cfg/ssa/builder.rs, src/decompiler/cfg/ssa/context.rs, src/decompiler/cfg/ssa/mod.rs, src/decompiler/cfg/method_body.rs, src/decompiler/csharp/render.rs, src/decompiler/csharp/render/structured/declarations.rs, src/decompiler/csharp/render/structured/expr_context.rs, src/decompiler/csharp/render/structured/plan.rs, src/decompiler/csharp/render/structured/plan_methods/return_types.rs, src/decompiler/csharp/render/structured/stmt.rs, src/decompiler/csharp/render/structured/tests.rs, src/decompiler/csharp/render/structured/tests_expr_types.rs, src/decompiler/csharp/render/structured/tests_plan.rs, src/decompiler/native_method_types.rs]

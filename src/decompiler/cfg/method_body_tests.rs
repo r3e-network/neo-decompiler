@@ -8,7 +8,7 @@ use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::cfg::ssa::MethodContext;
 use crate::decompiler::high_level::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS;
 use crate::decompiler::ir::{
-    render_block, Block, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt,
+    render_block, Block, ControlFlow, Expr, Intrinsic, Literal, SemanticCallTarget, Stmt,
 };
 use crate::instruction::{Instruction, OpCode, Operand};
 use std::collections::{BTreeMap, BTreeSet};
@@ -244,6 +244,67 @@ fn catch_exception_symbol_is_a_dynamic_vm_payload() {
         "{rendered}"
     );
     assert!(!rendered.contains('?'), "{rendered}");
+}
+
+#[test]
+fn phi_assignments_refine_common_value_types() {
+    let body = Block::from(vec![Stmt::ControlFlow(Box::new(ControlFlow::if_else(
+        Expr::var("condition"),
+        Block::from(vec![Stmt::assign("p3_0", Expr::int(1))]),
+        Block::from(vec![Stmt::assign("p3_0", Expr::int(2))]),
+    )))]);
+    let mut symbols = BTreeMap::from([
+        (
+            "condition".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(0),
+                value_type: ValueType::Boolean,
+            },
+        ),
+        (
+            "p3_0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Phi,
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+
+    register_structured_temporaries(&body, &mut symbols);
+
+    assert_eq!(symbols["p3_0"].value_type, ValueType::Integer);
+}
+
+#[test]
+fn phi_assignments_keep_conflicting_value_types_dynamic() {
+    let body = Block::from(vec![Stmt::ControlFlow(Box::new(ControlFlow::if_else(
+        Expr::var("condition"),
+        Block::from(vec![Stmt::assign("p3_0", Expr::int(1))]),
+        Block::from(vec![Stmt::assign(
+            "p3_0",
+            Expr::Literal(Literal::String("bytes".to_string())),
+        )]),
+    )))]);
+    let mut symbols = BTreeMap::from([
+        (
+            "condition".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Parameter(0),
+                value_type: ValueType::Boolean,
+            },
+        ),
+        (
+            "p3_0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Phi,
+                value_type: ValueType::Unknown,
+            },
+        ),
+    ]);
+
+    register_structured_temporaries(&body, &mut symbols);
+
+    assert_eq!(symbols["p3_0"].value_type, ValueType::Any);
 }
 
 #[test]
