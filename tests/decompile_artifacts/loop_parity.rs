@@ -73,7 +73,7 @@ fn lambda_and_linq_scan_helpers_use_csharp_for_loops() {
         eprintln!("Skipping C# loop parity: Contract_Lambda artifacts are unavailable");
         return;
     };
-    let lambda_scan = private_method_block(&lambda, "sub_0x027D", "sub_0x029D");
+    let lambda_scan = private_method_block(&lambda, "sub_0x022F", "sub_0x024F");
     assert!(
         lambda_scan.contains("for ("),
         "Lambda predicate scan should use a C# for loop: {lambda_scan}"
@@ -92,10 +92,10 @@ fn lambda_and_linq_scan_helpers_use_csharp_for_loops() {
         return;
     };
     for (start, next) in [
-        ("sub_0x00A8", "sub_0x00D9"),
-        ("sub_0x0141", "sub_0x0175"),
-        ("sub_0x04AA", "sub_0x04E1"),
-        ("sub_0x05C1", "sub_0x05F5"),
+        ("sub_0x000D", "sub_0x0037"),
+        ("sub_0x009B", "sub_0x00CC"),
+        ("sub_0x0134", "sub_0x0168"),
+        ("sub_0x025C", "sub_0x0301"),
     ] {
         let scan = private_method_block(&linq, start, next);
         assert!(
