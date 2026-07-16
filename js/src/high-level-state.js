@@ -20,15 +20,11 @@ export function createState(
   // arg0;`). Mirrors the Rust `set_argument_labels` guard.
   const startsWithInitslot =
     instructions[0]?.opcode?.mnemonic === "INITSLOT";
+  const hasArguments = manifestMethod?.parameters?.length > 0 || inferredArgCount > 0;
   const inferredReturnBehavior =
     context?.methodContractsByOffset?.get(methodOffset)?.returnBehavior;
   return {
-    stack:
-      manifestMethod?.parameters?.length ||
-      inferredArgCount === 0 ||
-      startsWithInitslot
-        ? []
-        : [...parameterNames],
+    stack: !hasArguments || startsWithInitslot ? [] : [...parameterNames],
     statements: [],
     warnings: [],
     initializedLocals: new Set(),

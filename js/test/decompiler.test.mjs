@@ -2330,6 +2330,52 @@ test("models catch entry stack with exception value", () => {
   assert.match(result.highLevel, /let loc0 = exception;/);
 });
 
+test("seeds manifest parameters for methods without INITSLOT", () => {
+  const script = new Uint8Array([0x78, 0x40]); // LDARG0; RET
+  const manifest = {
+    name: "PropertyContract",
+    groups: [],
+    features: {},
+    supportedstandards: [],
+    permissions: [],
+    trusts: [],
+    abi: {
+      methods: [{
+        name: "setValue",
+        parameters: [{ name: "value", type: "String" }],
+        returntype: "String",
+        offset: 0,
+        safe: false,
+      }],
+      events: [],
+    },
+  };
+  const result = decompileHighLevelBytesWithManifest(buildNefFromScript(script), manifest);
+  assert.match(result.highLevel, /fn setValue\(value: string\) -> string \{/);
+  assert.match(result.highLevel, /return value;/);
+  assert.doesNotMatch(result.highLevel, /\?\?\?/);
+});
+
+test("lifts compiler-generated catch-only regions using the normal ENDTRY target", () => {
+  const script = new Uint8Array([
+    0x3b, 0x08, 0x00, // TRY: catch handler at 0x08
+    0x11, // normal body value
+    0x3d, 0x08, // ENDTRY: normal path resumes at 0x0C
+    0x21, 0x21, // padding between the body transfer and handler
+    0x70, // catch stores the exception
+    0x12, // catch payload
+    0x3a, // catch throws the payload
+    0x21, // padding before the shared resume block
+    0x40, // RET
+  ]);
+  const result = decompileHighLevelBytes(buildNefFromScript(script));
+  assert.match(result.highLevel, /try \{/);
+  assert.match(result.highLevel, /catch \{/);
+  assert.match(result.highLevel, /let loc0 = exception;/);
+  assert.match(result.highLevel, /throw\(2\);/);
+  assert.doesNotMatch(result.highLevel, /TRY .*not yet translated/);
+});
+
 test("lifts throw inside try-finally", () => {
   const script = new Uint8Array([
     0x3b, 0x00, 0x07,

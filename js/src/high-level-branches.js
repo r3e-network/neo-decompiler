@@ -8,6 +8,7 @@ import {
   popConditionForBranch,
   rewriteForLoops,
 } from "./high-level-control-flow-shared.js";
+import { mergeBranchStacks } from "./high-level-branch-merge.js";
 
 export function createBranchHelpers(runtime) {
   const {
@@ -246,11 +247,14 @@ export function createBranchHelpers(runtime) {
       }
     }
     const thenState = cloneState(prefixState);
+    let thenStackState = thenState;
     if (nestedThen === null) {
       executeStraightLine(thenState, thenSlice);
+    } else {
+      thenStackState = cloneState(prefixState);
+      executeStraightLine(thenStackState, thenSlice);
     }
     const thenTerminates = branchTerminates(thenSlice, context);
-    const statements = [...prefixState.statements];
 
     if (elseSlice.length === 0) {
       const restSlice = instructions.slice(targetIndex);
@@ -263,19 +267,14 @@ export function createBranchHelpers(runtime) {
       }
     }
 
-    statements.push(`if ${condition} {`);
-    if (nestedThen) {
-      statements.push(...nestedThen.statements);
-    } else {
-      statements.push(...thenState.statements.slice(prefixState.statements.length));
-      // Emit remaining stack values as statements (PUSH-only then-bodies)
-      while (thenState.stack.length > 0) {
-        const val = thenState.stack.shift();
-        if (val !== undefined) statements.push(`${val};`);
-      }
-    }
+    const elseTerminates = elseSlice.length > 0
+      ? branchTerminates(elseSlice, context)
+      : false;
+    let nestedElse = null;
+    const elseState = cloneState(prefixState);
+    let elseStackState = elseState;
     if (elseSlice.length > 0) {
-      const nestedElse = containsUnsupportedBranchStructure(elseSlice)
+      nestedElse = containsUnsupportedBranchStructure(elseSlice)
         ? liftStructuredSlice(
             elseSlice,
             manifestMethod,
@@ -284,25 +283,69 @@ export function createBranchHelpers(runtime) {
             prefixState,
           )
         : null;
-      const elseState = cloneState(prefixState);
       if (nestedElse === null) {
         executeStraightLine(elseState, elseSlice);
+      } else {
+        elseStackState = cloneState(prefixState);
+        executeStraightLine(elseStackState, elseSlice);
       }
+    }
+    const branchMerge = mergeBranchStacks(
+      prefixState,
+      thenStackState,
+      elseStackState,
+      thenTerminates,
+      elseTerminates,
+    );
+    const statements = [...prefixState.statements];
+
+    if (branchMerge) {
+      statements.push(...branchMerge.declarations);
+      prefixState.nextTempId = branchMerge.nextTempId;
+    }
+
+    statements.push(`if ${condition} {`);
+    if (nestedThen) {
+      statements.push(...nestedThen.statements);
+      if (branchMerge?.thenAssignments.length) {
+        statements.push(...branchMerge.thenAssignments);
+      }
+    } else {
+      statements.push(...thenState.statements.slice(prefixState.statements.length));
+      if (branchMerge?.thenAssignments.length) {
+        statements.push(...branchMerge.thenAssignments);
+      } else {
+        // Emit remaining stack values as statements (PUSH-only then-bodies)
+        while (thenState.stack.length > 0) {
+          const val = thenState.stack.shift();
+          if (val !== undefined) statements.push(`${val};`);
+        }
+      }
+    }
+    if (elseSlice.length > 0) {
       statements.push("} else {");
       if (nestedElse) {
         statements.push(...nestedElse.statements);
+        if (branchMerge?.elseAssignments.length) {
+          statements.push(...branchMerge.elseAssignments);
+        }
       } else {
         statements.push(...elseState.statements.slice(prefixState.statements.length));
-        // Emit remaining stack values as statements (PUSH-only else-bodies)
-        while (elseState.stack.length > 0) {
-          const val = elseState.stack.shift();
-          if (val !== undefined) statements.push(`${val};`);
+        if (branchMerge?.elseAssignments.length) {
+          statements.push(...branchMerge.elseAssignments);
+        } else {
+          // Emit remaining stack values as statements (PUSH-only else-bodies)
+          while (elseState.stack.length > 0) {
+            const val = elseState.stack.shift();
+            if (val !== undefined) statements.push(`${val};`);
+          }
         }
       }
       statements.push("}");
       let suffixState = null;
       if (suffixSlice.length > 0) {
         suffixState = cloneState(prefixState);
+        if (branchMerge) suffixState.stack = [...branchMerge.mergedStack];
         executeStraightLine(suffixState, suffixSlice);
         statements.push(...suffixState.statements.slice(prefixState.statements.length));
       }
@@ -310,6 +353,7 @@ export function createBranchHelpers(runtime) {
         statements,
         warnings: [
           ...collectDerivedWarnings(prefixState, thenState, elseState, suffixState),
+          ...collectDerivedWarnings(prefixState, thenStackState, elseStackState),
           ...(nestedThen?.warnings ?? []),
           ...(nestedElse?.warnings ?? []),
         ],
@@ -320,12 +364,17 @@ export function createBranchHelpers(runtime) {
     let suffixState = null;
     if (suffixSlice.length > 0) {
       suffixState = cloneState(prefixState);
+      if (branchMerge) suffixState.stack = [...branchMerge.mergedStack];
       executeStraightLine(suffixState, suffixSlice);
       statements.push(...suffixState.statements.slice(prefixState.statements.length));
     }
     return rewriteForLoops({
       statements,
-      warnings: [...collectDerivedWarnings(prefixState, thenState, suffixState), ...(nestedThen?.warnings ?? [])],
+      warnings: [
+        ...collectDerivedWarnings(prefixState, thenState, suffixState),
+        ...collectDerivedWarnings(prefixState, thenStackState, elseStackState),
+        ...(nestedThen?.warnings ?? []),
+      ],
     });
   }
 

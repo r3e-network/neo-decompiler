@@ -111,5 +111,14 @@ function isMergeTemporary(value) {
 }
 
 function isSafeMergeValue(value) {
-  return /^(?:-?\d+|0x[0-9A-Fa-f]+|true|false|null|[A-Za-z_][A-Za-z0-9_]*)$/u.test(value);
+  if (typeof value !== "string" || value.length === 0 || value === "???") {
+    return false;
+  }
+  // A stack expression has already been evaluated by the VM before a
+  // forward branch. Capture any syntactically single-line expression once
+  // at the edge so joins preserve its identity (including strings, indexed
+  // values, arrays, and syscall/call results) instead of inventing a fresh
+  // value or clearing the simulated stack. Keep malformed placeholders and
+  // statement fragments fail-closed.
+  return !/[;\r\n]/u.test(value) && !/^\/\/|^warning:/u.test(value.trim());
 }

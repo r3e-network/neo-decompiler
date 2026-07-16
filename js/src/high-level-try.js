@@ -95,12 +95,31 @@ export function createTryHelpers(runtime) {
         return null;
       }
 
+      // C# compiler-generated catch-only regions use the ENDTRY at the end
+      // of the normal body as the transfer to the shared resume block. The
+      // handler itself follows that ENDTRY, so there is no second ENDTRY to
+      // delimit the catch slice. Use the normal-path target when it lands
+      // after the handler; compact synthetic fixtures still use the legacy
+      // second-ENDTRY shape and fall through to the scan below.
+      const normalResumeTarget = jumpTarget(instructions[endtryGlobalIndex]);
+      const normalResumeIndex = normalResumeTarget === null
+        ? undefined
+        : indexByOffset.get(normalResumeTarget);
+      if (
+        normalResumeIndex !== undefined &&
+        normalResumeIndex > catchIndex &&
+        normalResumeTarget > catchTarget
+      ) {
+        catchSlice = instructions.slice(catchIndex, normalResumeIndex);
+        resumeSlice = instructions.slice(normalResumeIndex);
+      }
+
       const catchEndGlobalIndex = findMnemonicFrom(
         instructions,
         endtryGlobalIndex + 1,
         "ENDTRY",
       );
-      if (catchEndGlobalIndex >= 0) {
+      if (catchSlice.length === 0 && catchEndGlobalIndex >= 0) {
         const catchEndInstruction = instructions[catchEndGlobalIndex];
         const catchEndTarget = jumpTarget(catchEndInstruction);
         if (catchEndTarget !== null && catchEndTarget > catchTarget) {
@@ -153,7 +172,7 @@ export function createTryHelpers(runtime) {
     // loop bodies. Render those slices recursively so the readable surface
     // keeps structured exception blocks instead of leaking raw TRY warnings;
     // the linear states below remain the conservative continuation model.
-    const liftNestedTrySlice = (slice) => {
+    const liftNestedTrySlice = (slice, entryState = prefixState) => {
       if (!liftStructuredSlice || !slice.some((instruction) => {
         const mnemonic = instruction.opcode.mnemonic;
         return mnemonic === "TRY" || mnemonic === "TRY_L";
@@ -165,11 +184,15 @@ export function createTryHelpers(runtime) {
         manifestMethod,
         context,
         slice[0]?.offset ?? methodOffset,
-        prefixState,
+        entryState,
       );
     };
+    const catchEntryState = catchSlice.length > 0 ? cloneState(prefixState) : null;
+    if (catchEntryState) catchEntryState.stack.push("exception");
     const nestedTryBody = liftNestedTrySlice(instructions.slice(bodyStartIndex, endtryGlobalIndex));
-    const nestedCatchBody = liftNestedTrySlice(catchSlice);
+    const nestedCatchBody = catchEntryState
+      ? liftNestedTrySlice(catchSlice, catchEntryState)
+      : null;
     const nestedFinallyBody = liftNestedTrySlice(finallySlice);
 
     const statements = [...prefixState.statements];
@@ -182,8 +205,7 @@ export function createTryHelpers(runtime) {
     let resumeState = null;
 
     if (catchSlice.length > 0) {
-      catchState = cloneState(prefixState);
-      catchState.stack.push("exception");
+      catchState = catchEntryState ?? cloneState(prefixState);
       executeStraightLine(catchState, catchSlice);
       statements.push("} catch {");
       statements.push(...(nestedCatchBody
@@ -256,7 +278,11 @@ function findBodyEndtryIndex(instructions, bodyStartIndex, firstHandlerTarget, i
     const mnemonic = instructions[index]?.opcode?.mnemonic;
     if (mnemonic === "ENDTRY" || mnemonic === "ENDTRY_L") return index;
   }
-  return -1;
+  // A body whose last reachable instruction always throws has no normal
+  // ENDTRY transfer before the handler. In that compiler layout the handler
+  // offset itself is the body boundary; the handler's trailing ENDTRY is
+  // discovered by the catch-slice scan.
+  return handlerIndex;
 }
 
 function tryHandlerTargets(instruction) {

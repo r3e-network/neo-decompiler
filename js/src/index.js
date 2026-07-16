@@ -368,5 +368,32 @@ function stackEffectForArgInference(instruction) {
   if (mnemonic === "POPITEM") {
     return { pops: 1, pushes: 1 };
   }
+  if (mnemonic === "DUP") return { pops: 1, pushes: 2 };
+  if (mnemonic === "OVER") return { pops: 2, pushes: 3 };
+  if (mnemonic === "SWAP") return { pops: 2, pushes: 2 };
+  if (mnemonic === "ROT") return { pops: 3, pushes: 3 };
+  if (mnemonic === "TUCK") return { pops: 2, pushes: 3 };
+  if (mnemonic === "NIP") return { pops: 2, pushes: 1 };
+  if (["REVERSE3", "REVERSE4"].includes(mnemonic)) {
+    const width = mnemonic === "REVERSE3" ? 3 : 4;
+    return { pops: width, pushes: width };
+  }
+  if (["PICK", "ROLL", "REVERSEN"].includes(mnemonic)) {
+    return { pops: 1, pushes: 1 };
+  }
+  if (mnemonic === "XDROP") return { pops: 1, pushes: 0 };
+  if (mnemonic === "SETITEM") return { pops: 3, pushes: 0 };
+  if (["APPEND", "REMOVE", "CLEARITEMS", "REVERSEITEMS"].includes(mnemonic)) {
+    return { pops: mnemonic === "APPEND" || mnemonic === "REMOVE" ? 2 : 1, pushes: 0 };
+  }
+  if ([
+    "ISNULL", "NOT", "NEGATE", "ABS", "SIGN", "INVERT", "INC", "DEC",
+    "SQRT", "CONVERT", "ISTYPE", "SIZE", "DEPTH",
+  ].includes(mnemonic)) {
+    return { pops: mnemonic === "DEPTH" ? 0 : 1, pushes: 1 };
+  }
+  if (["WITHIN", "MODMUL"].includes(mnemonic)) return { pops: 3, pushes: 1 };
+  if (["MODPOW"].includes(mnemonic)) return { pops: 3, pushes: 1 };
+  if (["SHL", "SHR"].includes(mnemonic)) return { pops: 2, pushes: 1 };
   return null;
 }
