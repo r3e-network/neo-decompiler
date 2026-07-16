@@ -687,6 +687,48 @@ test("C# rendering keeps dynamic compound assignments assignable", () => {
   assert.doesNotMatch(rendered, /\(\(dynamic\)\(@value\)\) \+=/);
 });
 
+test("C# rendering folds complete literal expressions conservatively", () => {
+  const csharp = renderCSharpContract([
+    "contract Constants {",
+    "fn add() -> int {",
+    "    return 1 + 1;",
+    "}",
+    "fn nested() -> int {",
+    "    let value = (1 + 2) * 3;",
+    "    return value;",
+    "}",
+    "fn compare() -> bool {",
+    "    return 2 < 3;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /return 2;/);
+  assert.match(csharp, /BigInteger @value = 9;/);
+  assert.match(csharp, /return true;/);
+  assert.doesNotMatch(csharp, /dynamic\)\(1 \+ 1/);
+  assert.doesNotMatch(csharp, /dynamic\)\(\(1 \+ 2\)\)/);
+});
+
+test("C# constant folding refuses fault-prone and mixed expressions", () => {
+  const csharp = renderCSharpContract([
+    "contract Constants {",
+    "fn divide() -> int {",
+    "    return 1 / 0;",
+    "}",
+    "fn mixed(value) -> int {",
+    "    return value + 1 + 2;",
+    "}",
+    "fn text() -> string {",
+    '    return "1 + 2";',
+    "}",
+    "}",
+  ].join("\n"));
+  assert.doesNotMatch(csharp, /return 0;/);
+  assert.match(csharp, /return \(BigInteger\)\(dynamic\)\(1 \/ 0\);/);
+  assert.match(csharp, /return \(BigInteger\)\(dynamic\)\(\(\(dynamic\)\(@value\)\) \+ 1 \+ 2\);/);
+  assert.match(csharp, /return \"1 \+ 2\";/);
+});
+
 test("C# rendering lowers VM function-pointer markers", () => {
   const rendered = renderCSharpContract([
     "contract FunctionPointers {",

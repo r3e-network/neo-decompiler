@@ -29,6 +29,7 @@ import {
   rewriteNumericUnaryNot,
   rewriteShiftCounts,
 } from "./csharp-expression-operators.js";
+import { rewriteConstantExpressions } from "./csharp-expression-constants.js";
 import {
   rewriteFrameworkCallArguments,
 } from "./csharp-framework.js";
@@ -50,7 +51,7 @@ const CSHARP_COLLECTION_HELPERS = createCSharpCollectionHelpers(
 
 export function rewriteCSharpExpression(line, types = null) {
   const lowered = rewriteUnknownPlaceholders(
-    rewriteCollectionLiterals(
+    rewriteConstantExpressions(rewriteCollectionLiterals(
       rewriteEmptyArrayLiterals(
         rewriteConcatenation(
           rewriteFrameworkCallArguments(
@@ -67,7 +68,7 @@ export function rewriteCSharpExpression(line, types = null) {
         ),
       ),
       (element) => rewriteCSharpExpression(element),
-    ),
+    )),
   );
   return rewriteCSharpIdentifiers(
     rewriteNumericUnaryNot(
