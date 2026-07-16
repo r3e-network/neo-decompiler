@@ -4,6 +4,27 @@ export const GOTO_LABEL_RE = /^goto\s+(label_0x[\da-f]+);$/i;
 export const LEAVE_LABEL_RE = /^leave\s+(label_0x[\da-f]+);$/i;
 export const LABEL_LINE_RE = /^(label_0x[\da-f]+):$/i;
 export const IF_GOTO_RE = /^if\s+.+\{\s*goto\s+(label_0x[\da-f]+);\s*\}$/i;
+const INLINE_IF_GOTO_RE = /^(\s*)if\s+(.+?)\s*\{\s*goto\s+(label_0x[\da-f]+);\s*\}$/i;
+
+// Expand the compact branch form emitted by the linear lifter into the
+// multiline representation consumed by brace-aware postprocess passes. This
+// is deliberately limited to a single conditional goto; ordinary inline C#
+// source supplied to the renderer is handled by csharp-body.js instead.
+export function expandInlineConditionalGotos(statements) {
+  for (let index = 0; index < statements.length; index += 1) {
+    const match = INLINE_IF_GOTO_RE.exec(statements[index]);
+    if (!match) continue;
+    const [, indent, condition, label] = match;
+    statements.splice(
+      index,
+      1,
+      `${indent}if ${condition} {`,
+      `${indent}    goto ${label};`,
+      `${indent}}`,
+    );
+    index += 2;
+  }
+}
 
 // ─── Pass 5: eliminate_fallthrough_gotos ────────────────────────────────────
 
@@ -145,5 +166,4 @@ export function removeOrphanedLabels(statements) {
     }
   }
 }
-
 

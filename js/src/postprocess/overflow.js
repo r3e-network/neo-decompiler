@@ -6,6 +6,10 @@ import {
   parseAssignment,
   isTempIdent,
 } from "./helpers.js";
+import {
+  applyDirectOverflowCollapse,
+  tryMatchDirectOverflow,
+} from "./overflow-direct.js";
 
 const OVERFLOW_BOUNDS = [
   "-2147483648",
@@ -20,9 +24,13 @@ const OVERFLOW_BOUNDS = [
 export function collapseOverflowChecks(statements) {
   let index = 0;
   while (index < statements.length) {
-    const collapse = tryMatchOverflow(statements, index);
+    const collapse = tryMatchDirectOverflow(statements, index) ?? tryMatchOverflow(statements, index);
     if (collapse) {
-      applyOverflowCollapse(statements, collapse);
+      if (collapse.kind === "direct") {
+        applyDirectOverflowCollapse(statements, collapse);
+      } else {
+        applyOverflowCollapse(statements, collapse);
+      }
       continue;
     }
     index++;

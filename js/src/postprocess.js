@@ -40,6 +40,7 @@ import {
 
 import {
   eliminateFallthroughGotos,
+  expandInlineConditionalGotos,
   removeOrphanedLabels,
   rewriteLabelGotoToLoop,
 } from "./postprocess/labels.js";
@@ -175,6 +176,9 @@ function inlineForIncrementTemps(statements) {
 }
 
 export function postprocess(statements, options = {}) {
+  // Pass 0: normalize compact conditional transfers before any pass that
+  // relies on brace matching (overflow, loops, or else-if recovery).
+  expandInlineConditionalGotos(statements);
   // Pass 1
   rewriteElseIfChains(statements);
   // Pass 2

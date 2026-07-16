@@ -188,9 +188,39 @@ test("high-level forward jumps restore and merge stack values", () => {
   ]);
   const { highLevel } = decompileHighLevelBytes(buildNef({ script }));
   assert.doesNotMatch(highLevel, /\?\?\?/);
-  assert.match(highLevel, /let t\d+ = t\d+ & 4294967295;/);
+  assert.match(highLevel, /if t\d+ < -2147483648 \|\| t\d+ > 2147483647 \{/);
+  assert.match(highLevel, /t\d+ = t\d+ & 4294967295;/);
   assert.match(highLevel, /t\d+ = t\d+ - 4294967296;/);
+  assert.doesNotMatch(highLevel, /goto label_|label_0x[0-9A-Fa-f]+:/);
   assert.match(highLevel, /return arg0;/);
+});
+
+test("postprocess: expands and structures direct unsigned overflow transfers", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "let t0 = a + b;",
+    "if t0 >= 0 { goto label_0x0010; }",
+    "goto label_0x0018;",
+    "label_0x0010:",
+    "if t0 <= 255 { goto label_0x0020; }",
+    "label_0x0018:",
+    "t0 = t0 & 255;",
+    "label_0x0020:",
+    "return t0;",
+  ];
+
+  postprocess(statements);
+
+  assert.deepEqual(
+    statements.filter((line) => line.trim() !== ""),
+    [
+      "let t0 = a + b;",
+      "if t0 < 0 || t0 > 255 {",
+      "    t0 = t0 & 255;",
+      "}",
+      "return t0;",
+    ],
+  );
 });
 
 test("nested structured branches inherit the parent stack", () => {
