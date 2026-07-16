@@ -79,6 +79,19 @@ export function restoreStackAtLabel(state, offset) {
     return;
   }
   if (state.stack.length !== snapshot.length) {
+    // Compiler-generated value-selection chains may reach the same label with
+    // a shared prefix plus one selected value (for example, the original
+    // string on one edge and its normalized copy on the other). Preserve the
+    // richer fall-through stack when the shorter edge is an exact prefix;
+    // unrelated depth changes remain fail-closed below.
+    const shorter = state.stack.length < snapshot.length ? state.stack : snapshot;
+    const longer = state.stack.length < snapshot.length ? snapshot : state.stack;
+    if (isStackPrefix(shorter, longer) && longer.every(isSafeMergeValue)) {
+      if (state.stack.length < snapshot.length) {
+        state.stack.push(...snapshot.slice(state.stack.length));
+      }
+      return;
+    }
     state.stack.length = 0;
     return;
   }
@@ -108,6 +121,10 @@ export function restoreStackAtLabel(state, offset) {
 
 function isMergeTemporary(value) {
   return /^t\d+$/u.test(value);
+}
+
+function isStackPrefix(shorter, longer) {
+  return shorter.every((value, index) => value === longer[index]);
 }
 
 function isSafeMergeValue(value) {

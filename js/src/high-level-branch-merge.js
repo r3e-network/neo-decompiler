@@ -21,16 +21,31 @@ export function mergeBranchStacks(
     return null;
   }
 
-  if (liveThen && liveElse && liveThen.length !== liveElse.length) {
+  const targetLength = Math.max(
+    liveThen?.length ?? 0,
+    liveElse?.length ?? 0,
+    reference.length,
+  );
+  if (
+    liveThen &&
+    liveElse &&
+    liveThen.length !== liveElse.length &&
+    !isStackPrefix(
+      liveThen.length < liveElse.length ? liveThen : liveElse,
+      liveThen.length < liveElse.length ? liveElse : liveThen,
+    )
+  ) {
     return null;
   }
   if (liveThen && !liveElse && !elseTerminates) return null;
   if (liveElse && !liveThen && !thenTerminates) return null;
 
-  const targetLength = reference.length;
   if ((liveThen && liveThen.length !== targetLength) ||
       (liveElse && liveElse.length !== targetLength)) {
-    return null;
+    const shorter = liveThen?.length === targetLength ? liveElse : liveThen;
+    if (shorter && !isStackPrefix(shorter, reference)) {
+      return null;
+    }
   }
 
   const mergedStack = [];
@@ -44,8 +59,8 @@ export function mergeBranchStacks(
   );
 
   for (let index = 0; index < targetLength; index += 1) {
-    const thenValue = liveThen?.[index];
-    const elseValue = liveElse?.[index];
+    const thenValue = branchValueAt(liveThen, index, targetLength);
+    const elseValue = branchValueAt(liveElse, index, targetLength);
     const values = [thenValue, elseValue].filter((value) => value !== undefined);
     if (values.some((value) => value === "???")) {
       return null;
@@ -74,4 +89,15 @@ export function mergeBranchStacks(
     elseAssignments,
     nextTempId,
   };
+}
+
+function branchValueAt(stack, index, targetLength) {
+  if (!stack) return undefined;
+  if (index < stack.length) return stack[index];
+  if (stack.length > 0 && stack.length < targetLength) return stack.at(-1);
+  return undefined;
+}
+
+function isStackPrefix(shorter, longer) {
+  return shorter.every((value, index) => value === longer[index]);
 }
