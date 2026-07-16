@@ -413,6 +413,7 @@ export function createTryHelpers(runtime) {
       ),
       stack: [...finalStackState.stack],
       nextTempId: finalStackState.nextTempId,
+      terminated: finalStackState.terminated === true,
     });
   }
 

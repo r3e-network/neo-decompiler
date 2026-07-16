@@ -365,6 +365,25 @@ test("postprocess: collapsing nested else-if chains keeps braces balanced", asyn
   assert.equal(statements.filter((line) => line.trim() === "}").length, 1);
 });
 
+test("postprocess: nested else suffix stays outside the conditional", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "if outer {",
+    "return 1;",
+    "} else {",
+    "if inner {",
+    "throw();",
+    "}",
+    "return 2;",
+    "}",
+  ];
+  postprocess(statements, {});
+  const rendered = statements.join("\n");
+  assert.match(rendered, /\} else \{\nif inner \{/);
+  assert.doesNotMatch(rendered, /else if inner/);
+  assert.match(rendered, /\}\nreturn 2;\n\}/);
+});
+
 test("postprocess: ' get '/' has_key ' inside a string literal is not rewritten as an index", async () => {
   const { postprocess } = await import("../src/postprocess.js");
   const getCase = ['return "a get b";'];

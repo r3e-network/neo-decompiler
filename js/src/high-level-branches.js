@@ -258,11 +258,12 @@ export function createBranchHelpers(runtime) {
       } else {
         executeStraightLine(thenStackState, thenSlice);
       }
+      thenStackState.terminated = nestedThen.terminated === true;
       if (Number.isInteger(nestedThen.nextTempId)) {
         thenStackState.nextTempId = nestedThen.nextTempId;
       }
     }
-    const thenTerminates = branchTerminates(thenSlice, context);
+    const thenTerminates = thenStackState.terminated || branchTerminates(thenSlice, context);
 
     if (elseSlice.length === 0) {
       const restSlice = instructions.slice(targetIndex);
@@ -275,9 +276,6 @@ export function createBranchHelpers(runtime) {
       }
     }
 
-    const elseTerminates = elseSlice.length > 0
-      ? branchTerminates(elseSlice, context)
-      : false;
     let nestedElse = null;
     const elseState = cloneState(prefixState);
     let elseStackState = elseState;
@@ -301,11 +299,15 @@ export function createBranchHelpers(runtime) {
         } else {
           executeStraightLine(elseStackState, elseSlice);
         }
+        elseStackState.terminated = nestedElse.terminated === true;
         if (Number.isInteger(nestedElse.nextTempId)) {
           elseStackState.nextTempId = nestedElse.nextTempId;
         }
       }
     }
+    const elseTerminates = elseSlice.length > 0
+      ? elseStackState.terminated || branchTerminates(elseSlice, context)
+      : false;
     const branchMerge = mergeBranchStacks(
       prefixState,
       thenStackState,
@@ -327,7 +329,8 @@ export function createBranchHelpers(runtime) {
           ? suffixSlice.length <= 256
           : suffixSlice.length <= 48 &&
             containsUnsupportedBranchStructure(suffixSlice) &&
-            suffixSlice.some((instruction) => instruction.opcode?.mnemonic === "CALLT");
+            (suffixSlice.some((instruction) => instruction.opcode?.mnemonic === "CALLT")
+              || containsKnownTerminator(suffixSlice, context));
       if (hasStructuredSuffix) {
         nestedSuffix = liftStructuredSlice(
           suffixSlice,
@@ -340,6 +343,7 @@ export function createBranchHelpers(runtime) {
       if (nestedSuffix?.stack) {
         suffixState.stack = [...nestedSuffix.stack];
         suffixState.warnings = [...prefixState.warnings];
+        suffixState.terminated = nestedSuffix.terminated === true;
       } else {
         executeStraightLine(suffixState, suffixSlice);
       }
@@ -402,6 +406,9 @@ export function createBranchHelpers(runtime) {
         ],
         stack: [...(suffixState?.stack ?? branchMerge?.mergedStack ?? prefixState.stack)],
         nextTempId: suffixState?.nextTempId ?? branchMerge?.nextTempId ?? prefixState.nextTempId,
+        terminated: suffixState?.terminated === true
+          || nestedSuffix?.terminated === true
+          || (thenTerminates && elseTerminates),
       });
     }
 
@@ -418,6 +425,9 @@ export function createBranchHelpers(runtime) {
       ],
       stack: [...(suffixState?.stack ?? branchMerge?.mergedStack ?? prefixState.stack)],
       nextTempId: suffixState?.nextTempId ?? branchMerge?.nextTempId ?? prefixState.nextTempId,
+      terminated: suffixState?.terminated === true
+        || nestedSuffix?.terminated === true
+        || thenTerminates,
     });
   }
 
@@ -462,4 +472,18 @@ function decodePrintableBytes(bytes) {
     }
   } catch {}
   return null;
+}
+
+function containsKnownTerminator(instructions, context) {
+  return instructions.some((instruction) => {
+    const mnemonic = instruction.opcode?.mnemonic;
+    if (["THROW", "ABORT", "ABORTMSG"].includes(mnemonic)) {
+      return true;
+    }
+    if (mnemonic !== "CALL" && mnemonic !== "CALL_L") {
+      return false;
+    }
+    const target = jumpTarget(instruction);
+    return target !== null && context?.methodNeverReturnsByOffset?.get(target) === true;
+  });
 }

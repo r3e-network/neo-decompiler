@@ -337,5 +337,6 @@ function liftStraightLineMethodBody(
     warnings: state.warnings,
     stack: [...state.stack],
     nextTempId: state.nextTempId,
+    terminated: state.terminated === true,
   };
 }

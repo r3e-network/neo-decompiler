@@ -1161,6 +1161,33 @@ test("proven non-returning internal calls terminate both C# branch paths", () =>
   );
 });
 
+test("proven non-returning calls stop source-order lifting at dead opcodes", () => {
+  // The helper starts at 0x08 and throws. The PUSH/JMP bytes after the call
+  // are still inside the caller's method slice, but cannot execute on that
+  // path and must not surface as untranslated control flow.
+  const script = new Uint8Array([
+    0x57, 0x00, 0x00, // 0x00 INITSLOT 0 locals, 0 args
+    0x34, 0x05,       // 0x03 CALL +5 -> helper at 0x08
+    0x11,             // 0x05 unreachable PUSH1
+    0x26, 0x04,       // 0x06 unreachable JMPIF
+    0x3A,             // 0x08 helper: THROW
+  ]);
+  const manifest = {
+    name: "DeadCallTail",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Void", offset: 0 },
+        { name: "helper", parameters: [], returntype: "Integer", offset: 8 },
+      ],
+      events: [],
+    },
+  };
+  const result = decompileHighLevelBytesWithManifest(buildNefFromScript(script), manifest);
+  assert.match(result.highLevel, /helper\(\);\n\s*throw\(\);/);
+  assert.doesNotMatch(result.highLevel, /JMPIF.*not yet translated/);
+  assert.doesNotMatch(result.warnings.join("\n"), /JMPIF.*not yet translated/);
+});
+
 test("DUP on a call result materialises a temp instead of double-evaluating", () => {
   // SYSCALL System.Runtime.GetTime; DUP; DROP; DROP; RET. The second
   // DUP'd reference used to render as a second call, which is

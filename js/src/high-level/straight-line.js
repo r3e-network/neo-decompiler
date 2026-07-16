@@ -24,6 +24,9 @@ export function executeStraightLine(state, instructions) {
   } = state;
 
   for (const instruction of instructions) {
+    if (state.terminated) {
+      break;
+    }
     const mnemonic = instruction.opcode.mnemonic;
     emitLabelIfNeeded(state, instruction.offset);
 

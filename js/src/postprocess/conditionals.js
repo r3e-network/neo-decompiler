@@ -23,6 +23,16 @@ export function rewriteElseIfChains(statements) {
           i++;
           continue;
         }
+        // `else { if (condition) { ... } suffix; }` cannot be flattened to
+        // `else if`: the suffix belongs to the enclosing else path and must
+        // still run when the nested condition is false. Keep the wrapper so
+        // control flow and side-effect ordering remain explicit.
+        if (statements
+          .slice(nestedClose + 1, wrapperClose)
+          .some((line) => line.trim() !== "")) {
+          i++;
+          continue;
+        }
         const parentIndent = leadingWhitespace(statements[i]);
         const nestedIndent = leadingWhitespace(statements[i + 1]);
         const dedent = Math.max(0, nestedIndent.length - parentIndent.length);

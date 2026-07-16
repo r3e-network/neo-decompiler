@@ -108,6 +108,7 @@ export function createLoopHelpers(runtime) {
         ...suffixState.statements.slice(prefixState.statements.length),
       ],
       warnings: collectDerivedWarnings(prefixState, bodyState, suffixState),
+      terminated: suffixState.terminated === true,
     });
   }
 
@@ -200,6 +201,7 @@ export function createLoopHelpers(runtime) {
           ...(nestedBody.warnings ?? []),
         ]
         : collectDerivedWarnings(prefixState, bodyState, suffixState),
+      terminated: suffixState.terminated === true,
     });
   }
 

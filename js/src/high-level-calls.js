@@ -61,6 +61,7 @@ function emitInternalCallResult(state, target, expression) {
     state.statements.push(`${expression};`);
     state.statements.push("throw();");
     state.stack.length = 0;
+    state.terminated = true;
   } else if (state.context.methodReturnsValueByOffset?.get(target) === false) {
     state.statements.push(`${expression};`);
   } else {

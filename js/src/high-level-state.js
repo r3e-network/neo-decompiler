@@ -46,6 +46,11 @@ export function createState(
     previousInstruction: null,
     previousStoreInfo: null,
     lastDroppedValue: undefined,
+    // A proven VM terminator (including a call to a helper that never
+    // returns) makes the remaining source-order instructions unreachable
+    // on this path.  Keep that fact with the stack snapshot so branch
+    // recovery can merge the path without interpreting dead opcodes.
+    terminated: false,
     labelTargets: collectLabelTargets(instructions),
     emittedLabels: new Set(),
     program: instructions,
@@ -76,6 +81,7 @@ export function cloneState(state) {
     previousInstruction: state.previousInstruction,
     previousStoreInfo: state.previousStoreInfo,
     lastDroppedValue: state.lastDroppedValue,
+    terminated: state.terminated,
     labelTargets: new Set(state.labelTargets),
     emittedLabels: new Set(state.emittedLabels),
     program: state.program,

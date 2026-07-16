@@ -167,6 +167,7 @@ export function rewriteForLoops(result) {
     warnings: result.warnings ?? [],
     ...(result.stack ? { stack: [...result.stack] } : {}),
     ...(Number.isInteger(result.nextTempId) ? { nextTempId: result.nextTempId } : {}),
+    ...(result.terminated === true ? { terminated: true } : {}),
   };
 }
 

@@ -56,21 +56,25 @@ export function tryControlStatement(state, instruction) {
       ) {
         state.statements.push("throw();");
         state.stack.length = 0;
+        state.terminated = true;
         return true;
       }
       const value = stripOuterParens(state.stack.pop() ?? "???");
       state.statements.push(`throw(${value});`);
       state.stack.length = 0;
+      state.terminated = true;
       return true;
     }
     case "ABORT":
       state.statements.push("abort();");
       state.stack.length = 0;
+      state.terminated = true;
       return true;
     case "ABORTMSG": {
       const msg = stripOuterParens(state.stack.pop() ?? "???");
       state.statements.push(`abort(${msg});`);
       state.stack.length = 0;
+      state.terminated = true;
       return true;
     }
     default:

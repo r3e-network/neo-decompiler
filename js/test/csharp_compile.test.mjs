@@ -54,6 +54,7 @@ test("pinned JS-generated C# corpus compiles with Roslyn", { skip: skipReason },
 
     const failures = [];
     const tryFallbacks = [];
+    const unexpectedWarnings = [];
     for (const nefName of nefFiles) {
       const manifestName = nefName.replace(/\.nef$/, ".manifest.json");
       const manifest = JSON.parse(readFileSync(join(corpus, manifestName), "utf8"));
@@ -70,6 +71,16 @@ test("pinned JS-generated C# corpus compiles with Roslyn", { skip: skipReason },
           nefName,
           warnings: hazardWarnings,
         });
+      }
+      const allowedWarnings = nefName === "Contract_Foreach.nef"
+        ? decompiled.warnings.filter((warning) =>
+          /0x045B: missing call argument values for sub_0x0450/u.test(warning),
+        )
+        : [];
+      for (const warning of decompiled.warnings) {
+        if (!hazardWarnings.includes(warning) && !allowedWarnings.includes(warning)) {
+          unexpectedWarnings.push({ nefName, warning });
+        }
       }
       writeFileSync(join(project, "Generated.cs"), source);
       const build = runDotnet(project, [
@@ -95,6 +106,11 @@ test("pinned JS-generated C# corpus compiles with Roslyn", { skip: skipReason },
       tryFallbacks,
       [],
       `JS high-level corpus still contains untranslated TRY regions: ${JSON.stringify(tryFallbacks)}`,
+    );
+    assert.deepEqual(
+      unexpectedWarnings,
+      [],
+      `JS high-level corpus emitted unexpected warnings: ${JSON.stringify(unexpectedWarnings)}`,
     );
   } finally {
     rmSync(project, { recursive: true, force: true });
