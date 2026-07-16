@@ -8,7 +8,7 @@ import {
 
 const GOTO_LABEL_RE = /^goto\s+(label_0x[\da-f]+);$/i;
 const LABEL_LINE_RE = /^(label_0x[\da-f]+):$/i;
-const DO_WHILE_END_RE = /^}\s+while\s+(?:!\((.+)\)|(.+))\);?$/;
+const DO_WHILE_END_RE = /^}\s+while\s+(?:!\((.+)\)|\((.+)\))\s*;?$/;
 
 export function rewriteGotoDoWhile(statements) {
   let index = 0;
@@ -16,7 +16,9 @@ export function rewriteGotoDoWhile(statements) {
     const labelMatch = GOTO_LABEL_RE.exec(statements[index].trim());
     if (!labelMatch) { index++; continue; }
     const label = labelMatch[1];
-    const doIdx = nextCodeLine(statements, index);
+    // `nextCodeLine` is inclusive; start after the transfer so the valid
+    // `goto -> do { ... } while` compiler shape can be recognized.
+    const doIdx = nextCodeLine(statements, index + 1);
     if (doIdx < 0 || statements[doIdx].trim() !== "do {") { index++; continue; }
     const endIdx = findBlockEnd(statements, doIdx);
     if (endIdx < 0) { index++; continue; }

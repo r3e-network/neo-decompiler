@@ -212,6 +212,32 @@ test("postprocess: nested control rewrites preserve indentation", async () => {
   ]);
 });
 
+test("postprocess: leading goto into do-while becomes a while loop", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "let index = 0;",
+    "goto label_0x0010;",
+    "do {",
+    "    values[index] = index;",
+    "    let next = index + 1;",
+    "    label_0x000E:",
+    "    index = next;",
+    "    label_0x0010:",
+    "} while (index < length);",
+  ];
+
+  postprocess(statements);
+
+  assert.deepEqual(statements, [
+    "let index = 0;",
+    "while index < length {",
+    "    values[index] = index;",
+    "    let next = index + 1;",
+    "    index = next;",
+    "}",
+  ]);
+});
+
 test("postprocess: strips VM swap comments like the Rust cleanup pass", async () => {
   const { postprocess } = await import("../src/postprocess.js");
   const statements = [
