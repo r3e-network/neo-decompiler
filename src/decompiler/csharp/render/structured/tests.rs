@@ -71,8 +71,10 @@ mod events;
 mod expr;
 #[path = "tests_expr_types.rs"]
 mod expr_types;
-#[path = "tests_plan.rs"]
-mod plan;
+#[path = "tests_plan_declarations.rs"]
+mod plan_declarations;
+#[path = "tests_plan_methods.rs"]
+mod plan_methods;
 #[path = "tests_plan_types.rs"]
 mod plan_types;
 #[path = "tests_stmt.rs"]
