@@ -223,6 +223,23 @@ test("pattern analysis identifies wildcard call permissions", () => {
   assert.equal(info.confidence, "medium");
 });
 
+test("pattern analysis mirrors tolerant wildcard method selectors", () => {
+  const hashContract = "0x" + "11".repeat(20);
+  const omitted = identifyPatterns(nef(), [], {
+    supportedStandards: [],
+    permissions: [{ contract: hashContract }],
+    abi: { methods: [], events: [] },
+  });
+  const nonCanonical = identifyPatterns(nef(), [], {
+    supportedStandards: [],
+    permissions: [{ contract: hashContract, methods: "all" }],
+    abi: { methods: [], events: [] },
+  });
+  for (const info of [omitted, nonCanonical]) {
+    assert.deepEqual(info.patterns, ["call_permissions", "wildcard_permissions"]);
+  }
+});
+
 test("pattern analysis exposes ABI event behavior", () => {
   const info = identifyPatterns(
     nef(),

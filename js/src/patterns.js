@@ -106,9 +106,15 @@ export function identifyPatterns(nef, instructions, manifest = null) {
     patterns.add("call_permissions");
     evidence.push({ source: "manifest.permissions", value: String(permissions.length) });
   }
-  if (permissions.some((permission) =>
-    permission && (permission.contract === "*" || permission.methods === "*")
-  )) {
+  if (permissions.some((permission) => {
+    if (!permission || typeof permission !== "object") return false;
+    // Rust's tolerant manifest model treats every string selector as the
+    // wildcard enum (strict parsing validates that the value is "*"). An
+    // omitted methods field also defaults to that wildcard variant.
+    const wildcardMethods =
+      permission.methods === undefined || typeof permission.methods === "string";
+    return permission.contract === "*" || wildcardMethods;
+  })) {
     patterns.add("wildcard_permissions");
     evidence.push({ source: "manifest.permissions", value: "wildcard" });
   }
