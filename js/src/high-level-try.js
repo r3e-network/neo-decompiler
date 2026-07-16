@@ -90,10 +90,16 @@ export function createTryHelpers(runtime) {
         finallySlice = instructions.slice(finallyIndex, finallyEndGlobalIndex);
         resumeSlice = instructions.slice(finallyEndGlobalIndex + 1);
       } else {
-        const terminatingIndex = findTerminatingHandlerIndex(instructions, finallyIndex);
-        if (terminatingIndex >= 0) {
-          finallySlice = instructions.slice(finallyIndex, terminatingIndex + 1);
-          resumeSlice = instructions.slice(terminatingIndex + 1);
+        const resumeIndex = indexByOffset.get(jumpTarget(instructions[endtryGlobalIndex]));
+        if (resumeIndex !== undefined && resumeIndex > finallyIndex) {
+          finallySlice = instructions.slice(finallyIndex, resumeIndex);
+          resumeSlice = instructions.slice(resumeIndex);
+        } else {
+          const terminatingIndex = findTerminatingHandlerIndex(instructions, finallyIndex);
+          if (terminatingIndex >= 0) {
+            finallySlice = instructions.slice(finallyIndex, terminatingIndex + 1);
+            resumeSlice = instructions.slice(terminatingIndex + 1);
+          }
         }
       }
     } else if (catchTarget !== null) {
@@ -186,10 +192,16 @@ export function createTryHelpers(runtime) {
           // unstructured ENDFINALLY renderer.
           resumeSlice = instructions.slice(finallyEndGlobalIndex + 1);
         } else {
-          const terminatingIndex = findTerminatingHandlerIndex(instructions, finallyIndex);
-          if (terminatingIndex >= 0) {
-            finallySlice = instructions.slice(finallyIndex, terminatingIndex + 1);
-            resumeSlice = instructions.slice(terminatingIndex + 1);
+          const resumeIndex = indexByOffset.get(jumpTarget(instructions[endtryGlobalIndex]));
+          if (resumeIndex !== undefined && resumeIndex > finallyIndex) {
+            finallySlice = instructions.slice(finallyIndex, resumeIndex);
+            resumeSlice = instructions.slice(resumeIndex);
+          } else {
+            const terminatingIndex = findTerminatingHandlerIndex(instructions, finallyIndex);
+            if (terminatingIndex >= 0) {
+              finallySlice = instructions.slice(finallyIndex, terminatingIndex + 1);
+              resumeSlice = instructions.slice(terminatingIndex + 1);
+            }
           }
         }
       }
