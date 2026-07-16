@@ -65,10 +65,16 @@ fn resolve_condition_expression(
     header_index: usize,
     condition: &str,
 ) -> Option<String> {
-    if condition.contains("==") {
-        return Some(condition.trim().to_string());
-    }
     let condition = condition.trim();
+    if let Some(inner) = condition
+        .strip_prefix("!(")
+        .and_then(|value| value.strip_suffix(')'))
+    {
+        return inner.contains("==").then(|| inner.trim().to_string());
+    }
+    if condition.contains("==") {
+        return Some(condition.to_string());
+    }
     let condition = condition
         .strip_prefix('!')
         .map(str::trim)
@@ -505,6 +511,39 @@ mod tests {
         assert!(
             statements.iter().any(|s| s.trim().starts_with("switch ")),
             "consecutive standalone-if cases should still fold to a switch: {statements:?}"
+        );
+    }
+
+    #[test]
+    fn switch_fold_accepts_negated_final_equality_case() {
+        let mut statements = vec![
+            "if t1 { goto label_0x0010; }".to_string(),
+            "let t2 = \"one\";".to_string(),
+            "let t3 = loc0 == t2;".to_string(),
+            "if t3 { goto label_0x0012; }".to_string(),
+            "if !(loc0 == \"two\") {".to_string(),
+            "    goto label_0x0020;".to_string(),
+            "    label_0x0010:".to_string(),
+            "    return 1;".to_string(),
+            "    label_0x0012:".to_string(),
+            "    return 2;".to_string(),
+            "}".to_string(),
+            "else {".to_string(),
+            "    return 3;".to_string(),
+            "}".to_string(),
+            "label_0x0020:".to_string(),
+            "return 99;".to_string(),
+        ];
+        HighLevelEmitter::rewrite_switch_statements(&mut statements);
+        assert!(
+            statements.iter().any(|line| line.trim() == "switch loc0 {"),
+            "negated final equality should be folded into a switch: {statements:?}"
+        );
+        assert!(
+            statements
+                .iter()
+                .any(|line| line.trim() == "case \"two\" {"),
+            "final case literal should be retained: {statements:?}"
         );
     }
 }
