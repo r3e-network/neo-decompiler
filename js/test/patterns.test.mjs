@@ -1334,6 +1334,30 @@ test("C# rendering scopes switch syntax and deduplicates method labels", () => {
   assert.doesNotMatch(csharp, /switch @value \{|case 0 \{|default \{/);
 });
 
+test("C# rendering gives nested catch clauses distinct exception bindings", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn nested() {",
+    "    try {",
+    "        let outer = 1;",
+    "    } catch {",
+    "        let outer = exception;",
+    "        try {",
+    "            throw(\"exception\");",
+    "        } catch {",
+    "            let inner = exception;",
+    "        }",
+    "    }",
+    "    return;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /catch \(Exception exception\) \{/);
+  assert.match(csharp, /catch \(Exception exception_1\) \{/);
+  assert.match(csharp, /dynamic inner = exception_1;/);
+  assert.match(csharp, /throw new Exception\(Convert\.ToString\("exception"\)\);/);
+});
+
 test("C# rendering replays framework-internal syscalls through Runtime.LoadScript", () => {
   const csharp = renderCSharpContract([
     "contract Token {",

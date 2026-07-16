@@ -27,6 +27,7 @@ import {
   renderSignature,
 } from "./csharp-render.js";
 import { rewriteCSharpMethodTokenCalls } from "./csharp-framework.js";
+import { isInsideQuotedString } from "./csharp-expression-scanner.js";
 
 export function renderCSharpContract(
   highLevel,
@@ -59,6 +60,19 @@ export function renderCSharpContract(
   for (const sourceLine of sourceLines) {
     sourceDepthByLine.push(sourceDepth);
     sourceDepth += sourceBraceDelta(sourceLine);
+  }
+  const catchScopes = buildCatchScopes(sourceLines, sourceDepthByLine);
+  const catchVariablesByHeader = new Map(
+    catchScopes.map((scope) => [scope.headerLine, scope.variable]),
+  );
+  const catchVariablesByBodyLine = new Map();
+  for (const scope of catchScopes) {
+    for (let lineIndex = scope.startLine; lineIndex < scope.endLine; lineIndex += 1) {
+      const previous = catchVariablesByBodyLine.get(lineIndex);
+      if (!previous || previous.startLine < scope.startLine) {
+        catchVariablesByBodyLine.set(lineIndex, scope);
+      }
+    }
   }
   const labelsByLine = labelsVisibleInMethod(sourceLines, sourceDepthByLine);
   const nonVoidMethodInfo = analyzeNonVoidMethods(
@@ -176,8 +190,15 @@ export function renderCSharpContract(
       scopePlans.plansByLine.get(lineIndex) ?? line,
       options.methodTokens,
     );
+    const catchScope = catchVariablesByBodyLine.get(lineIndex);
+    const bodyLine = catchScope
+      ? replaceExceptionReference(scopedLine, catchScope.variable)
+      : scopedLine;
     const renderedBody = renderBodyLine(
-      renderCSharpCatchClause(renderStaticSlotLine(scopedLine)),
+      renderCSharpCatchClause(
+        renderStaticSlotLine(bodyLine),
+        catchVariablesByHeader.get(lineIndex) ?? "exception",
+      ),
       declarationTypesByLine?.get(lineIndex) ?? null,
     );
     const returnedBody = coerceCSharpReturn(
@@ -203,8 +224,51 @@ export function renderCSharpContract(
   return output.join("\n").replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
 }
 
-function renderCSharpCatchClause(line) {
-  return line.replace(/^(\s*\}\s*)catch\s*\{\s*$/u, "$1catch (Exception exception) {");
+function renderCSharpCatchClause(line, exceptionName = "exception") {
+  return line.replace(
+    /^(\s*\}\s*)catch\s*\{\s*$/u,
+    `$1catch (Exception ${exceptionName}) {`,
+  );
+}
+
+function buildCatchScopes(lines, depths) {
+  const scopes = [];
+  let ordinal = 0;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*fn\s+/.test(lines[index])) ordinal = 0;
+    if (!/^\s*\}\s*catch\s*\{\s*$/u.test(lines[index]) &&
+        !/^\s*catch\s*\{\s*$/u.test(lines[index])) {
+      continue;
+    }
+    const variable = ordinal === 0 ? "exception" : `exception_${ordinal}`;
+    ordinal += 1;
+    const bodyDepth = depths[index] + sourceBraceDelta(lines[index]);
+    let endLine = lines.length;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      const trimmed = lines[cursor].trim();
+      if (depths[cursor] < bodyDepth ||
+          (depths[cursor] === bodyDepth && /^\}\s*(?:catch|finally|else)\s*\{/u.test(trimmed))) {
+        endLine = cursor;
+        break;
+      }
+    }
+    scopes.push({ headerLine: index, startLine: index + 1, endLine, variable });
+  }
+  return scopes;
+}
+
+function replaceExceptionReference(line, variable) {
+  if (variable === "exception" || line.trim().startsWith("//")) return line;
+  const pattern = /\bexception\b/gu;
+  let cursor = 0;
+  let output = "";
+  let match;
+  while ((match = pattern.exec(line)) !== null) {
+    if (isInsideQuotedString(line, match.index)) continue;
+    output += line.slice(cursor, match.index) + variable;
+    cursor = match.index + match[0].length;
+  }
+  return cursor === 0 ? line : output + line.slice(cursor);
 }
 
 function isInferredHelperName(name) {
