@@ -195,7 +195,7 @@ function renderUnresolvedStackHelper(name, args) {
 }
 
 function rewriteKnownSyscalls(line) {
-  const marker = /syscall\("([^"]+)"/g;
+  const marker = /\bsyscall\(\s*(?:"([^"]+)"|(0x[0-9a-fA-F]+))/g;
   let output = "";
   let cursor = 0;
   let match;
@@ -205,14 +205,14 @@ function rewriteKnownSyscalls(line) {
     if (open < 0 || close < 0) continue;
     const argsText = line
       .slice(open + 1, close)
-      .replace(/^\s*"[^"]*"\s*(?:,\s*)?/, "")
+      .replace(/^\s*(?:"[^"]*"|0x[0-9a-fA-F]+)\s*(?:,\s*)?/, "")
       .trim();
     // Rewrite nested syscall expressions before rendering the enclosing call.
     // A syscall argument can itself be a syscall (for example storage calls
     // receiving `GetReadOnlyContext`), and a single left-to-right scan would
     // otherwise skip the nested marker inside the replaced outer call.
     const args = splitCallArguments(argsText).map((arg) => rewriteKnownSyscalls(arg));
-    const replacement = renderCSharpSyscall(match[1], args);
+    const replacement = renderCSharpSyscall(match[1] ?? match[2], args);
     if (!replacement) continue;
     output += line.slice(cursor, match.index) + replacement;
     cursor = close + 1;

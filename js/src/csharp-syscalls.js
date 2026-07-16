@@ -118,7 +118,12 @@ export function renderCSharpSyscall(name, args) {
   if (CSHARP_LOW_LEVEL_SYSCALLS.has(name)) return renderLowLevelSyscall(name, args);
 
   const api = CSHARP_SYSCALLS.get(name);
-  if (!api) return null;
+  if (!api) {
+    const hash = parseNumericSyscallHash(name);
+    return hash === null
+      ? renderUnresolvedSyscall(name, args)
+      : renderLowLevelSyscallHash(hash, args);
+  }
   const storageMethod = api.startsWith("Storage.") ? api.slice("Storage.".length) : null;
   if (storageMethod && ["Get", "Put", "Delete", "Find"].includes(storageMethod)) {
     return renderStorageCall(storageMethod, args, false);
@@ -168,13 +173,35 @@ function renderNumericEnum(expression, type) {
 
 function renderLowLevelSyscall(name, args) {
   const hash = SYSCALL_HASHES_BY_NAME.get(name);
-  if (hash === undefined) return null;
+  return hash === undefined ? null : renderLowLevelSyscallHash(hash, args);
+}
+
+function renderLowLevelSyscallHash(hash, args) {
+  const value = Number(hash) >>> 0;
   const bytes = [
     0x41,
-    hash & 0xff,
-    (hash >>> 8) & 0xff,
-    (hash >>> 16) & 0xff,
-    (hash >>> 24) & 0xff,
+    value & 0xff,
+    (value >>> 8) & 0xff,
+    (value >>> 16) & 0xff,
+    (value >>> 24) & 0xff,
   ].map((byte) => `0x${byte.toString(16).padStart(2, "0").toUpperCase()}`);
   return `Runtime.LoadScript((ByteString)new byte[] { ${bytes.join(", ")} }, CallFlags.All, new object[] { ${args.join(", ")} })`;
+}
+
+function parseNumericSyscallHash(name) {
+  const match = String(name).match(/^0x([0-9a-fA-F]{1,8})$/);
+  return match ? Number.parseInt(match[1], 16) >>> 0 : null;
+}
+
+function renderUnresolvedSyscall(name, args) {
+  const label = String(name)
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\*\//g, "* /")
+    .replace(/[\r\n]/g, " ");
+  const renderedArgs = args
+    .join(", ")
+    .replace(/\*\//g, "* /")
+    .replace(/[\r\n]/g, " ");
+  return `default(dynamic) /* unresolved VM syscall \"${label}\"(${renderedArgs}) */`;
 }

@@ -848,10 +848,13 @@ test("C# typed declarations use catalog syscall return types", () => {
   assert.match(typedRendered, /ByteString @value = Storage\.Get\(context, key\);/);
   assert.match(typedRendered, /Iterator iterator = Storage\.Find\(key, \(FindOptions\)\(0\)\);/);
   assert.match(typedRendered, /bool next = iterator\.Next\(\);/);
-  assert.match(typedRendered, /dynamic unknown = syscall\("System\.Custom\.Unknown", key\);/);
+  assert.match(
+    typedRendered,
+    /dynamic unknown = default\(dynamic\) \/\* unresolved VM syscall "System\.Custom\.Unknown"\(key\) \*\//,
+  );
 });
 
-test("C# rendering lowers known syscalls but preserves unknown ones", () => {
+test("C# rendering lowers known syscalls and keeps unknown ones compile-safe", () => {
   const source = [
     "contract Token {",
     "fn get() -> any {",
@@ -864,7 +867,25 @@ test("C# rendering lowers known syscalls but preserves unknown ones", () => {
   const csharp = renderCSharpContract(source);
   assert.match(csharp, /Storage\.CurrentContext/);
   assert.match(csharp, /Storage\.Get\(context, key\)/);
-  assert.match(csharp, /syscall\("System\.Custom\.Unknown", key\)/);
+  assert.match(
+    csharp,
+    /default\(dynamic\) \/\* unresolved VM syscall "System\.Custom\.Unknown"\(key\) \*\//,
+  );
+});
+
+test("C# rendering replays unknown numeric syscall hashes through Runtime.LoadScript", () => {
+  const csharp = renderCSharpContract([
+    "contract UnknownSyscall {",
+    "fn get(key) -> any {",
+    "    return syscall(0xDEADBEEF, key);",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(
+    csharp,
+    /Runtime\.LoadScript\(\(ByteString\)new byte\[\] \{ 0x41, 0xEF, 0xBE, 0xAD, 0xDE \}, CallFlags\.All, new object\[\] \{ key \}\)/,
+  );
+  assert.doesNotMatch(csharp, /syscall\(0xDEADBEEF/);
 });
 
 test("C# storage calls normalize numeric VM keys and find options", () => {

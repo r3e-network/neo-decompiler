@@ -1169,6 +1169,12 @@ test("unknown syscall hash surfaces a `// warning: unknown syscall` annotation",
     /\/\/ warning: unknown syscall 0xDEADBEEF/,
     "unknown-syscall warning should appear before the call: ${result.highLevel}",
   );
+  assert.match(
+    result.csharp,
+    /Runtime\.LoadScript\(\(ByteString\)new byte\[\] \{ 0x41, 0xEF, 0xBE, 0xAD, 0xDE \}, CallFlags\.All, new object\[\] \{  \}\)/,
+    `unknown syscall hash should use a C# compatibility call: ${result.csharp}`,
+  );
+  assert.doesNotMatch(result.csharp, /syscall\(0xDEADBEEF\)/);
 });
 
 test("NEWARRAY / NEWBUFFER / NEWSTRUCT materialise a temp before mutation", () => {
