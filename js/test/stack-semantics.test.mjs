@@ -121,6 +121,97 @@ test("postprocess: a negated single-temp loop/if condition inlines as !(expr)", 
   assert.deepEqual(whileBare.filter((s) => s !== ""), ["while loc0 > 3 {", "}"]);
 });
 
+test("postprocess: nested control rewrites preserve indentation", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+
+  const conditional = [
+    "if outer {",
+    "    let t0 = value > 0;",
+    "    if t0 {",
+    "        return value;",
+    "    }",
+    "}",
+  ];
+  postprocess(conditional);
+  assert.deepEqual(conditional, [
+    "if outer {",
+    "    if value > 0 {",
+    "        return value;",
+    "    }",
+    "}",
+  ]);
+
+  const loop = [
+    "if outer {",
+    "    let loc0 = 0;",
+    "    while loc0 < 2 {",
+    "        loc0 = loc0 + 1;",
+    "    }",
+    "}",
+  ];
+  postprocess(loop);
+  assert.deepEqual(loop, [
+    "if outer {",
+    "    for (let loc0 = 0; loc0 < 2; loc0 += 1) {",
+    "    }",
+    "}",
+  ]);
+
+  const elseIf = [
+    "if outer {",
+    "    if first {",
+    "        return 0;",
+    "    }",
+    "    else {",
+    "        if second {",
+    "            return 1;",
+    "        }",
+    "    }",
+    "}",
+  ];
+  postprocess(elseIf);
+  assert.deepEqual(elseIf, [
+    "if outer {",
+    "    if first {",
+    "        return 0;",
+    "    }",
+    "    } else if second {",
+    "        return 1;",
+    "    }",
+    "}",
+  ]);
+
+  const switchChain = [
+    "if outer {",
+    "    if value == 1 {",
+    "        return 1;",
+    "    }",
+    "    if value == 2 {",
+    "        return 2;",
+    "    }",
+    "    if value == 3 {",
+    "        return 3;",
+    "    }",
+    "}",
+  ];
+  postprocess(switchChain);
+  assert.deepEqual(switchChain, [
+    "if outer {",
+    "    switch value {",
+    "        case 1 {",
+    "            return 1;",
+    "        }",
+    "        case 2 {",
+    "            return 2;",
+    "        }",
+    "        case 3 {",
+    "            return 3;",
+    "        }",
+    "    }",
+    "}",
+  ]);
+});
+
 test("postprocess: strips VM swap comments like the Rust cleanup pass", async () => {
   const { postprocess } = await import("../src/postprocess.js");
   const statements = [

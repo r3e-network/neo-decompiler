@@ -101,11 +101,20 @@ function tryBuildSwitch(statements, start) {
   }
   if (!hasElseLink && !cases.every((c) => caseBodyIsSwitchSafe(c.body, scrutinee))) return null;
 
-  const output = [`switch ${scrutinee} {`];
-  for (const c of cases) output.push(`case ${c.value} {`, ...c.body, "}");
-  if (defaultBody !== null) output.push("default {", ...defaultBody, "}");
-  output.push("}");
+  const indent = leadingWhitespace(statements[start]);
+  const output = [`${indent}switch ${scrutinee} {`];
+  for (const c of cases) {
+    output.push(`${indent}    case ${c.value} {`, ...indentBlock(c.body), `${indent}    }`);
+  }
+  if (defaultBody !== null) {
+    output.push(`${indent}    default {`, ...indentBlock(defaultBody), `${indent}    }`);
+  }
+  output.push(`${indent}}`);
   return { replacement: output, end: overallEnd };
+}
+
+function indentBlock(lines) {
+  return lines.map((line) => (line.trim() === "" ? line : `    ${line}`));
 }
 
 function caseBodyIsSwitchSafe(body, scrutinee) {

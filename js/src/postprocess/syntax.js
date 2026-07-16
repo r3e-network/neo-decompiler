@@ -22,7 +22,8 @@ export function rewriteCompoundAssignments(statements) {
       if (parts) {
         const rewritten = rewriteIncrement(parts.increment);
         if (rewritten) {
-          statements[i] = `for (${parts.init}; ${parts.condition}; ${rewritten}) {`;
+          statements[i] =
+            `${leadingWhitespace(statements[i])}for (${parts.init}; ${parts.condition}; ${rewritten}) {`;
         }
       }
       continue;

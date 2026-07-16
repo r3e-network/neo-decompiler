@@ -4,6 +4,7 @@ import {
   extractWhileCondition,
   findBlockEnd,
   isBlank,
+  leadingWhitespace,
   parseAssignment,
   prevCodeLine,
   replaceIdentifier,
@@ -42,7 +43,8 @@ export function rewriteForLoops(statements) {
       continue;
     }
 
-    statements[index] = `for (${initAssign.full}; ${condition}; ${increment.expr}) {`;
+    statements[index] =
+      `${leadingWhitespace(statements[index])}for (${initAssign.full}; ${condition}; ${increment.expr}) {`;
     statements[initIdx] = "";
     statements[increment.incrementIdx] = "";
     if (increment.tempIdx !== null) {

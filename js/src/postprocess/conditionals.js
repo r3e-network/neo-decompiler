@@ -3,6 +3,7 @@ import {
   findMatchingClose,
   isElseOpen,
   isIfOpen,
+  leadingWhitespace,
 } from "./helpers.js";
 
 /** Normalize adjacent `else { if (...) {` blocks into `else if` chains. */
@@ -17,13 +18,28 @@ export function rewriteElseIfChains(statements) {
         // that nested branch, so its closer is not necessarily adjacent to
         // the nested branch's closer.
         const wrapperClose = findMatchingClose(statements, i);
-        statements[i] = `} else if ${condition} {`;
-        statements.splice(i + 1, 1);
-        if (wrapperClose >= i + 2) {
-          const adjustedClose = wrapperClose - 1;
-          if (statements[adjustedClose]?.trim() === "}") {
-            statements.splice(adjustedClose, 1);
+        const nestedClose = findMatchingClose(statements, i + 1);
+        if (wrapperClose < 0 || nestedClose < 0) {
+          i++;
+          continue;
+        }
+        const parentIndent = leadingWhitespace(statements[i]);
+        const nestedIndent = leadingWhitespace(statements[i + 1]);
+        const dedent = Math.max(0, nestedIndent.length - parentIndent.length);
+        if (dedent > 0) {
+          for (let cursor = i + 2; cursor < nestedClose; cursor++) {
+            const line = statements[cursor];
+            const indent = leadingWhitespace(line);
+            if (indent.length >= dedent) {
+              statements[cursor] = `${indent.slice(dedent)}${line.trimStart()}`;
+            }
           }
+        }
+        statements[i] = `${leadingWhitespace(statements[i])}} else if ${condition} {`;
+        statements.splice(i + 1, 1);
+        const adjustedNestedClose = nestedClose - 1;
+        if (statements[adjustedNestedClose]?.trim() === "}") {
+          statements.splice(adjustedNestedClose, 1);
         }
         continue;
       }

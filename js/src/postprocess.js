@@ -11,6 +11,7 @@ import {
   braceDelta,
   containsIdentifier,
   findMatchingBrace,
+  leadingWhitespace,
   negateCondition,
   parseAssignment,
   parseForParts,
@@ -101,19 +102,20 @@ function inlineConditionTemps(statements) {
           if (kind === "while") {
             const inlined = inlinedCondition(cond, assign);
             if (inlined !== null) {
-              statements[index] = `while ${inlined} {`;
+              statements[index] = `${leadingWhitespace(statements[index])}while ${inlined} {`;
               statements[idx] = "";
             }
           } else if (kind === "for") {
             const inlined = inlinedCondition(forParts.condition, assign);
             if (inlined !== null) {
-              statements[index] = `for (${forParts.init}; ${inlined}; ${forParts.increment}) {`;
+              statements[index] =
+                `${leadingWhitespace(statements[index])}for (${forParts.init}; ${inlined}; ${forParts.increment}) {`;
               statements[idx] = "";
             }
           } else if (kind === "if") {
             const inlined = inlinedCondition(cond, assign);
             if (inlined !== null) {
-              statements[index] = `if ${inlined} {`;
+              statements[index] = `${leadingWhitespace(statements[index])}if ${inlined} {`;
               statements[idx] = "";
             }
           }
@@ -164,7 +166,8 @@ function inlineForIncrementTemps(statements) {
             continue;
           }
           const replaced = replaceIdentifier(forParts.increment, assign.lhs, assign.rhs);
-          statements[index] = `for (${forParts.init}; ${forParts.condition}; ${replaced}) {`;
+          statements[index] =
+            `${leadingWhitespace(statements[index])}for (${forParts.init}; ${forParts.condition}; ${replaced}) {`;
           statements[cursor] = "";
           break;
         }

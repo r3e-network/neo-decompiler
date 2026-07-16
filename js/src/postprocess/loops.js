@@ -2,6 +2,7 @@ import {
   findBlockEnd,
   isBlank,
   isIfOpen,
+  leadingWhitespace,
   nextCodeLine,
 } from "./helpers.js";
 
@@ -32,14 +33,15 @@ export function rewriteGotoDoWhile(statements) {
       if (!isBlank(statements[i])) setupLines.push(i);
     }
     statements[index] = "";
-    statements[doIdx] = `while ${condition} {`;
+    statements[doIdx] = `${leadingWhitespace(statements[doIdx])}while ${condition} {`;
     statements[labelIdx] = "";
     if (setupLines.length === 0) {
-      statements[endIdx] = "}";
+      statements[endIdx] = `${leadingWhitespace(statements[endIdx])}}`;
     } else {
       const copies = setupLines.map((lineIndex) => statements[lineIndex]);
       for (let j = 0; j < copies.length; j++) statements.splice(doIdx + j, 0, copies[j]);
-      statements[endIdx + copies.length] = "}";
+      statements[endIdx + copies.length] =
+        `${leadingWhitespace(statements[endIdx + copies.length])}}`;
     }
     index++;
   }
@@ -68,7 +70,8 @@ export function rewriteIfGotoToWhile(statements) {
       .slice(index + 1, ifIdx)
       .filter((line) => !isBlank(line));
     statements[index] = "";
-    statements[ifIdx] = statements[ifIdx].trim().replace(/^if /, "while ");
+    statements[ifIdx] =
+      `${leadingWhitespace(statements[ifIdx])}${statements[ifIdx].trim().replace(/^if /, "while ")}`;
     statements[gotoIdx] = "";
     for (let j = 0; j < setupLines.length; j++) statements.splice(endIdx + j, 0, setupLines[j]);
     index++;
