@@ -6,7 +6,7 @@ import { inferDeclarationTypes } from "./csharp-types.js";
 export function renderBodyLine(line, declarationTypes = null) {
   const indentation = line.match(/^\s*/)?.[0] ?? "";
   const trimmed = line.trim();
-  const finish = (rendered) => rewriteCSharpControlSyntax(rendered);
+  const finish = (rendered) => rewriteCSharpControlSyntax(rendered, declarationTypes);
   if (trimmed.startsWith("//")) return line;
   const declaration = trimmed.match(
     /^let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=\s*.*?;)(\s*\/\/.*)?$/,
@@ -156,12 +156,25 @@ function isInvocationStatement(source) {
   return prefix === "" || /(?:\.|::|\)|\])$/.test(prefix);
 }
 
-function rewriteCSharpControlSyntax(line) {
+function rewriteCSharpControlSyntax(line, declarationTypes = null) {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("//")) return line;
 
   let output = line.replace(/\bleave\s+(label_0x[0-9A-Fa-f]+);/g, "goto $1;");
-  output = output.replace(/\bfor\s*\(\s*let\b/g, "for (var");
+  const forDeclaration = output.match(
+    /^(\s*for\s*\(\s*)let\s+(@?[A-Za-z_][A-Za-z0-9_]*)\s*(=)/,
+  );
+  if (forDeclaration) {
+    const name = forDeclaration[2].replace(/^@/, "");
+    const inferredType = declarationTypes?.get(name);
+    const renderedType = inferredType && inferredType !== "dynamic" ? inferredType : "var";
+    output = output.replace(
+      forDeclaration[0],
+      `${forDeclaration[1]}${renderedType} ${forDeclaration[2]} ${forDeclaration[3]}`,
+    );
+  } else {
+    output = output.replace(/\bfor\s*\(\s*let\b/g, "for (var");
+  }
   const loop = output.match(/^(\s*)loop\s*\{\s*$/);
   if (loop) return `${loop[1]}while (true) {`;
 

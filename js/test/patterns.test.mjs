@@ -640,8 +640,8 @@ test("C# rendering keeps for-loop declarations in their lexical scope", () => {
     "}",
     "}",
   ].join("\n"));
-  assert.match(rendered, /for \(var loc0 = 0; loc0 < 3; loc0 \+= 1\)/);
-  assert.doesNotMatch(rendered, /default;\s*for \(var loc0/);
+  assert.match(rendered, /for \(BigInteger loc0 = 0; loc0 < 3; loc0 \+= 1\)/);
+  assert.doesNotMatch(rendered, /default;\s*for \(BigInteger loc0/);
 });
 
 test("C# rendering hoists a for-loop variable only when it escapes", () => {
@@ -1071,7 +1071,7 @@ test("C# identifier rewriting preserves literals, comments, and loop syntax", ()
     "}",
     "}",
   ].join("\n"));
-  assert.match(csharp, /for \(var index = 0; index < @await; index = index \+ 1\) \{/);
+  assert.match(csharp, /for \(BigInteger index = 0; index < @await; index = index \+ 1\) \{/);
   assert.match(csharp, /dynamic @value = "await value"; \/\/ await value/);
   assert.match(csharp, /return @await; \/\/ await value/);
 });
