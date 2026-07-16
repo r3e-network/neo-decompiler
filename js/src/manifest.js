@@ -21,6 +21,13 @@ export function parseManifest(json, options = {}) {
         { code: "FileTooLarge", size, max: MAX_MANIFEST_SIZE },
       );
     }
+    const duplicateKey = findDuplicateJsonObjectKey(json);
+    if (duplicateKey !== null) {
+      throw new ManifestParseError(
+        `duplicate manifest object key ${JSON.stringify(duplicateKey)}`,
+        { code: "InvalidJson", key: duplicateKey },
+      );
+    }
     try {
       value = JSON.parse(json);
     } catch (cause) {
@@ -117,6 +124,111 @@ export function parseManifest(json, options = {}) {
   }
 
   return manifest;
+}
+
+/**
+ * Return the first duplicate object key in a JSON string, or null when none
+ * is found. JSON.parse intentionally keeps the last duplicate property;
+ * Rust/serde rejects duplicates, so detect them before schema validation.
+ * Invalid syntax is left to JSON.parse to report.
+ */
+function findDuplicateJsonObjectKey(json) {
+  let index = 0;
+  let duplicate = null;
+
+  const skipWhitespace = () => {
+    while (index < json.length && /\s/u.test(json[index])) index++;
+  };
+
+  const readString = () => {
+    const start = index;
+    index++;
+    let escaped = false;
+    while (index < json.length) {
+      const character = json[index++];
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        try {
+          return JSON.parse(json.slice(start, index));
+        } catch {
+          return null;
+        }
+      }
+    }
+    return null;
+  };
+
+  const scanValue = (depth) => {
+    if (duplicate !== null || depth > 256) return;
+    skipWhitespace();
+    const character = json[index];
+    if (character === '"') {
+      readString();
+      return;
+    }
+    if (character === "{") {
+      scanObject(depth + 1);
+      return;
+    }
+    if (character === "[") {
+      index++;
+      skipWhitespace();
+      if (json[index] === "]") {
+        index++;
+        return;
+      }
+      while (index < json.length && duplicate === null) {
+        scanValue(depth + 1);
+        skipWhitespace();
+        if (json[index] === ",") {
+          index++;
+          continue;
+        }
+        if (json[index] === "]") index++;
+        break;
+      }
+      return;
+    }
+    while (index < json.length && !/[\s,\]}]/u.test(json[index])) index++;
+  };
+
+  const scanObject = (depth) => {
+    index++;
+    const keys = new Set();
+    skipWhitespace();
+    if (json[index] === "}") {
+      index++;
+      return;
+    }
+    while (index < json.length && duplicate === null) {
+      skipWhitespace();
+      if (json[index] !== '"') return;
+      const key = readString();
+      if (key === null) return;
+      if (keys.has(key)) {
+        duplicate = key;
+        return;
+      }
+      keys.add(key);
+      skipWhitespace();
+      if (json[index] !== ":") return;
+      index++;
+      scanValue(depth + 1);
+      skipWhitespace();
+      if (json[index] === ",") {
+        index++;
+        continue;
+      }
+      if (json[index] === "}") index++;
+      break;
+    }
+  };
+
+  scanValue(0);
+  return duplicate;
 }
 
 function requireString(value, path) {

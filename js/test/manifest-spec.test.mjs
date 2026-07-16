@@ -10,6 +10,7 @@ import {
   classifyPermissionContract,
   parseManifest,
   parseNef,
+  ManifestParseError,
   NefParseError,
 } from "../src/index.js";
 
@@ -105,6 +106,29 @@ test("manifest-spec: strict mode rejects non-empty features; tolerant keeps raw 
       JSON.stringify({ name: "C", abi: { methods: [], events: [] }, features: {} }),
       { strict: true },
     ),
+  );
+});
+
+test("manifest-spec: duplicate JSON object keys are rejected like Rust", () => {
+  const duplicateTopLevel =
+    '{"name":"First","name":"Second","abi":{"methods":[],"events":[]}}';
+  assert.throws(
+    () => parseManifest(duplicateTopLevel),
+    (error) => error instanceof ManifestParseError && error.details.code === "InvalidJson",
+  );
+
+  const duplicateNested =
+    '{"name":"C","abi":{"methods":[],"methods":[],"events":[]}}';
+  assert.throws(
+    () => parseManifest(duplicateNested),
+    (error) => error instanceof ManifestParseError && error.details.key === "methods",
+  );
+
+  const escapedDuplicate =
+    '{"name":"C","abi":{"methods":[],"\\u0065vents":[],"events":[]}}';
+  assert.throws(
+    () => parseManifest(escapedDuplicate),
+    (error) => error instanceof ManifestParseError && error.details.key === "events",
   );
 });
 
