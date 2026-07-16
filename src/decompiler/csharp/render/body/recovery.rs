@@ -12,6 +12,8 @@ use super::super::structured::stmt;
 use super::fidelity::semantic_warnings;
 use super::{plan_method_declarations, BodyBackend, BodyRenderResult, LiftedBodyContext};
 
+const MAX_RENDERED_PLACEHOLDER_ARGUMENTS: usize = 256;
+
 /// Preserve a useful C# call shape when structured lifting reports a recoverable
 /// stack issue. The emitted placeholders are limited to the callee's declared
 /// arity so compatibility recovery never invents an extra argument for a
@@ -148,9 +150,17 @@ pub(super) fn recovered_result(
 }
 
 fn render_placeholder_arguments(argument_count: usize) -> String {
-    std::iter::repeat_n("(dynamic)null", argument_count)
-        .collect::<Vec<_>>()
-        .join(", ")
+    let rendered_count = argument_count.min(MAX_RENDERED_PLACEHOLDER_ARGUMENTS);
+    let mut arguments = std::iter::repeat_n("(dynamic)null", rendered_count)
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    if argument_count > rendered_count {
+        arguments.push(format!(
+            "/* omitted {} additional VM arguments */ (dynamic)null",
+            argument_count - rendered_count
+        ));
+    }
+    arguments.join(", ")
 }
 
 pub(super) fn indent_body(source: &str) -> String {
@@ -207,5 +217,12 @@ mod tests {
             render_placeholder_arguments(2),
             "(dynamic)null, (dynamic)null"
         );
+    }
+
+    #[test]
+    fn compatibility_recovery_bounds_large_placeholder_argument_lists() {
+        let rendered = render_placeholder_arguments(300);
+        assert_eq!(rendered.matches("(dynamic)null").count(), 257);
+        assert!(rendered.contains("omitted 44 additional VM arguments"));
     }
 }
