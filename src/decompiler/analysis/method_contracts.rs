@@ -100,6 +100,7 @@ impl MethodContracts {
             .map(|index| &self.methods[index])
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn argument_counts_by_offset(&self) -> BTreeMap<usize, usize> {
         self.methods
             .iter()

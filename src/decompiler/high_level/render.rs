@@ -1,8 +1,8 @@
 use super::super::analysis::call_graph::CallGraph;
 use super::super::analysis::method_contracts::MethodContracts;
 use super::super::helpers::{
-    build_call_targets_by_offset, build_calla_targets_by_offset, build_method_labels_by_offset,
-    inferred_method_starts, sanitize_identifier,
+    build_call_targets_by_offset, build_calla_targets_by_offset, build_method_arg_counts_by_offset,
+    build_method_labels_by_offset, inferred_method_starts, sanitize_identifier,
 };
 use crate::decompiler::output_format::RenderOptions;
 use crate::instruction::Instruction;
@@ -78,7 +78,8 @@ pub(crate) fn render_high_level(
         sanitize_identifier,
         "script_entry",
     );
-    let method_arg_counts_by_offset = method_contracts.argument_counts_by_offset();
+    let method_arg_counts_by_offset =
+        build_method_arg_counts_by_offset(instructions, &inferred_starts, manifest);
     let method_returns_value_by_offset = method_contracts.returns_value_by_offset();
     let call_targets_by_offset = if manifest.is_some() {
         build_call_targets_by_offset(call_graph)

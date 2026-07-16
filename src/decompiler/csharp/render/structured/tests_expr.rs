@@ -900,6 +900,21 @@ fn logical_not_uses_vm_truthiness_for_integer_operands() {
 
 #[test]
 fn isnull_is_false_for_non_nullable_value_types() {
+    let context = ExprContext::default().with_concrete_types(&BTreeMap::from([
+        ("number".to_string(), "BigInteger".to_string()),
+        ("flag".to_string(), "bool".to_string()),
+    ]));
+    for name in ["number", "flag"] {
+        let expression = Expr::call(
+            SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Isnull)),
+            vec![Expr::var(name)],
+        );
+        assert_eq!(render_expr(&expression, &context), "false");
+    }
+}
+
+#[test]
+fn isnull_preserves_ambiguous_integer_aliases() {
     let context =
         expr_context_with_types(&[("number", ValueType::Integer), ("flag", ValueType::Boolean)]);
     for name in ["number", "flag"] {
@@ -907,7 +922,10 @@ fn isnull_is_false_for_non_nullable_value_types() {
             SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Isnull)),
             vec![Expr::var(name)],
         );
-        assert_eq!(render_expr(&expression, &context), "false");
+        assert_eq!(
+            render_expr(&expression, &context),
+            format!("{name} is null")
+        );
     }
 }
 
