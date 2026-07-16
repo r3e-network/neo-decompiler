@@ -16,8 +16,16 @@ export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
 
     const parameterNames = methodParameterNames(lines[start]);
     const methodTypes = inferDeclarationTypes(lines.slice(start, end + 1));
-    const scopeEnds = computeScopeEnds(depths, start, end, methodDepth);
-    const declarations = collectDeclarations(lines, depths, start, end, scopeEnds);
+    const scopeEnds = computeScopeEnds(depths, start, end);
+    const braceCloseLines = computeBraceCloseLines(lines, start, end);
+    const declarations = collectDeclarations(
+      lines,
+      depths,
+      start,
+      end,
+      scopeEnds,
+      braceCloseLines,
+    );
     const hoistedNames = new Set();
 
     for (const [name, entries] of declarations) {
@@ -41,7 +49,7 @@ export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
     for (let line = start + 1; line < end; line += 1) {
       const trimmed = lines[line].trim();
       if (!trimmed || trimmed.startsWith("//") || /^fn\s+/.test(trimmed)) continue;
-      const declared = trimmed.match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)\s*=/)?.[1];
+      const declared = declarationName(trimmed);
       const tokens = trimmed.match(/\b(?:loc|t)\d+\b/g) ?? [];
       for (const name of new Set(tokens)) {
         if (name === declared || parameterNames.has(name)) continue;
@@ -71,9 +79,9 @@ export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
 
     for (let line = start + 1; line < end; line += 1) {
       const trimmed = lines[line].trim();
-      const declaration = trimmed.match(/^(let\s+)([A-Za-z_][A-Za-z0-9_]*)(\s*=)/);
-      if (!declaration || !hoistedNames.has(declaration[2])) continue;
-      plansByLine.set(line, lines[line].replace(declaration[0], `${declaration[2]}${declaration[3]}`));
+      const declaration = declarationName(trimmed);
+      if (!declaration || !hoistedNames.has(declaration)) continue;
+      plansByLine.set(line, rewriteHoistedDeclaration(lines[line], declaration));
     }
     start = end;
   }
@@ -81,16 +89,17 @@ export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
   return { plansByLine, declarationsByStart };
 }
 
-function collectDeclarations(lines, depths, start, end, scopeEnds) {
+function collectDeclarations(lines, depths, start, end, scopeEnds, braceCloseLines) {
   const declarations = new Map();
   for (let line = start + 1; line < end; line += 1) {
-    const match = lines[line].trim().match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)\s*=/);
-    if (!match) continue;
-    const name = match[1];
+    const name = declarationName(lines[line].trim());
+    if (!name) continue;
     const entry = {
       line,
       depth: depths[line],
-      scopeEnd: scopeEnds[line] ?? end,
+      scopeEnd: forDeclarationScopeEnd(lines, line, end, braceCloseLines)
+        ?? scopeEnds[line]
+        ?? end,
     };
     if (!declarations.has(name)) declarations.set(name, []);
     declarations.get(name).push(entry);
@@ -98,18 +107,67 @@ function collectDeclarations(lines, depths, start, end, scopeEnds) {
   return declarations;
 }
 
-function computeScopeEnds(depths, start, end, methodDepth) {
-  const scopeEnds = new Map();
-  for (let line = start + 1; line < end; line += 1) {
-    const depth = depths[line];
-    let scopeEnd = end;
-    for (let cursor = line + 1; cursor <= end; cursor += 1) {
-      if (cursor === end || depths[cursor] < depth) {
-        scopeEnd = cursor;
-        break;
+function forDeclarationScopeEnd(lines, line, end, braceCloseLines) {
+  if (!/^for\s*\(/.test(lines[line].trim())) return null;
+
+  if (lines[line].includes("{")) {
+    return braceCloseLines.get(line) ?? end;
+  }
+
+  // The high-level emitter normally braces loop bodies, but keep single-line
+  // loops scoped correctly if a future lowering pass emits one.
+  return Math.min(line + 2, end);
+}
+
+function computeBraceCloseLines(lines, start, end) {
+  const openLines = [];
+  const closeLines = new Map();
+  for (let line = start; line <= end; line += 1) {
+    for (const character of lines[line]) {
+      if (character === "{") {
+        openLines.push(line);
+      } else if (character === "}") {
+        const openLine = openLines.pop();
+        if (openLine !== undefined) closeLines.set(openLine, line);
       }
     }
-    scopeEnds.set(line, scopeEnd);
+  }
+  return closeLines;
+}
+
+function declarationName(line) {
+  return line.match(/^let\s+([A-Za-z_][A-Za-z0-9_]*)\s*=/)?.[1]
+    ?? line.match(/^for\s*\(\s*let\s+([A-Za-z_][A-Za-z0-9_]*)\s*=/)?.[1]
+    ?? null;
+}
+
+function rewriteHoistedDeclaration(line, name) {
+  const direct = line.match(/^(\s*)let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=)/);
+  if (direct?.[2] === name) {
+    return line.replace(direct[0], `${direct[1]}${name}${direct[3]}`);
+  }
+  const loop = line.match(/^(\s*for\s*\(\s*)let\s+([A-Za-z_][A-Za-z0-9_]*)(\s*=)/);
+  if (loop?.[2] === name) {
+    return line.replace(loop[0], `${loop[1]}${name}${loop[3]}`);
+  }
+  return line;
+}
+
+function computeScopeEnds(depths, start, end) {
+  const scopeEnds = new Map();
+  const openLines = [];
+  for (let line = start + 1; line < end; line += 1) {
+    const depth = depths[line];
+    while (openLines.length > 0) {
+      const openLine = openLines[openLines.length - 1];
+      if (depths[openLine] <= depth) break;
+      scopeEnds.set(openLine, line);
+      openLines.pop();
+    }
+    openLines.push(line);
+  }
+  for (const line of openLines) {
+    scopeEnds.set(line, end);
   }
   scopeEnds.set(start, end);
   scopeEnds.set(end, end);

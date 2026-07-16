@@ -86,7 +86,13 @@ export function inferDeclarationTypes(lines) {
   const definitions = new Map();
   const parameterTypes = inferParameterTypes(lines);
   for (const line of lines) {
-    const match = line.trim().match(/^(?:let\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);$/);
+    const trimmed = line.trim();
+    const forMatch = trimmed.match(
+      /^for\s*\(\s*let\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^;]+);/,
+    );
+    const match = forMatch ?? trimmed.match(
+      /^(?:let\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+);$/,
+    );
     if (!match) continue;
     if (!definitions.has(match[1])) definitions.set(match[1], []);
     definitions.get(match[1]).push(match[2]);

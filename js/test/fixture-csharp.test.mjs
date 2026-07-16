@@ -74,6 +74,11 @@ test("all supported TestingArtifacts decompile to high-level C# contracts", () =
       assert.doesNotMatch(csharp, /while \(true\)/, `LoopIf while(true):\n${csharp}`);
       assert.doesNotMatch(highLevel, /loop \{/, `LoopIf loop form:\n${highLevel}`);
       assert.match(csharp, /for \(|while \(/, `LoopIf structured loop:\n${csharp}`);
+      assert.doesNotMatch(
+        csharp,
+        /default;\s*for \(var loc0/,
+        `LoopIf must not redeclare a hoisted counter:\n${csharp}`,
+      );
     }
     if (rel.includes("events/Events")) {
       assert.match(csharp, /public static event /, `Events missing events:\n${csharp}`);

@@ -630,6 +630,35 @@ test("C# rendering hoists VM slots that cross source block scopes", () => {
   assert.doesNotMatch(rendered, /BigInteger loc1 = 1;/);
 });
 
+test("C# rendering keeps for-loop declarations in their lexical scope", () => {
+  const rendered = renderCSharpContract([
+    "contract LoopScope {",
+    "fn sample() -> void {",
+    "    for (let loc0 = 0; loc0 < 3; loc0 += 1) {",
+    "    }",
+    "    return;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /for \(var loc0 = 0; loc0 < 3; loc0 \+= 1\)/);
+  assert.doesNotMatch(rendered, /default;\s*for \(var loc0/);
+});
+
+test("C# rendering hoists a for-loop variable only when it escapes", () => {
+  const rendered = renderCSharpContract([
+    "contract LoopScopeEscape {",
+    "fn sample() -> int {",
+    "    for (let loc0 = 0; loc0 < 3; loc0 += 1) {",
+    "    }",
+    "    return loc0;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /BigInteger loc0 = default;/);
+  assert.match(rendered, /for \(loc0 = 0; loc0 < 3; loc0 \+= 1\)/);
+  assert.doesNotMatch(rendered, /for \(var loc0/);
+});
+
 test("C# rendering dynamically binds compound VM call and comparison operands", () => {
   const rendered = renderCSharpContract([
     "contract CompoundOperators {",

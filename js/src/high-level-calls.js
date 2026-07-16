@@ -2,6 +2,8 @@ import { SYSCALLS } from "./generated/syscalls.js";
 import { jumpTarget, stripOuterParens } from "./high-level-utils.js";
 import { hex16, hex32, hexOffset } from "./util.js";
 
+const MAX_RENDERED_CALL_ARGUMENTS = 256;
+
 export function tryInternalCall(state, instruction) {
   const mnemonic = instruction.opcode.mnemonic;
   if (mnemonic !== "CALL" && mnemonic !== "CALL_L") {
@@ -109,7 +111,8 @@ export function tryTokenCall(state, instruction) {
 function popCallArguments(state, instruction, calleeLabel, argCount) {
   const args = [];
   let missingArgument = false;
-  for (let index = 0; index < argCount; index += 1) {
+  const renderedCount = Math.min(argCount, MAX_RENDERED_CALL_ARGUMENTS);
+  for (let index = 0; index < renderedCount; index += 1) {
     const value = state.stack.pop();
     if (value === undefined) {
       missingArgument = true;
@@ -117,6 +120,20 @@ function popCallArguments(state, instruction, calleeLabel, argCount) {
     } else {
       args.push(stripOuterParens(value));
     }
+  }
+  if (argCount > renderedCount) {
+    // A malformed or adversarial token can legally advertise a u16-sized
+    // argument list. Keep source output bounded while consuming the values
+    // that the VM call would remove from the abstract stack.
+    const omitted = argCount - renderedCount;
+    state.stack.length = Math.max(0, state.stack.length - omitted);
+    args.push("unknown");
+    const message = `call argument count ${argCount} exceeds render limit `
+      + `${MAX_RENDERED_CALL_ARGUMENTS}; omitted ${omitted} values for ${calleeLabel}`;
+    state.statements.push(`// warning: ${message}`);
+    state.warnings.push(
+      `high-level: 0x${instruction.offset.toString(16).padStart(4, "0").toUpperCase()}: ${message}`,
+    );
   }
   if (missingArgument) {
     const message = `missing call argument values for ${calleeLabel} (substituted ???)`;
