@@ -810,8 +810,15 @@ fn foreach_tuple_helper_underflow_stays_explicit_and_compile_safe() {
         "C# should retain an honest underflow comment: {method}"
     );
     assert!(
-        method.contains("sub_0x0450((dynamic)null, (dynamic)null, (dynamic)null, (dynamic)null)"),
-        "C# should use compile-safe dynamic placeholders for unproven call arguments: {method}"
+        method.contains(
+            "sub_0x0450((dynamic)(((object)null) ?? throw new InvalidOperationException(\"VM argument underflow"
+        ),
+        "C# should use compile-safe throwing expressions for unproven call arguments: {method}"
+    );
+    assert!(
+        method.contains("dynamic loc3 = (dynamic)null;")
+            && method.contains("dynamic loc4 = (dynamic)null;"),
+        "C# should keep unrelated unknown tuple elements as compatibility nulls: {method}"
     );
 }
 

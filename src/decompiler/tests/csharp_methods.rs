@@ -359,12 +359,14 @@ fn csharp_manifest_void_internal_call_underflow_keeps_call_visible() {
 
     let csharp = decompilation.csharp.as_deref().expect("csharp output");
     assert!(
-        csharp.contains("helper((dynamic)null);"),
-        "argument underflow must remain a typed structured call: {csharp}"
+        csharp.contains(
+            "helper((dynamic)(((object)null) ?? throw new InvalidOperationException(\"VM argument underflow"
+        ),
+        "argument underflow must remain a typed structured call with a throwing placeholder: {csharp}"
     );
     assert!(
         csharp.contains(
-            "// VM argument underflow in caller at 0x0004: requires 1 stack values, but only 0 are available; missing values are rendered as (dynamic)null."
+            "// VM argument underflow in caller at 0x0004: requires 1 stack values, but only 0 are available; missing values use a throwing C# compatibility expression."
         ),
         "argument underflow must be explicit in generated C#: {csharp}"
     );
@@ -415,8 +417,10 @@ fn csharp_manifest_long_internal_call_underflow_keeps_call_visible() {
         .expect("csharp output");
 
     assert!(
-        csharp.contains("helper((dynamic)null);"),
-        "long-call argument underflow must retain the helper call: {csharp}"
+        csharp.contains(
+            "helper((dynamic)(((object)null) ?? throw new InvalidOperationException(\"VM argument underflow"
+        ),
+        "long-call argument underflow must retain the helper call with a throwing placeholder: {csharp}"
     );
     assert!(
         csharp.contains("VM argument underflow in caller at 0x0004"),
@@ -463,7 +467,9 @@ fn csharp_manifest_value_tail_call_underflow_still_returns_call() {
 
     let csharp = decompilation.csharp.as_deref().expect("csharp output");
     assert!(
-        csharp.contains("return helper((dynamic)null);"),
+        csharp.contains(
+            "return helper((dynamic)(((object)null) ?? throw new InvalidOperationException(\"VM argument underflow"
+        ),
         "argument underflow must preserve value-producing tail-call behavior: {csharp}"
     );
 }

@@ -70,6 +70,47 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
     instructions: &[crate::instruction::Instruction],
     event_signatures: &EventSignatures,
 ) -> String {
+    render_block_with_trace_and_underflow(
+        block,
+        plan,
+        symbols,
+        return_behavior,
+        inline_single_use_temps,
+        assert_message_helper,
+        vm_exception_type,
+        bare_throw_helper_call,
+        unpack_packstruct_helper_call,
+        tagged_opcode_helper_calls,
+        internal_call_return_types,
+        return_type,
+        source_map,
+        instructions,
+        event_signatures,
+        &BTreeSet::new(),
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::decompiler::csharp::render) fn render_block_with_trace_and_underflow(
+    block: &Block,
+    plan: &DeclarationPlan,
+    symbols: &BTreeMap<String, SymbolInfo>,
+    return_behavior: ReturnBehavior,
+    inline_single_use_temps: bool,
+    assert_message_helper: &str,
+    vm_exception_type: &str,
+    bare_throw_helper_call: Option<&str>,
+    unpack_packstruct_helper_call: Option<&str>,
+    tagged_opcode_helper_calls: &BTreeMap<(u8, u8), String>,
+    internal_call_return_types: &BTreeMap<usize, String>,
+    return_type: Option<&str>,
+    source_map: Option<&SourceMap>,
+    instructions: &[crate::instruction::Instruction],
+    event_signatures: &EventSignatures,
+    vm_argument_underflow_targets: &BTreeSet<String>,
+    vm_argument_underflow_placeholder: Option<&str>,
+) -> String {
     let mut reserved_names = symbols.keys().cloned().collect::<BTreeSet<_>>();
     reserved_names.extend(
         plan.declarations
@@ -108,6 +149,10 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace(
             .with_unpack_packstruct_helper_call(unpack_packstruct_helper_call)
             .with_tagged_opcode_helper_calls(tagged_opcode_helper_calls)
             .with_internal_call_return_types(internal_call_return_types)
+            .with_vm_argument_underflow(
+                vm_argument_underflow_targets,
+                vm_argument_underflow_placeholder,
+            )
             .with_event_signatures(event_signatures),
         return_behavior,
         return_type,

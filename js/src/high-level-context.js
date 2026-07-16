@@ -72,33 +72,52 @@ function inferMethodArgCount(group, entryOffset) {
   return inferRequiredEntryStackDepth(group.instructions);
 }
 
+const MAX_SIMULATED_ENTRY_POPS = 1024;
+
 function inferRequiredEntryStackDepth(instructions) {
   let required = 0;
-  let depth = 0;
+  const stack = [];
 
   for (const instruction of instructions) {
     if (instruction.opcode.mnemonic === "RET") {
       break;
     }
-    const effect = stackEffectForArgInference(instruction);
+    const effect = stackEffectForArgInference(instruction, stack);
     if (!effect) {
       break;
     }
-    while (depth < effect.pops) {
-      depth += 1;
+    while (stack.length < effect.pops) {
+      stack.unshift(null);
       required += 1;
     }
-    depth -= effect.pops;
-    depth += effect.pushes;
+    for (let index = 0; index < effect.pops; index += 1) {
+      stack.pop();
+    }
+    stack.push(...effect.pushes);
   }
 
   return required;
 }
 
-function stackEffectForArgInference(instruction) {
+function stackEffectForArgInference(instruction, stack) {
   const mnemonic = instruction.opcode.mnemonic;
+  const literalPush = (value) => ({ pops: 0, pushes: [value] });
+  const unknownPush = () => literalPush(null);
+  const unaryUnknown = () => ({ pops: 1, pushes: [null] });
+  const binaryUnknown = () => ({ pops: 2, pushes: [null] });
+
+  if (mnemonic.startsWith("PUSHINT")) {
+    const value = instruction.operand?.value;
+    return typeof value === "number" && Number.isSafeInteger(value)
+      ? literalPush(value)
+      : unknownPush();
+  }
+  const shortPush = /^PUSH(\d+)$/.exec(mnemonic);
+  if (shortPush) {
+    return literalPush(Number(shortPush[1]));
+  }
   if (["NOP", "INITSSLOT", "INITSLOT"].includes(mnemonic)) {
-    return { pops: 0, pushes: 0 };
+    return { pops: 0, pushes: [] };
   }
   if (
     mnemonic.startsWith("PUSH") ||
@@ -110,7 +129,7 @@ function stackEffectForArgInference(instruction) {
     mnemonic.startsWith("LDSFLD") ||
     mnemonic === "DEPTH"
   ) {
-    return { pops: 0, pushes: 1 };
+    return unknownPush();
   }
   if (
     mnemonic.startsWith("STLOC") ||
@@ -118,14 +137,14 @@ function stackEffectForArgInference(instruction) {
     mnemonic.startsWith("STSFLD") ||
     mnemonic === "DROP"
   ) {
-    return { pops: 1, pushes: 0 };
+    return { pops: 1, pushes: [] };
   }
   if (mnemonic === "SYSCALL" && instruction.operand?.kind === "Syscall") {
     const info = SYSCALLS.get(instruction.operand.value) ?? null;
     if (!info) return null;
     return {
       pops: info.param_count ?? 0,
-      pushes: (info.returns_value ?? true) ? 1 : 0,
+      pushes: (info.returns_value ?? true) ? [null] : [],
     };
   }
   if (
@@ -150,26 +169,32 @@ function stackEffectForArgInference(instruction) {
       "PICKITEM",
     ].includes(mnemonic)
   ) {
-    return { pops: 2, pushes: 1 };
+    return binaryUnknown();
   }
-  if (mnemonic === "POPITEM") return { pops: 1, pushes: 1 };
-  if (mnemonic === "DUP") return { pops: 1, pushes: 2 };
-  if (mnemonic === "OVER") return { pops: 2, pushes: 3 };
-  if (mnemonic === "SWAP") return { pops: 2, pushes: 2 };
-  if (mnemonic === "ROT") return { pops: 3, pushes: 3 };
-  if (mnemonic === "TUCK") return { pops: 2, pushes: 3 };
-  if (mnemonic === "NIP") return { pops: 2, pushes: 1 };
+  if (mnemonic === "POPITEM") return { pops: 1, pushes: [null] };
+  if (mnemonic === "DUP") {
+    const top = stack.at(-1) ?? null;
+    return { pops: 1, pushes: [top, top] };
+  }
+  if (mnemonic === "OVER") return { pops: 2, pushes: [null, null, null] };
+  if (mnemonic === "SWAP") return { pops: 2, pushes: [null, null] };
+  if (mnemonic === "ROT") return { pops: 3, pushes: [null, null, null] };
+  if (mnemonic === "TUCK") return { pops: 2, pushes: [null, null, null] };
+  if (mnemonic === "NIP") return { pops: 2, pushes: [null] };
   if (["REVERSE3", "REVERSE4"].includes(mnemonic)) {
     const width = mnemonic === "REVERSE3" ? 3 : 4;
-    return { pops: width, pushes: width };
+    return { pops: width, pushes: Array(width).fill(null) };
   }
   if (["PICK", "ROLL", "REVERSEN"].includes(mnemonic)) {
-    return { pops: 1, pushes: 1 };
+    return { pops: 1, pushes: [null] };
   }
-  if (mnemonic === "XDROP") return { pops: 1, pushes: 0 };
-  if (mnemonic === "SETITEM") return { pops: 3, pushes: 0 };
+  if (mnemonic === "XDROP") return { pops: 1, pushes: [] };
+  if (mnemonic === "SETITEM") return { pops: 3, pushes: [] };
   if (["APPEND", "REMOVE", "CLEARITEMS", "REVERSEITEMS"].includes(mnemonic)) {
-    return { pops: mnemonic === "APPEND" || mnemonic === "REMOVE" ? 2 : 1, pushes: 0 };
+    return {
+      pops: mnemonic === "APPEND" || mnemonic === "REMOVE" ? 2 : 1,
+      pushes: [],
+    };
   }
   if (
     [
@@ -188,11 +213,24 @@ function stackEffectForArgInference(instruction) {
       "DEPTH",
     ].includes(mnemonic)
   ) {
-    return { pops: mnemonic === "DEPTH" ? 0 : 1, pushes: 1 };
+    return mnemonic === "DEPTH" ? unknownPush() : unaryUnknown();
   }
   if (["WITHIN", "MODMUL", "MODPOW"].includes(mnemonic)) {
-    return { pops: 3, pushes: 1 };
+    return { pops: 3, pushes: [null] };
   }
-  if (["SHL", "SHR"].includes(mnemonic)) return { pops: 2, pushes: 1 };
+  if (["SHL", "SHR"].includes(mnemonic)) return binaryUnknown();
+
+  if (["PACK", "PACKSTRUCT", "PACKMAP"].includes(mnemonic)) {
+    const count = stack.at(-1);
+    const unit = mnemonic === "PACKMAP" ? 2 : 1;
+    if (!Number.isInteger(count) || count < 0 || count > MAX_SIMULATED_ENTRY_POPS) {
+      return null;
+    }
+    return {
+      pops: 1 + count * unit,
+      pushes: [null],
+    };
+  }
+
   return null;
 }

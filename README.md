@@ -652,8 +652,10 @@ into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
   backends. The pinned neo-devpack-dotnet v3.10.0 corpus has one known
   incomplete method: `Contract_Foreach@0x0458` calls a compiler-generated
   helper with four required stack values while the caller provides none. The
-  C# renderer preserves that underflow warning and uses compile-safe dynamic
-  placeholders instead of inventing tuple values.
+  C# renderer preserves that underflow warning, makes the first missing
+  argument an explicit throwing compatibility expression, and keeps any
+  remaining unknown values as `dynamic` nulls instead of inventing tuple
+  values.
 
 ## Troubleshooting
 

@@ -12,6 +12,10 @@ use super::super::structured::stmt;
 use super::fidelity::semantic_warnings;
 use super::{plan_method_declarations, BodyBackend, BodyRenderResult, LiftedBodyContext};
 
+#[path = "recovery_underflow.rs"]
+mod underflow;
+pub(super) use underflow::{underflow_call_targets, underflow_placeholder};
+
 const MAX_RENDERED_PLACEHOLDER_ARGUMENTS: usize = 256;
 
 /// Preserve a useful C# call shape when structured lifting reports a recoverable
@@ -27,13 +31,15 @@ pub(super) fn recovered_result(
     fidelity: FidelityReport,
 ) -> BodyRenderResult {
     let mut source = String::new();
+    let underflow_targets = underflow_call_targets(instructions, context, &fidelity);
+    let underflow_placeholder = underflow_placeholder(method_plan, &fidelity, &underflow_targets);
     if body
         .stmts
         .iter()
         .any(|statement| !matches!(statement, Stmt::Comment(_) | Stmt::Return(None)))
     {
         let declarations = plan_method_declarations(body, symbols, method_plan, context);
-        let structured = stmt::render_block_with_trace(
+        let structured = stmt::render_block_with_trace_and_underflow(
             body,
             &declarations,
             symbols,
@@ -51,6 +57,8 @@ pub(super) fn recovered_result(
             None,
             instructions,
             context.event_signatures,
+            &underflow_targets,
+            underflow_placeholder.as_deref(),
         );
         let structured = ensure_non_void_termination(structured, body, method_plan.return_behavior);
         let structured = prepend_argument_underflow_comment(structured, method_plan, &fidelity);
@@ -97,13 +105,28 @@ pub(super) fn recovered_result(
             .copied()
             .unwrap_or(0);
         let args = render_placeholder_arguments(argument_count);
+        let args = if underflow_targets.contains(target_name) {
+            match underflow_placeholder.as_deref() {
+                Some(placeholder) => args.replacen("(dynamic)null", placeholder, 1),
+                None => args,
+            }
+        } else {
+            args
+        };
         let call = format!("{target_name}({args})");
         match instruction.opcode {
             OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::Jmp | OpCode::Jmp_L => {
                 if argument_underflow {
+                    let underflow_note = if underflow_targets.contains(target_name)
+                        && underflow_placeholder.is_some()
+                    {
+                        "first missing value uses a throwing compatibility expression; remaining values use dynamic nulls"
+                    } else {
+                        "missing values remain dynamic nulls because the callee target is unresolved"
+                    };
                     writeln!(
                         source,
-                        "            // VM argument underflow: {target_name}: {argument_underflow_detail}; substituted (dynamic)null arguments."
+                        "            // VM argument underflow: {target_name}: {argument_underflow_detail}; {underflow_note}."
                     )
                     .unwrap();
                 }
@@ -200,8 +223,14 @@ pub(super) fn prepend_argument_underflow_comment(
     }) else {
         return source;
     };
+    let fallback = if source.contains("throw new InvalidOperationException(\"VM argument underflow")
+    {
+        "missing values use a throwing C# compatibility expression"
+    } else {
+        "missing values remain dynamic nulls because the callee target is unresolved"
+    };
     format!(
-        "// VM argument underflow in {} at 0x{:04X}: {}; missing values are rendered as (dynamic)null.\n{}",
+        "// VM argument underflow in {} at 0x{:04X}: {}; {fallback}.\n{}",
         method_plan.emitted_name, issue.offset, issue.detail, source
     )
 }

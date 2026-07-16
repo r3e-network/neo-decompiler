@@ -1091,6 +1091,35 @@ test("internal call with insufficient stack values emits `???` placeholder + war
   );
 });
 
+test("detached PACKSTRUCT helpers infer entry arity and keep C# underflow explicit", () => {
+  // The helper has no INITSLOT. Its three literal PACK operations require
+  // four values from the caller's entry stack before the final RET.
+  const script = new Uint8Array([
+    0x57, 0x00, 0x00, // caller: INITSLOT 0 locals, 0 args
+    0x34, 0x03,       // CALL +3 -> helper at 0x06
+    0x40,
+    0x12, 0xBF,      // PUSH2; PACKSTRUCT
+    0x12, 0xBF,      // PUSH2; PACKSTRUCT
+    0x50,             // SWAP
+    0x12, 0xC0,      // PUSH2; PACK
+    0x40,
+  ]);
+  const { highLevel, csharp, warnings } = decompileHighLevelBytes(buildNefFromScript(script), {
+    typedDeclarations: true,
+  });
+
+  assert.match(highLevel, /sub_0x0006\(\?\?\?, \?\?\?, \?\?\?, \?\?\?\)/);
+  assert.ok(
+    warnings.some((warning) => /missing call argument values for sub_0x0006/.test(warning)),
+    `warnings should include the PACKSTRUCT helper underflow: ${JSON.stringify(warnings)}`,
+  );
+  assert.match(
+    csharp,
+    /sub_0x0006\(\(dynamic\)\(\(\(object\)null\) \?\? throw new InvalidOperationException\("VM argument underflow/,
+  );
+  assert.match(csharp, /throwing compatibility expression/);
+});
+
 test("proven non-returning internal calls terminate both C# branch paths", () => {
   // main(bool) calls helper() on either branch. The helper ends in ABORT and
   // has no RET, so the call is a proven non-returning edge even though its

@@ -28,6 +28,11 @@ import {
 } from "./csharp-render.js";
 import { rewriteCSharpMethodTokenCalls } from "./csharp-framework.js";
 import { isInsideQuotedString } from "./csharp-expression-scanner.js";
+import {
+  collectUnderflowTargets,
+  rewriteUnderflowCallArguments,
+  rewriteUnderflowWarningComment,
+} from "./csharp-underflow.js";
 
 export function renderCSharpContract(
   highLevel,
@@ -55,6 +60,7 @@ export function renderCSharpContract(
   ];
   let classSeen = false;
   const sourceLines = highLevel.split(/\r?\n/);
+  const underflowTargets = collectUnderflowTargets(sourceLines);
   const sourceDepthByLine = [];
   let sourceDepth = 0;
   for (const sourceLine of sourceLines) {
@@ -201,10 +207,15 @@ export function renderCSharpContract(
       ),
       declarationTypesByLine?.get(lineIndex) ?? null,
     );
-    const returnedBody = coerceCSharpReturn(
-      renderedBody,
-      returnTypesByLine.get(lineIndex) ?? null,
-      declarationTypesByLine?.get(lineIndex) ?? null,
+    const returnedBody = rewriteUnderflowWarningComment(
+      rewriteUnderflowCallArguments(
+        coerceCSharpReturn(
+          renderedBody,
+          returnTypesByLine.get(lineIndex) ?? null,
+          declarationTypesByLine?.get(lineIndex) ?? null,
+        ),
+        underflowTargets,
+      ),
     );
     output.push(metadata ?? (orphanElse
       ? `${line.match(/^\s*/)?.[0] ?? ""}// orphaned else branch`

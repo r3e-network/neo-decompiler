@@ -18,10 +18,15 @@ pub(super) fn render_call(
     expanding: &mut BTreeSet<String>,
 ) -> RenderedExpr {
     match target {
-        SemanticCallTarget::Internal { name, .. } => RenderedExpr::new(
-            format!("{name}({})", render_expr_list(args, context, expanding)),
-            PREC_PRIMARY,
-        ),
+        SemanticCallTarget::Internal { name, .. } => {
+            let mut rendered_args = render_expr_list(args, context, expanding);
+            if context.vm_argument_underflow_targets.contains(name) {
+                if let Some(placeholder) = context.vm_argument_underflow_placeholder.as_deref() {
+                    rendered_args = rendered_args.replacen("(dynamic)null", placeholder, 1);
+                }
+            }
+            RenderedExpr::new(format!("{name}({rendered_args})"), PREC_PRIMARY)
+        }
         SemanticCallTarget::MethodToken {
             index,
             name,

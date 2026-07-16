@@ -112,7 +112,10 @@ pub(super) fn render_method_body(
         return throwing_stub_with_fidelity(method_plan, fidelity);
     }
 
-    let source = stmt::render_block_with_trace(
+    let underflow_targets = recovery::underflow_call_targets(instructions, context, &fidelity);
+    let underflow_placeholder =
+        recovery::underflow_placeholder(method_plan, &fidelity, &underflow_targets);
+    let source = stmt::render_block_with_trace_and_underflow(
         &lowered.body,
         &declarations,
         &lowered.symbols,
@@ -130,6 +133,8 @@ pub(super) fn render_method_body(
         context.emit_trace_comments.then_some(&lowered.source_map),
         instructions,
         context.event_signatures,
+        &underflow_targets,
+        underflow_placeholder.as_deref(),
     );
     let source =
         recovery::ensure_non_void_termination(source, &lowered.body, method_plan.return_behavior);

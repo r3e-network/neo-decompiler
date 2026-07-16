@@ -36,6 +36,8 @@ pub(super) struct ExprContext {
     pub(super) unpack_packstruct_helper_call: Option<String>,
     pub(super) tagged_opcode_helper_calls: BTreeMap<(u8, u8), String>,
     internal_call_return_types: BTreeMap<usize, String>,
+    pub(super) vm_argument_underflow_targets: BTreeSet<String>,
+    pub(super) vm_argument_underflow_placeholder: Option<String>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -80,6 +82,8 @@ impl ExprContext {
                 unpack_packstruct_helper_call: None,
                 tagged_opcode_helper_calls: BTreeMap::new(),
                 internal_call_return_types: BTreeMap::new(),
+                vm_argument_underflow_targets: BTreeSet::new(),
+                vm_argument_underflow_placeholder: None,
             };
         }
 
@@ -134,6 +138,8 @@ impl ExprContext {
             unpack_packstruct_helper_call: None,
             tagged_opcode_helper_calls: BTreeMap::new(),
             internal_call_return_types: BTreeMap::new(),
+            vm_argument_underflow_targets: BTreeSet::new(),
+            vm_argument_underflow_placeholder: None,
         }
     }
 
@@ -170,6 +176,16 @@ impl ExprContext {
         return_types: &BTreeMap<usize, String>,
     ) -> Self {
         self.internal_call_return_types.clone_from(return_types);
+        self
+    }
+
+    pub(super) fn with_vm_argument_underflow(
+        mut self,
+        targets: &BTreeSet<String>,
+        placeholder: Option<&str>,
+    ) -> Self {
+        self.vm_argument_underflow_targets.clone_from(targets);
+        self.vm_argument_underflow_placeholder = placeholder.map(str::to_string);
         self
     }
 

@@ -2,7 +2,7 @@
 status: narrowed
 trigger: "continue analysis and resolve the nine remaining pinned-corpus limitations"
 created: 2026-07-13T00:00:00+08:00
-updated: 2026-07-16T17:42:45+08:00
+updated: 2026-07-17T00:00:00+08:00
 ---
 
 ## Current Focus
@@ -13,6 +13,15 @@ expecting: Contract_Foreach@0458 remains the only incomplete method; generated C
 next_action: Keep this bytecode path explicit as a known limitation unless a corrected compiler artifact or VM-validated call-entry model supplies the missing tuple values.
 reasoning_checkpoint: null
 tdd_checkpoint: null
+
+## C# Contract Boundary
+
+The unresolved call remains visible in generated C# rather than being replaced
+with fabricated tuple elements. For a resolved underflowing internal call, the
+first missing argument is rendered as a throwing `InvalidOperationException`
+expression; additional unknown arguments remain `(dynamic)null`. This keeps
+the contract source compile-safe while preserving the VM fault boundary and
+the warning that explains the incomplete method.
 
 ## Symptoms
 
