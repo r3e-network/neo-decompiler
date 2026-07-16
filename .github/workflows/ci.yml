@@ -174,6 +174,14 @@ jobs:
             --clean
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Install .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Install Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Cache dependencies
         uses: actions/cache@v4
         with:
@@ -184,6 +192,23 @@ jobs:
           key: ${{ runner.os }}-cargo-devpack-v3.10.0-${{ hashFiles('**/Cargo.lock') }}
       - name: Run pinned corpus sweep
         run: bash tools/ci/artifact_sweep.sh
+      - name: Restore pinned Neo C# framework assembly
+        run: |
+          dotnet new classlib --framework net10.0 --output .ci/roslyn --no-restore
+          dotnet add .ci/roslyn package Neo.SmartContract.Framework --version 3.10.0
+          dotnet restore .ci/roslyn --nologo --verbosity quiet
+          framework_dll="$(find "$HOME/.nuget/packages/neo.smartcontract.framework/3.10.0/lib/net10.0" -name Neo.SmartContract.Framework.dll -print -quit)"
+          test -n "$framework_dll"
+          {
+            echo "NEO_SMARTCONTRACT_FRAMEWORK_DLL=$framework_dll"
+            echo "NEO_CSHARP_TARGET_FRAMEWORK=net10.0"
+            echo "NEO_CSHARP_CORPUS_DIR=$GITHUB_WORKSPACE/TestingArtifacts/devpack"
+          } >> "$GITHUB_ENV"
+      - name: Compile pinned Rust C# corpus with Roslyn
+        run: cargo test --test csharp_compile pinned_corpus_generated_csharp_compiles_with_roslyn -- --nocapture
+      - name: Compile pinned JS C# corpus with Roslyn
+        working-directory: js
+        run: node --test --test-name-pattern "pinned JS-generated C# corpus" test/*.test.mjs
 
   build:
     name: Build

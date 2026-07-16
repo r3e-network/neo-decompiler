@@ -232,7 +232,6 @@ fn representative_generated_csharp_compiles_with_roslyn() {
 }
 
 #[test]
-#[ignore = "requires dotnet, framework DLL, and NEO_CSHARP_CORPUS_DIR"]
 fn pinned_corpus_generated_csharp_compiles_with_roslyn() {
     let Some(corpus) = env::var_os("NEO_CSHARP_CORPUS_DIR").map(PathBuf::from) else {
         eprintln!("NEO_CSHARP_CORPUS_DIR is unset; skipping full C# corpus gate");
