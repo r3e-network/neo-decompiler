@@ -41,10 +41,18 @@ export function labelsVisibleInMethod(lines, depths) {
     const labels = new Set();
     const labelDepths = new Map();
     const finallyLabels = new Set();
+    const duplicateLabelLines = new Set();
     for (let index = start + 1; index < end; index += 1) {
       const match = lines[index].trim().match(/^(label_0x[0-9A-Fa-f]+):/i);
       if (match) {
         const normalized = match[1].toLowerCase();
+        if (labels.has(normalized)) {
+          // A structured loop can expose the same VM target once before the
+          // loop and once at the end of its body. C# labels are method-scoped,
+          // so retaining both definitions creates CS0158 shadowing errors.
+          duplicateLabelLines.add(index);
+          continue;
+        }
         labels.add(normalized);
         labelDepths.set(normalized, depths[index]);
       }
@@ -59,7 +67,13 @@ export function labelsVisibleInMethod(lines, depths) {
       }
     }
     for (let index = start; index <= end; index += 1) {
-      labelsByLine.set(index, { labels, labelDepths, finallyLabels, depth: depths[index] });
+      labelsByLine.set(index, {
+        labels,
+        labelDepths,
+        finallyLabels,
+        depth: depths[index],
+        skipLabel: duplicateLabelLines.has(index),
+      });
     }
     start = end;
   }

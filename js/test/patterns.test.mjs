@@ -1292,6 +1292,31 @@ test("C# rendering comments unresolved method-scoped gotos", () => {
   assert.doesNotMatch(csharp, /^\s+goto label_0x000B;$/m);
 });
 
+test("C# rendering scopes switch syntax and deduplicates method labels", () => {
+  const csharp = renderCSharpContract([
+    "contract Token {",
+    "fn flow(value) {",
+    "    switch value {",
+    "        case 0 {",
+    "            goto label_0x000A;",
+    "        }",
+    "        default {",
+    "            goto label_0x000A;",
+    "        }",
+    "    }",
+    "    label_0x000A:",
+    "    label_0x000A:",
+    "    return;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(csharp, /switch \(@value\) \{/);
+  assert.match(csharp, /case 0: \{/);
+  assert.match(csharp, /default: \{/);
+  assert.equal((csharp.match(/label_0x000A:/g) ?? []).length, 1);
+  assert.doesNotMatch(csharp, /switch @value \{|case 0 \{|default \{/);
+});
+
 test("C# rendering replays framework-internal syscalls through Runtime.LoadScript", () => {
   const csharp = renderCSharpContract([
     "contract Token {",

@@ -91,6 +91,10 @@ export function renderCSharpContract(
   let patternCommentsPending = true;
   const patternComments = renderPatternComments(patternInfo);
   for (const [lineIndex, line] of sourceLines.entries()) {
+    const labelContext = labelsByLine.get(lineIndex);
+    if (labelContext?.skipLabel && /^\s*label_0x[0-9A-Fa-f]+:\s*$/.test(line)) {
+      continue;
+    }
     if (
       classSeen &&
       patternCommentsPending &&
@@ -183,7 +187,7 @@ export function renderCSharpContract(
     );
     output.push(metadata ?? (orphanElse
       ? `${line.match(/^\s*/)?.[0] ?? ""}// orphaned else branch`
-      : rewriteUnresolvedGotos(returnedBody, labelsByLine.get(lineIndex))));
+      : rewriteUnresolvedGotos(returnedBody, labelContext)));
     if (/^\s*(?:features|groups|permissions)\s*\{\s*$/.test(line)) {
       metadataBlock = true;
     }

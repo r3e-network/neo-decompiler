@@ -178,6 +178,17 @@ function rewriteCSharpControlSyntax(line, declarationTypes = null) {
   const loop = output.match(/^(\s*)loop\s*\{\s*$/);
   if (loop) return `${loop[1]}while (true) {`;
 
+  const switchStatement = output.match(/^(\s*)switch\s+(.+?)\s*\{\s*$/);
+  if (switchStatement) {
+    return `${switchStatement[1]}switch (${switchStatement[2].trim()}) {`;
+  }
+  const caseStatement = output.match(/^(\s*)case\s+(.+?)\s*\{\s*$/);
+  if (caseStatement) {
+    return `${caseStatement[1]}case ${caseStatement[2].trim()}: {`;
+  }
+  const defaultStatement = output.match(/^(\s*)default\s*\{\s*$/);
+  if (defaultStatement) return `${defaultStatement[1]}default: {`;
+
   const control = output.match(/^(\s*)((?:}\s*else\s+)?(?:if|while))\s+/);
   if (control) {
     const [, indentation, keyword] = control;

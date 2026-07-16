@@ -137,6 +137,19 @@ hint is secondary analysis only. Manifest standards are high confidence; bytecod
 method signatures can infer NEP-17, NEP-11, and NEP-24 (`royaltyInfo`) when
 the manifest does not declare a standard.
 
+When the pinned v3.10.0 corpus and Neo framework assembly are available, the
+optional Roslyn gate verifies every generated JS contract:
+
+```bash
+NEO_CSHARP_CORPUS_DIR=/path/to/devpack-artifacts-v3.10.0 \
+NEO_SMARTCONTRACT_FRAMEWORK_DLL=/path/to/Neo.SmartContract.Framework.dll \
+NEO_CSHARP_TARGET_FRAMEWORK=net10.0 \
+npm test -- --test-name-pattern "pinned JS-generated C# corpus"
+```
+
+Without those environment variables the gate is skipped; the ordinary JS
+suite remains self-contained.
+
 ### `parseManifest(json) → { name, abi, ... }`
 
 Parse a Neo N3 contract manifest JSON.
