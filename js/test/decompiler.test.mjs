@@ -1434,6 +1434,37 @@ test("uses method token metadata to lift CALLT arguments and void returns", () =
   assert.match(result.highLevel, /return;/);
 });
 
+test("preserves a value through a suffix branch chain before CALLT", () => {
+  // Each matching branch returns immediately; the fallthrough chain keeps the
+  // original argument for the final one-argument token call. Linear stack
+  // replay used to consume that value while simulating the nested branches,
+  // leaving `foo(???)` in the generated contract.
+  const script = new Uint8Array([
+    0x57, 0x00, 0x01, // INITSLOT 0 locals, 1 arg
+    0x78, // LDARG0
+    0x4a, 0x11, 0x97, // DUP; PUSH1; EQUAL
+    0x26, 0x05, // JMPIFNOT -> second comparison
+    0x75, 0x11, 0x40, // DROP; PUSH1; RET
+    0x4a, 0x12, 0x97, // DUP; PUSH2; EQUAL
+    0x26, 0x05, // JMPIFNOT -> token call
+    0x75, 0x12, 0x40, // DROP; PUSH2; RET
+    0x37, 0x00, 0x00, // CALLT token 0 (one argument)
+    0x40, // RET
+  ]);
+  const nef = buildNefWithSingleToken(
+    script,
+    new Uint8Array(20),
+    "foo",
+    1,
+    true,
+    0x0f,
+  );
+  const result = decompileHighLevelBytes(nef);
+  assert.match(result.highLevel, /foo\(arg0\)/);
+  assert.doesNotMatch(result.highLevel, /\?\?\?/);
+  assert.equal(result.warnings.length, 0);
+});
+
 test("keeps restricted native CALLT labels unqualified", () => {
   const nef = buildNefWithSingleToken(
     new Uint8Array([0x11, 0x37, 0x00, 0x00, 0x40]),
@@ -1642,6 +1673,35 @@ test("method contracts classify a private void helper and preserve the caller re
   assert.match(result.highLevel, /return 9;/);
   assert.doesNotMatch(result.highLevel, /return sub_0x0007\(1\)/);
   assert.match(result.highLevel, /fn sub_0x0007\(arg0\) \{/);
+});
+
+test("method contracts keep exception-bearing helper returns conservative", () => {
+  const script = new Uint8Array([
+    0x34, 0x03, // CALL helper at offset 3
+    0x40, // RET
+    0x3b, 0x00, 0x05, // TRY with finally at offset 8
+    0x11, // PUSH1
+    0x3d, 0x02, // ENDTRY -> RET after ENDFINALLY
+    0x3f, // ENDFINALLY
+    0x40, // RET
+  ]);
+  const manifest = JSON.stringify({
+    name: "TryValueHelper",
+    abi: {
+      methods: [
+        { name: "main", parameters: [], returntype: "Integer", offset: 0 },
+      ],
+      events: [],
+    },
+  });
+  const result = decompileHighLevelBytesWithManifest(buildNefFromScript(script), manifest);
+  assert.equal(
+    result.methodContracts.methods.find(({ method }) => method.offset === 3)
+      ?.returnBehavior,
+    "unknown",
+  );
+  assert.match(result.highLevel, /return sub_0x0003\(\);/);
+  assert.doesNotMatch(result.highLevel, /return \?\?\?;/);
 });
 
 test("method contracts converge through a private void wrapper chain", () => {

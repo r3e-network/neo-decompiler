@@ -234,14 +234,21 @@ function renderCSharpCatchClause(line, exceptionName = "exception") {
 function buildCatchScopes(lines, depths) {
   const scopes = [];
   let ordinal = 0;
+  let methodParameters = new Set();
   for (let index = 0; index < lines.length; index += 1) {
-    if (/^\s*fn\s+/.test(lines[index])) ordinal = 0;
+    if (/^\s*fn\s+/.test(lines[index])) {
+      ordinal = 0;
+      methodParameters = methodParameterNames(lines[index]);
+    }
     if (!/^\s*\}\s*catch\s*\{\s*$/u.test(lines[index]) &&
         !/^\s*catch\s*\{\s*$/u.test(lines[index])) {
       continue;
     }
-    const variable = ordinal === 0 ? "exception" : `exception_${ordinal}`;
-    ordinal += 1;
+    let variable;
+    do {
+      variable = ordinal === 0 ? "exception" : `exception_${ordinal}`;
+      ordinal += 1;
+    } while (methodParameters.has(variable));
     const bodyDepth = depths[index] + sourceBraceDelta(lines[index]);
     let endLine = lines.length;
     for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
@@ -255,6 +262,14 @@ function buildCatchScopes(lines, depths) {
     scopes.push({ headerLine: index, startLine: index + 1, endLine, variable });
   }
   return scopes;
+}
+
+function methodParameterNames(signature) {
+  const parameters = signature.match(/^\s*fn\s+[^\s(]+\((.*?)\)/)?.[1] ?? "";
+  return new Set(parameters.split(",").map((parameter) => {
+    const separator = parameter.indexOf(":");
+    return (separator < 0 ? parameter : parameter.slice(0, separator)).trim();
+  }).filter(Boolean));
 }
 
 function replaceExceptionReference(line, variable) {

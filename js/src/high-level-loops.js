@@ -151,6 +151,19 @@ export function createLoopHelpers(runtime) {
     const bodyState = cloneState(prefixState);
     executeStraightLine(bodyState, instructions.slice(loopStartIndex, tailIndex));
     const bodySlice = instructions.slice(loopStartIndex, tailIndex);
+    // A compiler's protected-region epilogue can leave a lone PUSHF/PUSHT
+    // immediately before a backward conditional. Treating that marker as a
+    // real do-while body produces an empty `do { } while (...)` and prevents
+    // the TRY that follows it from being structured. Let the try lifter own
+    // the slice when there is no observable body work.
+    if (
+      bodySlice.length === 1 &&
+      ["PUSHF", "PUSHT", "PUSHNULL", "NOP"].includes(
+        bodySlice[0]?.opcode?.mnemonic,
+      )
+    ) {
+      return null;
+    }
     const nestedBody = hasLeadingTry(bodySlice)
       ? liftStructuredSlice(
         bodySlice,
@@ -264,6 +277,8 @@ function executeStructuredLoopBody(
         );
         state.statements.push(...nested.statements);
         state.warnings.push(...nested.warnings);
+        if (nested.stack) state.stack = [...nested.stack];
+        if (Number.isInteger(nested.nextTempId)) state.nextTempId = nested.nextTempId;
       } else {
         executeStraightLineFn(state, part.instructions);
       }

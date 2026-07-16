@@ -3,6 +3,14 @@ import {
   collectDerivedWarnings,
   rewriteForLoops,
 } from "./high-level-control-flow-shared.js";
+import {
+  extendTerminatingTryRegion,
+  extendTryBodyForNestedHandlers,
+  findBodyEndtryIndex,
+  findHandlerEndIndex,
+  findTerminatingHandlerIndex,
+  tryHandlerTargets,
+} from "./high-level-try-boundaries.js";
 
 function findMnemonicFrom(instructions, start, mnemonic) {
   for (let i = start; i < instructions.length; i++) {
@@ -35,6 +43,12 @@ export function createTryHelpers(runtime) {
     methodOffset,
     initialState = null,
   ) {
+    // Nested TRY recovery is intentionally bounded. Large or adversarial
+    // streams remain available through the linear renderer and must not turn
+    // recursive handler discovery into quadratic/exponential work.
+    if (instructions.length > 256) {
+      return null;
+    }
     const tryIndex = findTryIndex(instructions, 0);
     if (tryIndex < 0) {
       return null;
@@ -67,6 +81,24 @@ export function createTryHelpers(runtime) {
     if (endtryGlobalIndex < 0) {
       return null;
     }
+    const handlerTargetsForBoundary = [catchTarget, finallyTarget].filter(
+      (target) => target !== null,
+    );
+    const methodStartsWithSlotSetup =
+      instructions[0]?.opcode?.mnemonic === "INITSLOT";
+    const outerHandlerBoundary = methodStartsWithSlotSetup || handlerTargetsForBoundary.length === 0
+      ? Math.min(...handlerTargetsForBoundary, Number.POSITIVE_INFINITY)
+      : (instructions.at(-1)?.offset ?? Number.POSITIVE_INFINITY) + 1;
+    const tryBodyEndIndex = extendTryBodyForNestedHandlers(
+      instructions,
+      bodyStartIndex,
+      endtryGlobalIndex,
+      outerHandlerBoundary,
+      indexByOffset,
+    );
+    const tryBodySliceEnd = tryBodyEndIndex > endtryGlobalIndex
+      ? tryBodyEndIndex + 1
+      : endtryGlobalIndex;
     let catchSlice = [];
     let finallySlice = [];
     let resumeSlice = [];
@@ -132,6 +164,31 @@ export function createTryHelpers(runtime) {
         endtryGlobalIndex + 1,
         "ENDTRY",
       );
+      // When the protected body terminates before emitting an ENDTRY, the
+      // handler begins at `endtryGlobalIndex` and often ends in THROW/ABORT.
+      // Do not let a later, unrelated ENDTRY (for a following TRY region)
+      // absorb that handler and all subsequent instructions.
+      const bodyEndedWithoutEndtry = ![
+        "ENDTRY",
+        "ENDTRY_L",
+      ].includes(instructions[endtryGlobalIndex]?.opcode?.mnemonic);
+      const terminatingCatchIndex = bodyEndedWithoutEndtry
+        ? findTerminatingHandlerIndex(instructions, catchIndex)
+        : -1;
+      if (
+        bodyEndedWithoutEndtry &&
+        terminatingCatchIndex >= catchIndex &&
+        (catchEndGlobalIndex < 0 || terminatingCatchIndex < catchEndGlobalIndex)
+      ) {
+        const regionEnd = extendTerminatingTryRegion(
+          instructions,
+          catchIndex,
+          terminatingCatchIndex,
+          indexByOffset,
+        );
+        catchSlice = instructions.slice(catchIndex, regionEnd + 1);
+        resumeSlice = instructions.slice(regionEnd + 1);
+      }
       if (catchSlice.length === 0 && catchEndGlobalIndex >= 0) {
         const catchEndInstruction = instructions[catchEndGlobalIndex];
         const catchEndTarget = jumpTarget(catchEndInstruction);
@@ -199,8 +256,14 @@ export function createTryHelpers(runtime) {
           } else {
             const terminatingIndex = findTerminatingHandlerIndex(instructions, finallyIndex);
             if (terminatingIndex >= 0) {
-              finallySlice = instructions.slice(finallyIndex, terminatingIndex + 1);
-              resumeSlice = instructions.slice(terminatingIndex + 1);
+              const regionEnd = extendTerminatingTryRegion(
+                instructions,
+                finallyIndex,
+                terminatingIndex,
+                indexByOffset,
+              );
+              finallySlice = instructions.slice(finallyIndex, regionEnd + 1);
+              resumeSlice = instructions.slice(regionEnd + 1);
             }
           }
         }
@@ -216,7 +279,10 @@ export function createTryHelpers(runtime) {
       : createState(manifestMethod, context, methodOffset, instructions);
     executeStraightLine(prefixState, instructions.slice(0, tryIndex));
     const tryBodyState = cloneState(prefixState);
-    executeStraightLine(tryBodyState, instructions.slice(bodyStartIndex, endtryGlobalIndex));
+    executeStraightLine(
+      tryBodyState,
+      instructions.slice(bodyStartIndex, tryBodySliceEnd),
+    );
 
     // Nested compiler-generated try regions are common around conversions and
     // loop bodies. Render those slices recursively so the readable surface
@@ -239,7 +305,9 @@ export function createTryHelpers(runtime) {
     };
     const catchEntryState = catchSlice.length > 0 ? cloneState(prefixState) : null;
     if (catchEntryState) catchEntryState.stack.push("exception");
-    const nestedTryBody = liftNestedTrySlice(instructions.slice(bodyStartIndex, endtryGlobalIndex));
+    const nestedTryBody = liftNestedTrySlice(
+      instructions.slice(bodyStartIndex, tryBodySliceEnd),
+    );
     const nestedCatchBody = catchEntryState
       ? liftNestedTrySlice(catchSlice, catchEntryState)
       : null;
@@ -256,6 +324,7 @@ export function createTryHelpers(runtime) {
     let catchState = null;
     let finallyState = null;
     let resumeState = null;
+    let nestedResumeBody = null;
 
     if (catchSlice.length > 0) {
       catchState = catchEntryState ?? cloneState(prefixState);
@@ -287,11 +356,39 @@ export function createTryHelpers(runtime) {
       // full stack a downstream RET / consumer expects: finally if it
       // ran, else the try body, else the prefix.
       const upstream = finallyState ?? tryBodyState ?? prefixState;
+      // A compiler-generated method may place another protected region in
+      // the continuation after this TRY. Lift that continuation as a
+      // structured slice so the first try does not force all later regions
+      // through the straight-line opcode fallback. The cloned linear state
+      // remains the stack model used for this boundary; the nested result is
+      // only responsible for rendering and warning propagation.
+      if (
+        liftStructuredSlice &&
+        (manifestMethod !== null || (context?.methodTokens?.length ?? 0) > 0) &&
+        resumeSlice.length <= 256 &&
+        resumeSlice.some((instruction) => {
+          const mnemonic = instruction.opcode?.mnemonic;
+          return mnemonic === "TRY" || mnemonic === "TRY_L";
+        })
+      ) {
+        nestedResumeBody = liftStructuredSlice(
+          resumeSlice,
+          manifestMethod,
+          context,
+          resumeSlice[0]?.offset ?? methodOffset,
+          upstream,
+        );
+      }
       resumeState = cloneState(upstream);
       executeStraightLine(resumeState, resumeSlice);
-      statements.push(...resumeState.statements.slice(upstream.statements.length));
+      statements.push(
+        ...(nestedResumeBody
+          ? nestedResumeBody.statements
+          : resumeState.statements.slice(upstream.statements.length)),
+      );
     }
 
+    const finalStackState = resumeState ?? finallyState ?? catchState ?? tryBodyState ?? prefixState;
     return rewriteForLoops({
       statements,
       warnings: collectDerivedWarnings(
@@ -301,133 +398,23 @@ export function createTryHelpers(runtime) {
         finallyState,
         resumeState,
       ).filter((warning) => {
-        if (!nestedTryBody && !nestedCatchBody && !nestedFinallyBody) return true;
+        if (
+          !nestedTryBody &&
+          !nestedCatchBody &&
+          !nestedFinallyBody &&
+          !nestedResumeBody
+        ) return true;
         return !/TRY(?:_L)? \(not yet translated\)/u.test(warning);
       }).concat(
         nestedTryBody?.warnings ?? [],
         nestedCatchBody?.warnings ?? [],
         nestedFinallyBody?.warnings ?? [],
+        nestedResumeBody?.warnings ?? [],
       ),
+      stack: [...finalStackState.stack],
+      nextTempId: finalStackState.nextTempId,
     });
   }
 
   return { tryLiftSimpleTryBlock };
-}
-
-// Compiler-generated nested try blocks place the outer handler immediately
-// after the ENDTRY that closes the outer body. Searching from the body start
-// for the first ENDTRY instead selects an inner handler transfer and slices
-// the outer catch/finally regions at the wrong offsets.
-function findBodyEndtryIndex(
-  instructions,
-  bodyStartIndex,
-  catchTarget,
-  finallyTarget,
-  indexByOffset,
-) {
-  const firstHandlerTarget = catchTarget ?? finallyTarget;
-  if (firstHandlerTarget === null || firstHandlerTarget === undefined) {
-    return findMnemonicFrom(instructions, bodyStartIndex, "ENDTRY");
-  }
-  const handlerIndex = indexByOffset.get(firstHandlerTarget);
-  // Keep compatibility with the compact synthetic fixtures used by the JS
-  // API, whose relative catch offset points at the body start. Real compiler
-  // handlers are strictly after the body and use the boundary scan below.
-  if (handlerIndex === undefined || handlerIndex <= bodyStartIndex) {
-    return findMnemonicFrom(instructions, bodyStartIndex, "ENDTRY");
-  }
-  if (catchTarget !== null && catchTarget !== undefined) {
-    for (let index = handlerIndex - 1; index >= bodyStartIndex; index -= 1) {
-      const mnemonic = instructions[index]?.opcode?.mnemonic;
-      if (mnemonic === "ENDTRY" || mnemonic === "ENDTRY_L") return index;
-    }
-  } else {
-    // A finally-only TRY may contain a nested catch before its own ENDTRY.
-    // Prefer the boundary whose transfer lands at or beyond the finally
-    // handler, which is how compiler-generated ENDTRY_L regions identify the
-    // outer normal path.
-    for (let index = handlerIndex - 1; index >= bodyStartIndex; index -= 1) {
-      const mnemonic = instructions[index]?.opcode?.mnemonic;
-      if (mnemonic !== "ENDTRY" && mnemonic !== "ENDTRY_L") continue;
-      const target = jumpTarget(instructions[index]);
-      if (target !== null && target >= finallyTarget) return index;
-    }
-    for (let index = handlerIndex - 1; index >= bodyStartIndex; index -= 1) {
-      const mnemonic = instructions[index]?.opcode?.mnemonic;
-      if (mnemonic === "ENDTRY" || mnemonic === "ENDTRY_L") return index;
-    }
-  }
-  // A body whose last reachable instruction always throws has no normal
-  // ENDTRY transfer before the handler. In that compiler layout the handler
-  // offset itself is the body boundary; the handler's trailing ENDTRY is
-  // discovered by the catch-slice scan.
-  return handlerIndex;
-}
-
-function findHandlerEndIndex(instructions, startIndex, resumeTarget, indexByOffset) {
-  const resumeIndex = resumeTarget === null ? undefined : indexByOffset.get(resumeTarget);
-  if (resumeIndex !== undefined && resumeIndex > startIndex) {
-    for (let index = resumeIndex - 1; index >= startIndex; index -= 1) {
-      if (instructions[index]?.opcode?.mnemonic === "ENDFINALLY") return index;
-    }
-  }
-  return findMnemonicFrom(instructions, startIndex, "ENDFINALLY");
-}
-
-function findTerminatingHandlerIndex(instructions, startIndex) {
-  for (let index = startIndex; index < instructions.length; index += 1) {
-    const mnemonic = instructions[index]?.opcode?.mnemonic;
-    if (["ABORT", "ABORTMSG", "THROW", "RET"].includes(mnemonic)) return index;
-  }
-  return -1;
-}
-
-function tryHandlerTargets(instruction) {
-  if (instruction.opcode.mnemonic !== "TRY" && instruction.opcode.mnemonic !== "TRY_L") {
-    return null;
-  }
-
-  const operand = instruction.operand;
-  if (operand === null || operand.kind !== "Bytes") {
-    return null;
-  }
-
-  const bytes = operand.value;
-  let catchDelta;
-  let finallyDelta;
-
-  if (bytes.length === 2) {
-    catchDelta = bytes[0];
-    finallyDelta = bytes[1];
-    if (catchDelta > 127) catchDelta -= 256;
-    if (finallyDelta > 127) finallyDelta -= 256;
-  } else if (bytes.length === 8) {
-    catchDelta = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
-    finallyDelta = bytes[4] | (bytes[5] << 8) | (bytes[6] << 16) | (bytes[7] << 24);
-    if (catchDelta > 2147483647) catchDelta -= 4294967296;
-    if (finallyDelta > 2147483647) finallyDelta -= 4294967296;
-  } else {
-    return null;
-  }
-
-  const width = 1 + bytes.length;
-  const bodyStart = instruction.offset + width;
-
-  let catchTarget = null;
-  if (catchDelta !== 0) {
-    const target = instruction.offset + catchDelta;
-    if (target > instruction.offset) {
-      catchTarget = target;
-    }
-  }
-
-  let finallyTarget = null;
-  if (finallyDelta !== 0) {
-    const target = instruction.offset + finallyDelta;
-    if (target > instruction.offset) {
-      finallyTarget = target;
-    }
-  }
-
-  return { bodyStart, catchTarget, finallyTarget };
 }

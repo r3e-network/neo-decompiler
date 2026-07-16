@@ -53,13 +53,24 @@ test("pinned JS-generated C# corpus compiles with Roslyn", { skip: skipReason },
     assert.equal(restore.status, 0, `Roslyn restore failed:\n${outputText(restore)}`);
 
     const failures = [];
+    const tryFallbacks = [];
     for (const nefName of nefFiles) {
       const manifestName = nefName.replace(/\.nef$/, ".manifest.json");
       const manifest = JSON.parse(readFileSync(join(corpus, manifestName), "utf8"));
-      const source = decompileHighLevelBytesWithManifest(
+      const decompiled = decompileHighLevelBytesWithManifest(
         readFileSync(join(corpus, nefName)),
         manifest,
-      ).csharp;
+      );
+      const source = decompiled.csharp;
+      const hazardWarnings = decompiled.warnings.filter((warning) =>
+        /TRY(?:_L)? \(not yet translated\)/u.test(warning),
+      );
+      if (hazardWarnings.length > 0) {
+        tryFallbacks.push({
+          nefName,
+          warnings: hazardWarnings,
+        });
+      }
       writeFileSync(join(project, "Generated.cs"), source);
       const build = runDotnet(project, [
         "build",
@@ -80,6 +91,11 @@ test("pinned JS-generated C# corpus compiles with Roslyn", { skip: skipReason },
       }
     }
     assert.deepEqual(failures, [], `Roslyn rejected JS-generated contracts: ${JSON.stringify(failures)}`);
+    assert.deepEqual(
+      tryFallbacks,
+      [],
+      `JS high-level corpus still contains untranslated TRY regions: ${JSON.stringify(tryFallbacks)}`,
+    );
   } finally {
     rmSync(project, { recursive: true, force: true });
   }

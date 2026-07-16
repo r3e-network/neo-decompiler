@@ -20,6 +20,7 @@ import { postprocess } from "./postprocess.js";
 import { hasLeadingTry } from "./high-level-control-flow-shared.js";
 
 let CONTROL_FLOW;
+const ACTIVE_STRUCTURED_SLICES = new Set();
 
 function liftStructuredSlice(
   instructions,
@@ -32,28 +33,79 @@ function liftStructuredSlice(
     return { statements: [], warnings: [] };
   }
 
-  const leadingTry = hasLeadingTry(instructions);
-  const result =
-    CONTROL_FLOW.tryLiftSimpleSwitch(instructions, manifestMethod, context, methodOffset, initialState) ??
-    (leadingTry
-      ? CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset, initialState)
-      : null) ??
-    CONTROL_FLOW.tryLiftSimpleLoop(instructions, manifestMethod, context, methodOffset, initialState) ??
-    (!leadingTry
-      ? CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset, initialState)
-      : null) ??
-    CONTROL_FLOW.tryLiftSimpleBranch(instructions, manifestMethod, context, methodOffset, initialState) ??
-    liftStraightLineMethodBody(
+  const sliceKey = [
+    instructions[0]?.offset ?? 0,
+    instructions.at(-1)?.offset ?? 0,
+    instructions.length,
+  ].join(":");
+  if (ACTIVE_STRUCTURED_SLICES.has(sliceKey)) {
+    return liftStraightLineMethodBody(
       instructions,
       manifestMethod,
       context,
       initialState ? forkStateForSlice(initialState, instructions) : undefined,
       methodOffset,
     );
-  if (initialState) {
-    advanceNextTempIdFromStatements(initialState, result.statements);
   }
-  return result;
+  ACTIVE_STRUCTURED_SLICES.add(sliceKey);
+  try {
+    const leadingTry = hasLeadingTry(instructions);
+    let result =
+      CONTROL_FLOW.tryLiftSimpleSwitch(instructions, manifestMethod, context, methodOffset, initialState) ??
+      (leadingTry
+        ? CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset, initialState)
+        : null) ??
+      CONTROL_FLOW.tryLiftSimpleLoop(instructions, manifestMethod, context, methodOffset, initialState) ??
+      (!leadingTry
+        ? CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset, initialState)
+        : null) ??
+      CONTROL_FLOW.tryLiftSimpleBranch(instructions, manifestMethod, context, methodOffset, initialState) ??
+      liftStraightLineMethodBody(
+        instructions,
+        manifestMethod,
+        context,
+        initialState ? forkStateForSlice(initialState, instructions) : undefined,
+        methodOffset,
+      );
+
+  // Loop/branch recognition can claim a broad compiler-generated slice even
+  // though a protected region inside it fell through to the linear opcode
+  // renderer. Retry the try parser as a narrower alternative and keep it when
+  // it removes at least one untranslated TRY warning. This preserves the
+  // existing loop preference for clean slices while allowing nested handlers
+  // to be structured when the surrounding control-flow shape is imperfect.
+  if (
+    instructions.length <= 256 &&
+    (manifestMethod !== null || (context?.methodTokens?.length ?? 0) > 0) &&
+    instructions.some((instruction) =>
+      ["TRY", "TRY_L"].includes(instruction.opcode?.mnemonic),
+    ) &&
+    result.warnings?.some((warning) => /TRY(?:_L)? \(not yet translated\)/u.test(warning))
+  ) {
+    const tryAlternative = CONTROL_FLOW.tryLiftSimpleTryBlock(
+      instructions,
+      manifestMethod,
+      context,
+      methodOffset,
+      initialState,
+    );
+    const primaryTryWarnings = result.warnings.filter((warning) =>
+      /TRY(?:_L)? \(not yet translated\)/u.test(warning),
+    ).length;
+    const alternativeTryWarnings = tryAlternative?.warnings?.filter((warning) =>
+      /TRY(?:_L)? \(not yet translated\)/u.test(warning),
+    ).length ?? Number.POSITIVE_INFINITY;
+    if (tryAlternative && alternativeTryWarnings < primaryTryWarnings) {
+      result = tryAlternative;
+    }
+  }
+    if (initialState) {
+      advanceNextTempIdFromStatements(initialState, result.statements);
+    }
+    return result;
+  } finally {
+    ACTIVE_STRUCTURED_SLICES.delete(sliceKey);
+  }
 }
 
 CONTROL_FLOW = createControlFlowHelpers({
@@ -233,6 +285,34 @@ export function liftMethodBody(
     }
   }
 
+  // The top-level method path has the same ambiguity as nested slices: a
+  // broad loop/branch lift can leave a later compiler TRY untranslated. Give
+  // the dedicated try parser one opportunity to produce a cleaner result.
+  if (
+    instructions.length <= 256 &&
+    (manifestMethod !== null || (context?.methodTokens?.length ?? 0) > 0) &&
+    instructions.some((instruction) =>
+      ["TRY", "TRY_L"].includes(instruction.opcode?.mnemonic),
+    ) &&
+    result.warnings?.some((warning) => /TRY(?:_L)? \(not yet translated\)/u.test(warning))
+  ) {
+    const tryAlternative = CONTROL_FLOW.tryLiftSimpleTryBlock(
+      instructions,
+      manifestMethod,
+      context,
+      methodOffset,
+    );
+    const primaryTryWarnings = result.warnings.filter((warning) =>
+      /TRY(?:_L)? \(not yet translated\)/u.test(warning),
+    ).length;
+    const alternativeTryWarnings = tryAlternative?.warnings?.filter((warning) =>
+      /TRY(?:_L)? \(not yet translated\)/u.test(warning),
+    ).length ?? Number.POSITIVE_INFINITY;
+    if (tryAlternative && alternativeTryWarnings < primaryTryWarnings) {
+      result = tryAlternative;
+    }
+  }
+
   postprocess(result.statements, context.postprocessOptions);
   return result;
 }
@@ -252,5 +332,10 @@ function liftStraightLineMethodBody(
     }
     state.stack.length = 0;
   }
-  return { statements: state.statements, warnings: state.warnings };
+  return {
+    statements: state.statements,
+    warnings: state.warnings,
+    stack: [...state.stack],
+    nextTempId: state.nextTempId,
+  };
 }

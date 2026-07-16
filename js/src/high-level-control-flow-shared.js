@@ -165,6 +165,8 @@ export function rewriteForLoops(result) {
   return {
     statements: statements.filter((line) => line !== ""),
     warnings: result.warnings ?? [],
+    ...(result.stack ? { stack: [...result.stack] } : {}),
+    ...(Number.isInteger(result.nextTempId) ? { nextTempId: result.nextTempId } : {}),
   };
 }
 

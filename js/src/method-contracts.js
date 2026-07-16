@@ -52,6 +52,17 @@ export function inferMethodContracts(methodGroups, context, callGraph) {
       if (!group) {
         continue;
       }
+      // Exception regions can restore an operand-stack value at ENDFINALLY
+      // even when the linear high-level pass cannot see an explicit producer
+      // immediately before RET. Do not infer `void` from that incomplete
+      // view; keeping the contract unknown is conservative and lets callers
+      // preserve the helper result instead of emitting a stack-underflow `???`.
+      if (group.instructions.some((instruction) =>
+        ["TRY", "TRY_L", "ENDTRY", "ENDTRY_L", "ENDFINALLY"].includes(
+          instruction.opcode.mnemonic,
+        ))) {
+        continue;
+      }
       const result = liftMethodBody(group.instructions, null, evolvingContext, group.start);
       const returns = result.statements
         .flatMap((statement) => statement.split("\n"))

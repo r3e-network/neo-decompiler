@@ -252,7 +252,15 @@ export function createBranchHelpers(runtime) {
       executeStraightLine(thenState, thenSlice);
     } else {
       thenStackState = cloneState(prefixState);
-      executeStraightLine(thenStackState, thenSlice);
+      if (nestedThen.stack) {
+        thenStackState.stack = [...nestedThen.stack];
+        thenStackState.warnings = [...prefixState.warnings];
+      } else {
+        executeStraightLine(thenStackState, thenSlice);
+      }
+      if (Number.isInteger(nestedThen.nextTempId)) {
+        thenStackState.nextTempId = nestedThen.nextTempId;
+      }
     }
     const thenTerminates = branchTerminates(thenSlice, context);
 
@@ -287,7 +295,15 @@ export function createBranchHelpers(runtime) {
         executeStraightLine(elseState, elseSlice);
       } else {
         elseStackState = cloneState(prefixState);
-        executeStraightLine(elseStackState, elseSlice);
+        if (nestedElse.stack) {
+          elseStackState.stack = [...nestedElse.stack];
+          elseStackState.warnings = [...prefixState.warnings];
+        } else {
+          executeStraightLine(elseStackState, elseSlice);
+        }
+        if (Number.isInteger(nestedElse.nextTempId)) {
+          elseStackState.nextTempId = nestedElse.nextTempId;
+        }
       }
     }
     const branchMerge = mergeBranchStacks(
@@ -297,6 +313,37 @@ export function createBranchHelpers(runtime) {
       thenTerminates,
       elseTerminates,
     );
+    let suffixState = null;
+    let nestedSuffix = null;
+    if (suffixSlice.length > 0) {
+      suffixState = cloneState(prefixState);
+      if (branchMerge) suffixState.stack = [...branchMerge.mergedStack];
+      const canRecoverStructuredSuffix =
+        manifestMethod !== null || (context?.methodTokens?.length ?? 0) > 0;
+      const hasStructuredSuffix = canRecoverStructuredSuffix &&
+        suffixSlice.some((instruction) =>
+          ["TRY", "TRY_L"].includes(instruction.opcode?.mnemonic),
+        )
+          ? suffixSlice.length <= 256
+          : suffixSlice.length <= 48 &&
+            containsUnsupportedBranchStructure(suffixSlice) &&
+            suffixSlice.some((instruction) => instruction.opcode?.mnemonic === "CALLT");
+      if (hasStructuredSuffix) {
+        nestedSuffix = liftStructuredSlice(
+          suffixSlice,
+          manifestMethod,
+          context,
+          suffixSlice[0]?.offset ?? methodOffset,
+          suffixState,
+        );
+      }
+      if (nestedSuffix?.stack) {
+        suffixState.stack = [...nestedSuffix.stack];
+        suffixState.warnings = [...prefixState.warnings];
+      } else {
+        executeStraightLine(suffixState, suffixSlice);
+      }
+    }
     const statements = [...prefixState.statements];
 
     if (branchMerge) {
@@ -342,13 +389,8 @@ export function createBranchHelpers(runtime) {
         }
       }
       statements.push("}");
-      let suffixState = null;
-      if (suffixSlice.length > 0) {
-        suffixState = cloneState(prefixState);
-        if (branchMerge) suffixState.stack = [...branchMerge.mergedStack];
-        executeStraightLine(suffixState, suffixSlice);
-        statements.push(...suffixState.statements.slice(prefixState.statements.length));
-      }
+      if (nestedSuffix) statements.push(...nestedSuffix.statements);
+      else if (suffixState) statements.push(...suffixState.statements.slice(prefixState.statements.length));
       return rewriteForLoops({
         statements,
         warnings: [
@@ -356,25 +398,26 @@ export function createBranchHelpers(runtime) {
           ...collectDerivedWarnings(prefixState, thenStackState, elseStackState),
           ...(nestedThen?.warnings ?? []),
           ...(nestedElse?.warnings ?? []),
+          ...(nestedSuffix?.warnings ?? []),
         ],
+        stack: [...(suffixState?.stack ?? branchMerge?.mergedStack ?? prefixState.stack)],
+        nextTempId: suffixState?.nextTempId ?? branchMerge?.nextTempId ?? prefixState.nextTempId,
       });
     }
 
     statements.push("}");
-    let suffixState = null;
-    if (suffixSlice.length > 0) {
-      suffixState = cloneState(prefixState);
-      if (branchMerge) suffixState.stack = [...branchMerge.mergedStack];
-      executeStraightLine(suffixState, suffixSlice);
-      statements.push(...suffixState.statements.slice(prefixState.statements.length));
-    }
+    if (nestedSuffix) statements.push(...nestedSuffix.statements);
+    else if (suffixState) statements.push(...suffixState.statements.slice(prefixState.statements.length));
     return rewriteForLoops({
       statements,
       warnings: [
         ...collectDerivedWarnings(prefixState, thenState, suffixState),
         ...collectDerivedWarnings(prefixState, thenStackState, elseStackState),
         ...(nestedThen?.warnings ?? []),
+        ...(nestedSuffix?.warnings ?? []),
       ],
+      stack: [...(suffixState?.stack ?? branchMerge?.mergedStack ?? prefixState.stack)],
+      nextTempId: suffixState?.nextTempId ?? branchMerge?.nextTempId ?? prefixState.nextTempId,
     });
   }
 

@@ -98,7 +98,7 @@ function collectDeclarations(lines, depths, start, end, scopeEnds, braceCloseLin
       line,
       depth: depths[line],
       scopeEnd: forDeclarationScopeEnd(lines, line, end, braceCloseLines)
-        ?? scopeEnds[line]
+        ?? scopeEnds.get(line)
         ?? end,
     };
     if (!declarations.has(name)) declarations.set(name, []);
