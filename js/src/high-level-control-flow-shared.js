@@ -36,6 +36,24 @@ export function containsUnsupportedBranchStructure(instructions) {
   );
 }
 
+export function hasLeadingTry(instructions) {
+  const tryIndex = instructions.findIndex((instruction) => {
+    const mnemonic = instruction.opcode?.mnemonic;
+    return mnemonic === "TRY" || mnemonic === "TRY_L";
+  });
+  if (tryIndex < 0) {
+    return false;
+  }
+  return instructions.slice(0, tryIndex).every((instruction) => {
+    const mnemonic = instruction.opcode?.mnemonic;
+    return ![
+      "JMP", "JMP_L", "JMPIF", "JMPIF_L", "JMPIFNOT", "JMPIFNOT_L",
+      "JMPEQ", "JMPEQ_L", "JMPNE", "JMPNE_L", "JMPGT", "JMPGT_L",
+      "JMPGE", "JMPGE_L", "JMPLT", "JMPLT_L", "JMPLE", "JMPLE_L", "RET",
+    ].includes(mnemonic);
+  });
+}
+
 export function branchTerminates(instructions, context = null) {
   const last = instructions.at(-1)?.opcode.mnemonic;
   if (["RET", "THROW", "ABORT", "ABORTMSG"].includes(last)) {

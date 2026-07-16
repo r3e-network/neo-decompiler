@@ -60,7 +60,8 @@ export function createTryHelpers(runtime) {
     const endtryGlobalIndex = findBodyEndtryIndex(
       instructions,
       bodyStartIndex,
-      catchTarget ?? finallyTarget,
+      catchTarget,
+      finallyTarget,
       indexByOffset,
     );
     if (endtryGlobalIndex < 0) {
@@ -78,16 +79,22 @@ export function createTryHelpers(runtime) {
         return null;
       }
 
-      const finallyEndGlobalIndex = findMnemonicFrom(
-        instructions,
-        endtryGlobalIndex + 1,
-        "ENDFINALLY",
-      );
-
       catchSlice = instructions.slice(catchIndex, finallyIndex);
+      const finallyEndGlobalIndex = findHandlerEndIndex(
+        instructions,
+        finallyIndex,
+        jumpTarget(instructions[endtryGlobalIndex]),
+        indexByOffset,
+      );
       if (finallyEndGlobalIndex >= 0) {
         finallySlice = instructions.slice(finallyIndex, finallyEndGlobalIndex);
         resumeSlice = instructions.slice(finallyEndGlobalIndex + 1);
+      } else {
+        const terminatingIndex = findTerminatingHandlerIndex(instructions, finallyIndex);
+        if (terminatingIndex >= 0) {
+          finallySlice = instructions.slice(finallyIndex, terminatingIndex + 1);
+          resumeSlice = instructions.slice(terminatingIndex + 1);
+        }
       }
     } else if (catchTarget !== null) {
       const catchIndex = indexByOffset.get(catchTarget);
@@ -128,6 +135,20 @@ export function createTryHelpers(runtime) {
         }
       }
 
+      if (catchSlice.length === 0) {
+        const catchEndFinallyIndex = findMnemonicFrom(instructions, catchIndex, "ENDFINALLY");
+        if (catchEndFinallyIndex >= 0) {
+          catchSlice = instructions.slice(catchIndex, catchEndFinallyIndex);
+          resumeSlice = instructions.slice(catchEndFinallyIndex + 1);
+        } else {
+          const terminatingIndex = findTerminatingHandlerIndex(instructions, catchIndex);
+          if (terminatingIndex >= 0) {
+            catchSlice = instructions.slice(catchIndex, terminatingIndex + 1);
+            resumeSlice = instructions.slice(terminatingIndex + 1);
+          }
+        }
+      }
+
       if (
         catchSlice.length === 0 &&
         instructions[catchIndex]?.opcode.mnemonic === "ENDFINALLY"
@@ -141,19 +162,36 @@ export function createTryHelpers(runtime) {
         return null;
       }
 
-      const finallyEndGlobalIndex = findMnemonicFrom(
+      // A terminating try body can transfer directly to an ENDFINALLY
+      // marker. There is no finally payload to render, but the wrapper is
+      // still structured and should not fall back to a raw TRY warning.
+      if (instructions[finallyIndex]?.opcode?.mnemonic === "ENDFINALLY") {
+        allowBareTry = true;
+        resumeSlice = instructions.slice(finallyIndex + 1);
+      }
+
+      const finallyEndGlobalIndex = findHandlerEndIndex(
         instructions,
         finallyIndex,
-        "ENDFINALLY",
+        jumpTarget(instructions[endtryGlobalIndex]),
+        indexByOffset,
       );
-      if (finallyEndGlobalIndex >= 0) {
-        finallySlice = instructions.slice(finallyIndex, finallyEndGlobalIndex);
-        // Resume picks up after ENDFINALLY. The finally body's stack
-        // effects are propagated by cloning the resume state from
-        // `finallyState` further below — re-slicing the finally bytes
-        // into the resume would duplicate them and trip the
-        // unstructured ENDFINALLY renderer.
-        resumeSlice = instructions.slice(finallyEndGlobalIndex + 1);
+      if (!allowBareTry) {
+        if (finallyEndGlobalIndex >= 0) {
+          finallySlice = instructions.slice(finallyIndex, finallyEndGlobalIndex);
+          // Resume picks up after ENDFINALLY. The finally body's stack
+          // effects are propagated by cloning the resume state from
+          // `finallyState` further below — re-slicing the finally bytes
+          // into the resume would duplicate them and trip the
+          // unstructured ENDFINALLY renderer.
+          resumeSlice = instructions.slice(finallyEndGlobalIndex + 1);
+        } else {
+          const terminatingIndex = findTerminatingHandlerIndex(instructions, finallyIndex);
+          if (terminatingIndex >= 0) {
+            finallySlice = instructions.slice(finallyIndex, terminatingIndex + 1);
+            resumeSlice = instructions.slice(terminatingIndex + 1);
+          }
+        }
       }
     }
 
@@ -196,7 +234,10 @@ export function createTryHelpers(runtime) {
     const nestedFinallyBody = liftNestedTrySlice(finallySlice);
 
     const statements = [...prefixState.statements];
-    statements.push("try {");
+    const hasStructuredHandler = catchSlice.length > 0 || finallySlice.length > 0;
+    if (hasStructuredHandler) {
+      statements.push("try {");
+    }
     statements.push(...(nestedTryBody
       ? nestedTryBody.statements
       : tryBodyState.statements.slice(prefixState.statements.length)));
@@ -222,7 +263,9 @@ export function createTryHelpers(runtime) {
         : finallyState.statements.slice(prefixState.statements.length)));
     }
 
-    statements.push("}");
+    if (hasStructuredHandler) {
+      statements.push("}");
+    }
 
     if (resumeSlice.length > 0) {
       // Stack values that the try / finally body left on the operand
@@ -263,7 +306,14 @@ export function createTryHelpers(runtime) {
 // after the ENDTRY that closes the outer body. Searching from the body start
 // for the first ENDTRY instead selects an inner handler transfer and slices
 // the outer catch/finally regions at the wrong offsets.
-function findBodyEndtryIndex(instructions, bodyStartIndex, firstHandlerTarget, indexByOffset) {
+function findBodyEndtryIndex(
+  instructions,
+  bodyStartIndex,
+  catchTarget,
+  finallyTarget,
+  indexByOffset,
+) {
+  const firstHandlerTarget = catchTarget ?? finallyTarget;
   if (firstHandlerTarget === null || firstHandlerTarget === undefined) {
     return findMnemonicFrom(instructions, bodyStartIndex, "ENDTRY");
   }
@@ -274,15 +324,50 @@ function findBodyEndtryIndex(instructions, bodyStartIndex, firstHandlerTarget, i
   if (handlerIndex === undefined || handlerIndex <= bodyStartIndex) {
     return findMnemonicFrom(instructions, bodyStartIndex, "ENDTRY");
   }
-  for (let index = handlerIndex - 1; index >= bodyStartIndex; index -= 1) {
-    const mnemonic = instructions[index]?.opcode?.mnemonic;
-    if (mnemonic === "ENDTRY" || mnemonic === "ENDTRY_L") return index;
+  if (catchTarget !== null && catchTarget !== undefined) {
+    for (let index = handlerIndex - 1; index >= bodyStartIndex; index -= 1) {
+      const mnemonic = instructions[index]?.opcode?.mnemonic;
+      if (mnemonic === "ENDTRY" || mnemonic === "ENDTRY_L") return index;
+    }
+  } else {
+    // A finally-only TRY may contain a nested catch before its own ENDTRY.
+    // Prefer the boundary whose transfer lands at or beyond the finally
+    // handler, which is how compiler-generated ENDTRY_L regions identify the
+    // outer normal path.
+    for (let index = handlerIndex - 1; index >= bodyStartIndex; index -= 1) {
+      const mnemonic = instructions[index]?.opcode?.mnemonic;
+      if (mnemonic !== "ENDTRY" && mnemonic !== "ENDTRY_L") continue;
+      const target = jumpTarget(instructions[index]);
+      if (target !== null && target >= finallyTarget) return index;
+    }
+    for (let index = handlerIndex - 1; index >= bodyStartIndex; index -= 1) {
+      const mnemonic = instructions[index]?.opcode?.mnemonic;
+      if (mnemonic === "ENDTRY" || mnemonic === "ENDTRY_L") return index;
+    }
   }
   // A body whose last reachable instruction always throws has no normal
   // ENDTRY transfer before the handler. In that compiler layout the handler
   // offset itself is the body boundary; the handler's trailing ENDTRY is
   // discovered by the catch-slice scan.
   return handlerIndex;
+}
+
+function findHandlerEndIndex(instructions, startIndex, resumeTarget, indexByOffset) {
+  const resumeIndex = resumeTarget === null ? undefined : indexByOffset.get(resumeTarget);
+  if (resumeIndex !== undefined && resumeIndex > startIndex) {
+    for (let index = resumeIndex - 1; index >= startIndex; index -= 1) {
+      if (instructions[index]?.opcode?.mnemonic === "ENDFINALLY") return index;
+    }
+  }
+  return findMnemonicFrom(instructions, startIndex, "ENDFINALLY");
+}
+
+function findTerminatingHandlerIndex(instructions, startIndex) {
+  for (let index = startIndex; index < instructions.length; index += 1) {
+    const mnemonic = instructions[index]?.opcode?.mnemonic;
+    if (["ABORT", "ABORTMSG", "THROW", "RET"].includes(mnemonic)) return index;
+  }
+  return -1;
 }
 
 function tryHandlerTargets(instruction) {

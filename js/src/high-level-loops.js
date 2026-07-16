@@ -1,6 +1,7 @@
 import { jumpTarget } from "./high-level-utils.js";
 import {
   collectDerivedWarnings,
+  hasLeadingTry,
   isSimpleConditional,
   isUnconditionalJump,
   popConditionForBranch,
@@ -149,6 +150,16 @@ export function createLoopHelpers(runtime) {
 
     const bodyState = cloneState(prefixState);
     executeStraightLine(bodyState, instructions.slice(loopStartIndex, tailIndex));
+    const bodySlice = instructions.slice(loopStartIndex, tailIndex);
+    const nestedBody = hasLeadingTry(bodySlice)
+      ? liftStructuredSlice(
+        bodySlice,
+        manifestMethod,
+        context,
+        bodySlice[0]?.offset ?? methodOffset,
+        prefixState,
+      )
+      : null;
     const condition = popConditionForLoop(bodyState.stack, tail.opcode.mnemonic);
     if (condition === null) {
       return null;
@@ -161,11 +172,21 @@ export function createLoopHelpers(runtime) {
       statements: [
         ...prefixState.statements,
         "do {",
-        ...bodyState.statements.slice(prefixState.statements.length),
+        ...(nestedBody
+          ? nestedBody.statements
+          : bodyState.statements.slice(prefixState.statements.length)),
         `} while (${condition});`,
         ...suffixState.statements.slice(prefixState.statements.length),
       ],
-      warnings: collectDerivedWarnings(prefixState, bodyState, suffixState),
+      warnings: nestedBody
+        ? [
+          ...collectDerivedWarnings(prefixState, suffixState),
+          ...bodyState.warnings
+            .slice(prefixState.warnings.length)
+            .filter((warning) => !/TRY(?:_L)? \(not yet translated\)/u.test(warning)),
+          ...(nestedBody.warnings ?? []),
+        ]
+        : collectDerivedWarnings(prefixState, bodyState, suffixState),
     });
   }
 

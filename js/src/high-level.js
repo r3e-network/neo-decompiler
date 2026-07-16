@@ -17,6 +17,7 @@ import {
 } from "./manifest.js";
 import { hexOffset } from "./util.js";
 import { postprocess } from "./postprocess.js";
+import { hasLeadingTry } from "./high-level-control-flow-shared.js";
 
 let CONTROL_FLOW;
 
@@ -31,10 +32,16 @@ function liftStructuredSlice(
     return { statements: [], warnings: [] };
   }
 
+  const leadingTry = hasLeadingTry(instructions);
   const result =
     CONTROL_FLOW.tryLiftSimpleSwitch(instructions, manifestMethod, context, methodOffset, initialState) ??
+    (leadingTry
+      ? CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset, initialState)
+      : null) ??
     CONTROL_FLOW.tryLiftSimpleLoop(instructions, manifestMethod, context, methodOffset, initialState) ??
-    CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset, initialState) ??
+    (!leadingTry
+      ? CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset, initialState)
+      : null) ??
     CONTROL_FLOW.tryLiftSimpleBranch(instructions, manifestMethod, context, methodOffset, initialState) ??
     liftStraightLineMethodBody(
       instructions,
@@ -198,19 +205,29 @@ export function liftMethodBody(
   if (switchLift !== null) {
     result = switchLift;
   } else {
-    const loopLift = CONTROL_FLOW.tryLiftSimpleLoop(instructions, manifestMethod, context, methodOffset);
-    if (loopLift !== null) {
-      result = loopLift;
+    const leadingTry = hasLeadingTry(instructions);
+    const leadingTryLift = leadingTry
+      ? CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset)
+      : null;
+    if (leadingTryLift !== null) {
+      result = leadingTryLift;
     } else {
-      const tryLift = CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset);
-      if (tryLift !== null) {
-        result = tryLift;
+      const loopLift = CONTROL_FLOW.tryLiftSimpleLoop(instructions, manifestMethod, context, methodOffset);
+      if (loopLift !== null) {
+        result = loopLift;
       } else {
-        const branchLift = CONTROL_FLOW.tryLiftSimpleBranch(instructions, manifestMethod, context, methodOffset);
-        if (branchLift !== null) {
-          result = branchLift;
+        const tryLift = leadingTry
+          ? null
+          : CONTROL_FLOW.tryLiftSimpleTryBlock(instructions, manifestMethod, context, methodOffset);
+        if (tryLift !== null) {
+          result = tryLift;
         } else {
-          result = liftStraightLineMethodBody(instructions, manifestMethod, context, undefined, methodOffset);
+          const branchLift = CONTROL_FLOW.tryLiftSimpleBranch(instructions, manifestMethod, context, methodOffset);
+          if (branchLift !== null) {
+            result = branchLift;
+          } else {
+            result = liftStraightLineMethodBody(instructions, manifestMethod, context, undefined, methodOffset);
+          }
         }
       }
     }
