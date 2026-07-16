@@ -198,8 +198,13 @@ fn collect_nef_files(path: &Path, files: &mut Vec<PathBuf>) {
 }
 
 #[test]
-#[ignore = "requires dotnet and NEO_SMARTCONTRACT_FRAMEWORK_DLL"]
 fn representative_generated_csharp_compiles_with_roslyn() {
+    if env::var_os("NEO_SMARTCONTRACT_FRAMEWORK_DLL").is_none() {
+        eprintln!(
+            "NEO_SMARTCONTRACT_FRAMEWORK_DLL is unset; skipping representative C# corpus gate"
+        );
+        return;
+    }
     let (framework, target_framework) = framework_config();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let cases = [

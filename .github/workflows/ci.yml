@@ -205,7 +205,7 @@ jobs:
             echo "NEO_CSHARP_CORPUS_DIR=$GITHUB_WORKSPACE/TestingArtifacts/devpack"
           } >> "$GITHUB_ENV"
       - name: Compile pinned Rust C# corpus with Roslyn
-        run: cargo test --test csharp_compile pinned_corpus_generated_csharp_compiles_with_roslyn -- --nocapture
+        run: cargo test --test csharp_compile -- --nocapture
       - name: Compile pinned JS C# corpus with Roslyn
         working-directory: js
         run: node --test --test-name-pattern "pinned JS-generated C# corpus" test/*.test.mjs
