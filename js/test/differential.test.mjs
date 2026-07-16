@@ -32,9 +32,9 @@ function findNefFiles(dir) {
   return results;
 }
 
-function runRust(subcommand, nefPath) {
+function runRust(subcommand, nefPath, options = []) {
   try {
-    return execFileSync(RUST_BIN, [subcommand, nefPath], {
+    return execFileSync(RUST_BIN, [subcommand, ...options, nefPath], {
       encoding: "utf-8",
       timeout: 15_000,
       stdio: ["pipe", "pipe", "pipe"],
@@ -229,7 +229,7 @@ for (const nefPath of nefFiles) {
     const bytes = readFileSync(nefPath);
 
     // Rust high-level (auto-discovers manifest from sibling .manifest.json)
-    const rustRaw = runRust("decompile", nefPath);
+    const rustRaw = runRust("decompile", nefPath, ["--format", "high-level"]);
     if (typeof rustRaw === "object" && rustRaw.error) {
       // Rust failed - check JS
       let jsFailed = false;
