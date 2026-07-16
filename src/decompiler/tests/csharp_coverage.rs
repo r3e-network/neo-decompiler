@@ -283,7 +283,7 @@ fn assert_pinned_incomplete_baseline(root: &Path, incomplete_locations: &BTreeSe
         return;
     }
 
-    let expected = BTreeSet::from(["Contract_Foreach@0x04AC".to_string()]);
+    let expected = BTreeSet::from(["Contract_Foreach@0x0458".to_string()]);
     assert_eq!(
         incomplete_locations, &expected,
         "pinned v3.10.0 C# incomplete-method baseline changed"

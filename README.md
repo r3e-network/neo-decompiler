@@ -650,7 +650,7 @@ into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
 - Generated source is intentionally limited to Neo C#. Pseudocode, high-level,
   structured IR, and SSA are analysis views rather than alternate source
   backends. The pinned neo-devpack-dotnet v3.10.0 corpus has one known
-  incomplete method: `Contract_Foreach@0x04AC` calls a compiler-generated
+  incomplete method: `Contract_Foreach@0x0458` calls a compiler-generated
   helper with four required stack values while the caller provides none. The
   C# renderer preserves that underflow warning and uses compile-safe dynamic
   placeholders instead of inventing tuple values.
