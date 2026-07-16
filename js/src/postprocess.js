@@ -25,6 +25,7 @@ import {
 import { inlineSingleUseTemps } from "./postprocess/inlining.js";
 import { rewriteElseIfChains } from "./postprocess/conditionals.js";
 import { collapseOverflowChecks } from "./postprocess/overflow.js";
+import { collapseSizeNormalizations } from "./postprocess/size-normalization.js";
 import { rewriteGotoDoWhile, rewriteIfGotoToWhile } from "./postprocess/loops.js";
 import {
   collapseIfTrue,
@@ -186,6 +187,8 @@ export function postprocess(statements, options = {}) {
   rewriteElseIfChains(statements);
   // Pass 2
   collapseOverflowChecks(statements);
+  // Pass 2a
+  collapseSizeNormalizations(statements);
   // Pass 3
   rewriteGotoDoWhile(statements);
   // Pass 4

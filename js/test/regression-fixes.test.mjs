@@ -260,6 +260,82 @@ test("postprocess: preserves an ambient alias before a signed overflow chain", a
   );
 });
 
+test("postprocess: collapses exact SIZE-guarded i32 normalization", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "let t0 = a + b;",
+    "let t3 = null;",
+    "if len(t0) > 4 {",
+    "    let t1 = t0 & 4294967295;",
+    "    let t2 = null;",
+    "    if t1 > 2147483647 {",
+    "        t2 = t1 - 4294967296;",
+    "    }",
+    "    t3 = t2;",
+    "}",
+    "return t3;",
+  ];
+
+  postprocess(statements);
+
+  assert.deepEqual(statements, [
+    "let t0 = a + b;",
+    "let t3 = t0 & 4294967295;",
+    "if t3 > 2147483647 {",
+    "    t3 -= 4294967296;",
+    "}",
+    "return t3;",
+  ]);
+});
+
+test("postprocess: collapses exact SIZE-guarded i64 normalization", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "let t0 = a + b;",
+    "let t3 = null;",
+    "if len(t0) > 8 {",
+    "    let t1 = t0 & 18446744073709551615;",
+    "    let t2 = null;",
+    "    if t1 > 9223372036854775807 {",
+    "        t2 = t1 - 18446744073709551616;",
+    "    }",
+    "    t3 = t2;",
+    "}",
+    "return t3;",
+  ];
+
+  postprocess(statements);
+
+  assert.deepEqual(statements, [
+    "let t0 = a + b;",
+    "let t3 = t0 & 18446744073709551615;",
+    "if t3 > 9223372036854775807 {",
+    "    t3 -= 18446744073709551616;",
+    "}",
+    "return t3;",
+  ]);
+});
+
+test("postprocess: leaves unrelated SIZE bounds untouched", async () => {
+  const { collapseSizeNormalizations } = await import(
+    "../src/postprocess/size-normalization.js",
+  );
+  const statements = [
+    "let t0 = value;",
+    "let t1 = null;",
+    "if len(t0) > 5 {",
+    "    let t2 = t0 & 31;",
+    "    t1 = t2;",
+    "}",
+    "return t1;",
+  ];
+  const before = [...statements];
+
+  collapseSizeNormalizations(statements);
+
+  assert.deepEqual(statements, before);
+});
+
 test("nested structured branches inherit the parent stack", () => {
   // Checked arithmetic has a second conditional nested in the false path of
   // the first one. The nested slice must start with the duplicated operation

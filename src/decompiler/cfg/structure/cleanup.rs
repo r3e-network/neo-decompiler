@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 mod int_normalization;
 mod int_normalization_uses;
 mod loops;
+mod size_normalization;
 
 pub(super) fn simplify_unreachable_control(block: &mut IrBlock) {
     loop {
@@ -20,6 +21,7 @@ pub(super) fn simplify_unreachable_control(block: &mut IrBlock) {
     // loops as `while (true) { init; if (cond) ... }`.
     loops::recover_header_init_loops(block);
     loops::promote_adjacent_for_loops(block);
+    size_normalization::collapse_size_wrappers(block);
     int_normalization::collapse_int32_wrappers(block);
 }
 
