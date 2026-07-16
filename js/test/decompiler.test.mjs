@@ -2312,6 +2312,7 @@ test("matches an outer TRY_L body past a nested ENDTRY", () => {
   assert.match(result.highLevel, /try \{/);
   assert.match(result.highLevel, /catch \{/);
   assert.doesNotMatch(result.highLevel, /TRY_L .*not yet translated/);
+  assert.doesNotMatch(result.highLevel, /TRY .*not yet translated/);
 });
 
 test("models catch entry stack with exception value", () => {

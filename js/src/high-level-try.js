@@ -20,7 +20,13 @@ function findTryIndex(instructions, start) {
 }
 
 export function createTryHelpers(runtime) {
-  const { createState, cloneState, forkStateForSlice, executeStraightLine } = runtime;
+  const {
+    createState,
+    cloneState,
+    forkStateForSlice,
+    executeStraightLine,
+    liftStructuredSlice,
+  } = runtime;
 
   function tryLiftSimpleTryBlock(
     instructions,
@@ -143,9 +149,34 @@ export function createTryHelpers(runtime) {
     const tryBodyState = cloneState(prefixState);
     executeStraightLine(tryBodyState, instructions.slice(bodyStartIndex, endtryGlobalIndex));
 
+    // Nested compiler-generated try regions are common around conversions and
+    // loop bodies. Render those slices recursively so the readable surface
+    // keeps structured exception blocks instead of leaking raw TRY warnings;
+    // the linear states below remain the conservative continuation model.
+    const liftNestedTrySlice = (slice) => {
+      if (!liftStructuredSlice || !slice.some((instruction) => {
+        const mnemonic = instruction.opcode.mnemonic;
+        return mnemonic === "TRY" || mnemonic === "TRY_L";
+      })) {
+        return null;
+      }
+      return liftStructuredSlice(
+        slice,
+        manifestMethod,
+        context,
+        slice[0]?.offset ?? methodOffset,
+        prefixState,
+      );
+    };
+    const nestedTryBody = liftNestedTrySlice(instructions.slice(bodyStartIndex, endtryGlobalIndex));
+    const nestedCatchBody = liftNestedTrySlice(catchSlice);
+    const nestedFinallyBody = liftNestedTrySlice(finallySlice);
+
     const statements = [...prefixState.statements];
     statements.push("try {");
-    statements.push(...tryBodyState.statements.slice(prefixState.statements.length));
+    statements.push(...(nestedTryBody
+      ? nestedTryBody.statements
+      : tryBodyState.statements.slice(prefixState.statements.length)));
     let catchState = null;
     let finallyState = null;
     let resumeState = null;
@@ -155,14 +186,18 @@ export function createTryHelpers(runtime) {
       catchState.stack.push("exception");
       executeStraightLine(catchState, catchSlice);
       statements.push("} catch {");
-      statements.push(...catchState.statements.slice(prefixState.statements.length));
+      statements.push(...(nestedCatchBody
+        ? nestedCatchBody.statements
+        : catchState.statements.slice(prefixState.statements.length)));
     }
 
     if (finallySlice.length > 0) {
       finallyState = cloneState(prefixState);
       executeStraightLine(finallyState, finallySlice);
       statements.push("} finally {");
-      statements.push(...finallyState.statements.slice(prefixState.statements.length));
+      statements.push(...(nestedFinallyBody
+        ? nestedFinallyBody.statements
+        : finallyState.statements.slice(prefixState.statements.length)));
     }
 
     statements.push("}");
@@ -188,6 +223,13 @@ export function createTryHelpers(runtime) {
         catchState,
         finallyState,
         resumeState,
+      ).filter((warning) => {
+        if (!nestedTryBody && !nestedCatchBody && !nestedFinallyBody) return true;
+        return !/TRY(?:_L)? \(not yet translated\)/u.test(warning);
+      }).concat(
+        nestedTryBody?.warnings ?? [],
+        nestedCatchBody?.warnings ?? [],
+        nestedFinallyBody?.warnings ?? [],
       ),
     });
   }
