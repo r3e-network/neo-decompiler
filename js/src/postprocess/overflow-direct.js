@@ -27,7 +27,18 @@ export function tryMatchDirectOverflow(statements, idx) {
   const operation = parseAssignment(statements[idx]);
   if (!operation || !operation.hasLet || !isIdentifier(operation.lhs)) return null;
 
-  const firstIdx = nextCodeLine(statements, idx + 1);
+  let firstIdx = nextCodeLine(statements, idx + 1);
+  // A DUP of an ambient stack value can leave one unrelated alias between the
+  // arithmetic result and its range checks (common inside finally blocks).
+  // Keep that declaration in place, but allow the proven chain after it to be
+  // structured. Do not skip more than one line or any control statement.
+  const alias = firstIdx === -1 ? null : parseAssignment(statements[firstIdx]);
+  if (alias?.hasLet && alias.lhs !== operation.lhs) {
+    const candidate = nextCodeLine(statements, firstIdx + 1);
+    if (candidate !== -1 && readConditionalGoto(statements, candidate)) {
+      firstIdx = candidate;
+    }
+  }
   const first = firstIdx === -1 ? null : readConditionalGoto(statements, firstIdx);
   if (!first) return null;
   const lower = parseComparison(first.condition, operation.lhs);
@@ -81,7 +92,7 @@ export function tryMatchDirectOverflow(statements, idx) {
       lower: lower.bound,
       upper: range.upper,
       maskLine: statements[maskIdx].trim(),
-      opLine: idx,
+      chainStart: firstIdx,
       end,
     };
   } else {
@@ -120,7 +131,7 @@ export function tryMatchDirectOverflow(statements, idx) {
       copyLine: statements[copyIdx].trim(),
       maskedUpper: maskAssignment.lhs,
       subtractLine: statements[subtractIdx].trim(),
-      opLine: idx,
+      chainStart: firstIdx,
       end,
     };
   }
@@ -136,10 +147,8 @@ export function tryMatchDirectOverflow(statements, idx) {
 }
 
 export function applyDirectOverflowCollapse(statements, collapse) {
-  const indent = leadingWhitespace(statements[collapse.opLine]);
-  const operation = statements[collapse.opLine];
+  const indent = leadingWhitespace(statements[collapse.chainStart]);
   const lines = [
-    operation,
     `${indent}if ${collapse.operation.lhs} < ${collapse.lower} || ${collapse.operation.lhs} > ${collapse.upper} {`,
     `${indent}    ${collapse.maskLine}`,
   ];
@@ -152,7 +161,7 @@ export function applyDirectOverflowCollapse(statements, collapse) {
     );
   }
   lines.push(`${indent}}`);
-  statements.splice(collapse.opLine, collapse.end - collapse.opLine + 1, ...lines);
+  statements.splice(collapse.chainStart, collapse.end - collapse.chainStart + 1, ...lines);
 }
 
 function readConditionalGoto(statements, start) {

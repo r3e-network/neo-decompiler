@@ -223,6 +223,43 @@ test("postprocess: expands and structures direct unsigned overflow transfers", a
   );
 });
 
+test("postprocess: preserves an ambient alias before a signed overflow chain", async () => {
+  const { postprocess } = await import("../src/postprocess.js");
+  const statements = [
+    "let t0 = value + 1;",
+    "let t1 = value;",
+    "if t0 >= -2147483648 { goto label_0x0010; }",
+    "goto label_0x0018;",
+    "label_0x0010:",
+    "if t0 <= 2147483647 { goto label_0x0030; }",
+    "label_0x0018:",
+    "let t2 = t0 & 4294967295;",
+    "t0 = t2;",
+    "if t2 <= 2147483647 { goto label_0x0030; }",
+    "t0 = t2 - 4294967296;",
+    "label_0x0030:",
+    "return t0;",
+  ];
+
+  postprocess(statements);
+
+  assert.deepEqual(
+    statements.filter((line) => line.trim() !== ""),
+    [
+      "let t0 = value + 1;",
+      "let t1 = value;",
+      "if t0 < -2147483648 || t0 > 2147483647 {",
+      "    let t2 = t0 & 4294967295;",
+      "    t0 = t2;",
+      "    if t2 > 2147483647 {",
+      "        t0 = t2 - 4294967296;",
+      "    }",
+      "}",
+      "return t0;",
+    ],
+  );
+});
+
 test("nested structured branches inherit the parent stack", () => {
   // Checked arithmetic has a second conditional nested in the false path of
   // the first one. The nested slice must start with the duplicated operation

@@ -71,7 +71,7 @@ export function rewriteIndexingSyntax(statements) {
     // set_item(expr) -> expr[key] = value
     const setItem = rewriteSetItem(trimmed);
     if (setItem) {
-      statements[i] = setItem;
+      statements[i] = `${leadingWhitespace(statements[i])}${setItem}`;
       continue;
     }
 
@@ -79,8 +79,9 @@ export function rewriteIndexingSyntax(statements) {
     if (trimmed.startsWith("for (") && trimmed.endsWith("{")) {
       const parts = parseForParts(trimmed);
       if (parts) {
+        const indent = leadingWhitespace(statements[i]);
         statements[i] =
-          `for (${parts.init}; ${rewriteExpr(parts.condition)}; ${rewriteExpr(parts.increment)}) {`;
+          `${indent}for (${parts.init}; ${rewriteExpr(parts.condition)}; ${rewriteExpr(parts.increment)}) {`;
       }
       continue;
     }
@@ -88,22 +89,23 @@ export function rewriteIndexingSyntax(statements) {
     // If condition
     const ifCond = extractIfCondition(trimmed);
     if (ifCond !== null) {
-      statements[i] = `if ${rewriteExpr(ifCond)} {`;
+      statements[i] = `${leadingWhitespace(statements[i])}if ${rewriteExpr(ifCond)} {`;
       continue;
     }
 
     // Else-if condition
     const elseIfCond = extractElseIfCondition(trimmed);
     if (elseIfCond !== null) {
+      const indent = leadingWhitespace(statements[i]);
       const prefix = trimmed.startsWith("} ") ? "} " : "";
-      statements[i] = `${prefix}else if ${rewriteExpr(elseIfCond)} {`;
+      statements[i] = `${indent}${prefix}else if ${rewriteExpr(elseIfCond)} {`;
       continue;
     }
 
     // While condition
     const whileCond = extractWhileCondition(trimmed);
     if (whileCond !== null) {
-      statements[i] = `while ${rewriteExpr(whileCond)} {`;
+      statements[i] = `${leadingWhitespace(statements[i])}while ${rewriteExpr(whileCond)} {`;
       continue;
     }
 
