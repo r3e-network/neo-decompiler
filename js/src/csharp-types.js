@@ -1,6 +1,11 @@
 import { csharpSyscallReturnType } from "./csharp-syscalls.js";
+import { csharpType } from "./csharp-type-map.js";
 
-function inferExpressionType(expression, knownTypes = new Map()) {
+function inferExpressionType(
+  expression,
+  knownTypes = new Map(),
+  knownCallTypes = new Map(),
+) {
   let value = expression.trim();
   while (value.startsWith("(") && value.endsWith(")")) {
     value = value.slice(1, -1).trim();
@@ -34,6 +39,12 @@ function inferExpressionType(expression, knownTypes = new Map()) {
   if (/^convert_to_bytestring\s*\(/i.test(value)) return "ByteString";
   const syscall = value.match(/^syscall\s*\(\s*\"([^\"]+)\"/i);
   if (syscall) return csharpSyscallReturnType(syscall[1]) ?? "dynamic";
+  const call = value.match(/^@?([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+  if (call) {
+    const knownCallType = knownCallTypes.get(call[1]);
+    if (knownCallType && knownCallType !== "void") return knownCallType;
+    return "dynamic";
+  }
   // Operators inside call arguments (for example `hanoiTower(n - 1, ...)`)
   // do not describe the call's result. Keep unknown method calls dynamic
   // instead of falsely inferring a numeric return from an argument expression.
@@ -63,8 +74,12 @@ function mapsEqual(left, right) {
   return [...left].every(([name, type]) => right.get(name) === type);
 }
 
-function resolveDefinitionType(definitions, knownTypes) {
-  const observed = definitions.map((definition) => inferExpressionType(definition, knownTypes));
+function resolveDefinitionType(definitions, knownTypes, knownCallTypes) {
+  const observed = definitions.map((definition) => inferExpressionType(
+    definition,
+    knownTypes,
+    knownCallTypes,
+  ));
   if (observed.includes("dynamic")) return null;
   const concrete = observed.filter((type) => type !== "dynamic" && type !== "null");
   if (concrete.length === 0 || new Set(concrete).size !== 1) return null;
@@ -82,7 +97,7 @@ function resolveDefinitionType(definitions, knownTypes) {
  * `let alias = source;` inherit a concrete collection type without treating
  * unresolved expressions as a type claim.
  */
-export function inferDeclarationTypes(lines) {
+export function inferDeclarationTypes(lines, knownCallTypes = new Map()) {
   const definitions = new Map();
   const parameterTypes = inferParameterTypes(lines);
   for (const line of lines) {
@@ -102,7 +117,7 @@ export function inferDeclarationTypes(lines) {
   for (let iteration = 0; iteration <= definitions.size; iteration += 1) {
     const nextTypes = new Map(parameterTypes);
     for (const [name, values] of definitions) {
-      const type = resolveDefinitionType(values, knownTypes);
+      const type = resolveDefinitionType(values, knownTypes, knownCallTypes);
       if (type) nextTypes.set(name, type);
     }
     if (mapsEqual(nextTypes, knownTypes)) break;
@@ -113,6 +128,30 @@ export function inferDeclarationTypes(lines) {
     ...parameterTypes,
     ...[...definitions.keys()].map((name) => [name, knownTypes.get(name) ?? "dynamic"]),
   ]);
+}
+
+/**
+ * Collect C#-mapped return types for methods available in the high-level
+ * surface. `any` and unannotated methods stay dynamic/void so a call cannot
+ * create a false concrete declaration type.
+ */
+export function inferKnownMethodReturnTypes(lines) {
+  const returnTypes = new Map();
+  for (const line of lines) {
+    const match = line.match(
+      /^\s*fn\s+([A-Za-z_][A-Za-z0-9_]*)\(.*\)(?:\s*->\s*([^\s{]+))?\s*\{\s*$/,
+    );
+    if (!match) continue;
+    const raw = String(match[2] ?? "void").trim().toLowerCase();
+    const type = raw === "any" ? "dynamic" : csharpType(raw);
+    const previous = returnTypes.get(match[1]);
+    if (previous && previous !== type) {
+      returnTypes.set(match[1], "dynamic");
+    } else if (!previous || previous === "dynamic") {
+      returnTypes.set(match[1], type);
+    }
+  }
+  return returnTypes;
 }
 
 function inferParameterTypes(lines) {

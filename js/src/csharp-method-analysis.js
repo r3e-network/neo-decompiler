@@ -1,4 +1,5 @@
-import { csharpType, inferDeclarationTypes } from "./csharp-render.js";
+import { csharpType } from "./csharp-type-map.js";
+import { inferDeclarationTypes } from "./csharp-types.js";
 
 // High-level lifting may recover a non-void method's body without a source
 // `return` at the method boundary. This is common when a VM path terminates
@@ -46,7 +47,7 @@ function isTerminalHighLevelStatement(statement) {
   return /^(?:return\b|throw\s*\(|abort(?:\s*\(|\s*;))/.test(statement);
 }
 
-export function inferDeclarationTypesByLine(lines, depths) {
+export function inferDeclarationTypesByLine(lines, depths, knownCallTypes = new Map()) {
   const typesByLine = new Map();
   for (let start = 0; start < lines.length; start += 1) {
     if (!/^\s*fn\s+.*\{\s*$/.test(lines[start])) continue;
@@ -56,7 +57,10 @@ export function inferDeclarationTypesByLine(lines, depths) {
       if (depths[end] === methodDepth + 1 && /^\s*}\s*$/.test(lines[end])) break;
       end += 1;
     }
-    const methodTypes = inferDeclarationTypes(lines.slice(start, end + 1));
+    const methodTypes = inferDeclarationTypes(
+      lines.slice(start, end + 1),
+      knownCallTypes,
+    );
     for (let index = start + 1; index < end; index += 1) {
       typesByLine.set(index, methodTypes);
     }

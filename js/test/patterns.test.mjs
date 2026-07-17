@@ -567,6 +567,27 @@ test("C# rendering uses conservative typed declarations by default", () => {
   assert.match(legacyRendered, /var count = 0;/);
 });
 
+test("C# typed declarations infer known helper return annotations", () => {
+  const rendered = renderCSharpContract([
+    "contract KnownCalls {",
+    "fn helper() -> int {",
+    "    return 1;",
+    "}",
+    "fn unknownHelper() -> any {",
+    "    return 1;",
+    "}",
+    "fn main() -> void {",
+    "    let value = helper();",
+    "    let unknown = unknownHelper();",
+    "    let missing = missingHelper();",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /BigInteger @value = helper\(\);/);
+  assert.match(rendered, /dynamic unknown = unknownHelper\(\);/);
+  assert.match(rendered, /dynamic missing = missingHelper\(\);/);
+});
+
 test("C# typed declarations stay scoped to each method", () => {
   const source = [
     "contract TypedScopes {",

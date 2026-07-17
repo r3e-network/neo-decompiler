@@ -6,6 +6,7 @@ import {
   inferDeclarationTypesByLine,
   inferReturnTypesByLine,
 } from "./csharp-method-analysis.js";
+import { inferKnownMethodReturnTypes } from "./csharp-types.js";
 import { labelsVisibleInMethod, rewriteUnresolvedGotos } from "./csharp-labels.js";
 import { isContractHeaderLine, sourceBraceDelta } from "./csharp-source.js";
 import {
@@ -64,6 +65,7 @@ export function renderCSharpContract(
   ];
   let classSeen = false;
   const sourceLines = highLevel.split(/\r?\n/);
+  const knownCallTypes = inferKnownMethodReturnTypes(sourceLines);
   const underflowTargets = collectUnderflowTargets(sourceLines);
   const sourceDepthByLine = [];
   let sourceDepth = 0;
@@ -94,10 +96,11 @@ export function renderCSharpContract(
     sourceLines,
     sourceDepthByLine,
     options.typedDeclarations !== false,
+    knownCallTypes,
   );
   const declarationTypesByLine = options.typedDeclarations === false
     ? null
-    : inferDeclarationTypesByLine(sourceLines, sourceDepthByLine);
+    : inferDeclarationTypesByLine(sourceLines, sourceDepthByLine, knownCallTypes);
   const staticSlotTypes = options.typedDeclarations === false
     ? null
     : inferStaticSlotTypes(sourceLines, declarationTypesByLine);

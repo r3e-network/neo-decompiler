@@ -1,34 +1,11 @@
 import { sanitizeIdentifier } from "./manifest.js";
 import { splitCallArguments } from "./csharp-expression.js";
+import { csharpType } from "./csharp-type-map.js";
 export { coerceCSharpReturn, inferDeclarationTypes, renderBodyLine } from "./csharp-body.js";
 import { inferDeclarationTypes, renderBodyLine } from "./csharp-body.js";
 export { csharpIdentifier } from "./csharp-identifiers.js";
 import { csharpIdentifier } from "./csharp-identifiers.js";
-
-const TYPE_MAP = new Map([
-  ["void", "void"],
-  ["bool", "bool"],
-  ["boolean", "bool"],
-  ["int", "BigInteger"],
-  ["integer", "BigInteger"],
-  ["string", "string"],
-  ["hash160", "UInt160"],
-  ["hash256", "UInt256"],
-  ["publickey", "ECPoint"],
-  ["bytes", "ByteString"],
-  ["bytestring", "ByteString"],
-  ["bytearray", "ByteString"],
-  ["signature", "ByteString"],
-  ["array", "object[]"],
-  ["map", "Map<object, object>"],
-  ["interop", "object"],
-  ["interopinterface", "object"],
-  ["any", "object"],
-]);
-
-export function csharpType(type) {
-  return TYPE_MAP.get(String(type ?? "any").trim().toLowerCase()) ?? "object";
-}
+export { csharpType } from "./csharp-type-map.js";
 
 export function escapeCSharpString(value) {
   let escaped = "";

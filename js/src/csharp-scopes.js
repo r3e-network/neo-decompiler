@@ -5,7 +5,12 @@ import { findUnusedCopyLines } from "./csharp-copies.js";
 // enclosing block, while VM slot names can be reused after control-flow joins.
 // Normalize only the names whose lexical lifetime cannot be represented by the
 // source-shaped C# body; ordinary one-scope `let` declarations stay inline.
-export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
+export function buildCSharpScopePlans(
+  lines,
+  depths,
+  typedDeclarations = true,
+  knownCallTypes = new Map(),
+) {
   const plansByLine = new Map();
   const declarationsByStart = new Map();
   const skippedLines = new Set();
@@ -17,7 +22,10 @@ export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
     if (end < 0) continue;
 
     const parameterNames = methodParameterNames(lines[start]);
-    const methodTypes = inferDeclarationTypes(lines.slice(start, end + 1));
+    const methodTypes = inferDeclarationTypes(
+      lines.slice(start, end + 1),
+      knownCallTypes,
+    );
     const unusedCopies = findUnusedCopyLines(lines, start, end, methodTypes);
     for (const line of unusedCopies.skippedLines) skippedLines.add(line);
     const scopeEnds = computeScopeEnds(depths, start, end);
