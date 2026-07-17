@@ -132,9 +132,10 @@ pub(crate) fn lookup(
             "StdLib",
             "Base64Encode" | "Base64UrlEncode" | "Base58Encode" | "Base58CheckEncode" | "HexEncode",
         ) => Some(return_type(ValueType::ByteString, "string")),
-        ("StdLib", "Base64Decode" | "Base58Decode" | "Base58CheckDecode" | "HexDecode") => {
-            Some(return_type(ValueType::ByteString, "ByteString"))
-        }
+        (
+            "StdLib",
+            "Base64Decode" | "Base64UrlDecode" | "Base58Decode" | "Base58CheckDecode" | "HexDecode",
+        ) => Some(return_type(ValueType::ByteString, "ByteString")),
         ("StdLib", "Serialize") => Some(return_type(ValueType::ByteString, "ByteString")),
         ("StdLib", "JsonSerialize") => Some(return_type(ValueType::ByteString, "string")),
         ("StdLib", "MemoryCompare" | "MemorySearch" | "StrLen") => {
@@ -225,6 +226,10 @@ mod tests {
         let bytes = lookup(Some(STDLIB), "base58CheckDecode", Some(0x0F)).unwrap();
         assert_eq!(bytes.value_type, ValueType::ByteString);
         assert_eq!(bytes.csharp_type, "ByteString");
+
+        let url_bytes = lookup(Some(STDLIB), "base64UrlDecode", Some(0x0F)).unwrap();
+        assert_eq!(url_bytes.value_type, ValueType::ByteString);
+        assert_eq!(url_bytes.csharp_type, "ByteString");
 
         let json = lookup(Some(STDLIB), "jsonSerialize", Some(0x0F)).unwrap();
         assert_eq!(json.value_type, ValueType::ByteString);
