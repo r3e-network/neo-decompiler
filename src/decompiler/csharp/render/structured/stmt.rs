@@ -408,6 +408,12 @@ impl StatementRenderer<'_> {
             } if (elements.len() == 1
                 && self.expressions.is_debug_singleton_array_target(target))
                 || self.expressions.is_event_array_target(target)
+        ) || matches!(
+            statement,
+            Stmt::Assign {
+                target,
+                value: Expr::Variable(_),
+            } if self.plan.unused_copy_symbols.contains(target)
         )
     }
 }

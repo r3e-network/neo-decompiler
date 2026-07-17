@@ -238,11 +238,13 @@ impl StatementRenderer<'_> {
     pub(super) fn hoisted_declarations(&self, scope: ScopeId, indent: usize) -> Vec<String> {
         self.plan
             .declarations
-            .values()
-            .filter(|declaration| {
-                declaration.scope == scope && declaration.kind == DeclarationKind::HoistedAssignment
+            .iter()
+            .filter(|(name, declaration)| {
+                declaration.scope == scope
+                    && declaration.kind == DeclarationKind::HoistedAssignment
+                    && !self.plan.unused_copy_symbols.contains(name.as_str())
             })
-            .map(|declaration| {
+            .map(|(_, declaration)| {
                 let initializer = if declaration.initialize_to_default {
                     " = default"
                 } else {

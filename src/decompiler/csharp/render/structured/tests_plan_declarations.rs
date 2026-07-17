@@ -176,6 +176,38 @@ fn stack_placeholder_is_a_lost_stack_value() {
 }
 
 #[test]
+fn unused_local_copy_is_removed_without_dropping_its_source() {
+    let body = Block::with_stmts(vec![
+        Stmt::assign("source", Expr::int(1)),
+        Stmt::assign("dead_copy", Expr::var("source")),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "source".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Integer,
+            },
+        ),
+        (
+            "dead_copy".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Integer,
+            },
+        ),
+    ]);
+
+    let plan = plan_declarations(&body, &symbols, true);
+    assert!(plan.unused_copy_symbols.contains("dead_copy"));
+    assert!(plan.declarations.contains_key("dead_copy"));
+
+    let rendered = render_block(&body, &plan, &symbols, ReturnBehavior::Void, false);
+    assert!(rendered.contains("source = 1;"));
+    assert!(!rendered.contains("dead_copy"));
+}
+
+#[test]
 fn csharp_emits_static_referenced_beyond_type_info() {
     let instructions = vec![
         Instruction::new(0, OpCode::Ldsfld3, None),

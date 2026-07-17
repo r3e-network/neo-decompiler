@@ -122,6 +122,7 @@ pub(in crate::decompiler::csharp::render) struct DeclarationPlan {
     pub(in crate::decompiler::csharp::render) issues: Vec<LoweringIssue>,
     pub(in crate::decompiler::csharp::render) typed: bool,
     pub(in crate::decompiler::csharp::render) index_defined_symbols: HashSet<String>,
+    pub(in crate::decompiler::csharp::render) unused_copy_symbols: HashSet<String>,
 }
 
 impl DeclarationPlan {
@@ -185,6 +186,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
         known_call_types,
     );
     let index_defined_symbols = collector.index_defined_symbols();
+    let unused_copy_symbols = collector.unused_copy_symbols(symbols);
 
     let mut declarations = BTreeMap::new();
     let mut issues = collector
@@ -314,6 +316,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
         issues,
         typed,
         index_defined_symbols,
+        unused_copy_symbols,
     }
 }
 

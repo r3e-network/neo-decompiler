@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::decompiler::analysis::types::ValueType;
-use crate::decompiler::cfg::method_body::SymbolInfo;
+use crate::decompiler::cfg::method_body::{SymbolInfo, SymbolOrigin};
 use crate::decompiler::ir::{Expr, Intrinsic, Literal, SemanticCallTarget};
 use crate::instruction::OpCode;
 
@@ -237,6 +237,54 @@ impl<'a> ActivityCollector<'a> {
         let mut symbols = self.indexed_base_symbols.clone();
         self.propagate_indexed_base_symbols(&mut symbols);
         symbols
+    }
+
+    /// Return local symbols whose every definition is a plain copy and whose
+    /// value is never read by the structured body.
+    ///
+    /// A copy assignment has no observable effect on its own. Restricting the
+    /// result to local-like symbols keeps static writes and ABI parameters out
+    /// of this readability-only optimization.
+    pub(super) fn unused_copy_symbols(
+        &self,
+        symbol_types: &BTreeMap<String, SymbolInfo>,
+    ) -> HashSet<String> {
+        self.activity
+            .iter()
+            .filter(|(_, activity)| !activity.definitions.is_empty() && activity.uses.is_empty())
+            .filter_map(|(name, _)| {
+                let symbol = symbol_types.get(name)?;
+                if !matches!(
+                    symbol.origin,
+                    SymbolOrigin::Local(_) | SymbolOrigin::Temporary | SymbolOrigin::Phi
+                ) {
+                    return None;
+                }
+                let definitions = self.definition_values.get(name)?;
+                definitions
+                    .iter()
+                    .all(|definition| {
+                        let Expr::Variable(source) = definition else {
+                            return false;
+                        };
+                        let Some(source_info) = symbol_types.get(source) else {
+                            return false;
+                        };
+                        if source_info.value_type != symbol.value_type {
+                            return false;
+                        }
+                        match (
+                            self.concrete_definition_types.get(name),
+                            self.concrete_definition_types.get(source),
+                        ) {
+                            (Some(target_type), Some(source_type)) => target_type == source_type,
+                            (None, None) => true,
+                            _ => false,
+                        }
+                    })
+                    .then_some(name.clone())
+            })
+            .collect()
     }
 
     fn propagate_copy_definitions(&self, symbols: &mut HashSet<String>) {
