@@ -50,18 +50,23 @@ export function tryControlTransferFallback(state, instruction) {
       return false;
     }
     recordStackSnapshot(state, target);
+    // The branch lifter strips label targets outside its prefix; re-register
+    // so a later linear fallback can still resolve this goto.
+    state.labelTargets.add(target);
     state.statements.push(`if ${condition} { goto ${labelName(target)}; }`);
     return true;
   }
 
   if (mnemonic === "JMP" || mnemonic === "JMP_L") {
     recordStackSnapshot(state, target);
+    state.labelTargets.add(target);
     state.statements.push(`goto ${labelName(target)};`);
     state.stack.length = 0;
     return true;
   }
 
   if (mnemonic === "ENDTRY" || mnemonic === "ENDTRY_L") {
+    state.labelTargets.add(target);
     state.statements.push(`leave ${labelName(target)};`);
     state.stack.length = 0;
     return true;

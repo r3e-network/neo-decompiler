@@ -323,14 +323,14 @@ export function createBranchHelpers(runtime) {
       const canRecoverStructuredSuffix =
         manifestMethod !== null || (context?.methodTokens?.length ?? 0) > 0;
       const hasStructuredSuffix = canRecoverStructuredSuffix &&
-        suffixSlice.some((instruction) =>
+        (suffixSlice.some((instruction) =>
           ["TRY", "TRY_L"].includes(instruction.opcode?.mnemonic),
         )
           ? suffixSlice.length <= 256
           : suffixSlice.length <= 48 &&
             containsUnsupportedBranchStructure(suffixSlice) &&
             (suffixSlice.some((instruction) => instruction.opcode?.mnemonic === "CALLT")
-              || containsKnownTerminator(suffixSlice, context));
+              || containsKnownTerminator(suffixSlice, context)));
       if (hasStructuredSuffix) {
         nestedSuffix = liftStructuredSlice(
           suffixSlice,
