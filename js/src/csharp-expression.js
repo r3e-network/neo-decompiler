@@ -33,6 +33,7 @@ import { rewriteConstantExpressions } from "./csharp-expression-constants.js";
 import {
   rewriteFrameworkCallArguments,
 } from "./csharp-framework.js";
+import { frameworkMethodName } from "./native-contracts.js";
 
 export { splitCallArguments } from "./csharp-expression-scanner.js";
 
@@ -145,7 +146,8 @@ function rewriteQualifiedCalls(line) {
   let cursor = 0;
   let match;
   while ((match = nextOutsideMatch(line, pattern)) !== null) {
-    const property = CSHARP_NATIVE_PROPERTIES.get(`${match[1]}::${match[2]}`);
+    const method = frameworkMethodName(match[1], match[2]);
+    const property = CSHARP_NATIVE_PROPERTIES.get(`${match[1]}::${method}`);
     if (property) {
       const open = line.indexOf("(", match.index);
       const close = findCallClose(line, open);
@@ -157,7 +159,7 @@ function rewriteQualifiedCalls(line) {
       }
     }
     output += line.slice(cursor, match.index);
-    output += `${match[1]}.${match[2]}(`;
+    output += `${match[1]}.${method}(`;
     cursor = pattern.lastIndex;
   }
   return cursor === 0 ? line : output + line.slice(cursor);

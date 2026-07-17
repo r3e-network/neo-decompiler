@@ -3,6 +3,7 @@ import {
   nextOutsideMatch,
   splitCallArguments,
 } from "./csharp-expression-scanner.js";
+import { describeMethodToken } from "./native-contracts.js";
 
 // A few framework APIs have stronger C# parameter types than the VM values
 // they consume. Add explicit boundary conversions only where the recovered
@@ -79,10 +80,14 @@ function isNumericExpression(expression, types) {
 // framework's Contract.Call API so the generated C# remains self-contained.
 export function rewriteCSharpMethodTokenCalls(line, methodTokens = null) {
   if (!Array.isArray(methodTokens) || methodTokens.length === 0) return line;
+  if (line.trimStart().startsWith("//")) return line;
   const tokens = new Map(
     methodTokens
       .filter((token) => token && typeof token.method === "string")
-      .map((token) => [token.method, token]),
+      .flatMap((token) => [
+        [token.method, token],
+        [token.method.toLowerCase(), token],
+      ]),
   );
   if (tokens.size === 0) return line;
   const pattern = /\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
@@ -90,8 +95,9 @@ export function rewriteCSharpMethodTokenCalls(line, methodTokens = null) {
   let cursor = 0;
   let match;
   while ((match = nextOutsideMatch(line, pattern)) !== null) {
-    const token = tokens.get(match[1]);
+    const token = tokens.get(match[1]) ?? tokens.get(match[1].toLowerCase());
     if (!token || isQualifiedCallName(line, match.index)) continue;
+    if (isDirectNativeToken(token)) continue;
     const open = line.indexOf("(", match.index);
     const close = findCallClose(line, open);
     if (close < 0) continue;
@@ -102,6 +108,15 @@ export function rewriteCSharpMethodTokenCalls(line, methodTokens = null) {
     pattern.lastIndex = cursor;
   }
   return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function isDirectNativeToken(token) {
+  if (token.callFlags !== 0x0F) return false;
+  const hash = token.hash instanceof Uint8Array
+    ? token.hash
+    : Array.isArray(token.hash) ? Uint8Array.from(token.hash) : null;
+  return hash?.length === 20
+    && describeMethodToken(hash, token.method)?.hasExactMethod() === true;
 }
 
 function isQualifiedCallName(line, index) {

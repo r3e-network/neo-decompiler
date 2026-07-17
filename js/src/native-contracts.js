@@ -161,6 +161,15 @@ const NATIVE_CONTRACTS = [
   },
 ];
 
+const FRAMEWORK_METHOD_NAMES = new Map([
+  ["CryptoLib:recoverSecp256K1", "RecoverSecp256K1"],
+  ["CryptoLib:ripemd160", "Ripemd160"],
+  ["CryptoLib:verifyWithECDsa", "VerifyWithECDsa"],
+  ["LedgerContract:getTransaction", "GetTransaction"],
+  ["NeoToken:UnregisterCandidate", "UnRegisterCandidate"],
+  ["PolicyContract:getAttributeFee", "GetAttributeFee"],
+]);
+
 function bytesEqual(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -211,4 +220,13 @@ export function describeMethodToken(hash, method) {
       return ciMatch !== undefined && ciMatch !== null;
     },
   };
+}
+
+/**
+ * Return the spelling used by the Neo C# framework for a catalogued native
+ * method. VM method names intentionally preserve protocol casing, while a
+ * few framework declarations use CLR-style names.
+ */
+export function frameworkMethodName(contract, method) {
+  return FRAMEWORK_METHOD_NAMES.get(`${contract}:${method}`) ?? method;
 }

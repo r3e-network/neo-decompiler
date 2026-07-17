@@ -863,6 +863,38 @@ test("C# method-token rewriting leaves qualified native calls intact", () => {
   assert.doesNotMatch(rendered, /Contract\.Call\(/);
 });
 
+test("C# native method tokens keep framework casing and metadata comments intact", () => {
+  const stdLibHash = Uint8Array.from([
+    0xC0, 0xEF, 0x39, 0xCE, 0xE0, 0xE4, 0xE9, 0x25, 0xC6, 0xC2,
+    0xA0, 0x6A, 0x79, 0xE1, 0x44, 0x0D, 0xD8, 0x6F, 0xCE, 0xAC,
+  ]);
+  const cryptoHash = Uint8Array.from([
+    0x1B, 0xF5, 0x75, 0xAB, 0x11, 0x89, 0x68, 0x84, 0x13, 0x61,
+    0x0A, 0x35, 0xA1, 0x28, 0x86, 0xCD, 0xE0, 0xB6, 0x6C, 0x72,
+  ]);
+  const rendered = renderCSharpContract([
+    "contract NativeSpelling {",
+    "    // itoa (StdLib::Itoa) hash=C0EF39CEE0E4E925C6C2A06A79E1440DD86FCEAC",
+    "fn invoke(value, data, sig) -> any {",
+    "    let text = StdLib::Itoa(value);",
+    "    let bytes = StdLib::Base64UrlDecode(text);",
+    "    return CryptoLib::recoverSecp256K1(data, sig);",
+    "}",
+    "}",
+  ].join("\n"), null, {
+    methodTokens: [
+      { hash: stdLibHash, method: "itoa", callFlags: 15, parametersCount: 1, hasReturnValue: true },
+      { hash: stdLibHash, method: "base64UrlDecode", callFlags: 15, parametersCount: 1, hasReturnValue: true },
+      { hash: cryptoHash, method: "recoverSecp256K1", callFlags: 15, parametersCount: 2, hasReturnValue: true },
+    ],
+  });
+
+  assert.match(rendered, /return CryptoLib\.RecoverSecp256K1\(data, sig\);/);
+  assert.match(rendered, /StdLib\.Base64UrlDecode\(text\)/);
+  assert.match(rendered, /\/\/ itoa \(StdLib::Itoa\) hash=/);
+  assert.doesNotMatch(rendered, /Contract\.Call\(.*StdLib::Itoa/);
+});
+
 test("C# typed declarations propagate concrete collection aliases", () => {
   const rendered = renderCSharpContract([
     "contract AliasTypes {",
