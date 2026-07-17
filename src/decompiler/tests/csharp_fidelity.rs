@@ -98,6 +98,43 @@ fn csharp_unknown_source_and_unresolved_call_use_whole_method_fallback() {
 }
 
 #[test]
+fn csharp_detached_packstruct_helper_keeps_vm_underflow_explicit() {
+    // The helper has no INITSLOT. Its two PACKSTRUCT operations and final
+    // PACK require four entry-stack values, while the caller starts with an
+    // empty stack. Preserve that VM fault instead of inventing tuple fields.
+    let script = [
+        0x57, 0x00, 0x00, // INITSLOT 0 locals, 0 args
+        0x34, 0x03, // CALL into the detached helper
+        0x40, // RET
+        0x12, 0xBF, // PUSH2; PACKSTRUCT
+        0x12, 0xBF, // PUSH2; PACKSTRUCT
+        0x50, // SWAP
+        0x12, 0xC0, // PUSH2; PACK
+        0x40, // RET
+    ];
+    let rendered = render_csharp_with_coverage(&build_nef(&script), None, true, false, true);
+    let coverage = rendered
+        .coverage
+        .method(0, "ScriptEntry")
+        .expect("caller coverage");
+
+    assert_eq!(
+        coverage.fidelity.status,
+        crate::decompiler::cfg::method_body::Fidelity::Incomplete
+    );
+    assert!(
+        rendered.source.contains("VM argument underflow")
+            && rendered
+                .source
+                .contains("throw new InvalidOperationException")
+            && rendered.source.contains("(dynamic)null"),
+        "C# must preserve the detached-helper fault and unknown values:\n{}",
+        rendered.source
+    );
+    assert!(!rendered.source.contains("missing_pack_item()"));
+}
+
+#[test]
 fn csharp_typed_map_temporary_keeps_its_receiver_type() {
     let script = [
         crate::instruction::OpCode::Newmap.byte(),
