@@ -15,9 +15,10 @@ pub enum OutputFormat {
     // legacy `c-sharp` form is kept as an alias for back-compat with
     // any scripts that pinned the old spelling.
     #[cfg_attr(feature = "cli", value(name = "csharp", alias = "c-sharp"))]
-    CSharp,
-    /// Emit all supported outputs.
     #[default]
+    CSharp,
+    /// Emit all source and analysis views. This is an explicit opt-in because
+    /// generated source is intentionally limited to the C# contract view.
     All,
 }
 
@@ -32,6 +33,16 @@ impl OutputFormat {
 
     pub(super) fn wants_csharp(self) -> bool {
         matches!(self, OutputFormat::CSharp | OutputFormat::All)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OutputFormat;
+
+    #[test]
+    fn defaults_to_the_csharp_contract_view() {
+        assert_eq!(OutputFormat::default(), OutputFormat::CSharp);
     }
 }
 
