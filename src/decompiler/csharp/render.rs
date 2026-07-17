@@ -173,31 +173,18 @@ pub(crate) fn render_csharp(
     let vm_exception_type = vm_exception_type_name(instructions, &mut used_member_names);
     let vm_exception_type_ref = vm_exception_type.as_deref().unwrap_or(VM_EXCEPTION_TYPE);
     let assert_message_helper = assert_message_helper_name(instructions, &mut used_member_names);
-    let assert_message_helper_call = assert_message_helper
-        .as_ref()
-        .map(|helper| format!("global::NeoDecompiler.Generated.{contract_name}.{helper}"));
+    let assert_message_helper_call = assert_message_helper.clone();
     let unpack_packstruct_helper =
         unpack_packstruct_helper_name(instructions, &mut used_member_names);
-    let unpack_packstruct_helper_call = unpack_packstruct_helper
-        .as_ref()
-        .map(|helper| format!("global::NeoDecompiler.Generated.{contract_name}.{helper}"));
+    let unpack_packstruct_helper_call = unpack_packstruct_helper.clone();
     let bare_throw_helper = bare_throw_helper_name(instructions, &mut used_member_names);
-    let bare_throw_helper_call = bare_throw_helper
-        .as_ref()
-        .map(|helper| format!("global::NeoDecompiler.Generated.{contract_name}.{helper}"));
+    let bare_throw_helper_call = bare_throw_helper.clone();
     let tagged_opcode_helpers = tagged_opcode_helpers(instructions, &mut used_member_names);
     let tagged_opcode_helper_calls = tagged_opcode_helpers
         .iter()
         .filter_map(|helper| {
-            structured::expr::tagged_opcode_helper_key(helper.opcode, helper.target).map(|key| {
-                (
-                    key,
-                    format!(
-                        "global::NeoDecompiler.Generated.{contract_name}.{}",
-                        helper.name
-                    ),
-                )
-            })
+            structured::expr::tagged_opcode_helper_key(helper.opcode, helper.target)
+                .map(|key| (key, helper.name.clone()))
         })
         .collect();
     // Pre-resolve inferred C# slot types per method so that body-local
@@ -304,6 +291,9 @@ fn contract_member_names(
 ) -> HashSet<String> {
     let mut used_names = HashSet::from([contract_name.to_string()]);
     used_names.extend(method_plans.emitted_names().map(str::to_string));
+    // Parameters shadow unqualified member lookups inside method bodies, so
+    // generated helper names must avoid them too.
+    used_names.extend(method_plans.parameter_names().map(str::to_string));
     used_names.extend(
         contract_symbols
             .static_fields

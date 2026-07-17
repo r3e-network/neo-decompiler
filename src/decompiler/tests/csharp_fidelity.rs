@@ -129,13 +129,8 @@ fn csharp_typed_map_temporary_keeps_its_receiver_type() {
     assert!(
         rendered
             .source
-            .contains("Map<object, object> t_0 = new Map<object, object>();"),
-        "{}",
-        rendered.source
-    );
-    assert!(
-        rendered.source.contains("return t_0.HasKey(1);"),
-        "{}",
+            .contains("return new Map<object, object>().HasKey(1);"),
+        "the map receiver keeps its concrete type when inlined: {}",
         rendered.source
     );
 }

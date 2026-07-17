@@ -19,6 +19,8 @@ use super::expr_values::{render_literal, render_new_array};
 
 pub(super) const PREC_ASSIGNMENT: u8 = 1;
 pub(super) const PREC_TERNARY: u8 = 2;
+const PREC_LOGICAL_OR: u8 = 3;
+const PREC_LOGICAL_AND: u8 = 4;
 const PREC_BIT_OR: u8 = 5;
 const PREC_BIT_XOR: u8 = 6;
 const PREC_BIT_AND: u8 = 7;
@@ -152,13 +154,26 @@ fn render_expr_node(
             ),
             PREC_PRIMARY,
         ),
-        Expr::Cast { expr, target_type } => RenderedExpr::new(
-            format!(
-                "({target_type})({})",
-                render_expr_prec(expr, 0, context, expanding)
-            ),
-            PREC_UNARY,
-        ),
+        Expr::Cast { expr, target_type } => {
+            // Skip identity casts: the operand already renders with the target
+            // type (statically exact, or a byte literal whose spelling carries
+            // the ByteString conversion), so a second cast is pure noise.
+            if context.is_statically_exact_csharp_type(expr, target_type)
+                || matches!(
+                    expr.as_ref(),
+                    Expr::Literal(Literal::Bytes(_)) if target_type == "ByteString"
+                )
+            {
+                return render_expr_node(expr, context, expanding);
+            }
+            RenderedExpr::new(
+                format!(
+                    "({target_type})({})",
+                    render_expr_prec(expr, 0, context, expanding)
+                ),
+                PREC_UNARY,
+            )
+        }
         Expr::Convert { value, target } => {
             render_tagged_type_opcode(OpCode::Convert, *target, value, context, expanding)
         }
@@ -172,14 +187,35 @@ fn render_expr_node(
             render_new_array(length, *element_type, context, expanding),
             PREC_PRIMARY,
         ),
-        Expr::Array(elements) => RenderedExpr::new(
-            format!(
-                "new {} {{ {} }}",
-                context.exact_csharp_type(expression).unwrap_or("object[]"),
-                render_expr_list(elements, context, expanding)
-            ),
-            PREC_PRIMARY,
-        ),
+        Expr::Array(elements) => {
+            // Inside a `new byte[]` literal the `(byte)` casts on elements are
+            // implied; rendering them per-element is pure noise.
+            let byte_array = context.exact_csharp_type(expression) == Some("byte[]");
+            RenderedExpr::new(
+                format!(
+                    "new {} {{ {} }}",
+                    context.exact_csharp_type(expression).unwrap_or("object[]"),
+                    if byte_array {
+                        elements
+                            .iter()
+                            .map(|element| match element {
+                                Expr::Cast {
+                                    expr: inner,
+                                    target_type,
+                                } if target_type == "byte" => {
+                                    render_expr_prec(inner, 0, context, expanding)
+                                }
+                                _ => render_expr_prec(element, 0, context, expanding),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    } else {
+                        render_expr_list(elements, context, expanding)
+                    }
+                ),
+                PREC_PRIMARY,
+            )
+        }
         Expr::Struct(elements) => {
             let array = format!(
                 "new object[] {{ {} }}",
@@ -211,15 +247,49 @@ fn render_expr_node(
             condition,
             then_expr,
             else_expr,
-        } => RenderedExpr::new(
-            format!(
-                "{} ? {} : {}",
-                render_expr_prec(condition, PREC_TERNARY + 1, context, expanding),
-                render_expr_prec(then_expr, PREC_TERNARY + 1, context, expanding),
-                render_expr_prec(else_expr, PREC_TERNARY + 1, context, expanding)
-            ),
-            PREC_TERNARY,
-        ),
+        } => {
+            // Boolean ternaries from folded branch merges spell naturally as
+            // short-circuit operators: `c ? a : false` -> `c && a` and
+            // `c ? a : true` -> `c || a`. Ternaries are short-circuit by
+            // construction, so this preserves evaluation semantics exactly.
+            let bool_literal = |expr: &Expr| match expr {
+                Expr::Literal(Literal::Bool(value)) => Some(*value),
+                _ => None,
+            };
+            let logical = match (bool_literal(then_expr), bool_literal(else_expr)) {
+                (None, Some(false)) => Some(("&&", PREC_LOGICAL_AND, false, then_expr)),
+                (Some(true), None) => Some(("||", PREC_LOGICAL_OR, false, else_expr)),
+                (Some(false), None) => Some(("&&", PREC_LOGICAL_AND, true, else_expr)),
+                (None, Some(true)) => Some(("||", PREC_LOGICAL_OR, true, then_expr)),
+                _ => None,
+            };
+            if let Some((spelling, precedence, negate_condition, value)) = logical {
+                let condition_source = render_expr_prec(condition, precedence, context, expanding);
+                let condition_source = if negate_condition {
+                    format!("!({condition_source})")
+                } else {
+                    condition_source
+                };
+                RenderedExpr::new(
+                    format!(
+                        "{} {spelling} {}",
+                        condition_source,
+                        render_expr_prec(value, precedence + 1, context, expanding)
+                    ),
+                    precedence,
+                )
+            } else {
+                RenderedExpr::new(
+                    format!(
+                        "{} ? {} : {}",
+                        render_expr_prec(condition, PREC_TERNARY + 1, context, expanding),
+                        render_expr_prec(then_expr, PREC_TERNARY + 1, context, expanding),
+                        render_expr_prec(else_expr, PREC_TERNARY + 1, context, expanding)
+                    ),
+                    PREC_TERNARY,
+                )
+            }
+        }
         Expr::StackTemp(index) => RenderedExpr::new(format!("_tmp{index}"), PREC_PRIMARY),
     }
 }

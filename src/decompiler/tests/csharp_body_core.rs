@@ -254,7 +254,7 @@ fn csharp_assert_preserves_non_scalar_vm_truthiness() {
     );
     assert!(
         rendered.source.contains(
-            "global::Neo.SmartContract.Framework.ExecutionEngine.Assert((bool)(object)(t_0));"
+            "global::Neo.SmartContract.Framework.ExecutionEngine.Assert((bool)(object)(new object[0]));"
         ),
         "{}",
         rendered.source
@@ -302,7 +302,7 @@ fn csharp_assert_message_preserves_eager_vm_message_validation() {
     assert!(
         rendered
             .source
-            .contains("            global::NeoDecompiler.Generated.EagerAssertMessage.__NeoDecompilerAssertMessage(1 != 0,"),
+            .contains("            __NeoDecompilerAssertMessage(1 != 0,"),
         "{}",
         rendered.source
     );
@@ -344,9 +344,11 @@ fn csharp_assert_message_helper_call_ignores_parameter_shadowing() {
 
     assert!(
         rendered.source.contains(
-            "global::NeoDecompiler.Generated.HelperNameCollision.__NeoDecompilerAssertMessage(1 != 0, (string)(object)(HelperNameCollision));"
+            "private static extern void __NeoDecompilerAssertMessage_1(bool condition, string message);"
+        ) && rendered.source.contains(
+            "__NeoDecompilerAssertMessage_1(1 != 0, (string)(object)(HelperNameCollision));"
         ),
-        "helper calls must not bind to same-named parameters: {}",
+        "helper is renamed and called unqualified so calls cannot bind to same-named parameters: {}",
         rendered.source
     );
 }
@@ -398,9 +400,9 @@ fn csharp_assert_message_uses_globally_qualified_opcode_attribute() {
         rendered.source
     );
     assert!(
-        rendered.source.contains(
-            "global::NeoDecompiler.Generated.OpCode.__NeoDecompilerAssertMessage(1 != 0, (string)(object)(2));"
-        ),
+        rendered
+            .source
+            .contains("__NeoDecompilerAssertMessage(1 != 0, (string)(object)(2));"),
         "{}",
         rendered.source
     );
@@ -604,20 +606,15 @@ fn csharp_trace_assert_converts_numeric_local_to_boolean() {
         crate::decompiler::csharp::BodyBackend::Structured
     );
     assert!(
-        rendered.source.contains("BigInteger loc0 = 1;"),
-        "{}",
-        rendered.source
-    );
-    assert!(
         rendered
             .source
-            .contains("global::Neo.SmartContract.Framework.ExecutionEngine.Assert(loc0 != 0);"),
-        "{}",
+            .contains("global::Neo.SmartContract.Framework.ExecutionEngine.Assert(1 != 0);"),
+        "constant-propagated numeric values are converted to C# booleans: {}",
         rendered.source
     );
     assert!(
-        !rendered.source.contains("ExecutionEngine.Assert(loc0);"),
-        "numeric locals are not C# boolean expressions: {}",
+        !rendered.source.contains("ExecutionEngine.Assert(1);"),
+        "numeric values are not C# boolean expressions: {}",
         rendered.source
     );
 }

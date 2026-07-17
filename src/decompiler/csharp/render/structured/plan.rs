@@ -79,6 +79,19 @@ impl CSharpMethodPlans {
         self.plans.iter().map(|plan| plan.emitted_name.as_str())
     }
 
+    /// Every parameter name across all methods. Decompiler-generated helper
+    /// members must avoid these: an unqualified helper call inside a method
+    /// body would otherwise bind to a same-named parameter.
+    pub(in crate::decompiler::csharp::render) fn parameter_names(
+        &self,
+    ) -> impl Iterator<Item = &str> {
+        self.plans.iter().flat_map(|plan| {
+            plan.parameters
+                .iter()
+                .map(|parameter| parameter.name.as_str())
+        })
+    }
+
     pub(in crate::decompiler::csharp::render) fn synthetic_entry(
         &self,
     ) -> Option<&CSharpMethodPlan> {

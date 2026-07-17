@@ -136,6 +136,7 @@ pub(crate) fn render_method_body(
         instructions: &view.instructions,
         context,
         symbol_types: MethodSymbolTypes::default(),
+        reduce_temps: false,
     });
     append_fidelity_warnings(warnings, method_name, view.method.offset, &lowered.fidelity);
     let body = render_block(&lowered.body, 0);

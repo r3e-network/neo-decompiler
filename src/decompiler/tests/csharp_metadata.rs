@@ -35,8 +35,8 @@ fn csharp_trims_initslot_boundaries() {
         "duplicate return from appended block should not appear in sumFunc"
     );
     assert!(
-        csharp.contains("private static dynamic sub_0x000C"),
-        "inferred helper should now be emitted separately"
+        csharp.contains("private static BigInteger sub_0x000C"),
+        "inferred helper should now be emitted separately (with a concrete return type)"
     );
 }
 

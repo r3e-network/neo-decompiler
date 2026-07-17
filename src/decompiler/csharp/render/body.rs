@@ -75,6 +75,7 @@ pub(super) fn render_method_body(
         instructions,
         context: method_plan.method_context.clone(),
         symbol_types: method_plan.symbol_types.clone(),
+        reduce_temps: true,
     });
     let mut fidelity = lowered.fidelity;
     fidelity

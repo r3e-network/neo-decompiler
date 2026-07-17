@@ -133,6 +133,7 @@ pub(in crate::decompiler::csharp::render) fn homogeneous_csharp_array_type(
     match candidate.as_str() {
         "BigInteger" => Some("BigInteger[]"),
         "bool" => Some("bool[]"),
+        "byte" => Some("byte[]"),
         "byte[]" => Some("byte[][]"),
         "ByteString" => Some("ByteString[]"),
         "ECPoint" => Some("ECPoint[]"),

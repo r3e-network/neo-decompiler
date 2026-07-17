@@ -68,6 +68,7 @@ pub(super) fn infer_private_parameter_types(
             instructions,
             context: caller.method_context.clone(),
             symbol_types: caller.symbol_types.clone(),
+            reduce_temps: false,
         });
         let call_arguments = if lowered.fidelity.status == Fidelity::Incomplete {
             HashMap::new()
@@ -208,6 +209,7 @@ fn indexed_parameter_indices(
         instructions,
         context: plan.method_context.clone(),
         symbol_types: plan.symbol_types.clone(),
+        reduce_temps: false,
     });
     collect_indexed_base_symbols(&lowered.body)
         .into_iter()

@@ -94,6 +94,30 @@ fn renders_all_expression_variants() {
             },
             "condition ? 1 : 2",
         ),
+        (
+            Expr::Ternary {
+                condition: Box::new(Expr::var("condition")),
+                then_expr: Box::new(Expr::Literal(Literal::Bool(true))),
+                else_expr: Box::new(Expr::var("value")),
+            },
+            "condition || value",
+        ),
+        (
+            Expr::Ternary {
+                condition: Box::new(Expr::var("condition")),
+                then_expr: Box::new(Expr::var("value")),
+                else_expr: Box::new(Expr::Literal(Literal::Bool(true))),
+            },
+            "!(condition) || value",
+        ),
+        (
+            Expr::Ternary {
+                condition: Box::new(Expr::var("condition")),
+                then_expr: Box::new(Expr::Literal(Literal::Bool(false))),
+                else_expr: Box::new(Expr::var("value")),
+            },
+            "!(condition) && value",
+        ),
         (Expr::StackTemp(7), "_tmp7"),
     ];
     for (expression, expected) in cases {

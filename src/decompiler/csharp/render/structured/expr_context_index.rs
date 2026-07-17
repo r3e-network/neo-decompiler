@@ -35,7 +35,11 @@ impl ExprContext {
         }
     }
 
-    pub(super) fn exact_literal_index_type(&self, base: &Expr, index: &Expr) -> Option<&str> {
+    pub(super) fn exact_literal_index_type<'a>(
+        &'a self,
+        base: &'a Expr,
+        index: &'a Expr,
+    ) -> Option<&'a str> {
         let index = self.constant_index(index)?;
         let elements = self.array_elements(base)?;
         let element = elements.get(index)?;

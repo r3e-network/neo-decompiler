@@ -207,9 +207,15 @@ impl ExprContext {
         self
     }
 
-    pub(super) fn exact_csharp_type(&self, expression: &Expr) -> Option<&str> {
+    pub(super) fn exact_csharp_type<'a>(&'a self, expression: &'a Expr) -> Option<&'a str> {
         match expression {
             Expr::Variable(name) => self.concrete_types.get(name).map(String::as_str),
+            // Literal spellings carry their own type (`true`,
+            // `(ByteString)new byte[] { ... }`), so casts over them are noise.
+            // (String literals are left untyped here: Neo treats them as
+            // ByteStrings at the VM level, not C# strings.)
+            Expr::Literal(Literal::Bool(_)) => Some("bool"),
+            Expr::Literal(Literal::Bytes(_)) => Some("ByteString"),
             Expr::Array(elements) if self.typed_array_literals => {
                 let element_types = elements.iter().map(|element| {
                     self.exact_csharp_type(element)
@@ -255,6 +261,10 @@ impl ExprContext {
             Expr::Member { base, name } => self
                 .exact_csharp_type(base)
                 .and_then(|base_type| types::csharp_member_type(base_type, name)),
+            // A cast's static type is its target by definition; without this,
+            // byte-typed array elements fall back to their operand's type and
+            // `new byte[] { (byte)x }` mistypes as `BigInteger[]`.
+            Expr::Cast { target_type, .. } => Some(target_type.as_str()),
             _ => None,
         }
     }
@@ -349,7 +359,22 @@ impl ExprContext {
             }
             Expr::Convert { target, .. } => *target,
             Expr::IsType { .. } => ValueType::Boolean,
-            Expr::NewArray { .. } | Expr::Array(_) => ValueType::Array,
+            Expr::NewArray { .. } => ValueType::Array,
+            Expr::Array(elements) => {
+                // A uniformly byte-cast array literal renders as `new byte[]`,
+                // which is a VM Buffer for concat/storage-key purposes. Bare
+                // integer elements stay Array: they type as BigInteger/object
+                // elements, not bytes.
+                if !elements.is_empty()
+                    && elements.iter().all(|element| {
+                        matches!(element, Expr::Cast { target_type, .. } if target_type == "byte")
+                    })
+                {
+                    ValueType::Buffer
+                } else {
+                    ValueType::Array
+                }
+            }
             Expr::Struct(_) => ValueType::Struct,
             Expr::Map(_) => ValueType::Map,
             Expr::Index { base, .. } => {

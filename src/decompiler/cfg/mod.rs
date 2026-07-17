@@ -15,6 +15,7 @@ mod structure;
 pub use basic_block::{BasicBlock, BlockId, Terminator};
 pub use builder::CfgBuilder;
 pub use graph::{Cfg, Edge, EdgeKind};
+pub(crate) use structure::reduce_temporaries_for_render;
 pub use structure::structure as structure_cfg;
 pub(crate) use structure::structure_with_source_names as structure_cfg_with_source_names;
 

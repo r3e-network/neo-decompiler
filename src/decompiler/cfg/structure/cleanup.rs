@@ -5,6 +5,7 @@ mod int_normalization;
 mod int_normalization_uses;
 mod loops;
 mod size_normalization;
+mod temps;
 
 pub(super) fn simplify_unreachable_control(block: &mut IrBlock) {
     loop {
@@ -24,6 +25,12 @@ pub(super) fn simplify_unreachable_control(block: &mut IrBlock) {
     size_normalization::collapse_size_wrappers(block);
     int_normalization::collapse_int32_wrappers(block);
 }
+
+/// Readability-oriented temporary reduction (copy propagation, redundant cast
+/// collapsing, dead store elimination). Applied on the C# rendering path via
+/// [`crate::decompiler::cfg::method_body::lower_method_body`] when the request
+/// asks for it; analysis callers keep the faithful structured IR.
+pub(crate) use temps::reduce_temporaries;
 
 fn collect_goto_labels(
     block: &IrBlock,

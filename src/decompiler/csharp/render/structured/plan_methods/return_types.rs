@@ -52,6 +52,7 @@ pub(super) fn infer_private_return_types(
                 instructions,
                 context: plan.method_context.clone(),
                 symbol_types: plan.symbol_types.clone(),
+                reduce_temps: false,
             });
             let Some(return_type) = inferred_return_type(
                 &lowered.body,

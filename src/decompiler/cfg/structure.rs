@@ -41,6 +41,8 @@ use analysis::{
 };
 use cleanup::simplify_unreachable_control;
 
+pub(crate) use cleanup::reduce_temporaries as reduce_temporaries_for_render;
+
 /// Structure a whole [`SsaForm`] into a single [`IrBlock`] starting from its
 /// entry block.
 #[must_use]

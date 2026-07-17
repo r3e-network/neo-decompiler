@@ -146,12 +146,12 @@ fn csharp_type_tag_operands_use_structured_renderer() {
         (
             "ConvertTag",
             crate::instruction::OpCode::Convert,
-            "global::NeoDecompiler.Generated.ConvertTag.__NeoDecompilerConvertInteger(1)",
+            "__NeoDecompilerConvertInteger(1)",
         ),
         (
             "IsTypeTag",
             crate::instruction::OpCode::Istype,
-            "global::NeoDecompiler.Generated.IsTypeTag.__NeoDecompilerIsTypeInteger(1)",
+            "__NeoDecompilerIsTypeInteger(1)",
         ),
         (
             "NewArrayTag",
@@ -221,10 +221,8 @@ fn csharp_type_tag_operands_use_structured_renderer() {
         }
         if opcode == crate::instruction::OpCode::NewarrayT {
             assert!(
-                rendered
-                    .source
-                    .contains("BigInteger[] t_1 = new BigInteger[(int)(1)];"),
-                "NEWARRAY_T needs a compile-oriented typed declaration:\n{}",
+                rendered.source.contains("return new BigInteger[(int)(1)];"),
+                "NEWARRAY_T renders a compile-oriented typed array expression:\n{}",
                 rendered.source
             );
         }
@@ -263,9 +261,9 @@ fn csharp_type_tag_helper_avoids_contract_member_collisions() {
         rendered.source
     );
     assert!(
-        rendered.source.contains(
-            "global::NeoDecompiler.Generated.TaggedHelperCollision.__NeoDecompilerConvertInteger_1(1)"
-        ),
+        rendered
+            .source
+            .contains("__NeoDecompilerConvertInteger_1(1)"),
         "tagged helper call must use the collision-safe declaration name:\n{}",
         rendered.source
     );
@@ -302,9 +300,9 @@ fn csharp_unpack_packstruct_helper_preserves_opcode_order_and_avoids_collisions(
         rendered.source
     );
     assert!(
-        rendered.source.contains(
-            "global::NeoDecompiler.Generated.UnpackPackStructCollision.__NeoDecompilerUnpackPackStruct_1(1)"
-        ),
+        rendered
+            .source
+            .contains("__NeoDecompilerUnpackPackStruct_1(1)"),
         "clone call must use the collision-safe declaration name:\n{}",
         rendered.source
     );
@@ -341,9 +339,7 @@ fn csharp_bare_throw_helper_preserves_the_opcode_and_avoids_collisions() {
         rendered.source
     );
     assert!(
-        rendered.source.contains(
-            "global::NeoDecompiler.Generated.BareThrowCollision.__NeoDecompilerBareThrow_1();"
-        ),
+        rendered.source.contains("__NeoDecompilerBareThrow_1();"),
         "bare-throw call must use the collision-safe declaration name:\n{}",
         rendered.source
     );

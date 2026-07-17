@@ -172,6 +172,7 @@ fn lowers_only_the_exact_slice_with_neutral_source_symbols() {
             locals: vec![ValueType::Boolean],
             statics: vec![ValueType::Unknown, ValueType::ByteString],
         },
+        reduce_temps: false,
     };
 
     let lowered = lower_method_body(request);
@@ -226,6 +227,7 @@ fn catch_exception_symbol_is_a_dynamic_vm_payload() {
             ..MethodContext::default()
         },
         symbol_types: MethodSymbolTypes::default(),
+        reduce_temps: false,
     });
 
     assert_eq!(
@@ -425,6 +427,7 @@ fn source_map_unions_offsets_for_folded_return() {
             ..MethodContext::default()
         },
         symbol_types: MethodSymbolTypes::default(),
+        reduce_temps: false,
     });
     assert_eq!(lowered.fidelity.status, Fidelity::Exact);
     assert_eq!(
@@ -444,6 +447,7 @@ fn rejects_an_oversized_slice_before_cfg_construction() {
         instructions: &instructions,
         context: MethodContext::default(),
         symbol_types: MethodSymbolTypes::default(),
+        reduce_temps: false,
     };
 
     let lowered = lower_method_body(request);
@@ -479,6 +483,7 @@ fn unknown_merge_value_keeps_the_method_incomplete() {
             ..MethodContext::default()
         },
         symbol_types: MethodSymbolTypes::default(),
+        reduce_temps: false,
     };
 
     let lowered = lower_method_body(request);
@@ -500,6 +505,7 @@ fn preserves_unknown_return_behavior() {
         instructions: &instructions,
         context: MethodContext::default(),
         symbol_types: MethodSymbolTypes::default(),
+        reduce_temps: false,
     });
 
     assert_eq!(lowered.return_behavior, ReturnBehavior::Unknown);

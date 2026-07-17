@@ -26,11 +26,14 @@ use super::MethodPlanDraft;
 mod calls;
 #[path = "plan_methods/parameter_calls.rs"]
 mod parameter_calls;
+#[path = "plan_methods/parameter_names.rs"]
+mod parameter_names;
 #[path = "plan_methods/parameter_types.rs"]
 mod parameter_types;
 #[path = "plan_methods/return_types.rs"]
 mod return_types;
 use calls::attach_call_plans;
+use parameter_names::infer_private_parameter_names;
 use parameter_types::infer_private_parameter_types;
 use return_types::infer_private_return_types;
 
@@ -196,6 +199,7 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
                 instructions,
                 context: draft_method_context(draft, method_contracts),
                 symbol_types: method_symbol_types(types, draft.start, &draft.parameters),
+                reduce_temps: false,
             })
             .symbols
         })
@@ -282,6 +286,7 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
             break;
         }
     }
+    infer_private_parameter_names(&mut plans, &inferred_methods, instructions);
 
     let mut parameter_index_definitions: BTreeMap<usize, BTreeSet<usize>> = BTreeMap::new();
     let mut index_defined_statics = BTreeSet::new();
@@ -295,6 +300,7 @@ pub(in crate::decompiler::csharp::render) fn build_csharp_method_plans(
             instructions,
             context: plan.method_context.clone(),
             symbol_types: plan.symbol_types.clone(),
+            reduce_temps: false,
         });
         for name in collect_index_defined_symbols(&lowered.body) {
             match lowered.symbols.get(&name).map(|symbol| &symbol.origin) {

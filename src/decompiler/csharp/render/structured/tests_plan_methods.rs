@@ -909,3 +909,144 @@ fn null_checked_local_aliases_use_dynamic_csharp_signatures() {
 
     assert_eq!(plans.manifest_method(0).parameters[0].ty, "dynamic");
 }
+
+#[test]
+fn infers_private_helper_parameter_name_from_manifest_argument() {
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "HelperNames",
+            "abi": { "methods": [{
+                "name": "entry",
+                "parameters": [{ "name": "amount", "type": "Integer" }],
+                "returntype": "Void",
+                "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+    let instructions = vec![
+        Instruction::new(0, OpCode::Initslot, Some(Operand::Bytes(vec![0, 1]))),
+        Instruction::new(3, OpCode::Ldarg0, None),
+        Instruction::new(4, OpCode::Call, Some(Operand::Jump(2))),
+        Instruction::new(5, OpCode::Ret, None),
+        Instruction::new(6, OpCode::Ldarg0, None),
+        Instruction::new(7, OpCode::Ret, None),
+    ];
+    let entry = MethodRef {
+        offset: 0,
+        name: "entry".to_string(),
+    };
+    let helper = MethodRef {
+        offset: 6,
+        name: "sub_0x0006".to_string(),
+    };
+    let call_graph = CallGraph {
+        methods: vec![entry.clone(), helper.clone()],
+        edges: vec![CallEdge {
+            caller: entry,
+            call_offset: 4,
+            opcode: "CALL".to_string(),
+            target: CallTarget::Internal { method: helper },
+        }],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "entry", 1, ReturnBehavior::Void),
+            method_contract(6, "sub_0x0006", 1, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        Some(&manifest),
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 6],
+    );
+
+    assert_eq!(
+        plans.inferred_method(6).unwrap().parameters[0].name,
+        "amount"
+    );
+}
+
+#[test]
+fn conflicting_helper_parameter_name_votes_keep_placeholder() {
+    let manifest = ContractManifest::from_json_str(
+        r#"{
+            "name": "ConflictingHelperNames",
+            "abi": { "methods": [{
+                "name": "entry",
+                "parameters": [
+                    { "name": "amount", "type": "Integer" },
+                    { "name": "owner", "type": "Integer" }
+                ],
+                "returntype": "Void",
+                "offset": 0
+            }] }
+        }"#,
+    )
+    .expect("manifest parsed");
+    let instructions = vec![
+        Instruction::new(0, OpCode::Initslot, Some(Operand::Bytes(vec![0, 2]))),
+        Instruction::new(3, OpCode::Ldarg0, None),
+        Instruction::new(4, OpCode::Call, Some(Operand::Jump(8))),
+        Instruction::new(5, OpCode::Drop, None),
+        Instruction::new(6, OpCode::Ldarg1, None),
+        Instruction::new(7, OpCode::Call, Some(Operand::Jump(5))),
+        Instruction::new(8, OpCode::Drop, None),
+        Instruction::new(9, OpCode::Ret, None),
+        Instruction::new(12, OpCode::Ldarg0, None),
+        Instruction::new(13, OpCode::Ret, None),
+    ];
+    let entry = MethodRef {
+        offset: 0,
+        name: "entry".to_string(),
+    };
+    let helper = MethodRef {
+        offset: 12,
+        name: "sub_0x000C".to_string(),
+    };
+    let call_graph = CallGraph {
+        methods: vec![entry.clone(), helper.clone()],
+        edges: vec![
+            CallEdge {
+                caller: entry.clone(),
+                call_offset: 4,
+                opcode: "CALL".to_string(),
+                target: CallTarget::Internal {
+                    method: helper.clone(),
+                },
+            },
+            CallEdge {
+                caller: entry,
+                call_offset: 7,
+                opcode: "CALL".to_string(),
+                target: CallTarget::Internal { method: helper },
+            },
+        ],
+    };
+    let method_contracts = MethodContracts {
+        methods: vec![
+            method_contract(0, "entry", 2, ReturnBehavior::Void),
+            method_contract(12, "sub_0x000C", 1, ReturnBehavior::Unknown),
+        ],
+        static_collection_facts: BTreeMap::new(),
+    };
+
+    let plans = build_csharp_method_plans(
+        &instructions,
+        Some(&manifest),
+        &call_graph,
+        &method_contracts,
+        &TypeInfo::default(),
+        &[0, 12],
+    );
+
+    assert_eq!(
+        plans.inferred_method(12).unwrap().parameters[0].name,
+        "arg0"
+    );
+}

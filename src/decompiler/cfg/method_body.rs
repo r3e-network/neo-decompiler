@@ -31,6 +31,11 @@ pub(crate) struct MethodIrRequest<'a> {
     pub(crate) instructions: &'a [Instruction],
     pub(crate) context: MethodContext,
     pub(crate) symbol_types: MethodSymbolTypes,
+    /// Apply readability-oriented temporary reduction (copy propagation,
+    /// redundant cast collapsing, dead store elimination) to the structured
+    /// body. Rendering paths enable this; analysis callers keep the faithful
+    /// IR so dataflow detectors observe every copy and temporary.
+    pub(crate) reduce_temps: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -214,7 +219,10 @@ pub(crate) fn lower_method_body(request: MethodIrRequest<'_>) -> StructuredMetho
     optimize_ssa(&mut ssa);
     let (source_names, mut symbols) =
         allocate_source_symbols(&request.context, &request.symbol_types, &ssa);
-    let body = structure_cfg_with_source_names(&ssa, &source_names);
+    let mut body = structure_cfg_with_source_names(&ssa, &source_names);
+    if request.reduce_temps {
+        crate::decompiler::cfg::reduce_temporaries_for_render(&mut body);
+    }
     let pointer_values = instructions
         .iter()
         .filter_map(|instruction| {

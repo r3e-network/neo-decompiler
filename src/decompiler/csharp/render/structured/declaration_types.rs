@@ -129,6 +129,26 @@ fn concrete_expression_type_with_symbols_and_known(
             ) {
                 return Some("bool".to_string());
             }
+            // Neo VM arithmetic/bitwise opcodes always yield an Integer (the
+            // VM faults otherwise), so the result type does not depend on how
+            // well the operand types recovered. This also keeps self-referential
+            // updates (`x = x + 1`) concretely typed after copy propagation.
+            if matches!(
+                op,
+                BinOp::Add
+                    | BinOp::Sub
+                    | BinOp::Mul
+                    | BinOp::Div
+                    | BinOp::Mod
+                    | BinOp::Pow
+                    | BinOp::And
+                    | BinOp::Or
+                    | BinOp::Xor
+                    | BinOp::Shl
+                    | BinOp::Shr
+            ) {
+                return Some("BigInteger".to_string());
+            }
             (concrete_expression_type_with_symbols_and_known(
                 left,
                 symbols,
@@ -150,6 +170,17 @@ fn concrete_expression_type_with_symbols_and_known(
         Expr::Unary { op, operand } => {
             if *op == UnaryOp::LogicalNot {
                 Some("bool".to_string())
+            } else if matches!(
+                op,
+                UnaryOp::Neg
+                    | UnaryOp::Not
+                    | UnaryOp::Inc
+                    | UnaryOp::Dec
+                    | UnaryOp::Abs
+                    | UnaryOp::Sign
+            ) {
+                // Integer unary opcodes: see the arithmetic note above.
+                Some("BigInteger".to_string())
             } else {
                 concrete_expression_type_with_symbols_and_known(
                     operand,
