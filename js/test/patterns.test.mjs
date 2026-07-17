@@ -990,6 +990,30 @@ test("C# typed declarations use catalog native method return types", () => {
   assert.match(rendered, /dynamic unknown = CustomContract\.DoThing\(@value\);/);
 });
 
+test("C# rendering keeps known void natives and syscalls statement-only", () => {
+  const rendered = renderCSharpContract([
+    "contract VoidCalls {",
+    "fn main(nef, manifest, data, url, filter, cb, user, gas) -> void {",
+    "    let destroyed = ContractManagement::Destroy();",
+    "    let updated = ContractManagement::Update(nef, manifest, data);",
+    "    let requested = OracleContract::Request(url, filter, cb, user, gas);",
+    '    let logged = syscall("System.Runtime.Log", "hi");',
+    '    syscall("System.Storage.Put", ctx, key, val);',
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+
+  assert.match(rendered, /^\s*ContractManagement\.Destroy\(\);$/m);
+  assert.match(rendered, /^\s*ContractManagement\.Update\(nef, manifest, data\);$/m);
+  assert.match(rendered, /^\s*OracleContract\.Request\(url, filter, cb, user, gas\);$/m);
+  assert.match(rendered, /^\s*Runtime\.Log\("hi"\);$/m);
+  assert.match(rendered, /^\s*Storage\.Put\(ctx, key, val\);$/m);
+  assert.doesNotMatch(rendered, /dynamic destroyed|void destroyed|var destroyed/);
+  assert.doesNotMatch(rendered, /dynamic logged|void logged|var logged/);
+  assert.doesNotMatch(rendered, /=\s*ContractManagement\.Destroy/);
+  assert.doesNotMatch(rendered, /=\s*Runtime\.Log/);
+});
+
 test("C# rendering lowers known syscalls and keeps unknown ones compile-safe", () => {
   const source = [
     "contract Token {",

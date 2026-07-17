@@ -1,6 +1,12 @@
-import { csharpSyscallReturnType } from "./csharp-syscalls.js";
+import {
+  csharpSyscallReturnType,
+  csharpSyscallReturnsValue,
+} from "./csharp-syscalls.js";
 import { csharpType } from "./csharp-type-map.js";
-import { nativeMethodReturnType } from "./native-contracts.js";
+import {
+  nativeMethodReturnType,
+  nativeMethodReturnsValue,
+} from "./native-contracts.js";
 
 function inferExpressionType(
   expression,
@@ -39,14 +45,24 @@ function inferExpressionType(
   if (/^convert_to_bool\s*\(/i.test(value)) return "bool";
   if (/^convert_to_bytestring\s*\(/i.test(value)) return "ByteString";
   const syscall = value.match(/^syscall\s*\(\s*\"([^\"]+)\"/i);
-  if (syscall) return csharpSyscallReturnType(syscall[1]) ?? "dynamic";
+  if (syscall) {
+    const syscallType = csharpSyscallReturnType(syscall[1]);
+    if (syscallType) return syscallType;
+    if (csharpSyscallReturnsValue(syscall[1]) === false) return "void";
+    return "dynamic";
+  }
   // Catalogued native helpers (`StdLib::Itoa`) carry a stable framework return
-  // type once the contract identity is known. Unknown natives stay dynamic.
+  // type once the contract identity is known. Known void natives stay `void`
+  // so the body renderer can emit a statement instead of an illegal assignment.
+  // Unknown natives stay dynamic.
   const native = value.match(
     /^([A-Za-z_][A-Za-z0-9_]*)(?:::|\.)([A-Za-z_][A-Za-z0-9_]*)\s*\(/,
   );
   if (native) {
-    return nativeMethodReturnType(native[1], native[2]) ?? "dynamic";
+    const nativeType = nativeMethodReturnType(native[1], native[2]);
+    if (nativeType) return nativeType;
+    if (nativeMethodReturnsValue(native[1], native[2]) === false) return "void";
+    return "dynamic";
   }
   const call = value.match(/^@?([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
   if (call) {

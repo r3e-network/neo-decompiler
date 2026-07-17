@@ -99,6 +99,21 @@ export function csharpSyscallReturnType(name) {
   return CSHARP_SYSCALL_RETURN_TYPES.get(name) ?? null;
 }
 
+/**
+ * Whether a catalogued syscall produces a VM value. Uses the generated
+ * SYSCALLS table so void helpers such as Runtime.Log stay statement-only.
+ */
+export function csharpSyscallReturnsValue(name) {
+  if (typeof name !== "string") return null;
+  const info = SYSCALLS_BY_NAME.get(name);
+  if (!info || typeof info.returns_value !== "boolean") return null;
+  return info.returns_value;
+}
+
+const SYSCALLS_BY_NAME = new Map(
+  [...SYSCALLS.values()].map((info) => [info.name, info]),
+);
+
 export function renderCSharpSyscall(name, args) {
   const iteratorMethod = {
     "System.Iterator.Next": (receiver) => `${receiver}.Next()`,

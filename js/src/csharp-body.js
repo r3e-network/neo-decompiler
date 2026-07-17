@@ -15,6 +15,18 @@ export function renderBodyLine(line, declarationTypes = null) {
     const declarationType = declarationTypes
       ? declarationTypes.get(declaration[1]) ?? "dynamic"
       : "var";
+    // Known void syscalls/natives must not become `void x = Call()` or
+    // `dynamic x = Call()` assignments — both are invalid/misleading in C#.
+    // Drop the binder and keep the call as a statement.
+    if (declarationType === "void") {
+      const rhs = declaration[2].match(/^\s*=\s*(.+);\s*$/)?.[1];
+      if (rhs) {
+        return finish(rewriteCSharpExpression(
+          `${indentation}${rhs};`,
+          declarationTypes,
+        )) + (declaration[3] ?? "");
+      }
+    }
     return finish(rewriteCSharpExpression(
       `${indentation}${declarationType} ${csharpIdentifier(declaration[1])}${declaration[2]}`,
       declarationTypes,

@@ -246,6 +246,29 @@ export function nativeMethodReturnType(contract, method) {
   return NATIVE_METHOD_RETURN_TYPES.get(`${contract}:${canonical}`) ?? null;
 }
 
+/**
+ * Whether a catalogued native method produces a VM value.
+ *
+ * Mirrors Rust `native_method_types::returns_value` for the high-level
+ * `Contract::Method` surface. Returns `true`/`false` only when identity is
+ * known; unknown methods return null so callers stay conservative.
+ */
+export function nativeMethodReturnsValue(contract, method) {
+  if (typeof contract !== "string" || typeof method !== "string") return null;
+  const canonical = canonicalNativeMethod(contract, method);
+  if (!canonical) return null;
+  if (NATIVE_VOID_METHODS.has(`${contract}:${canonical}`)) return false;
+  if (NATIVE_METHOD_RETURN_TYPES.has(`${contract}:${canonical}`)) return true;
+  return null;
+}
+
+// Known framework-void natives. Keep aligned with Rust returns_value().
+const NATIVE_VOID_METHODS = new Set([
+  "ContractManagement:Destroy",
+  "ContractManagement:Update",
+  "OracleContract:Request",
+]);
+
 function canonicalNativeMethod(contract, method) {
   const entry = NATIVE_CONTRACTS.find((candidate) => candidate.name === contract);
   if (!entry) return null;
