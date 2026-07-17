@@ -230,3 +230,142 @@ export function describeMethodToken(hash, method) {
 export function frameworkMethodName(contract, method) {
   return FRAMEWORK_METHOD_NAMES.get(`${contract}:${method}`) ?? method;
 }
+
+/**
+ * Stable C# return type for a catalogued native method, mirroring Rust
+ * `native_method_types::lookup` once the contract/method identity is known.
+ *
+ * High-level source already names the native contract (`StdLib::Itoa`), so a
+ * hash is not required for this surface. Unknown or void methods return null
+ * so callers stay dynamically typed instead of inventing a return value.
+ */
+export function nativeMethodReturnType(contract, method) {
+  if (typeof contract !== "string" || typeof method !== "string") return null;
+  const canonical = canonicalNativeMethod(contract, method);
+  if (!canonical) return null;
+  return NATIVE_METHOD_RETURN_TYPES.get(`${contract}:${canonical}`) ?? null;
+}
+
+function canonicalNativeMethod(contract, method) {
+  const entry = NATIVE_CONTRACTS.find((candidate) => candidate.name === contract);
+  if (!entry) return null;
+  const exact = entry.methods.find((candidate) => candidate === method);
+  if (exact) return exact;
+  const ciMatch = entry.methods.find(
+    (candidate) => candidate.toLowerCase() === method.toLowerCase(),
+  );
+  if (ciMatch) return ciMatch;
+  // Accept framework spellings (RecoverSecp256K1) that differ from the
+  // catalogued VM names (recoverSecp256K1).
+  for (const [key, frameworkName] of FRAMEWORK_METHOD_NAMES) {
+    if (frameworkName !== method) continue;
+    const [mappedContract, mappedMethod] = key.split(":");
+    if (mappedContract !== contract) continue;
+    if (entry.methods.includes(mappedMethod)) return mappedMethod;
+  }
+  return null;
+}
+
+// Keep these C# spellings aligned with src/decompiler/native_method_types.rs.
+const NATIVE_METHOD_RETURN_TYPES = new Map([
+  ["ContractManagement:Deploy", "Contract"],
+  ["ContractManagement:GetContract", "Contract"],
+  ["ContractManagement:GetContractById", "Contract"],
+  ["ContractManagement:GetContractHashes", "Iterator<(int, UInt160)>"],
+  ["ContractManagement:HasMethod", "bool"],
+  ["ContractManagement:IsContract", "bool"],
+  ["ContractManagement:GetMinimumDeploymentFee", "long"],
+
+  ["CryptoLib:Bls12381Deserialize", "object"],
+  ["CryptoLib:Bls12381Add", "object"],
+  ["CryptoLib:Bls12381Mul", "object"],
+  ["CryptoLib:Bls12381Pairing", "object"],
+  ["CryptoLib:Bls12381Equal", "bool"],
+  ["CryptoLib:recoverSecp256K1", "ByteString"],
+  ["CryptoLib:Keccak256", "ByteString"],
+  ["CryptoLib:Murmur32", "ByteString"],
+  ["CryptoLib:Sha256", "ByteString"],
+  ["CryptoLib:ripemd160", "ByteString"],
+  ["CryptoLib:VerifyWithECDsa", "bool"],
+  ["CryptoLib:VerifyWithEd25519", "bool"],
+  ["CryptoLib:verifyWithECDsa", "bool"],
+  ["CryptoLib:Bls12381Serialize", "byte[]"],
+
+  ["LedgerContract:CurrentHash", "UInt256"],
+  ["LedgerContract:CurrentIndex", "uint"],
+  ["LedgerContract:GetBlock", "Block"],
+  ["LedgerContract:getTransaction", "Transaction"],
+  ["LedgerContract:GetTransactionFromBlock", "Transaction"],
+  ["LedgerContract:GetTransactionHeight", "int"],
+  ["LedgerContract:GetTransactionVMState", "VMState"],
+  ["LedgerContract:GetTransactionSigners", "Signer[]"],
+
+  ["GasToken:Symbol", "string"],
+  ["NeoToken:Symbol", "string"],
+  ["GasToken:Decimals", "byte"],
+  ["NeoToken:Decimals", "byte"],
+  ["GasToken:BalanceOf", "BigInteger"],
+  ["NeoToken:BalanceOf", "BigInteger"],
+  ["GasToken:GetGasPerBlock", "BigInteger"],
+  ["NeoToken:GetGasPerBlock", "BigInteger"],
+  ["GasToken:TotalSupply", "BigInteger"],
+  ["NeoToken:TotalSupply", "BigInteger"],
+  ["GasToken:UnclaimedGas", "BigInteger"],
+  ["NeoToken:UnclaimedGas", "BigInteger"],
+  ["GasToken:Transfer", "bool"],
+  ["NeoToken:Transfer", "bool"],
+  ["NeoToken:GetRegisterPrice", "long"],
+  ["NeoToken:RegisterCandidate", "bool"],
+  ["NeoToken:UnregisterCandidate", "bool"],
+  ["NeoToken:Vote", "bool"],
+  ["NeoToken:GetCandidates", "(ECPoint, BigInteger)[]"],
+  ["NeoToken:GetAllCandidates", "Iterator<(ECPoint, BigInteger)>"],
+  ["NeoToken:GetCandidateVote", "BigInteger"],
+  ["NeoToken:GetCommittee", "ECPoint[]"],
+  ["NeoToken:GetNextBlockValidators", "ECPoint[]"],
+  ["NeoToken:GetCommitteeAddress", "UInt160"],
+  ["NeoToken:GetAccountState", "NeoAccountState"],
+
+  ["Notary:BalanceOf", "BigInteger"],
+  ["Notary:ExpirationOf", "uint"],
+  ["Notary:GetMaxNotValidBeforeDelta", "uint"],
+  ["Notary:LockDepositUntil", "bool"],
+  ["Notary:Verify", "bool"],
+  ["Notary:Withdraw", "bool"],
+
+  ["OracleContract:GetPrice", "long"],
+
+  ["PolicyContract:GetAttributeFee", "uint"],
+  ["PolicyContract:getAttributeFee", "uint"],
+  ["PolicyContract:GetExecFeeFactor", "uint"],
+  ["PolicyContract:GetStoragePrice", "uint"],
+  ["PolicyContract:GetExecPicoFeeFactor", "BigInteger"],
+  ["PolicyContract:GetFeePerByte", "long"],
+  ["PolicyContract:IsBlocked", "bool"],
+  ["PolicyContract:GetBlockedAccounts", "Iterator"],
+  ["PolicyContract:GetWhitelistFeeContracts", "Iterator"],
+
+  ["Treasury:Verify", "bool"],
+  ["RoleManagement:GetDesignatedByRole", "ECPoint[]"],
+
+  ["StdLib:Atoi", "BigInteger"],
+  ["StdLib:Deserialize", "object"],
+  ["StdLib:JsonDeserialize", "object"],
+  ["StdLib:Itoa", "string"],
+  ["StdLib:Base64Encode", "string"],
+  ["StdLib:Base64UrlEncode", "string"],
+  ["StdLib:Base58Encode", "string"],
+  ["StdLib:Base58CheckEncode", "string"],
+  ["StdLib:HexEncode", "string"],
+  ["StdLib:Base64Decode", "ByteString"],
+  ["StdLib:Base64UrlDecode", "ByteString"],
+  ["StdLib:Base58Decode", "ByteString"],
+  ["StdLib:Base58CheckDecode", "ByteString"],
+  ["StdLib:HexDecode", "ByteString"],
+  ["StdLib:Serialize", "ByteString"],
+  ["StdLib:JsonSerialize", "string"],
+  ["StdLib:MemoryCompare", "BigInteger"],
+  ["StdLib:MemorySearch", "BigInteger"],
+  ["StdLib:StrLen", "BigInteger"],
+  ["StdLib:StringSplit", "object[]"],
+]);

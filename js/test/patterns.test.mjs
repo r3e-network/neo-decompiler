@@ -965,6 +965,31 @@ test("C# typed declarations use catalog syscall return types", () => {
   );
 });
 
+test("C# typed declarations use catalog native method return types", () => {
+  const rendered = renderCSharpContract([
+    "contract Natives {",
+    "fn main(value, text, data, sig) -> any {",
+    "    let s = StdLib::Itoa(value);",
+    "    let bytes = StdLib::Base64UrlDecode(text);",
+    "    let n = StdLib::StrLen(s);",
+    "    let parts = StdLib::StringSplit(s, \",\");",
+    "    let digest = CryptoLib::Sha256(bytes);",
+    "    let recovered = CryptoLib::recoverSecp256K1(data, sig);",
+    "    let unknown = CustomContract::DoThing(value);",
+    "    return n;",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+
+  assert.match(rendered, /string s = StdLib\.Itoa\(@value\);/);
+  assert.match(rendered, /ByteString bytes = StdLib\.Base64UrlDecode\(text\);/);
+  assert.match(rendered, /BigInteger n = StdLib\.StrLen\(s\);/);
+  assert.match(rendered, /object\[\] parts = StdLib\.StringSplit\(s, ","\);/);
+  assert.match(rendered, /ByteString digest = CryptoLib\.Sha256\(bytes\);/);
+  assert.match(rendered, /ByteString recovered = CryptoLib\.RecoverSecp256K1\(data, sig\);/);
+  assert.match(rendered, /dynamic unknown = CustomContract\.DoThing\(@value\);/);
+});
+
 test("C# rendering lowers known syscalls and keeps unknown ones compile-safe", () => {
   const source = [
     "contract Token {",

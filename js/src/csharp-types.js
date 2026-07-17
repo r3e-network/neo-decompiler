@@ -1,5 +1,6 @@
 import { csharpSyscallReturnType } from "./csharp-syscalls.js";
 import { csharpType } from "./csharp-type-map.js";
+import { nativeMethodReturnType } from "./native-contracts.js";
 
 function inferExpressionType(
   expression,
@@ -39,6 +40,14 @@ function inferExpressionType(
   if (/^convert_to_bytestring\s*\(/i.test(value)) return "ByteString";
   const syscall = value.match(/^syscall\s*\(\s*\"([^\"]+)\"/i);
   if (syscall) return csharpSyscallReturnType(syscall[1]) ?? "dynamic";
+  // Catalogued native helpers (`StdLib::Itoa`) carry a stable framework return
+  // type once the contract identity is known. Unknown natives stay dynamic.
+  const native = value.match(
+    /^([A-Za-z_][A-Za-z0-9_]*)(?:::|\.)([A-Za-z_][A-Za-z0-9_]*)\s*\(/,
+  );
+  if (native) {
+    return nativeMethodReturnType(native[1], native[2]) ?? "dynamic";
+  }
   const call = value.match(/^@?([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
   if (call) {
     const knownCallType = knownCallTypes.get(call[1]);
