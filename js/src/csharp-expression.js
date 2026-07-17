@@ -33,7 +33,10 @@ import { rewriteConstantExpressions } from "./csharp-expression-constants.js";
 import {
   rewriteFrameworkCallArguments,
 } from "./csharp-framework.js";
-import { frameworkMethodName } from "./native-contracts.js";
+import {
+  frameworkNativeMethod,
+  nativeContractHash,
+} from "./native-contracts.js";
 
 export { splitCallArguments } from "./csharp-expression-scanner.js";
 
@@ -146,23 +149,55 @@ function rewriteQualifiedCalls(line) {
   let cursor = 0;
   let match;
   while ((match = nextOutsideMatch(line, pattern)) !== null) {
-    const method = frameworkMethodName(match[1], match[2]);
-    const property = CSHARP_NATIVE_PROPERTIES.get(`${match[1]}::${method}`);
-    if (property) {
-      const open = line.indexOf("(", match.index);
-      const close = findCallClose(line, open);
-      if (close >= 0 && !line.slice(open + 1, close).trim()) {
+    const contract = match[1];
+    const rawMethod = match[2];
+    const open = line.indexOf("(", match.index);
+    const close = findCallClose(line, open);
+    if (open < 0 || close < 0) continue;
+
+    const framework = frameworkNativeMethod(contract, rawMethod);
+    if (framework) {
+      const property = CSHARP_NATIVE_PROPERTIES.get(`${contract}::${framework}`);
+      if (property && !line.slice(open + 1, close).trim()) {
         output += line.slice(cursor, match.index) + property;
         cursor = close + 1;
         pattern.lastIndex = cursor;
         continue;
       }
+      output += line.slice(cursor, match.index);
+      output += `${contract}.${framework}(`;
+      cursor = pattern.lastIndex;
+      continue;
     }
+
+    // Catalogued natives without a framework binding must not claim a direct
+    // API (Governance.GetCommittee, OracleContract.Finish, …). Fall back to
+    // hash-preserving Contract.Call when the native script hash is known.
+    const hash = nativeContractHash(contract);
+    if (hash) {
+      const args = line.slice(open + 1, close).trim();
+      output += line.slice(cursor, match.index);
+      output += renderUnsupportedNativeCall(hash, rawMethod, args);
+      cursor = close + 1;
+      pattern.lastIndex = cursor;
+      continue;
+    }
+
     output += line.slice(cursor, match.index);
-    output += `${match[1]}.${method}(`;
+    output += `${contract}.${rawMethod}(`;
     cursor = pattern.lastIndex;
   }
   return cursor === 0 ? line : output + line.slice(cursor);
+}
+
+function renderUnsupportedNativeCall(hash, method, args) {
+  const bytes = [...hash]
+    .map((byte) => `0x${Number(byte).toString(16).padStart(2, "0").toUpperCase()}`)
+    .join(", ");
+  const escaped = String(method)
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+  return `(dynamic)Contract.Call((UInt160)new byte[] { ${bytes} }, "${escaped}", (CallFlags)(15), new object[] { ${args} })`;
 }
 
 function rewriteKnownHelpers(line, types) {

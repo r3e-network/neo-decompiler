@@ -3,7 +3,10 @@ import {
   nextOutsideMatch,
   splitCallArguments,
 } from "./csharp-expression-scanner.js";
-import { describeMethodToken } from "./native-contracts.js";
+import {
+  describeMethodToken,
+  frameworkNativeMethod,
+} from "./native-contracts.js";
 
 // A few framework APIs have stronger C# parameter types than the VM values
 // they consume. Add explicit boundary conversions only where the recovered
@@ -115,14 +118,22 @@ function isDirectNativeToken(token) {
   const hash = token.hash instanceof Uint8Array
     ? token.hash
     : Array.isArray(token.hash) ? Uint8Array.from(token.hash) : null;
-  return hash?.length === 20
-    && describeMethodToken(hash, token.method)?.hasExactMethod() === true;
+  if (hash?.length !== 20) return false;
+  const hint = describeMethodToken(hash, token.method);
+  if (!hint?.hasExactMethod() || !hint.canonicalMethod) return false;
+  // Only skip Contract.Call when the Neo C# framework exposes the method.
+  // Catalog-only protocol methods (Oracle.Finish, Governance.*) still need
+  // the hash-preserving fallback.
+  return frameworkNativeMethod(hint.contract, hint.canonicalMethod) != null;
 }
 
 function isQualifiedCallName(line, index) {
   let previous = index - 1;
   while (previous >= 0 && /\s/.test(line[previous])) previous -= 1;
-  return previous >= 0 && line[previous] === ".";
+  // High-level native labels use `Contract::Method`, while C# surface uses
+  // `Contract.Method`. Both must skip bare token rewriting so the qualified
+  // native rewriter can map framework APIs or Contract.Call fallbacks.
+  return previous >= 0 && (line[previous] === "." || line[previous] === ":");
 }
 
 function renderMethodTokenCall(token, args) {

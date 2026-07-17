@@ -990,6 +990,55 @@ test("C# typed declarations use catalog native method return types", () => {
   assert.match(rendered, /dynamic unknown = CustomContract\.DoThing\(@value\);/);
 });
 
+test("C# rendering falls back to Contract.Call for non-framework natives", () => {
+  const governanceHash = Uint8Array.from([
+    0x67, 0xCA, 0x70, 0x35, 0x06, 0x63, 0xBF, 0x25, 0x8C, 0xA5,
+    0x13, 0x04, 0x94, 0x67, 0xC6, 0x05, 0x9D, 0x15, 0xE7, 0x4C,
+  ]);
+  const oracleHash = Uint8Array.from([
+    0x58, 0x87, 0x17, 0x11, 0x7E, 0x0A, 0xA8, 0x10, 0x72, 0xAF,
+    0xAB, 0x71, 0xD2, 0xDD, 0x89, 0xFE, 0x7C, 0x4B, 0x92, 0xFE,
+  ]);
+  const rendered = renderCSharpContract([
+    "contract UnsupportedNatives {",
+    "fn main() -> any {",
+    "    let committee = Governance::GetCommittee();",
+    "    let finished = OracleContract::Finish();",
+    "    let fee = PolicyContract::SetFeePerByte(1);",
+    "    let ok = NeoToken::UnregisterCandidate(pubkey);",
+    "    return ok;",
+    "}",
+    "}",
+  ].join("\n"), null, {
+    typedDeclarations: true,
+    methodTokens: [
+      {
+        hash: governanceHash,
+        method: "getCommittee",
+        callFlags: 15,
+        parametersCount: 0,
+        hasReturnValue: true,
+      },
+      {
+        hash: oracleHash,
+        method: "finish",
+        callFlags: 15,
+        parametersCount: 0,
+        hasReturnValue: false,
+      },
+    ],
+  });
+
+  assert.match(rendered, /Contract\.Call\(/);
+  assert.match(rendered, /"GetCommittee"|"getCommittee"/);
+  assert.match(rendered, /"Finish"|"finish"/);
+  assert.match(rendered, /"SetFeePerByte"/);
+  assert.doesNotMatch(rendered, /Governance\.GetCommittee/);
+  assert.doesNotMatch(rendered, /OracleContract\.Finish/);
+  assert.doesNotMatch(rendered, /PolicyContract\.SetFeePerByte/);
+  assert.match(rendered, /bool ok = NeoToken\.UnRegisterCandidate\(pubkey\);/);
+});
+
 test("C# rendering keeps known void natives and syscalls statement-only", () => {
   const rendered = renderCSharpContract([
     "contract VoidCalls {",

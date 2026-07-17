@@ -226,9 +226,107 @@ export function describeMethodToken(hash, method) {
  * Return the spelling used by the Neo C# framework for a catalogued native
  * method. VM method names intentionally preserve protocol casing, while a
  * few framework declarations use CLR-style names.
+ *
+ * Prefer {@link frameworkNativeMethod} when deciding whether a method may be
+ * emitted as a direct framework call; this helper only rewrites casing and
+ * still returns the input name for unsupported methods.
  */
 export function frameworkMethodName(contract, method) {
-  return FRAMEWORK_METHOD_NAMES.get(`${contract}:${method}`) ?? method;
+  return frameworkNativeMethod(contract, method)
+    ?? FRAMEWORK_METHOD_NAMES.get(`${contract}:${method}`)
+    ?? method;
+}
+
+/**
+ * Framework spelling for a native method that is safe to emit as a direct
+ * `Contract.Method` call. Mirrors Rust `native_framework::method_name`:
+ * unsupported catalog/protocol methods return null so callers can fall back
+ * to hash-preserving `Contract.Call`.
+ */
+export function frameworkNativeMethod(contract, method) {
+  if (typeof contract !== "string" || typeof method !== "string") return null;
+  const mapped = FRAMEWORK_METHOD_NAMES.get(`${contract}:${method}`);
+  if (mapped) return mapped;
+  const canonical = canonicalNativeMethod(contract, method) ?? method;
+  const mappedCanonical = FRAMEWORK_METHOD_NAMES.get(`${contract}:${canonical}`);
+  if (mappedCanonical) return mappedCanonical;
+  if (!FRAMEWORK_SUPPORTED_CONTRACTS.has(contract)) return null;
+  if (!isFrameworkSupportedMethod(contract, canonical)) return null;
+  return canonical;
+}
+
+/**
+ * Script hash for a catalogued native contract name, or null when the name is
+ * not part of the native table (for example an ordinary external contract).
+ */
+export function nativeContractHash(contract) {
+  if (typeof contract !== "string") return null;
+  const entry = NATIVE_CONTRACTS.find((candidate) => candidate.name === contract);
+  return entry ? entry.scriptHash : null;
+}
+
+// Keep aligned with src/decompiler/csharp/render/structured/native_framework.rs.
+const FRAMEWORK_SUPPORTED_CONTRACTS = new Set([
+  "ContractManagement",
+  "CryptoLib",
+  "LedgerContract",
+  "Notary",
+  "OracleContract",
+  "PolicyContract",
+  "RoleManagement",
+  "StdLib",
+  "Treasury",
+  "GasToken",
+  "NeoToken",
+]);
+
+const FRAMEWORK_SUPPORTED_METHODS = new Map([
+  ["ContractManagement", new Set([
+    "Deploy", "Destroy", "GetContract", "GetContractById", "GetContractHashes",
+    "GetMinimumDeploymentFee", "HasMethod", "IsContract", "Update",
+  ])],
+  ["CryptoLib", new Set([
+    "Bls12381Add", "Bls12381Deserialize", "Bls12381Equal", "Bls12381Mul",
+    "Bls12381Pairing", "Bls12381Serialize", "Keccak256", "Murmur32", "Sha256",
+    "VerifyWithECDsa", "VerifyWithEd25519",
+  ])],
+  ["LedgerContract", new Set([
+    "CurrentHash", "CurrentIndex", "GetBlock", "GetTransactionFromBlock",
+    "GetTransactionHeight", "GetTransactionSigners", "GetTransactionVMState",
+  ])],
+  ["Notary", new Set([
+    "BalanceOf", "ExpirationOf", "GetMaxNotValidBeforeDelta",
+    "LockDepositUntil", "Verify", "Withdraw",
+  ])],
+  ["OracleContract", new Set(["GetPrice", "Request"])],
+  ["PolicyContract", new Set([
+    "GetAttributeFee", "GetBlockedAccounts", "GetExecFeeFactor",
+    "GetExecPicoFeeFactor", "GetFeePerByte", "GetStoragePrice",
+    "GetWhitelistFeeContracts", "IsBlocked",
+  ])],
+  ["RoleManagement", new Set(["GetDesignatedByRole"])],
+  ["StdLib", new Set([
+    "Atoi", "Base58CheckDecode", "Base58CheckEncode", "Base58Decode",
+    "Base58Encode", "Base64Decode", "Base64Encode", "Base64UrlDecode",
+    "Base64UrlEncode", "Deserialize", "HexDecode", "HexEncode", "Itoa",
+    "JsonDeserialize", "JsonSerialize", "MemoryCompare", "MemorySearch",
+    "Serialize", "StrLen", "StringSplit",
+  ])],
+  ["Treasury", new Set(["Verify"])],
+  ["GasToken", new Set([
+    "BalanceOf", "Decimals", "Symbol", "TotalSupply", "Transfer",
+  ])],
+  ["NeoToken", new Set([
+    "BalanceOf", "Decimals", "GetAccountState", "GetAllCandidates",
+    "GetCandidateVote", "GetCandidates", "GetCommittee", "GetCommitteeAddress",
+    "GetGasPerBlock", "GetNextBlockValidators", "GetRegisterPrice",
+    "RegisterCandidate", "Symbol", "TotalSupply", "Transfer", "UnclaimedGas",
+    "Vote",
+  ])],
+]);
+
+function isFrameworkSupportedMethod(contract, method) {
+  return FRAMEWORK_SUPPORTED_METHODS.get(contract)?.has(method) === true;
 }
 
 /**
