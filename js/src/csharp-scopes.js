@@ -1,4 +1,5 @@
 import { inferDeclarationTypes } from "./csharp-types.js";
+import { findUnusedCopyLines } from "./csharp-copies.js";
 
 // C# does not permit a local in a nested block to reuse a name from an
 // enclosing block, while VM slot names can be reused after control-flow joins.
@@ -7,6 +8,7 @@ import { inferDeclarationTypes } from "./csharp-types.js";
 export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
   const plansByLine = new Map();
   const declarationsByStart = new Map();
+  const skippedLines = new Set();
 
   for (let start = 0; start < lines.length; start += 1) {
     if (!/^\s*fn\s+.*\{\s*$/.test(lines[start])) continue;
@@ -16,6 +18,8 @@ export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
 
     const parameterNames = methodParameterNames(lines[start]);
     const methodTypes = inferDeclarationTypes(lines.slice(start, end + 1));
+    const unusedCopies = findUnusedCopyLines(lines, start, end, methodTypes);
+    for (const line of unusedCopies.skippedLines) skippedLines.add(line);
     const scopeEnds = computeScopeEnds(depths, start, end);
     const braceCloseLines = computeBraceCloseLines(lines, start, end);
     const declarations = collectDeclarations(
@@ -64,6 +68,8 @@ export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
       }
     }
 
+    for (const name of unusedCopies.skippedNames) hoistedNames.delete(name);
+
     if (hoistedNames.size === 0) {
       start = end;
       continue;
@@ -86,7 +92,7 @@ export function buildCSharpScopePlans(lines, depths, typedDeclarations = true) {
     start = end;
   }
 
-  return { plansByLine, declarationsByStart };
+  return { plansByLine, declarationsByStart, skippedLines };
 }
 
 function collectDeclarations(lines, depths, start, end, scopeEnds, braceCloseLines) {

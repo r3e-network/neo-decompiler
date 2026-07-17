@@ -661,6 +661,47 @@ test("C# rendering keeps for-loop declarations in their lexical scope", () => {
   assert.doesNotMatch(rendered, /default;\s*for \(BigInteger loc0/);
 });
 
+test("C# rendering removes an unused generated local copy", () => {
+  const rendered = renderCSharpContract([
+    "contract DeadCopies {",
+    "fn sample(value: int) -> int {",
+    "    let loc0 = value;",
+    "    return value;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /return @value;/);
+  assert.doesNotMatch(rendered, /loc0/);
+});
+
+test("C# rendering keeps a generated copy when it is read", () => {
+  const rendered = renderCSharpContract([
+    "contract LiveCopies {",
+    "fn sample(value: int) -> int {",
+    "    let loc0 = value;",
+    "    return loc0;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /BigInteger loc0 = @value;/);
+  assert.match(rendered, /return loc0;/);
+});
+
+test("C# rendering keeps a type-conflicting generated copy conservative", () => {
+  const rendered = renderCSharpContract([
+    "contract ConflictingCopies {",
+    "fn sample(value: int, text: string) -> any {",
+    "    let t0 = value;",
+    "    let t0 = text;",
+    "    return null;",
+    "}",
+    "}",
+  ].join("\n"));
+  assert.match(rendered, /dynamic t0 = default;/);
+  assert.match(rendered, /t0 = @value;/);
+  assert.match(rendered, /t0 = text;/);
+});
+
 test("C# rendering hoists a for-loop variable only when it escapes", () => {
   const rendered = renderCSharpContract([
     "contract LoopScopeEscape {",

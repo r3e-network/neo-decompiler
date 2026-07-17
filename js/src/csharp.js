@@ -115,6 +115,7 @@ export function renderCSharpContract(
     if (labelContext?.skipLabel && /^\s*label_0x[0-9A-Fa-f]+:\s*$/.test(line)) {
       continue;
     }
+    if (scopePlans.skippedLines.has(lineIndex)) continue;
     if (
       classSeen &&
       patternCommentsPending &&
