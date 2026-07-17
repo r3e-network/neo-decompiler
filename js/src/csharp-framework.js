@@ -11,9 +11,10 @@ import {
 // A few framework APIs have stronger C# parameter types than the VM values
 // they consume. Add explicit boundary conversions only where the recovered
 // expression is known to be a VM ByteString/number, keeping ordinary calls
-// readable and statically typed.
+// readable and statically typed. Keep these casts aligned with Rust
+// `expr_native::render_native_args`.
 export function rewriteFrameworkCallArguments(line, types = null) {
-  const pattern = /\b(Contract\.Call|RoleManagement\.GetDesignatedByRole|StdLib\.MemorySearch|Runtime\.Log)\s*\(/g;
+  const pattern = /\b(Contract\.Call|RoleManagement\.GetDesignatedByRole|StdLib\.MemorySearch|PolicyContract\.GetAttributeFee|CryptoLib\.VerifyWithECDsa|Runtime\.Log)\s*\(/g;
   let output = "";
   let cursor = 0;
   let match;
@@ -29,17 +30,27 @@ export function rewriteFrameworkCallArguments(line, types = null) {
         args[0] = `(UInt160)(dynamic)(${args[0]})`;
       }
       if (args[2] && !/^\s*\(\s*CallFlags\s*\)/.test(args[2])) {
-        args[2] = renderFrameworkEnumArgument(args[2], "CallFlags");
+        args[2] = renderFrameworkEnumArgument(args[2], "CallFlags", types);
       }
     } else if (name === "RoleManagement.GetDesignatedByRole" && args[0]) {
-      args[0] = renderFrameworkEnumArgument(args[0], "Role");
+      args[0] = renderFrameworkIntEnumArgument(args[0], "Role", types);
     } else if (name === "StdLib.MemorySearch") {
-      if (args[2] && !/^\s*\(\s*int\s*\)/.test(args[2])) {
-        args[2] = `(int)(dynamic)(${args[2]})`;
-      }
+      // Integer search values are VM numbers; the framework overload expects
+      // ByteString. Cast the pattern, then int-cast the start index.
       if (args[1] && isNumericExpression(args[1], types)) {
-        args[1] = `((dynamic)(${args[1]}))`;
+        args[1] = `(ByteString)(${args[1]})`;
       }
+      if (args[2] && !isExactIntExpression(args[2], types)) {
+        args[2] = renderIntCast(args[2]);
+      }
+    } else if (name === "PolicyContract.GetAttributeFee" && args[0]) {
+      args[0] = renderFrameworkIntEnumArgument(
+        args[0],
+        "TransactionAttributeType",
+        types,
+      );
+    } else if (name === "CryptoLib.VerifyWithECDsa" && args[3]) {
+      args[3] = renderFrameworkIntEnumArgument(args[3], "NamedCurveHash", types);
     } else if (name === "Runtime.Log") {
       for (let index = 0; index < args.length; index += 1) {
         if (/^\s*Helper\.Range\s*\(/.test(args[index])) {
@@ -55,11 +66,43 @@ export function rewriteFrameworkCallArguments(line, types = null) {
   return cursor === 0 ? line : output + line.slice(cursor);
 }
 
-function renderFrameworkEnumArgument(expression, type) {
+function renderFrameworkEnumArgument(expression, type, types = null) {
   const source = expression.trim();
   if (new RegExp(`^\\(\\s*${type}\\s*\\)`).test(source)) return expression;
+  if (hasExactFrameworkType(source, type, types)) return expression;
   if (/^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)) return `(${type})(${source})`;
   return `(${type})(dynamic)(${expression})`;
+}
+
+// Integer-backed framework enums (Role, NamedCurveHash, …) follow the Rust
+// renderer: `(Type)(int)(expr)` unless the value is already that enum type.
+function renderFrameworkIntEnumArgument(expression, type, types = null) {
+  const source = expression.trim();
+  if (new RegExp(`^\\(\\s*${type}\\s*\\)`).test(source)) return expression;
+  if (hasExactFrameworkType(source, type, types)) return expression;
+  if (/^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)) {
+    return `(${type})(int)(${source})`;
+  }
+  return `(${type})(int)(${expression})`;
+}
+
+function renderIntCast(expression) {
+  const source = expression.trim();
+  if (/^\(\s*int\s*\)/.test(source)) return expression;
+  if (/^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)) return `(int)(${source})`;
+  return `(int)(${expression})`;
+}
+
+function hasExactFrameworkType(expression, type, types) {
+  const identifier = expression.trim().match(/^@?([A-Za-z_][A-Za-z0-9_]*)$/)?.[1];
+  return identifier ? types?.get(identifier) === type : false;
+}
+
+function isExactIntExpression(expression, types) {
+  const source = expression.trim();
+  if (/^\(\s*int\s*\)/.test(source)) return true;
+  const identifier = source.match(/^@?([A-Za-z_][A-Za-z0-9_]*)$/)?.[1];
+  return identifier ? types?.get(identifier) === "int" : false;
 }
 
 function isByteStringExpression(expression, types) {

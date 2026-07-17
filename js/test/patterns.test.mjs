@@ -1063,6 +1063,47 @@ test("C# rendering keeps known void natives and syscalls statement-only", () => 
   assert.doesNotMatch(rendered, /=\s*Runtime\.Log/);
 });
 
+test("C# rendering casts framework-native boundary arguments", () => {
+  const rendered = renderCSharpContract([
+    "contract BoundaryCasts {",
+    "fn main(mem, value, index, role, attr, message, pubkey, signature, curve) -> any {",
+    "    let found = StdLib::MemorySearch(mem, value, index);",
+    "    let numeric = StdLib::MemorySearch(mem, 1, 2);",
+    "    let designated = RoleManagement::GetDesignatedByRole(role, index);",
+    "    let roleLiteral = RoleManagement::GetDesignatedByRole(8, 0);",
+    "    let fee = PolicyContract::GetAttributeFee(attr);",
+    "    let feeLiteral = PolicyContract::getAttributeFee(1);",
+    "    let verified = CryptoLib::verifyWithECDsa(message, pubkey, signature, curve);",
+    "    let verifiedLiteral = CryptoLib::VerifyWithECDsa(message, pubkey, signature, 3);",
+    "    return found;",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+
+  assert.match(rendered, /StdLib\.MemorySearch\(mem, @value, \(int\)\(index\)\)/);
+  assert.match(rendered, /StdLib\.MemorySearch\(mem, \(ByteString\)\(1\), \(int\)\(2\)\)/);
+  assert.match(rendered, /RoleManagement\.GetDesignatedByRole\(\(Role\)\(int\)\(role\), index\)/);
+  assert.match(rendered, /RoleManagement\.GetDesignatedByRole\(\(Role\)\(int\)\(8\), 0\)/);
+  assert.match(
+    rendered,
+    /PolicyContract\.GetAttributeFee\(\(TransactionAttributeType\)\(int\)\(attr\)\)/,
+  );
+  assert.match(
+    rendered,
+    /PolicyContract\.GetAttributeFee\(\(TransactionAttributeType\)\(int\)\(1\)\)/,
+  );
+  assert.match(
+    rendered,
+    /CryptoLib\.VerifyWithECDsa\(message, pubkey, signature, \(NamedCurveHash\)\(int\)\(curve\)\)/,
+  );
+  assert.match(
+    rendered,
+    /CryptoLib\.VerifyWithECDsa\(message, pubkey, signature, \(NamedCurveHash\)\(int\)\(3\)\)/,
+  );
+  assert.doesNotMatch(rendered, /\(\(dynamic\)\(1\)\)/);
+  assert.doesNotMatch(rendered, /\(Role\)\(dynamic\)/);
+});
+
 test("C# rendering lowers known syscalls and keeps unknown ones compile-safe", () => {
   const source = [
     "contract Token {",
