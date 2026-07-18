@@ -14,7 +14,7 @@ import {
 // readable and statically typed. Keep these casts aligned with Rust
 // `expr_native::render_native_args`.
 export function rewriteFrameworkCallArguments(line, types = null) {
-  const pattern = /\b(Contract\.Call|RoleManagement\.GetDesignatedByRole|StdLib\.MemorySearch|PolicyContract\.GetAttributeFee|CryptoLib\.VerifyWithECDsa|Runtime\.Log|Runtime\.BurnGas|Runtime\.GetNotifications|Runtime\.LoadScript)\s*\(/g;
+  const pattern = /\b(Contract\.Call|Contract\.CreateStandardAccount|Contract\.CreateMultisigAccount|ContractManagement\.HasMethod|RoleManagement\.GetDesignatedByRole|StdLib\.MemorySearch|PolicyContract\.GetAttributeFee|CryptoLib\.VerifyWithECDsa|CryptoLib\.Murmur32|Crypto\.CheckSig|Crypto\.CheckMultisig|Runtime\.Log|Runtime\.BurnGas|Runtime\.GetNotifications|Runtime\.LoadScript)\s*\(/g;
   let output = "";
   let cursor = 0;
   let match;
@@ -31,6 +31,21 @@ export function rewriteFrameworkCallArguments(line, types = null) {
       }
       if (args[2] && !/^\s*\(\s*CallFlags\s*\)/.test(args[2])) {
         args[2] = renderFrameworkEnumArgument(args[2], "CallFlags", types);
+      }
+    } else if (name === "Contract.CreateStandardAccount" && args[0]) {
+      // Mirror Rust SyscallArgument::Cast("ECPoint").
+      args[0] = renderFrameworkCast(args[0], "ECPoint", types);
+    } else if (name === "Contract.CreateMultisigAccount") {
+      if (args[0] && !isExactIntExpression(args[0], types)) {
+        args[0] = renderIntCast(args[0]);
+      }
+      if (args[1]) args[1] = renderFrameworkCast(args[1], "ECPoint[]", types);
+    } else if (name === "ContractManagement.HasMethod") {
+      // Framework: HasMethod(UInt160 hash, string method, int pcount).
+      if (args[0]) args[0] = renderFrameworkCast(args[0], "UInt160", types);
+      if (args[1]) args[1] = renderFrameworkCast(args[1], "string", types);
+      if (args[2] && !isExactIntExpression(args[2], types)) {
+        args[2] = renderIntCast(args[2]);
       }
     } else if (name === "RoleManagement.GetDesignatedByRole" && args[0]) {
       args[0] = renderFrameworkIntEnumArgument(args[0], "Role", types);
@@ -51,6 +66,15 @@ export function rewriteFrameworkCallArguments(line, types = null) {
       );
     } else if (name === "CryptoLib.VerifyWithECDsa" && args[3]) {
       args[3] = renderFrameworkIntEnumArgument(args[3], "NamedCurveHash", types);
+    } else if (name === "CryptoLib.Murmur32" && args[1]) {
+      // Framework seed parameter is uint.
+      args[1] = renderUintCast(args[1], types);
+    } else if (name === "Crypto.CheckSig") {
+      if (args[0]) args[0] = renderFrameworkCast(args[0], "ECPoint", types);
+      if (args[1]) args[1] = renderFrameworkCast(args[1], "ByteString", types);
+    } else if (name === "Crypto.CheckMultisig") {
+      if (args[0]) args[0] = renderFrameworkCast(args[0], "ECPoint[]", types);
+      if (args[1]) args[1] = renderFrameworkCast(args[1], "ByteString[]", types);
     } else if (name === "Runtime.Log" && args[0]) {
       // Mirror Rust SyscallArgument::Cast("string"). Helper.Range values stay
       // dynamically bound because they are not ordinary string expressions.
@@ -102,6 +126,14 @@ function renderLongIntegerCast(expression, types = null) {
   // Avoid double-wrapping an existing BigInteger cast.
   if (/^\(\s*BigInteger\s*\)/.test(source)) return `(long)${source}`;
   return `(long)(BigInteger)(${expression})`;
+}
+
+function renderUintCast(expression, types = null) {
+  const source = expression.trim();
+  if (/^\(\s*uint\s*\)/.test(source)) return expression;
+  if (hasExactFrameworkType(source, "uint", types)) return expression;
+  if (/^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)) return `(uint)(${source})`;
+  return `(uint)(${expression})`;
 }
 
 function escapeRegExp(value) {

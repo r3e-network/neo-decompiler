@@ -1253,12 +1253,52 @@ test("C# rendering recognizes additional Neo runtime and crypto syscalls", () =>
   const csharp = renderCSharpContract(source);
   assert.match(csharp, /Runtime\.CurrentSigners\(\)/);
   assert.match(csharp, /Runtime\.GetRandom\(\)/);
-  assert.match(csharp, /Crypto\.CheckSig\(key, signature\)/);
+  assert.match(
+    csharp,
+    /Crypto\.CheckSig\(\(ECPoint\)\(key\), \(ByteString\)\(signature\)\)/,
+  );
   assert.match(
     csharp,
     /Runtime\.LoadScript\(\(ByteString\)\(script\), \(CallFlags\)\(dynamic\)\(flags\), \(object\[\]\)\(args\)\)/,
   );
   assert.match(csharp, /return Contract\.GetCallFlags\(\);/);
+});
+
+test("C# rendering casts account and crypto syscall boundary arguments", () => {
+  const rendered = renderCSharpContract([
+    "contract AccountCasts {",
+    "fn main(pubkey, m, pubkeys, key, signature, signatures, hash, method, pcount, data, seed) -> any {",
+    '    let account = syscall("System.Contract.CreateStandardAccount", pubkey);',
+    '    let multi = syscall("System.Contract.CreateMultisigAccount", m, pubkeys);',
+    '    let valid = syscall("System.Crypto.CheckSig", key, signature);',
+    '    let multiValid = syscall("System.Crypto.CheckMultisig", pubkeys, signatures);',
+    "    let has = ContractManagement::HasMethod(hash, method, pcount);",
+    "    let digest = CryptoLib::Murmur32(data, seed);",
+    "    let digestLit = CryptoLib::Murmur32(data, 1);",
+    "    return account;",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+
+  assert.match(rendered, /Contract\.CreateStandardAccount\(\(ECPoint\)\(pubkey\)\)/);
+  assert.match(
+    rendered,
+    /Contract\.CreateMultisigAccount\(\(int\)\(m\), \(ECPoint\[\]\)\(pubkeys\)\)/,
+  );
+  assert.match(
+    rendered,
+    /Crypto\.CheckSig\(\(ECPoint\)\(key\), \(ByteString\)\(signature\)\)/,
+  );
+  assert.match(
+    rendered,
+    /Crypto\.CheckMultisig\(\(ECPoint\[\]\)\(pubkeys\), \(ByteString\[\]\)\(signatures\)\)/,
+  );
+  assert.match(
+    rendered,
+    /ContractManagement\.HasMethod\(\(UInt160\)\(hash\), \(string\)\(method\), \(int\)\(pcount\)\)/,
+  );
+  assert.match(rendered, /CryptoLib\.Murmur32\(data, \(uint\)\(seed\)\)/);
+  assert.match(rendered, /CryptoLib\.Murmur32\(data, \(uint\)\(1\)\)/);
 });
 
 test("C# rendering lowers iterator and local storage syscalls", () => {
