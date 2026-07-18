@@ -1055,12 +1055,38 @@ test("C# rendering keeps known void natives and syscalls statement-only", () => 
   assert.match(rendered, /^\s*ContractManagement\.Destroy\(\);$/m);
   assert.match(rendered, /^\s*ContractManagement\.Update\(nef, manifest, data\);$/m);
   assert.match(rendered, /^\s*OracleContract\.Request\(url, filter, cb, user, gas\);$/m);
-  assert.match(rendered, /^\s*Runtime\.Log\("hi"\);$/m);
+  assert.match(rendered, /^\s*Runtime\.Log\(\(string\)\("hi"\)\);$/m);
   assert.match(rendered, /^\s*Storage\.Put\(ctx, key, val\);$/m);
   assert.doesNotMatch(rendered, /dynamic destroyed|void destroyed|var destroyed/);
   assert.doesNotMatch(rendered, /dynamic logged|void logged|var logged/);
   assert.doesNotMatch(rendered, /=\s*ContractManagement\.Destroy/);
   assert.doesNotMatch(rendered, /=\s*Runtime\.Log/);
+});
+
+test("C# rendering casts Runtime syscall boundary arguments", () => {
+  const rendered = renderCSharpContract([
+    "contract RuntimeCasts {",
+    "fn main(msg, gas, hash, script, flags, args) -> any {",
+    '    syscall("System.Runtime.Log", msg);',
+    '    syscall("System.Runtime.Log", "hello");',
+    '    syscall("System.Runtime.BurnGas", gas);',
+    '    syscall("System.Runtime.BurnGas", 10);',
+    '    let notes = syscall("System.Runtime.GetNotifications", hash);',
+    '    let loaded = syscall("System.Runtime.LoadScript", script, 15, args);',
+    "    return notes;",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+
+  assert.match(rendered, /Runtime\.Log\(\(string\)\(msg\)\);/);
+  assert.match(rendered, /Runtime\.Log\(\(string\)\("hello"\)\);/);
+  assert.match(rendered, /Runtime\.BurnGas\(\(long\)\(BigInteger\)\(gas\)\);/);
+  assert.match(rendered, /Runtime\.BurnGas\(\(long\)\(BigInteger\)\(10\)\);/);
+  assert.match(rendered, /Runtime\.GetNotifications\(\(UInt160\)\(hash\)\)/);
+  assert.match(
+    rendered,
+    /Runtime\.LoadScript\(\(ByteString\)\(script\), \(CallFlags\)\(15\), \(object\[\]\)\(args\)\)/,
+  );
 });
 
 test("C# rendering casts framework-native boundary arguments", () => {
@@ -1228,7 +1254,10 @@ test("C# rendering recognizes additional Neo runtime and crypto syscalls", () =>
   assert.match(csharp, /Runtime\.CurrentSigners\(\)/);
   assert.match(csharp, /Runtime\.GetRandom\(\)/);
   assert.match(csharp, /Crypto\.CheckSig\(key, signature\)/);
-  assert.match(csharp, /Runtime\.LoadScript\(script, flags, args\)/);
+  assert.match(
+    csharp,
+    /Runtime\.LoadScript\(\(ByteString\)\(script\), \(CallFlags\)\(dynamic\)\(flags\), \(object\[\]\)\(args\)\)/,
+  );
   assert.match(csharp, /return Contract\.GetCallFlags\(\);/);
 });
 

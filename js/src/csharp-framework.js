@@ -14,7 +14,7 @@ import {
 // readable and statically typed. Keep these casts aligned with Rust
 // `expr_native::render_native_args`.
 export function rewriteFrameworkCallArguments(line, types = null) {
-  const pattern = /\b(Contract\.Call|RoleManagement\.GetDesignatedByRole|StdLib\.MemorySearch|PolicyContract\.GetAttributeFee|CryptoLib\.VerifyWithECDsa|Runtime\.Log)\s*\(/g;
+  const pattern = /\b(Contract\.Call|RoleManagement\.GetDesignatedByRole|StdLib\.MemorySearch|PolicyContract\.GetAttributeFee|CryptoLib\.VerifyWithECDsa|Runtime\.Log|Runtime\.BurnGas|Runtime\.GetNotifications|Runtime\.LoadScript)\s*\(/g;
   let output = "";
   let cursor = 0;
   let match;
@@ -51,12 +51,25 @@ export function rewriteFrameworkCallArguments(line, types = null) {
       );
     } else if (name === "CryptoLib.VerifyWithECDsa" && args[3]) {
       args[3] = renderFrameworkIntEnumArgument(args[3], "NamedCurveHash", types);
-    } else if (name === "Runtime.Log") {
-      for (let index = 0; index < args.length; index += 1) {
-        if (/^\s*Helper\.Range\s*\(/.test(args[index])) {
-          args[index] = `((dynamic)(${args[index]}))`;
-        }
+    } else if (name === "Runtime.Log" && args[0]) {
+      // Mirror Rust SyscallArgument::Cast("string"). Helper.Range values stay
+      // dynamically bound because they are not ordinary string expressions.
+      if (/^\s*Helper\.Range\s*\(/.test(args[0])) {
+        args[0] = `((dynamic)(${args[0]}))`;
+      } else {
+        args[0] = renderFrameworkCast(args[0], "string", types);
       }
+    } else if (name === "Runtime.BurnGas" && args[0]) {
+      // Framework takes long; VM gas values are BigInteger-shaped.
+      args[0] = renderLongIntegerCast(args[0], types);
+    } else if (name === "Runtime.GetNotifications" && args[0]) {
+      args[0] = renderFrameworkCast(args[0], "UInt160", types);
+    } else if (name === "Runtime.LoadScript") {
+      if (args[0]) args[0] = renderFrameworkCast(args[0], "ByteString", types);
+      if (args[1] && !/^\s*\(\s*CallFlags\s*\)/.test(args[1])) {
+        args[1] = renderFrameworkEnumArgument(args[1], "CallFlags", types);
+      }
+      if (args[2]) args[2] = renderFrameworkCast(args[2], "object[]", types);
     }
     output += line.slice(cursor, match.index);
     output += `${name}(${args.join(", ")})`;
@@ -66,10 +79,41 @@ export function rewriteFrameworkCallArguments(line, types = null) {
   return cursor === 0 ? line : output + line.slice(cursor);
 }
 
+function renderFrameworkCast(expression, type, types = null) {
+  const source = expression.trim();
+  if (new RegExp(`^\\(\\s*${escapeRegExp(type)}\\s*\\)`).test(source)) {
+    return expression;
+  }
+  if (hasExactFrameworkType(source, type, types)) return expression;
+  // Low-level LoadScript fallbacks already emit `new object[] { ... }`.
+  if (type === "object[]" && /^new\s+object\s*\[/.test(source)) {
+    return expression;
+  }
+  if (type === "ByteString" && (/^\(\s*ByteString\s*\)/.test(source) || /^new\s+byte\s*\[/.test(source))) {
+    return expression;
+  }
+  return `(${type})(${expression})`;
+}
+
+function renderLongIntegerCast(expression, types = null) {
+  const source = expression.trim();
+  if (/^\(\s*long\s*\)/.test(source)) return expression;
+  if (hasExactFrameworkType(source, "long", types)) return expression;
+  // Avoid double-wrapping an existing BigInteger cast.
+  if (/^\(\s*BigInteger\s*\)/.test(source)) return `(long)${source}`;
+  return `(long)(BigInteger)(${expression})`;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function renderFrameworkEnumArgument(expression, type, types = null) {
   const source = expression.trim();
   if (new RegExp(`^\\(\\s*${type}\\s*\\)`).test(source)) return expression;
   if (hasExactFrameworkType(source, type, types)) return expression;
+  // Already a framework enum member such as CallFlags.All.
+  if (new RegExp(`^${escapeRegExp(type)}\\.`).test(source)) return expression;
   if (/^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)) return `(${type})(${source})`;
   return `(${type})(dynamic)(${expression})`;
 }
