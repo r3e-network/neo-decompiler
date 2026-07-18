@@ -195,6 +195,9 @@ function inferParameterTypes(lines) {
     const name = parameter.slice(0, separator).trim();
     const type = parameter.slice(separator + 1).trim().toLowerCase();
     if (!name) continue;
+    // Keep ABI spellings aligned with csharp-type-map / signature rendering so
+    // hash160 and publickey parameters remain usable as framework evidence
+    // (for example Runtime.CheckWitness overload selection).
     types.set(name, {
       void: "void",
       bool: "bool",
@@ -202,11 +205,17 @@ function inferParameterTypes(lines) {
       int: "BigInteger",
       integer: "BigInteger",
       string: "string",
+      hash160: "UInt160",
+      hash256: "UInt256",
+      publickey: "ECPoint",
       bytes: "ByteString",
       bytestring: "ByteString",
       bytearray: "ByteString",
+      signature: "ByteString",
       array: "object[]",
       map: "Map<object, object>",
+      interop: "object",
+      interopinterface: "object",
       any: "dynamic",
     }[type] ?? "dynamic");
   }

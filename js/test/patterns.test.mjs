@@ -1264,6 +1264,40 @@ test("C# rendering recognizes additional Neo runtime and crypto syscalls", () =>
   assert.match(csharp, /return Contract\.GetCallFlags\(\);/);
 });
 
+test("C# rendering keeps CheckWitness fail-closed without overload evidence", () => {
+  const unknown = renderCSharpContract([
+    "contract Auth {",
+    "fn main(account) -> any {",
+    '    let allowed = syscall("System.Runtime.CheckWitness", account);',
+    "    return allowed;",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+  assert.match(
+    unknown,
+    /\(bool\)Runtime\.LoadScript\(\(ByteString\)new byte\[\] \{ 0x41, 0xF8, 0x27, 0xEC, 0x8C \}, CallFlags\.All, new object\[\] \{ account \}\)/,
+  );
+  assert.doesNotMatch(unknown, /Runtime\.CheckWitness\(account\)/);
+
+  const proven = renderCSharpContract([
+    "contract AuthTyped {",
+    "fn main(account: hash160, group: publickey, raw) -> any {",
+    '    let a = syscall("System.Runtime.CheckWitness", account);',
+    '    let b = syscall("System.Runtime.CheckWitness", group);',
+    '    let c = syscall("System.Runtime.CheckWitness", (UInt160)(raw));',
+    '    let d = syscall("System.Runtime.CheckWitness", (ECPoint)(raw));',
+    "    return a;",
+    "}",
+    "}",
+  ].join("\n"), null, { typedDeclarations: true });
+  assert.match(proven, /Runtime\.CheckWitness\(account\)/);
+  // `group` is a C# keyword, so the identifier rewriter emits `@group`.
+  assert.match(proven, /Runtime\.CheckWitness\(@group\)/);
+  assert.match(proven, /Runtime\.CheckWitness\(\(UInt160\)\(raw\)\)/);
+  assert.match(proven, /Runtime\.CheckWitness\(\(ECPoint\)\(raw\)\)/);
+  assert.doesNotMatch(proven, /LoadScript[\s\S]*account/);
+});
+
 test("C# rendering casts account and crypto syscall boundary arguments", () => {
   const rendered = renderCSharpContract([
     "contract AccountCasts {",

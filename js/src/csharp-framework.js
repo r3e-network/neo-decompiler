@@ -14,7 +14,7 @@ import {
 // readable and statically typed. Keep these casts aligned with Rust
 // `expr_native::render_native_args`.
 export function rewriteFrameworkCallArguments(line, types = null) {
-  const pattern = /\b(Contract\.Call|Contract\.CreateStandardAccount|Contract\.CreateMultisigAccount|ContractManagement\.HasMethod|RoleManagement\.GetDesignatedByRole|StdLib\.MemorySearch|PolicyContract\.GetAttributeFee|CryptoLib\.VerifyWithECDsa|CryptoLib\.Murmur32|Crypto\.CheckSig|Crypto\.CheckMultisig|Runtime\.Log|Runtime\.BurnGas|Runtime\.GetNotifications|Runtime\.LoadScript)\s*\(/g;
+  const pattern = /\b(Contract\.Call|Contract\.CreateStandardAccount|Contract\.CreateMultisigAccount|ContractManagement\.HasMethod|RoleManagement\.GetDesignatedByRole|StdLib\.MemorySearch|PolicyContract\.GetAttributeFee|CryptoLib\.VerifyWithECDsa|CryptoLib\.Murmur32|Crypto\.CheckSig|Crypto\.CheckMultisig|Runtime\.CheckWitness|Runtime\.Log|Runtime\.BurnGas|Runtime\.GetNotifications|Runtime\.LoadScript)\s*\(/g;
   let output = "";
   let cursor = 0;
   let match;
@@ -25,7 +25,18 @@ export function rewriteFrameworkCallArguments(line, types = null) {
     const args = splitCallArguments(line.slice(open + 1, close))
       .map((arg) => rewriteFrameworkCallArguments(arg, types));
     const name = match[1];
-    if (name === "Contract.Call") {
+    if (name === "Runtime.CheckWitness") {
+      // Mirror Rust SyscallArgument::Witness: only emit the framework
+      // overload when the argument is proven UInt160/ECPoint. Otherwise
+      // fail closed through the LoadScript syscall replay.
+      if (args.length !== 1 || !isWitnessExpression(args[0], types)) {
+        output += line.slice(cursor, match.index);
+        output += renderCheckWitnessFallback(args[0] ?? "null");
+        cursor = close + 1;
+        pattern.lastIndex = cursor;
+        continue;
+      }
+    } else if (name === "Contract.Call") {
       if (args[0] && isByteStringExpression(args[0], types)) {
         args[0] = `(UInt160)(dynamic)(${args[0]})`;
       }
@@ -134,6 +145,22 @@ function renderUintCast(expression, types = null) {
   if (hasExactFrameworkType(source, "uint", types)) return expression;
   if (/^-?(?:0x[0-9a-f]+|[0-9]+)$/i.test(source)) return `(uint)(${source})`;
   return `(uint)(${expression})`;
+}
+
+// System.Runtime.CheckWitness syscall hash 0x8CEC27F8, little-endian after
+// the SYSCALL opcode (0x41), matching Rust's low-level replay encoding.
+const CHECK_WITNESS_LOADSCRIPT =
+  "Runtime.LoadScript((ByteString)new byte[] { 0x41, 0xF8, 0x27, 0xEC, 0x8C }, CallFlags.All, new object[] { ";
+
+function renderCheckWitnessFallback(argument) {
+  return `(bool)${CHECK_WITNESS_LOADSCRIPT}${argument} })`;
+}
+
+function isWitnessExpression(expression, types = null) {
+  const source = expression.trim();
+  if (/^\(\s*(UInt160|ECPoint)\s*\)/.test(source)) return true;
+  return hasExactFrameworkType(source, "UInt160", types)
+    || hasExactFrameworkType(source, "ECPoint", types);
 }
 
 function escapeRegExp(value) {
