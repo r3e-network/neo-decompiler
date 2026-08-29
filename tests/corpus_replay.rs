@@ -1,7 +1,12 @@
 //! Corpus replay / regression test.
 //!
-//! Replays every fuzz corpus under `fuzz/corpus/` through the full pipeline
+//! Replays committed `TestingArtifacts/*` fixtures through the full pipeline
 //! (NEF parse → disassemble → CFG → SSA → render) under `catch_unwind`, and
+//! additionally replays every locally generated fuzz corpus under
+//! `fuzz/corpus/` when present. Because that directory is gitignored, the
+//! committed fixtures are the always-present seed so the fence runs with real
+//! coverage on a fresh CI checkout, while any local corpora layered on top
+//! extend it. `decompile_all_artifacts_across_formats_without_panics`
 //! re-decompiles every `TestingArtifacts/*` contract across all output formats.
 //!
 //! This is the regression fence introduced in the advanced-decompiler Phase 0:
@@ -36,6 +41,38 @@ fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
+}
+
+/// Discover committed `.nef` / `.manifest.json` fixtures under
+/// `TestingArtifacts/`. These always ship in git, so the panic fence has
+/// meaningful coverage even on a fresh CI checkout where the gitignored
+/// `fuzz/corpus/` directories are empty. Returns `(nef_files, manifest_files)`.
+fn committed_fixtures(root: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let mut all = Vec::new();
+    collect_files(&root.join("TestingArtifacts"), &mut all);
+    let is_nef = |p: &PathBuf| p.extension().and_then(|e| e.to_str()) == Some("nef");
+    let is_manifest = |p: &PathBuf| {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(".manifest.json"))
+    };
+    let mut nefs: Vec<PathBuf> = all.iter().filter(|p| is_nef(p)).cloned().collect();
+    let mut manifests: Vec<PathBuf> = all.iter().filter(|p| is_manifest(p)).cloned().collect();
+    nefs.sort();
+    manifests.sort();
+    (nefs, manifests)
+}
+
+/// Raw script bytes extracted from every committed `.nef`, used to seed the
+/// raw-bytecode target so it never runs empty.
+fn committed_scripts(nef_files: &[PathBuf]) -> Vec<Vec<u8>> {
+    let parser = NefParser::new();
+    nef_files
+        .iter()
+        .filter_map(|p| fs::read(p).ok())
+        .filter_map(|bytes| parser.parse(&bytes).ok())
+        .map(|nef| nef.script)
+        .collect()
 }
 
 /// One entry point per corpus: each exercises a different pipeline slice.
@@ -93,46 +130,76 @@ fn run_target(data: &[u8], target: Target) {
 #[test]
 fn replay_all_fuzz_corpora_without_panics() {
     let root = repo_root();
+    let (nef_files, manifest_files) = committed_fixtures(&root);
+    let raw_scripts = committed_scripts(&nef_files);
+
     for target in [
         Target::NefDecompile,
         Target::RawDecompile,
         Target::NefParse,
         Target::Manifest,
     ] {
-        let dir = root.join(target.dir());
-        let mut files = Vec::new();
-        collect_files(&dir, &mut files);
-        files.sort();
+        // Seed the fence with committed fixtures so every checkout (including a
+        // fresh CI clone where the gitignored corpora are absent) replays real
+        // inputs. Local fuzz corpora, when present, are layered on top.
+        let mut inputs: Vec<(String, Vec<u8>)> = Vec::new();
+        match target {
+            Target::NefDecompile | Target::NefParse => {
+                for f in &nef_files {
+                    if let Ok(data) = fs::read(f) {
+                        inputs.push((format!("committed artifact {}", f.display()), data));
+                    }
+                }
+            }
+            Target::RawDecompile => {
+                for (i, script) in raw_scripts.iter().enumerate() {
+                    inputs.push((format!("committed script #{i}"), script.clone()));
+                }
+            }
+            Target::Manifest => {
+                for f in &manifest_files {
+                    if let Ok(data) = fs::read(f) {
+                        inputs.push((format!("committed manifest {}", f.display()), data));
+                    }
+                }
+            }
+        }
 
-        let mut count = 0usize;
-        for file in &files {
-            // Skip the synthetic named .nef seed in nef_parse (already covered).
+        // Additionally replay any locally generated fuzz corpus (gitignored).
+        let dir = root.join(target.dir());
+        let mut corpus_files = Vec::new();
+        collect_files(&dir, &mut corpus_files);
+        corpus_files.sort();
+        for file in &corpus_files {
+            // Skip the synthetic named .nef seed (already covered by fixtures).
             if file.extension().and_then(|e| e.to_str()) == Some("nef") {
                 continue;
             }
-            let Ok(data) = fs::read(file) else {
-                continue;
-            };
-            // catch_unwind swallows panics; we want them to surface as failures
-            // with the offending corpus path, so re-run *outside* the catch.
-            let panic = {
-                let file = file.clone();
-                catch_unwind(|| {
-                    let _ = file; // pin path for the closure capture log
-                    run_target(&data, target);
-                })
-            };
-            if panic.is_err() {
-                panic!(
-                    "corpus replay panic in {} target at {}",
-                    target.dir(),
-                    file.display()
-                );
+            if let Ok(data) = fs::read(file) {
+                inputs.push((format!("{} corpus {}", target.dir(), file.display()), data));
             }
-            count += 1;
         }
-        // Guard against the corpora silently going missing.
-        assert!(count > 0, "no corpus files found for {}", target.dir());
+
+        let count = inputs.len();
+        for (label, data) in &inputs {
+            // catch_unwind swallows panics; surface them as failures with the
+            // offending input label by re-panicking outside the catch.
+            let panic = catch_unwind(|| {
+                run_target(data, target);
+            });
+            if panic.is_err() {
+                panic!("corpus replay panic in {} target at {label}", target.dir());
+            }
+        }
+
+        // The committed fixtures guarantee non-empty coverage on every checkout,
+        // so this now flags a genuine regression (fixtures gone) rather than an
+        // absent local, gitignored fuzz corpus.
+        assert!(
+            count > 0,
+            "no replay inputs for {} (committed fixtures missing?)",
+            target.dir()
+        );
     }
 }
 
