@@ -240,13 +240,11 @@ pub(super) fn statement_mutates_collections(statement: &Stmt, bases: &BTreeSet<S
                 | OpCode::Popitem
                 | OpCode::Reverseitems
                 | OpCode::Memcpy,
-            )) => {
-                if args
-                    .first()
-                    .is_some_and(|receiver| expr_mentions_any(receiver, bases))
-                {
-                    found = true;
-                }
+            )) if args
+                .first()
+                .is_some_and(|receiver| expr_mentions_any(receiver, bases)) =>
+            {
+                found = true;
             }
             SemanticCallTarget::Internal { .. } | SemanticCallTarget::Unresolved { .. }
                 if args.iter().any(|arg| expr_mentions_any(arg, bases)) =>

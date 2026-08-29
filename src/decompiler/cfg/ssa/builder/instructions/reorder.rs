@@ -44,22 +44,18 @@ impl<'a> SsaBuilder<'a> {
                     fresh_copy(top, stack, stmts);
                 }
             }
-            OpCode::Over => {
-                // [.. a, b] -> push copy of a (second from top)
-                if stack.len() >= 2 {
-                    let second = stack[stack.len() - 2].clone();
-                    fresh_copy(second, stack, stmts);
-                }
+            // [.. a, b] -> push copy of a (second from top)
+            OpCode::Over if stack.len() >= 2 => {
+                let second = stack[stack.len() - 2].clone();
+                fresh_copy(second, stack, stmts);
             }
-            OpCode::Tuck => {
-                // [.. a, b] -> [.. b_copy, a, b]
-                if stack.len() >= 2 {
-                    let b = stack.pop().unwrap();
-                    let a = stack.pop().unwrap();
-                    fresh_copy(b.clone(), stack, stmts);
-                    stack.push(a);
-                    stack.push(b);
-                }
+            // [.. a, b] -> [.. b_copy, a, b]
+            OpCode::Tuck if stack.len() >= 2 => {
+                let b = stack.pop().unwrap();
+                let a = stack.pop().unwrap();
+                fresh_copy(b.clone(), stack, stmts);
+                stack.push(a);
+                stack.push(b);
             }
             OpCode::Swap => {
                 let n = stack.len();
@@ -67,13 +63,11 @@ impl<'a> SsaBuilder<'a> {
                     stack.swap(n - 1, n - 2);
                 }
             }
-            OpCode::Rot => {
-                // [.. a, b, c] -> [.. b, c, a]
-                if stack.len() >= 3 {
-                    let n = stack.len();
-                    let a = stack.remove(n - 3);
-                    stack.push(a);
-                }
+            // [.. a, b, c] -> [.. b, c, a]
+            OpCode::Rot if stack.len() >= 3 => {
+                let n = stack.len();
+                let a = stack.remove(n - 3);
+                stack.push(a);
             }
             OpCode::Reverse3 => reverse_top(stack, 3),
             OpCode::Reverse4 => reverse_top(stack, 4),

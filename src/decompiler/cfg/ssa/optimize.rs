@@ -68,19 +68,17 @@ fn one_round(ssa: &mut SsaForm) -> usize {
                     // would erase the variable and fold away branch conditions /
                     // arithmetic the structurer needs (e.g. `loc0 = 0; if loc0<3`
                     // must survive, not become `if true`). Anonymous temps fold.
-                    SsaExpr::Literal(_) => {
-                        if !is_slot_var(target) {
-                            subst.insert(target.clone(), value.clone());
-                        }
+                    SsaExpr::Literal(_) if !is_slot_var(target) => {
+                        subst.insert(target.clone(), value.clone());
                     }
                     // Copy of another var: `t = v` -> use v. For a slot target,
                     // only collapse to ANOTHER slot (a redundant load-alias);
                     // never to a temp/literal, so the slot reference stays
                     // visible at use sites.
-                    SsaExpr::Variable(src) => {
-                        if !is_slot_var(target) || is_slot_var(src) || src.is_vm_null() {
-                            subst.insert(target.clone(), value.clone());
-                        }
+                    SsaExpr::Variable(src)
+                        if !is_slot_var(target) || is_slot_var(src) || src.is_vm_null() =>
+                    {
+                        subst.insert(target.clone(), value.clone());
                     }
                     // Foldable pure binary on two constants.
                     SsaExpr::Binary { op, left, right } => {
