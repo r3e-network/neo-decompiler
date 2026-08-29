@@ -240,9 +240,24 @@ jobs:
   js-package:
     name: JS package
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build release binary for differential parity gates
+        # js/test/differential.test.mjs resolves RUST_BIN to
+        # target/release/neo-decompiler and skips (vacuous pass) when it is
+        # absent. Build it here so the Rust↔JS parity assertions actually run.
+        run: cargo build --release
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

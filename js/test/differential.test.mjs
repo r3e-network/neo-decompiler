@@ -12,7 +12,12 @@ import {
 } from "../src/index.js";
 
 const ROOT = join(import.meta.dirname, "..", "..");
-const RUST_BIN = join(ROOT, "target", "release", "neo-decompiler");
+// CI (js-package job) builds the Rust release binary in-repo so the parity
+// gates run for real. Locally (especially on Windows, where the binary has an
+// .exe suffix), contributors can point at any build via NEO_DECOMPILER_BIN.
+const RUST_BIN =
+  process.env.NEO_DECOMPILER_BIN ??
+  join(ROOT, "target", "release", process.platform === "win32" ? "neo-decompiler.exe" : "neo-decompiler");
 const ARTIFACTS_DIR = join(ROOT, "TestingArtifacts");
 
 // ---------------------------------------------------------------------------
