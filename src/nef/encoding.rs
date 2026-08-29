@@ -94,8 +94,12 @@ pub(super) fn read_varstring(
         }
         .into());
     }
-    let start = offset + consumed;
-    let end = start + len;
+    let start = offset
+        .checked_add(consumed)
+        .ok_or(NefError::UnexpectedEof { offset })?;
+    let end = start
+        .checked_add(len)
+        .ok_or(NefError::UnexpectedEof { offset: start })?;
     let slice = bytes
         .get(start..end)
         .ok_or(NefError::UnexpectedEof { offset: start })?;
@@ -119,8 +123,12 @@ pub(super) fn read_varbytes(
         }
         .into());
     }
-    let start = offset + consumed;
-    let end = start + len;
+    let start = offset
+        .checked_add(consumed)
+        .ok_or(NefError::UnexpectedEof { offset })?;
+    let end = start
+        .checked_add(len)
+        .ok_or(NefError::UnexpectedEof { offset: start })?;
     let slice = bytes
         .get(start..end)
         .ok_or(NefError::UnexpectedEof { offset: start })?;
