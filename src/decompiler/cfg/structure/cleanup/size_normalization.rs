@@ -245,13 +245,12 @@ fn match_size_wrapper(
     };
 
     let (normal_branch, mask_branch, expected_normalization) =
-        if let Some(normalization) = matches_size_check(condition, size_var) {
-            (then_branch, else_branch, normalization)
-        } else if let Some(normalization) = matches_size_overflow_check(condition, size_var) {
-            (else_branch, then_branch, normalization)
-        } else {
-            return None;
-        };
+        matches_size_check(condition, size_var)
+            .map(|normalization| (then_branch, else_branch, normalization))
+            .or_else(|| {
+                matches_size_overflow_check(condition, size_var)
+                    .map(|normalization| (else_branch, then_branch, normalization))
+            })?;
     let normalized_var = direct_copy_target(normal_branch, operation_var)?;
     let (mask_var, normalized_from_mask, actual_normalization) =
         mask_path_target(mask_branch, operation_var)?;

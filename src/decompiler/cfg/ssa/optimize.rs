@@ -58,7 +58,7 @@ fn one_round(ssa: &mut SsaForm) -> usize {
     // Gather constants/copies from current assignments.
     let mut subst: Subst = BTreeMap::new();
 
-    for (_bid, block) in ssa.blocks.iter() {
+    for block in ssa.blocks.values() {
         for stmt in &block.stmts {
             if let SsaStmt::Assign { target, value } = stmt {
                 match value {
@@ -104,7 +104,7 @@ fn one_round(ssa: &mut SsaForm) -> usize {
 
     // Resolve transitive substitutions (v2->3, v1->v2 -> v1->3) and chase copy
     // chains (v1->v0, v0->3 -> v1->3).
-    for (_bid, block) in ssa.blocks.iter() {
+    for block in ssa.blocks.values() {
         for stmt in &block.stmts {
             if let SsaStmt::Assign { target, value } = stmt {
                 if !subst.contains_key(target) {
@@ -122,7 +122,7 @@ fn one_round(ssa: &mut SsaForm) -> usize {
 
     // Trivial-φ elimination: φ whose operands are all the same value (after
     // substitution) collapses to that value.
-    for (_bid, block) in ssa.blocks.iter() {
+    for block in ssa.blocks.values() {
         for phi in &block.phi_nodes {
             let operands: Vec<&SsaVariable> = phi.operands.values().collect();
             if operands.is_empty() {
@@ -263,7 +263,7 @@ fn one_round(ssa: &mut SsaForm) -> usize {
     // Rewrite expression roots before liveness. A removed alias phi may point
     // at a surviving nontrivial phi; its rewritten expression use must keep the
     // surviving phi and its incoming definitions live.
-    for (_bid, block) in ssa.blocks.iter_mut() {
+    for block in ssa.blocks.values_mut() {
         for stmt in &mut block.stmts {
             match stmt {
                 SsaStmt::Assign { value, .. } => {
@@ -537,7 +537,7 @@ fn collect_used(ssa: &SsaForm, _subst: &Subst) -> BTreeSet<SsaVariable> {
             used.insert(variable.clone());
         }
     }
-    for (_bid, block) in ssa.blocks.iter() {
+    for block in ssa.blocks.values() {
         for stmt in &block.stmts {
             match stmt {
                 SsaStmt::Assign { value, .. }
