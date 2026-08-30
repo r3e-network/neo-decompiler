@@ -1,4 +1,5 @@
 import { scanSlotCounts, scanStaticSlotCount } from "./util.js";
+import { SYSCALLS } from "./generated/syscalls.js";
 
 // Best-effort type recovery via a per-method stack simulation, mirroring the
 // Rust core (src/decompiler/analysis/types.rs `infer_types_in_slice`) so the
@@ -246,19 +247,31 @@ function inferInSlice(instructions, locals, args, statics) {
         break;
       case "PACK": {
         const count = asCount(popU().lit);
-        if (count !== null) for (let k = 0; k < Math.min(count, stack.length); k += 1) popU();
+        // Bound once, not inside the condition: the stack shrinks as we pop,
+        // so a re-evaluated `stack.length` limit would under-pop. Mirrors the
+        // Rust port's `for _ in 0..count.min(stack.len())`.
+        if (count !== null) {
+          const limit = Math.min(count, stack.length);
+          for (let k = 0; k < limit; k += 1) popU();
+        }
         stack.push({ ty: "array", lit: null });
         break;
       }
       case "PACKMAP": {
         const count = asCount(popU().lit);
-        if (count !== null) for (let k = 0; k < Math.min(count * 2, stack.length); k += 1) popU();
+        if (count !== null) {
+          const limit = Math.min(count * 2, stack.length);
+          for (let k = 0; k < limit; k += 1) popU();
+        }
         stack.push({ ty: "map", lit: null });
         break;
       }
       case "PACKSTRUCT": {
         const count = asCount(popU().lit);
-        if (count !== null) for (let k = 0; k < Math.min(count, stack.length); k += 1) popU();
+        if (count !== null) {
+          const limit = Math.min(count, stack.length);
+          for (let k = 0; k < limit; k += 1) popU();
+        }
         stack.push({ ty: "struct", lit: null });
         break;
       }
@@ -282,7 +295,13 @@ function inferInSlice(instructions, locals, args, statics) {
         popU();
         break;
       case "CLEARITEMS":
+      case "REVERSEITEMS":
         popU();
+        break;
+      // MEMCPY pops the destination, source index, destination index, count,
+      // and a size hint.
+      case "MEMCPY":
+        for (let index = 0; index < 5; index += 1) popU();
         break;
       case "POPITEM":
         popU();
@@ -380,6 +399,21 @@ function inferInSlice(instructions, locals, args, statics) {
         popU();
         stack.push({ ty: "bool", lit: null });
         break;
+
+      case "SYSCALL": {
+        // Mirror the Rust port: a known syscall consumes its declared
+        // parameters and pushes a result when it returns one. An unknown hash
+        // conservatively pushes `unknown` without consuming anything.
+        const hash = ins.operand?.kind === "Syscall" ? ins.operand.value : null;
+        const info = hash === null ? null : SYSCALLS.get(hash) ?? null;
+        if (!info) {
+          stack.push(unk());
+          break;
+        }
+        for (let index = 0; index < info.param_count; index += 1) popU();
+        if (info.returns_value) stack.push(unk());
+        break;
+      }
 
       // Everything else is a no-op for typing purposes.
       default:
