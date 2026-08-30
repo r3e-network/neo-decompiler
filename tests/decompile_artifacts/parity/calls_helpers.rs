@@ -43,21 +43,21 @@ fn delegate_manifest_methods_do_not_swallow_private_initslot_bodies() {
         "inferred private helper at 0x000C should be rendered separately: {high_level}"
     );
     assert!(
-        high_level.contains("fn sub_0x0034(arg0, arg1)"),
-        "inferred private helper at 0x0034 should be rendered separately: {high_level}"
+        high_level.contains("fn sub_0x0041(arg0, arg1)"),
+        "inferred private helper at 0x0041 should be rendered separately: {high_level}"
     );
     let delegate_block = method_block(high_level, "fn testDelegate(", "\n    fn sub_0x000C(");
     assert!(
-        delegate_block.contains("sub_0x0034("),
-        "stored local pointer should resolve to inferred helper call in testDelegate: {delegate_block}"
+        delegate_block.contains("sub_0x0041("),
+        "delegate body should call the inferred helper at 0x0041 in testDelegate: {delegate_block}"
     );
     assert!(
-        delegate_block.contains("sub_0x0034(t2, t1)"),
-        "stored local pointer call should preserve stack argument order for helper invocation: {delegate_block}"
+        delegate_block.contains("sub_0x0041(t2, t1)"),
+        "delegate helper call should preserve stack argument order: {delegate_block}"
     );
     assert!(
-        !delegate_block.contains("sub_0x0034()"),
-        "stored local pointer call should include helper arguments in testDelegate: {delegate_block}"
+        !delegate_block.contains("sub_0x0041()"),
+        "delegate helper call should include its arguments in testDelegate: {delegate_block}"
     );
     assert!(
         !delegate_block.contains("calla(loc0)"),
@@ -80,17 +80,16 @@ fn delegate_manifest_methods_do_not_swallow_private_initslot_bodies() {
         "private static BigInteger sub_0x000C(",
     );
     assert!(
-        csharp_delegate.contains("sub_0x0034("),
-        "C# output should resolve stored local pointer CALLA target: {csharp_delegate}"
+        csharp_delegate.contains("sub_0x0041("),
+        "C# output should resolve the delegate helper call target: {csharp_delegate}"
     );
     assert!(
-        csharp_delegate.contains("sub_0x0034(t2, t1)")
-            || csharp_delegate.contains("sub_0x0034(5, 6)"),
-        "C# output should preserve CALLA helper arguments: {csharp_delegate}"
+        csharp_delegate.contains("sub_0x0041(5, 6)"),
+        "C# output should keep the helper call arguments: {csharp_delegate}"
     );
     assert!(
-        !csharp_delegate.contains("sub_0x0034()"),
-        "C# output should not drop CALLA helper arguments: {csharp_delegate}"
+        !csharp_delegate.contains("sub_0x0041()"),
+        "C# output should not drop helper arguments: {csharp_delegate}"
     );
     assert!(
         delegate_block.contains("StdLib::Itoa(loc1)"),
@@ -105,7 +104,7 @@ fn delegate_manifest_methods_do_not_swallow_private_initslot_bodies() {
         "high-level void method should not return a stray stack value: {delegate_block}"
     );
     assert!(
-        csharp_delegate.contains("StdLib.Itoa(loc1)"),
+        csharp_delegate.contains("StdLib.Itoa(t_3)"),
         "C# CALLT should forward token argument from stack: {csharp_delegate}"
     );
     assert!(
@@ -158,13 +157,13 @@ fn inline_not_inline_case_does_not_require_spurious_call_argument() {
         "case \"not_inline_with_one_parameters\" {",
     );
     assert!(
-        !not_inline_case_block.contains("// 0099: insufficient values on stack for CALL (needs 1)"),
-        "not_inline switch case should not require a synthetic argument for CALL at 0x0099: {not_inline_case_block}"
+        !not_inline_case_block.contains("// 009F: insufficient values on stack for CALL (needs 1)"),
+        "not_inline switch case should not require a synthetic argument for CALL at 0x009F: {not_inline_case_block}"
     );
     assert!(
-        not_inline_case_block.contains("call_0x0106()")
-            || not_inline_case_block.contains("sub_0x0106()"),
-        "not_inline switch case should call the throw-tail helper at 0x0106 without arguments: {not_inline_case_block}"
+        not_inline_case_block.contains("call_0x0113()")
+            || not_inline_case_block.contains("sub_0x0113()"),
+        "not_inline switch case should call the int-returning helper at 0x0113 without arguments: {not_inline_case_block}"
     );
 }
 
@@ -266,8 +265,8 @@ fn initializer_anonymous_object_logs_use_emitted_getter_helpers_without_warnings
         "anonymousObjectCreation should no longer contain missing syscall placeholders: {high_level_block}"
     );
     assert!(
-        high_level_block.contains("sub_0x00DA(loc0)")
-            && high_level_block.contains("sub_0x00E1(t16)"),
+        high_level_block.contains("sub_0x0101(loc0)")
+            && high_level_block.contains("sub_0x0108(t16)"),
         "anonymousObjectCreation should call the compiler-emitted anonymous getter helpers: {high_level_block}"
     );
     assert!(
@@ -294,8 +293,8 @@ fn initializer_anonymous_object_logs_use_emitted_getter_helpers_without_warnings
         "C# output should not contain missing syscall placeholders: {csharp_block}"
     );
     assert!(
-        csharp.contains("sub_0x00DA(")
-            && csharp.contains("sub_0x00E1(")
+        csharp.contains("sub_0x0101(")
+            && csharp.contains("sub_0x0108(")
             && csharp.contains("Runtime.Log"),
         "C# output should render both anonymous getter helpers and Runtime.Log calls: {csharp}"
     );

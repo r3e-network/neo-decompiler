@@ -185,7 +185,7 @@ fn lambda_static_delegate_recursion_resolves_to_internal_calls() {
     let high_level = result.high_level.as_deref().expect("high-level output");
     let recursion_block = method_block(
         high_level,
-        "\n    fn sub_0x00C1(arg0) -> any {",
+        "\n    fn sub_0x00DB(arg0) -> any {",
         "\n    fn changeName(",
     );
     assert!(
@@ -193,7 +193,7 @@ fn lambda_static_delegate_recursion_resolves_to_internal_calls() {
         "recursive CALLA through static delegate should resolve to named internal calls: {recursion_block}"
     );
     assert!(
-        recursion_block.contains("= sub_0x00C1("),
+        recursion_block.contains("= sub_0x00DB("),
         "recursive CALLA through static delegate should render direct self-calls with arguments: {recursion_block}"
     );
 }

@@ -74,5 +74,18 @@ python3 tools/extract_devpack_artifacts.py \
   --expected-count 103 --strict --clean
 ```
 
+Always extract from a checkout of the pinned revision. The default
+`--devpack-root` is whatever revision your local `../neo-devpack-dotnet`
+happens to sit on; a newer compiler emits shifted bytecode offsets, so any
+offset-bearing parity assertion baselined against such a corpus silently
+disagrees with CI (which checks out `v3.10.0`). Create a detached worktree
+instead of switching branches:
+
+```bash
+git -C ../neo-devpack-dotnet fetch origin tag v3.10.0
+git -C ../neo-devpack-dotnet worktree add ../neo-decompiler/.devpack-v310 v3.10.0 --detach
+python3 tools/extract_devpack_artifacts.py --devpack-root .devpack-v310 ...
+```
+
 The extractor writes stable `provenance.json` metadata containing the source
 commit, exact tags, counts, and sorted artifact names.

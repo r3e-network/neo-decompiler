@@ -104,7 +104,7 @@ fn foreach_pack_helpers_do_not_emit_literal_pack_underflow_warnings() {
         .expect("decompile succeeds");
 
     let high_level = result.high_level.as_deref().expect("high-level output");
-    let helper_marker = ["\n    fn sub_0x0450("]
+    let helper_marker = ["\n    fn sub_0x04A4("]
         .into_iter()
         .find(|marker| high_level.contains(marker))
         .expect("Foreach tuple helper marker");
@@ -119,7 +119,7 @@ fn foreach_pack_helpers_do_not_emit_literal_pack_underflow_warnings() {
     );
     assert!(
         !high_level.contains("insufficient values on stack for STLOC4 (needs 1)"),
-        "PACK placeholder modeling should not regress the STLOC4 stack check at 0x046B: {high_level}"
+        "PACK placeholder modeling should not regress the helper's STLOC4 stack check: {high_level}"
     );
     assert!(
         !helper_block.contains("missing_pack_item()"),
@@ -164,7 +164,7 @@ fn foreach_tuple_helper_underflow_stays_explicit_and_compile_safe() {
 
     assert!(
         result.warnings.iter().any(
-            |warning| warning.contains("045B: insufficient values on stack for CALL (needs 4)")
+            |warning| warning.contains("04AF: insufficient values on stack for CALL (needs 4)")
         ),
         "tuple helper underflow should remain visible in decompilation warnings: {:?}",
         result.warnings
@@ -176,12 +176,12 @@ fn foreach_tuple_helper_underflow_stays_explicit_and_compile_safe() {
         "\n        public static void testDo()",
     );
     assert!(
-        method.contains("VM argument underflow in testForEachVariable at 0x045B"),
+        method.contains("VM argument underflow in testForEachVariable at 0x04AF"),
         "C# should retain an honest underflow comment: {method}"
     );
     assert!(
         method.contains(
-            "sub_0x0450((dynamic)(((object)null) ?? throw new InvalidOperationException(\"VM argument underflow"
+            "sub_0x04A4((dynamic)(((object)null) ?? throw new InvalidOperationException(\"VM argument underflow"
         ),
         "C# should use compile-safe throwing expressions for unproven call arguments: {method}"
     );
