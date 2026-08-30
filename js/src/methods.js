@@ -1,4 +1,4 @@
-import { makeUniqueIdentifier, sanitizeIdentifier } from "./manifest.js";
+import { sanitizeIdentifier } from "./manifest.js";
 import { jumpTarget } from "./high-level-utils.js";
 import { hexOffset } from "./util.js";
 
@@ -140,7 +140,6 @@ export function buildMethodGroups(instructions, manifest, options = {}) {
   // presentation-time rendering.
   const includePostTerminatorTails = options.includePostTerminatorTails ?? true;
   const entryOffset = instructions[0]?.offset ?? 0;
-  const used = new Set();
   const methods = manifest?.abi?.methods ?? [];
   const manifestOffsets = methods
     .map((method, index) => ({ index, offset: method.offset }))
@@ -152,9 +151,17 @@ export function buildMethodGroups(instructions, manifest, options = {}) {
   for (const { offset } of manifestOffsets) {
     starts.add(offset);
   }
-  for (const instruction of instructions) {
+  for (const [index, instruction] of instructions.entries()) {
+    // Mirrors Rust's `collect_initslot_offsets`: an INITSLOT prologue marks a
+    // method start only when it is *not* immediately preceded by INITSSLOT.
+    // The compiler emits INITSSLOT followed by INITSLOT at a single method
+    // entry (static slots, then local/argument slots); splitting them would
+    // fabricate a second method with the body attached to the wrong one.
     if (instruction.opcode.mnemonic === "INITSLOT") {
-      starts.add(instruction.offset);
+      const previous = index > 0 ? instructions[index - 1] : null;
+      if (previous?.opcode.mnemonic !== "INITSSLOT") {
+        starts.add(instruction.offset);
+      }
     }
     if (instruction.opcode.mnemonic === "CALL" || instruction.opcode.mnemonic === "CALL_L") {
       const target = jumpTarget(instruction);
@@ -184,11 +191,17 @@ export function buildMethodGroups(instructions, manifest, options = {}) {
   const manifestOffsetMap = new Map(manifestOffsets.map(({ offset, index }) => [offset, index]));
   const allManifestOffsetsMissing = manifestOffsets.length === 0;
 
+  // Method names are stored manifest-faithful: when the ABI declares overloads
+  // (two methods sharing a name), both groups keep that name. The analysis
+  // surface (types/xrefs/call_graph/method contracts) reports these names
+  // verbatim, matching the Rust port. Renderers that need collision-free
+  // identifiers apply `makeUniqueIdentifier` at render time instead -- see
+  // `renderMethodSignature` in high-level.js, which the C# renderer inherits.
   for (const offset of offsets) {
     if (offset === entryOffset && allManifestOffsetsMissing && methods[0]) {
       groups.push({
         start: offset,
-        name: makeUniqueIdentifier(sanitizeIdentifier(methods[0].name), used),
+        name: sanitizeIdentifier(methods[0].name),
         source: methods[0],
       });
       continue;
@@ -198,7 +211,7 @@ export function buildMethodGroups(instructions, manifest, options = {}) {
     if (manifestIndex !== undefined) {
       groups.push({
         start: offset,
-        name: makeUniqueIdentifier(sanitizeIdentifier(methods[manifestIndex].name), used),
+        name: sanitizeIdentifier(methods[manifestIndex].name),
         source: methods[manifestIndex],
       });
       continue;
@@ -206,16 +219,13 @@ export function buildMethodGroups(instructions, manifest, options = {}) {
 
     groups.push({
       start: offset,
-      name: makeUniqueIdentifier(
-        // Use uppercase hex (`0xABCD`) so the inferred-helper label
-        // matches Rust's `format!("sub_0x{start:04X}")`. Earlier this
-        // used `.toString(16).padStart(4, "0")` which lowercases A-F
-        // and silently diverged from Rust whenever the offset
-        // contained a hex letter (e.g. `sub_0x000a` vs Rust's
-        // `sub_0x000A`).
-        offset === entryOffset ? "script_entry" : `sub_0x${hexOffset(offset)}`,
-        used,
-      ),
+      // Use uppercase hex (`0xABCD`) so the inferred-helper label
+      // matches Rust's `format!("sub_0x{start:04X}")`. Earlier this
+      // used `.toString(16).padStart(4, "0")` which lowercases A-F
+      // and silently diverged from Rust whenever the offset
+      // contained a hex letter (e.g. `sub_0x000a` vs Rust's
+      // `sub_0x000A`).
+      name: offset === entryOffset ? "script_entry" : `sub_0x${hexOffset(offset)}`,
       source: null,
     });
   }
