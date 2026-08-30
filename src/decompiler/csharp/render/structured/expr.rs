@@ -138,14 +138,23 @@ fn render_expr_node(
         Expr::Binary { op, left, right } => render_binary(*op, left, right, context, expanding),
         Expr::Unary { op, operand } => render_unary(*op, operand, context, expanding),
         Expr::Call { target, args } => render_call(target, args, context, expanding),
-        Expr::Index { base, index } => RenderedExpr::new(
-            format!(
-                "{}[{}]",
-                render_expr_prec(base, PREC_PRIMARY, context, expanding),
-                render_expr_prec(index, 0, context, expanding)
-            ),
-            PREC_PRIMARY,
-        ),
+        Expr::Index { base, index } => {
+            let base_src = render_expr_prec(base, PREC_PRIMARY, context, expanding);
+            // `new T[n][i]` parses as a multi-rank array creation; parenthesize
+            // an array-creation base so it indexes the freshly built array.
+            let base_src = if is_array_creation_base(base) {
+                format!("({base_src})")
+            } else {
+                base_src
+            };
+            RenderedExpr::new(
+                format!(
+                    "{base_src}[{}]",
+                    render_expr_prec(index, 0, context, expanding)
+                ),
+                PREC_PRIMARY,
+            )
+        }
         Expr::Member { base, name } => RenderedExpr::new(
             format!(
                 "{}.{}",
@@ -264,7 +273,11 @@ fn render_expr_node(
                 _ => None,
             };
             if let Some((spelling, precedence, negate_condition, value)) = logical {
-                let condition_source = render_expr_prec(condition, precedence, context, expanding);
+                let condition_source = dynamic_object_operand(
+                    render_expr_prec(condition, precedence, context, expanding),
+                    condition,
+                    context,
+                );
                 let condition_source = if negate_condition {
                     format!("!({condition_source})")
                 } else {
@@ -274,17 +287,39 @@ fn render_expr_node(
                     format!(
                         "{} {spelling} {}",
                         condition_source,
-                        render_expr_prec(value, precedence + 1, context, expanding)
+                        dynamic_object_operand(
+                            render_expr_prec(value, precedence + 1, context, expanding),
+                            value,
+                            context,
+                        )
                     ),
                     precedence,
                 )
             } else {
+                let then_src = render_expr_prec(then_expr, PREC_TERNARY + 1, context, expanding);
+                let else_src = render_expr_prec(else_expr, PREC_TERNARY + 1, context, expanding);
+                // Distinct concrete branch types (e.g. string vs int) have no
+                // common conditional type (CS0173); route both through the
+                // dynamic binder so the conditional itself is dynamic.
+                let (then_src, else_src) = {
+                    let vt_then = context.value_type(then_expr);
+                    let vt_else = context.value_type(else_expr);
+                    let concrete = |t: ValueType| {
+                        !matches!(t, ValueType::Unknown | ValueType::Any | ValueType::Null)
+                    };
+                    if vt_then != vt_else && concrete(vt_then) && concrete(vt_else) {
+                        (
+                            format!("(dynamic)({then_src})"),
+                            format!("(dynamic)({else_src})"),
+                        )
+                    } else {
+                        (then_src, else_src)
+                    }
+                };
                 RenderedExpr::new(
                     format!(
-                        "{} ? {} : {}",
-                        render_expr_prec(condition, PREC_TERNARY + 1, context, expanding),
-                        render_expr_prec(then_expr, PREC_TERNARY + 1, context, expanding),
-                        render_expr_prec(else_expr, PREC_TERNARY + 1, context, expanding)
+                        "{} ? {then_src} : {else_src}",
+                        render_expr_prec(condition, PREC_TERNARY + 1, context, expanding)
                     ),
                     PREC_TERNARY,
                 )
@@ -292,6 +327,54 @@ fn render_expr_node(
         }
         Expr::StackTemp(index) => RenderedExpr::new(format!("_tmp{index}"), PREC_PRIMARY),
     }
+}
+
+fn is_array_creation_base(expr: &Expr) -> bool {
+    matches!(expr, Expr::NewArray { .. } | Expr::Array(_))
+}
+
+fn renders_to_object(expr: &Expr, context: &ExprContext) -> bool {
+    if context.exact_csharp_type(expr) == Some("object") {
+        return true;
+    }
+    match expr {
+        // Untyped intrinsic calls are the Runtime.LoadScript opcode
+        // emulation, whose C# result is `object`; typed syscalls/internal
+        // calls resolve to a concrete type via exact_csharp_type above.
+        Expr::Call { .. } => context.exact_csharp_type(expr).is_none(),
+        // Indexing a VM generic object array yields an `object` element.
+        Expr::Index { base, .. } => {
+            matches!(context.exact_csharp_type(base), Some("object[]"))
+        }
+        // A nested binary that lowers to a LoadScript opcode emulation also
+        // yields `object`; a natively rendered integer binary does not.
+        Expr::Binary {
+            op, left, right, ..
+        } => low_level_binary_opcode(*op, context.value_type(left), context.value_type(right))
+            .is_some(),
+        _ => false,
+    }
+}
+
+pub(super) fn dynamic_object_operand(
+    rendered: String,
+    operand: &Expr,
+    context: &ExprContext,
+) -> String {
+    if renders_to_object(operand, context) {
+        format!("(dynamic)({rendered})")
+    } else {
+        rendered
+    }
+}
+
+pub(super) fn render_math_arg(
+    expression: &Expr,
+    context: &ExprContext,
+    expanding: &mut BTreeSet<String>,
+) -> String {
+    let rendered = render_expr_prec(expression, 0, context, expanding);
+    dynamic_object_operand(rendered, expression, context)
 }
 
 fn render_binary(
@@ -331,20 +414,29 @@ fn render_binary(
             PREC_PRIMARY,
         );
     }
+    if operator != BinOp::Pow {
+        if let (Expr::Literal(Literal::Int(a)), Expr::Literal(Literal::Int(b))) = (left, right) {
+            if let Some(folded) = fold_overflowing_int_literals(operator, *a, *b) {
+                return RenderedExpr::new(folded, PREC_PRIMARY);
+            }
+        }
+    }
     let (spelling, precedence) = binary_spelling(operator);
+    let left_src = dynamic_object_operand(
+        render_expr_prec(left, precedence, context, expanding),
+        left,
+        context,
+    );
     let right = if matches!(operator, BinOp::Shl | BinOp::Shr) {
         int_cast(right, context, expanding)
     } else {
-        render_expr_prec(right, precedence + 1, context, expanding)
+        dynamic_object_operand(
+            render_expr_prec(right, precedence + 1, context, expanding),
+            right,
+            context,
+        )
     };
-    RenderedExpr::new(
-        format!(
-            "{} {spelling} {}",
-            render_expr_prec(left, precedence, context, expanding),
-            right
-        ),
-        precedence,
-    )
+    RenderedExpr::new(format!("{left_src} {spelling} {right}"), precedence)
 }
 
 pub(super) fn low_level_binary_opcode(
@@ -443,6 +535,38 @@ fn binary_spelling(operator: BinOp) -> (&'static str, u8) {
     }
 }
 
+/// Fold a constant integer expression, but only when C# would reject it.
+///
+/// Roslyn evaluates constant expressions at compile time, so `2147483647 + 1`
+/// is CS0220 ("overflows in checked mode") instead of the VM's wrapping
+/// BigInteger arithmetic. Folding that one case keeps the emitted value equal
+/// to the VM's. Every other constant keeps the bytecode's original shape, and
+/// `Shl`/`Shr` are never folded because C# masks the shift count modulo 32
+/// while the VM does not.
+fn fold_overflowing_int_literals(operator: BinOp, a: i64, b: i64) -> Option<String> {
+    let fits_i32 = |value: i64| i32::try_from(value).is_ok();
+    if !fits_i32(a) || !fits_i32(b) {
+        return None;
+    }
+    let folded = match operator {
+        BinOp::Add => a.checked_add(b)?,
+        BinOp::Sub => a.checked_sub(b)?,
+        BinOp::Mul => a.checked_mul(b)?,
+        BinOp::Div | BinOp::Mod if b == -1 && a == i64::from(i32::MIN) => {
+            if operator == BinOp::Div {
+                i64::from(i32::MAX) + 1
+            } else {
+                0
+            }
+        }
+        _ => return None,
+    };
+    if fits_i32(folded) {
+        return None;
+    }
+    Some(folded.to_string())
+}
+
 fn render_unary(
     operator: UnaryOp,
     operand: &Expr,
@@ -483,17 +607,39 @@ fn render_unary(
             RenderedExpr::new(
                 format!(
                     "{spelling}{}",
-                    render_expr_prec(operand, PREC_UNARY + 1, context, expanding)
+                    dynamic_object_operand(
+                        render_expr_prec(operand, PREC_UNARY + 1, context, expanding),
+                        operand,
+                        context,
+                    )
                 ),
                 PREC_UNARY,
             )
         }
         UnaryOp::Inc | UnaryOp::Dec => {
+            if let Expr::Literal(Literal::Int(n)) = operand {
+                let folded = if operator == UnaryOp::Inc {
+                    n.checked_add(1)
+                } else {
+                    n.checked_sub(1)
+                };
+                // Same CS0220 rule as `fold_overflowing_int_literals`: only a
+                // constant that C# would reject is folded to the VM's value.
+                if let Some(folded) = folded {
+                    if i32::try_from(*n).is_ok() && i32::try_from(folded).is_err() {
+                        return RenderedExpr::new(folded.to_string(), PREC_PRIMARY);
+                    }
+                }
+            }
             let spelling = if operator == UnaryOp::Inc { "+" } else { "-" };
             RenderedExpr::new(
                 format!(
                     "{} {spelling} 1",
-                    render_expr_prec(operand, PREC_ADDITIVE, context, expanding)
+                    dynamic_object_operand(
+                        render_expr_prec(operand, PREC_ADDITIVE, context, expanding),
+                        operand,
+                        context,
+                    )
                 ),
                 PREC_ADDITIVE,
             )

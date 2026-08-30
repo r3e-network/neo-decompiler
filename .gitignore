@@ -76,3 +76,11 @@ neo_csharp/**/obj/
 /fuzz/corpus/
 /fuzz/artifacts/
 .omx/
+
+# Local devpack corpus scaffolding (CI regenerates these at the pinned revision)
+/.ci/
+/.devpack-v310/
+/TestingArtifacts/devpack/
+
+# Agent workspace data
+.workbuddy/

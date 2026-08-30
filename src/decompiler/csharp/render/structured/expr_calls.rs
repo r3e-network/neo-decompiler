@@ -5,7 +5,8 @@ use std::collections::BTreeSet;
 use crate::decompiler::ir::{Expr, Intrinsic, SemanticCallTarget};
 
 use super::expr::{
-    escape_csharp_string, render_expr_list, ExprContext, RenderedExpr, PREC_PRIMARY,
+    escape_csharp_string, render_expr_list, render_math_arg, ExprContext, RenderedExpr,
+    PREC_PRIMARY,
 };
 use super::expr_intrinsics::render_intrinsic;
 use super::expr_native::render_method_token_call;
@@ -19,7 +20,11 @@ pub(super) fn render_call(
 ) -> RenderedExpr {
     match target {
         SemanticCallTarget::Internal { name, .. } => {
-            let mut rendered_args = render_expr_list(args, context, expanding);
+            let mut rendered_args = args
+                .iter()
+                .map(|expression| render_math_arg(expression, context, expanding))
+                .collect::<Vec<_>>()
+                .join(", ");
             if context.vm_argument_underflow_targets.contains(name) {
                 if let Some(placeholder) = context.vm_argument_underflow_placeholder.as_deref() {
                     rendered_args = rendered_args.replacen("(dynamic)null", placeholder, 1);

@@ -29,7 +29,16 @@ pub(super) fn render_intrinsic(
     let arg = |index: usize, expanding: &mut BTreeSet<String>| arg_at(index, 0, expanding);
     let receiver = |index: usize, expanding: &mut BTreeSet<String>| {
         args.get(index)
-            .map(|value| render_expr_prec(value, PREC_PRIMARY, context, expanding))
+            .map(|value| {
+                let rendered = render_expr_prec(value, PREC_PRIMARY, context, expanding);
+                // `new T[n][i]` parses as a multi-rank array creation; a
+                // subscripted array-creation receiver must be parenthesized.
+                if matches!(value, Expr::NewArray { .. } | Expr::Array(_)) {
+                    format!("({rendered})")
+                } else {
+                    rendered
+                }
+            })
             .unwrap_or_else(|| "default".to_string())
     };
     let call = |name: &str, expanding: &mut BTreeSet<String>| {
@@ -113,10 +122,15 @@ pub(super) fn render_intrinsic(
             {
                 RenderedExpr::new("false", PREC_PRIMARY)
             } else {
-                RenderedExpr::new(
-                    format!("{} is null", arg_at(0, PREC_RELATIONAL, expanding)),
-                    PREC_RELATIONAL,
-                )
+                let operand = if matches!(
+                    args.first(),
+                    Some(Expr::Literal(crate::decompiler::ir::Literal::Null))
+                ) {
+                    "(object)null".to_string()
+                } else {
+                    arg_at(0, PREC_RELATIONAL, expanding)
+                };
+                RenderedExpr::new(format!("{operand} is null"), PREC_RELATIONAL)
             }
         }
         OpCode::Newbuffer => RenderedExpr::new(

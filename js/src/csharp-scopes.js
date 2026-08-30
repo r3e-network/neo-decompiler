@@ -76,6 +76,17 @@ export function buildCSharpScopePlans(
       }
     }
 
+    // Gotos can jump over an inline `let` declaration, leaving C# with a
+    // use-before-assignment path (CS0165). In unstructured bodies, hoist
+    // every generated temp so each is definitely assigned before any label.
+    if (lines.slice(start + 1, end).some((line) => /^\s*goto\s+label_/u.test(line))) {
+      for (const name of declarations.keys()) {
+        if (/^t\d+$/u.test(name) && !parameterNames.has(name)) {
+          hoistedNames.add(name);
+        }
+      }
+    }
+
     for (const name of unusedCopies.skippedNames) hoistedNames.delete(name);
 
     if (hoistedNames.size === 0) {

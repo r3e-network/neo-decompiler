@@ -74,7 +74,7 @@ test("pinned JS-generated C# corpus compiles with Roslyn", { skip: skipReason },
       }
       const allowedWarnings = nefName === "Contract_Foreach.nef"
         ? decompiled.warnings.filter((warning) =>
-          /0x045B: missing call argument values for sub_0x0450/u.test(warning),
+          /0x04AF: missing call argument values for sub_0x04A4/u.test(warning),
         )
         : [];
       for (const warning of decompiled.warnings) {

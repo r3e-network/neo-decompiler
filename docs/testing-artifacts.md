@@ -89,3 +89,38 @@ python3 tools/extract_devpack_artifacts.py --devpack-root .devpack-v310 ...
 
 The extractor writes stable `provenance.json` metadata containing the source
 commit, exact tags, counts, and sorted artifact names.
+
+### Roslyn compile census
+
+Two steps compile the generated C# for all 103 contracts: `cargo test --test
+csharp_compile` (Rust renderer) and, in `js/`, the
+`pinned JS-generated C# corpus` test. Both are skipped unless
+`NEO_CSHARP_CORPUS_DIR` and `NEO_SMARTCONTRACT_FRAMEWORK_DLL` are set, so only
+the devpack job exercises them.
+
+Pin the framework assembly to the same version CI resolves, or the census will
+not reproduce:
+
+```bash
+dotnet new classlib --framework net10.0 --output .ci/roslyn --no-restore
+dotnet add .ci/roslyn package Neo.SmartContract.Framework --version 3.10.0
+dotnet restore .ci/roslyn
+export NEO_SMARTCONTRACT_FRAMEWORK_DLL="$HOME/.nuget/packages/neo.smartcontract.framework/3.10.0/lib/net10.0/Neo.SmartContract.Framework.dll"
+export NEO_CSHARP_TARGET_FRAMEWORK=net10.0
+export NEO_CSHARP_CORPUS_DIR="$PWD/TestingArtifacts/devpack"
+cargo test --test csharp_compile -- --nocapture
+```
+
+A stale local package (for example 3.9.1) yields a different failure set than
+CI and sends you chasing the wrong contracts. The test prints a census line plus
+per-contract diagnostics, and fails if any contract fails to compile.
+
+The generated C# is not always semantically identical to the original source;
+the gate asserts that it *compiles*. Two known fidelity limits:
+
+- Object-typed stack values are routed through the `dynamic` binder, so emitted
+  expressions carry `(dynamic)` casts. This is required: Roslyn rejects
+  arithmetic on `object` (CS0019). Expect a few hundred casts across the corpus.
+- Null-conditional expressions (`a?.Length > 0`) render as a conditional whose
+  branches are cast to `dynamic`. It compiles, but the lifted-comparison
+  semantics of the original are not preserved.

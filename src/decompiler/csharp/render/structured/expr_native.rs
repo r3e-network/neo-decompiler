@@ -7,8 +7,8 @@ use crate::decompiler::ir::Expr;
 use crate::native_contracts;
 
 use super::expr::{
-    escape_csharp_string, int_cast, render_expr_list, render_expr_prec, ExprContext, RenderedExpr,
-    PREC_PRIMARY,
+    escape_csharp_string, int_cast, render_expr_list, render_expr_prec, render_math_arg,
+    ExprContext, RenderedExpr, PREC_PRIMARY,
 };
 use super::native_framework;
 
@@ -140,7 +140,7 @@ fn render_native_args(
                     format!("(NamedCurveHash)(int)({rendered})")
                 }
             } else {
-                render_expr_prec(expression, 0, context, expanding)
+                render_math_arg(expression, context, expanding)
             }
         })
         .collect::<Vec<_>>()
