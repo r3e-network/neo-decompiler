@@ -446,12 +446,11 @@ test("late static PUSHA initialization resolves an earlier CALLA", () => {
   ]);
   const result = analyzeBytes(buildNef({ script }));
   const edge = result.callGraph.edges.find(
-    (candidate) => candidate.opcode === "CALLA" && candidate.callOffset === 5,
+    (candidate) => candidate.opcode === "CALLA" && candidate.call_offset === 5,
   );
   assert.ok(edge, "CALLA edge should be present");
   assert.deepEqual(edge.target, {
-    kind: "Internal",
-    method: { offset: 13, name: "sub_0x000D" },
+    Internal: { method: { offset: 13, name: "sub_0x000D" } },
   });
 });
 

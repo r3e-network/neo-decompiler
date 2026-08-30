@@ -304,8 +304,8 @@ test("integration: syscall-heavy contract analysis", () => {
   const result = analyzeBytes(buildNef({ script }));
   
   assert.equal(result.callGraph.edges.length, 2, "should detect 2 syscalls");
-  assert.ok(result.callGraph.edges.some(e => e.target.name?.includes("CheckWitness")), "should have CheckWitness");
-  assert.ok(result.callGraph.edges.some(e => e.target.name?.includes("Log")), "should have Log");
+  assert.ok(result.callGraph.edges.some(e => e.target.Syscall?.name?.includes("CheckWitness")), "should have CheckWitness");
+  assert.ok(result.callGraph.edges.some(e => e.target.Syscall?.name?.includes("Log")), "should have Log");
 });
 
 test("integration: storage contract with loops", () => {
@@ -436,7 +436,7 @@ test("integration: method token calls", () => {
   
   assert.equal(result.callGraph.edges.length, 1, "should have one edge");
   assert.equal(result.callGraph.edges[0].opcode, "CALLT", "should be CALLT");
-  assert.equal(result.callGraph.edges[0].target.method, "transfer", "should resolve method name");
+  assert.equal(result.callGraph.edges[0].target.MethodToken.method, "transfer", "should resolve method name");
 });
 
 test("integration: array and map operations", () => {

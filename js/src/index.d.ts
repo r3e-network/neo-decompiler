@@ -238,14 +238,26 @@ export interface IndirectCallTarget {
 }
 
 /**
+ * CALL/CALL_L whose absolute target is negative or lands mid-instruction.
+ * `target` is the raw signed destination, not a resolved method.
+ */
+export interface UnresolvedInternalCallTarget {
+  kind: "UnresolvedInternal";
+  target: number;
+}
+
+/**
  * Call-graph edge target, discriminated on `kind`. Shapes mirror the
- * runtime objects produced by `buildCallGraph` in call-graph.js.
+ * runtime objects produced by `buildCallGraph` in call-graph.js. This is the
+ * renderer-friendly *internal* representation with flattened camelCase
+ * payloads; the serialized analysis surface uses `WireCallTarget` instead.
  */
 export type CallTarget =
   | InternalCallTarget
   | SyscallCallTarget
   | MethodTokenCallTarget
-  | IndirectCallTarget;
+  | IndirectCallTarget
+  | UnresolvedInternalCallTarget;
 
 export interface CallEdge {
   caller: MethodRef;
@@ -258,6 +270,69 @@ export interface CallGraph {
   methods: MethodRef[];
   edges: CallEdge[];
 }
+
+// ---------------------------------------------------------------------------
+// Serialized analysis surface
+//
+// `analyzeBytes().callGraph` is converted to the wire shape published by the
+// Rust port and documented in the bundled `decompile` JSON schema: snake_case
+// keys and serde's default externally tagged enums. `buildCallGraph()` keeps
+// the internal representation above, so the renderer is unaffected.
+// ---------------------------------------------------------------------------
+
+export interface WireInternalCallTarget {
+  Internal: { method: MethodRef };
+}
+
+export interface WireSyscallCallTarget {
+  Syscall: {
+    hash: number;
+    name: string | null;
+    returns_value: boolean;
+  };
+}
+
+export interface WireMethodTokenCallTarget {
+  MethodToken: {
+    index: number;
+    hash_le: string;
+    hash_be: string;
+    method: string;
+    parameters_count: number;
+    has_return_value: boolean;
+    call_flags: number;
+  };
+}
+
+export interface WireIndirectCallTarget {
+  Indirect: { opcode: string; operand: number | null };
+}
+
+export interface WireUnresolvedInternalCallTarget {
+  UnresolvedInternal: { target: number };
+}
+
+export type WireCallTarget =
+  | WireInternalCallTarget
+  | WireSyscallCallTarget
+  | WireMethodTokenCallTarget
+  | WireIndirectCallTarget
+  | WireUnresolvedInternalCallTarget;
+
+export interface WireCallEdge {
+  caller: MethodRef;
+  call_offset: number;
+  opcode: string;
+  target: WireCallTarget;
+}
+
+export interface WireCallGraph {
+  methods: MethodRef[];
+  edges: WireCallEdge[];
+}
+
+/** Convert an internal `CallGraph` into the schema-conformant wire shape. */
+export function toWireCallGraph(callGraph: CallGraph): WireCallGraph;
 
 export type ReturnBehavior = "value" | "void" | "unknown";
 
@@ -384,7 +459,8 @@ export interface HighLevelWithManifestResult extends HighLevelResult {
 export interface AnalyzeResult extends DecompileResult {
   manifest: ContractManifest | null;
   methodGroups: MethodGroup[];
-  callGraph: CallGraph;
+  /** Wire shape: snake_case keys and externally tagged call targets. */
+  callGraph: WireCallGraph;
   methodContracts: MethodContracts;
   xrefs: Xrefs;
   types: TypeInfo;

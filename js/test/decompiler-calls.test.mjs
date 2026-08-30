@@ -396,9 +396,9 @@ test("uses call-graph-resolved CALLA targets across method arguments", () => {
   const nef = buildNefFromScript(script);
 
   const analysis = analyzeBytes(nef, manifest);
-  const calla = analysis.callGraph.edges.find((edge) => edge.callOffset === 13);
-  assert.equal(calla?.target.kind, "Internal");
-  assert.equal(calla?.target.method.offset, 15);
+  const calla = analysis.callGraph.edges.find((edge) => edge.call_offset === 13);
+  assert.ok(calla?.target.Internal, "expected an Internal call target");
+  assert.equal(calla?.target.Internal.method.offset, 15);
 
   const { highLevel } = decompileHighLevelBytesWithManifest(nef, manifest);
   assert.match(
@@ -435,8 +435,8 @@ test("does not resolve CALLA through a value-returning internal call", () => {
   const nef = buildNefFromScript(script);
 
   const analysis = analyzeBytes(nef, manifest);
-  const calla = analysis.callGraph.edges.find((edge) => edge.callOffset === 7);
-  assert.equal(calla?.target.kind, "Indirect");
+  const calla = analysis.callGraph.edges.find((edge) => edge.call_offset === 7);
+  assert.ok(calla?.target.Indirect, "expected an Indirect call target");
 
   const { highLevel } = decompileHighLevelBytesWithManifest(nef, manifest);
   assert.doesNotMatch(
@@ -490,8 +490,8 @@ test("does not resolve CALLA through unmodeled value producers", () => {
     });
     const nef = buildNefFromScript(script);
     const analysis = analyzeBytes(nef, manifest);
-    const calla = analysis.callGraph.edges.find((edge) => edge.callOffset === callaOffset);
-    assert.equal(calla?.target.kind, "Indirect", `${name} must hide the stale pointer`);
+    const calla = analysis.callGraph.edges.find((edge) => edge.call_offset === callaOffset);
+    assert.ok(calla?.target.Indirect, `${name} must hide the stale pointer`);
 
     const { highLevel } = decompileHighLevelBytesWithManifest(nef, manifest);
     assert.doesNotMatch(

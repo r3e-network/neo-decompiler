@@ -312,6 +312,63 @@ export function buildCallGraph(nef, instructions, methodGroups) {
 
   return { methods, edges };
 }
+
+/**
+ * Serialize a call graph into the wire shape published by the Rust port and
+ * documented in the bundled `decompile` JSON schema.
+ *
+ * `buildCallGraph` produces an internally tagged, camelCase graph that is
+ * convenient for the high-level renderer (`target.kind` discriminates the
+ * variant, all payload fields sit on `target`). The serialized form instead
+ * uses snake_case keys and serde's default *externally* tagged enums
+ * (`{ Internal: { method } }`), so the two ports emit identical JSON for the
+ * same contract. Only the public surface is converted; the renderer keeps the
+ * internal representation.
+ */
+export function toWireCallGraph(callGraph) {
+  const wireTarget = (target) => {
+    switch (target.kind) {
+      case "Internal":
+        return { Internal: { method: target.method } };
+      case "Syscall":
+        return {
+          Syscall: {
+            hash: target.hash,
+            name: target.name,
+            returns_value: target.returnsValue,
+          },
+        };
+      case "MethodToken":
+        return {
+          MethodToken: {
+            index: target.index,
+            hash_le: target.hashLe,
+            hash_be: target.hashBe,
+            method: target.method,
+            parameters_count: target.parametersCount,
+            has_return_value: target.hasReturnValue,
+            call_flags: target.callFlags,
+          },
+        };
+      case "UnresolvedInternal":
+        return { UnresolvedInternal: { target: target.target } };
+      case "Indirect":
+        return { Indirect: { opcode: target.opcode, operand: target.operand } };
+      default:
+        return target;
+    }
+  };
+
+  return {
+    methods: callGraph.methods,
+    edges: callGraph.edges.map((edge) => ({
+      caller: edge.caller,
+      call_offset: edge.callOffset,
+      opcode: edge.opcode,
+      target: wireTarget(edge.target),
+    })),
+  };
+}
 import {
   ensureArgValueArray,
   inferConstantStaticPointerValues,

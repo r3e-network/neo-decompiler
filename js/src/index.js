@@ -1,4 +1,4 @@
-import { buildCallGraph } from "./call-graph.js";
+import { buildCallGraph, toWireCallGraph } from "./call-graph.js";
 import { renderCSharpContract } from "./csharp.js";
 import { NeoDecompilerError, NefParseError, DisassemblyError, ManifestParseError } from "./errors.js";
 import { parseNef } from "./nef.js";
@@ -15,6 +15,7 @@ import { buildXrefs } from "./xrefs.js";
 
 export {
   buildCallGraph,
+  toWireCallGraph,
   buildMethodGroups,
   buildXrefs,
   classifyPermissionContract,
@@ -90,7 +91,10 @@ export function analyzeBytes(bytes, manifestInput = null, options = {}) {
     ...result,
     manifest,
     methodGroups,
-    callGraph,
+    // Public surface uses the Rust port's wire shape (snake_case keys,
+    // externally tagged call targets) so both ports emit identical JSON.
+    // `callGraph` above keeps the internal renderer-friendly representation.
+    callGraph: toWireCallGraph(callGraph),
     methodContracts: context.methodContracts,
     patterns: identifyPatterns(result.nef, result.instructions, manifest),
     xrefs: buildXrefs(result.instructions, analysisGroups),

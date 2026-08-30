@@ -10,24 +10,24 @@ import {
 test("builds call graph edges for syscalls, internal calls, CALLT, and CALLA", () => {
   const syscall = analyzeBytes(buildNefFromScript(new Uint8Array([0x41, 0xb7, 0xc3, 0x88, 0x03, 0x40])));
   assert.equal(syscall.callGraph.edges[0].opcode, "SYSCALL");
-  assert.equal(syscall.callGraph.edges[0].target.kind, "Syscall");
-  assert.equal(syscall.callGraph.edges[0].target.name, "System.Runtime.GetTime");
+  assert.ok(syscall.callGraph.edges[0].target.Syscall, "expected a Syscall call target");
+  assert.equal(syscall.callGraph.edges[0].target.Syscall.name, "System.Runtime.GetTime");
 
   const internal = analyzeBytes(buildNefFromScript(new Uint8Array([0x34, 0x05, 0x40, 0x21, 0x21, 0x57, 0x00, 0x00, 0x40])));
   assert.equal(internal.callGraph.edges[0].opcode, "CALL");
-  assert.equal(internal.callGraph.edges[0].target.kind, "Internal");
-  assert.equal(internal.callGraph.edges[0].target.method.name, "sub_0x0005");
+  assert.ok(internal.callGraph.edges[0].target.Internal, "expected an Internal call target");
+  assert.equal(internal.callGraph.edges[0].target.Internal.method.name, "sub_0x0005");
 
   const token = analyzeBytes(
     buildNefWithSingleToken(new Uint8Array([0x37, 0x00, 0x00, 0x40]), new Uint8Array(20), "transfer", 2, true, 0x0f),
   );
   assert.equal(token.callGraph.edges[0].opcode, "CALLT");
-  assert.equal(token.callGraph.edges[0].target.kind, "MethodToken");
-  assert.equal(token.callGraph.edges[0].target.method, "transfer");
+  assert.ok(token.callGraph.edges[0].target.MethodToken, "expected a MethodToken call target");
+  assert.equal(token.callGraph.edges[0].target.MethodToken.method, "transfer");
 
   const indirect = analyzeBytes(buildNefFromScript(new Uint8Array([0x11, 0x10, 0x36, 0x40])));
   assert.equal(indirect.callGraph.edges[0].opcode, "CALLA");
-  assert.equal(indirect.callGraph.edges[0].target.kind, "Indirect");
+  assert.ok(indirect.callGraph.edges[0].target.Indirect, "expected an Indirect call target");
 
   const resolvedCalla = analyzeBytes(
     buildNefFromScript(
@@ -42,8 +42,8 @@ test("builds call graph edges for syscalls, internal calls, CALLT, and CALLA", (
       ]),
     ),
   );
-  assert.equal(resolvedCalla.callGraph.edges[0].target.kind, "Internal");
-  assert.equal(resolvedCalla.callGraph.edges[0].target.method.offset, 9);
+  assert.ok(resolvedCalla.callGraph.edges[0].target.Internal, "expected an Internal call target");
+  assert.equal(resolvedCalla.callGraph.edges[0].target.Internal.method.offset, 9);
 });
 
 test("call graph: an out-of-range CALL target is unresolved, not a fabricated method", () => {
@@ -51,8 +51,8 @@ test("call graph: an out-of-range CALL target is unresolved, not a fabricated me
   // script end, so it must be UnresolvedInternal, not a fabricated sub_0x007F
   // Internal edge/method. Mirrors the Rust port (and the negative-target case).
   const a = analyzeBytes(buildNefFromScript(new Uint8Array([0x34, 0x7f, 0x40])));
-  assert.equal(a.callGraph.edges[0].target.kind, "UnresolvedInternal");
-  assert.equal(a.callGraph.edges[0].target.target, 127);
+  assert.ok(a.callGraph.edges[0].target.UnresolvedInternal, "expected a UnresolvedInternal call target");
+  assert.equal(a.callGraph.edges[0].target.UnresolvedInternal.target, 127);
   assert.ok(
     a.callGraph.methods.every((m) => m.offset !== 127),
     "out-of-range CALL must not fabricate a method",
@@ -67,7 +67,7 @@ test("call graph: an out-of-range PUSHA+CALLA target is Indirect, not a fabricat
     buildNefFromScript(new Uint8Array([0x0a, 0x7f, 0x00, 0x00, 0x00, 0x36, 0x40])),
   );
   const edge = a.callGraph.edges.find((e) => e.opcode === "CALLA");
-  assert.equal(edge.target.kind, "Indirect");
+  assert.ok(edge.target.Indirect, "expected an Indirect call target");
   assert.ok(
     a.callGraph.methods.every((m) => m.offset !== 127),
     "out-of-range CALLA must not fabricate a method",
@@ -87,8 +87,8 @@ test("resolves duplicated and static pointer flow into CALLA edges", () => {
       ]),
     ),
   );
-  assert.equal(dup.callGraph.edges[0].target.kind, "Internal");
-  assert.equal(dup.callGraph.edges[0].target.method.offset, 8);
+  assert.ok(dup.callGraph.edges[0].target.Internal, "expected an Internal call target");
+  assert.equal(dup.callGraph.edges[0].target.Internal.method.offset, 8);
 
   const staticFlow = analyzeBytes(
     buildNefFromScript(
@@ -103,8 +103,8 @@ test("resolves duplicated and static pointer flow into CALLA edges", () => {
       ]),
     ),
   );
-  assert.equal(staticFlow.callGraph.edges[0].target.kind, "Internal");
-  assert.equal(staticFlow.callGraph.edges[0].target.method.offset, 9);
+  assert.ok(staticFlow.callGraph.edges[0].target.Internal, "expected an Internal call target");
+  assert.equal(staticFlow.callGraph.edges[0].target.Internal.method.offset, 9);
 });
 
 test("resolves multi-hop local pointer flow into CALLA edges", () => {
@@ -125,8 +125,8 @@ test("resolves multi-hop local pointer flow into CALLA edges", () => {
     ),
   );
   const edge = result.callGraph.edges.find((candidate) => candidate.opcode === "CALLA");
-  assert.equal(edge.target.kind, "Internal");
-  assert.equal(edge.target.method.offset, 0x000c);
+  assert.ok(edge.target.Internal, "expected an Internal call target");
+  assert.equal(edge.target.Internal.method.offset, 0x000c);
 });
 
 test("does not resolve local pointer flow across method boundaries", () => {
@@ -148,7 +148,7 @@ test("does not resolve local pointer flow across method boundaries", () => {
     ),
   );
   const edge = result.callGraph.edges.find((candidate) => candidate.opcode === "CALLA");
-  assert.equal(edge.target.kind, "Indirect");
+  assert.ok(edge.target.Indirect, "expected an Indirect call target");
 });
 
 test("resolves CALLA targets loaded from helper arguments", () => {
@@ -169,10 +169,10 @@ test("resolves CALLA targets loaded from helper arguments", () => {
     ),
   );
   const directEdge = directArg.callGraph.edges.find(
-    (candidate) => candidate.opcode === "CALLA" && candidate.callOffset === 0x000d,
+    (candidate) => candidate.opcode === "CALLA" && candidate.call_offset === 0x000d,
   );
-  assert.equal(directEdge.target.kind, "Internal");
-  assert.equal(directEdge.target.method.offset, 0x000f);
+  assert.ok(directEdge.target.Internal, "expected an Internal call target");
+  assert.equal(directEdge.target.Internal.method.offset, 0x000f);
 
   const viaLocal = analyzeBytes(
     buildNefFromScript(
@@ -193,10 +193,10 @@ test("resolves CALLA targets loaded from helper arguments", () => {
     ),
   );
   const localEdge = viaLocal.callGraph.edges.find(
-    (candidate) => candidate.opcode === "CALLA" && candidate.callOffset === 0x000f,
+    (candidate) => candidate.opcode === "CALLA" && candidate.call_offset === 0x000f,
   );
-  assert.equal(localEdge.target.kind, "Internal");
-  assert.equal(localEdge.target.method.offset, 0x0011);
+  assert.ok(localEdge.target.Internal, "expected an Internal call target");
+  assert.equal(localEdge.target.Internal.method.offset, 0x0011);
 });
 
 test("resolves nested PUSHA argument through CALLA helpers", () => {
@@ -217,10 +217,10 @@ test("resolves nested PUSHA argument through CALLA helpers", () => {
     ),
   );
   const nested = withInitslot.callGraph.edges.find(
-    (candidate) => candidate.opcode === "CALLA" && candidate.callOffset === 0x0010,
+    (candidate) => candidate.opcode === "CALLA" && candidate.call_offset === 0x0010,
   );
-  assert.equal(nested.target.kind, "Internal");
-  assert.equal(nested.target.method.offset, 0x0012);
+  assert.ok(nested.target.Internal, "expected an Internal call target");
+  assert.equal(nested.target.Internal.method.offset, 0x0012);
 
   const withoutInitslot = analyzeBytes(
     buildNefFromScript(
@@ -237,10 +237,10 @@ test("resolves nested PUSHA argument through CALLA helpers", () => {
     ),
   );
   const noInitSlotEdge = withoutInitslot.callGraph.edges.find(
-    (candidate) => candidate.opcode === "CALLA" && candidate.callOffset === 0x0009,
+    (candidate) => candidate.opcode === "CALLA" && candidate.call_offset === 0x0009,
   );
-  assert.equal(noInitSlotEdge.target.kind, "Internal");
-  assert.equal(noInitSlotEdge.target.method.offset, 0x000b);
+  assert.ok(noInitSlotEdge.target.Internal, "expected an Internal call target");
+  assert.equal(noInitSlotEdge.target.Internal.method.offset, 0x000b);
 });
 
 test("resolves delegate-array PICKITEM targets into CALLA edges", () => {
@@ -265,8 +265,8 @@ test("resolves delegate-array PICKITEM targets into CALLA edges", () => {
   const directEdge = direct.callGraph.edges.find(
     (candidate) => candidate.opcode === "CALLA",
   );
-  assert.equal(directEdge.target.kind, "Internal");
-  assert.equal(directEdge.target.method.offset, 0x000e);
+  assert.ok(directEdge.target.Internal, "expected an Internal call target");
+  assert.equal(directEdge.target.Internal.method.offset, 0x000e);
 
   const aliased = analyzeBytes(
     buildNefFromScript(
@@ -293,8 +293,8 @@ test("resolves delegate-array PICKITEM targets into CALLA edges", () => {
   const aliasedEdge = aliased.callGraph.edges.find(
     (candidate) => candidate.opcode === "CALLA",
   );
-  assert.equal(aliasedEdge.target.kind, "Internal");
-  assert.equal(aliasedEdge.target.method.offset, 0x0012);
+  assert.ok(aliasedEdge.target.Internal, "expected an Internal call target");
+  assert.equal(aliasedEdge.target.Internal.method.offset, 0x0012);
 });
 
 test("includes slot xrefs for locals, arguments, and statics", () => {
