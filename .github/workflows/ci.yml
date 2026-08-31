@@ -209,6 +209,18 @@ jobs:
       - name: Compile pinned JS C# corpus with Roslyn
         working-directory: js
         run: node --test --test-name-pattern "pinned JS-generated C# corpus" test/*.test.mjs
+      - name: Build release binary for differential parity gate
+        # js/test/differential.test.mjs resolves RUST_BIN to
+        # target/release/neo-decompiler and skips (vacuous pass) when it is
+        # absent. The sweep above only exercises the dev/test profiles, so
+        # build the release profile explicitly.
+        run: cargo build --release --features cli --bin neo-decompiler
+      - name: Run Rust/JS differential parity gate
+        # Recurses TestingArtifacts/ (103 pinned devpack contracts + the 7
+        # committed edgecase fixtures) and asserts disasm, high-level, and the
+        # analysis blocks (call_graph/xrefs/types/patterns) match byte for byte.
+        working-directory: js
+        run: node --test test/differential.test.mjs
 
   build:
     name: Build
