@@ -3,6 +3,78 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.12.0] - 2026-08-31 (Rust) / [2.0.0] - 2026-08-31 (JS)
+
+The structured-IR C# decompiler comes of age: 370 commits completing the
+typed-declaration pipeline, a Rust↔JS parity harness that now covers the
+pinned corpus end to end, and a Roslyn compile gate that went from 83/103 to
+103/103 pinned contracts.
+
+**JS breaking change:** `analyzeBytes().callGraph` now uses the wire shape
+published by the Rust CLI and documented in the bundled `decompile` JSON
+schema — `edges[].call_offset` (snake_case) and externally tagged call
+targets (`target.Internal.method`, `target.MethodToken.hash_le`, …) instead
+of `edges[].callOffset` with an internally tagged `target.kind`.
+`buildCallGraph()` keeps the renderer-friendly internal representation and
+is unchanged.
+
+### Added (Rust)
+
+- **Structured IR C# pipeline completed** — the CFG/SSA structurer becomes
+  authoritative for C# bodies: typed declarations by default, proven
+  private-helper and framework return types, concrete parameter and
+  collection typing, nullable alias tracking, and manifest-backed events.
+- **Framework lowering** — known natives and syscalls lower to
+  `Neo.SmartContract.Framework` calls with correctly typed arguments and
+  returns; collections (`Map`, arrays, structs) and their helpers render as
+  framework operations rather than raw stack manipulation.
+- **Pattern inference expanded** — token transfer/lifecycle, ownership,
+  governance, upgradeability, role management, native contract behaviour,
+  authorization (`CheckWitness`), caller/signer context, and source-language
+  inference (C#, Java, Rust, JS/TS, JSX/TSX).
+- **Roslyn compile gate** — a dedicated CI job checks out
+  `neo-devpack-dotnet` at v3.10.0, strictly extracts all 103 NEF/manifest
+  pairs, and compiles the generated C# with Roslyn.
+
+### Fixed (Rust)
+
+- Generated C# for the pinned corpus now **compiles 103/103 with Roslyn**
+  (was 83/103): object-typed stack values route through the `dynamic`
+  binder, conditional branches with distinct branch types cast to dynamic,
+  array-creation receivers are parenthesized, literal `null` renders as
+  `(object)null` for `is null`, and internal/native call arguments go
+  through `render_math_arg`.
+- Constant folding only fires where C# would reject the expression
+  (compile-time overflow), so `3 + 1` keeps the bytecode's `PUSH3`/`INC`
+  shape instead of collapsing to `4`; `Shl`/`Shr` are never folded because
+  C# masks the shift count modulo 32.
+- Rebased every offset-bearing parity expectation onto the pinned v3.10.0
+  corpus and cleared the clippy 1.98 lints gating the Test jobs.
+
+### Fixed (JS)
+
+- **Analysis surface parity with the Rust port.** `analyzeBytes()`
+  previously diverged on 59 of the 103 pinned contracts. Four root causes,
+  all fixed: the call graph now serializes in the schema-conformant wire
+  shape; the type simulation models `SYSCALL`/`MEMCPY`/`REVERSEITEMS` and no
+  longer shrinks the `PACK`/`PACKMAP`/`PACKSTRUCT` pop bound while popping;
+  method grouping skips an `INITSLOT` immediately preceded by `INITSSLOT`;
+  and `PUSHA` targets register as method entries so lambda thunks reached
+  through locals, statics, or delegate arrays are discovered.
+- Method names are reported manifest-faithful (an ABI declaring two
+  `testEndWith` overloads no longer yields `testEndWith_1`); renderers keep
+  applying their own collision-free identifiers.
+- Hardening: duplicate manifest keys rejected, malformed pattern collections
+  tolerated, deterministic pattern evidence, checked arithmetic in
+  var-length range math, and bounded CFG recovery against pathological
+  input.
+
+### Internal
+
+- Large module split across `ssa`, `cfg`, `csharp`, and `analysis` in the
+  Rust port and the C# lowering helpers in the JS port; the JS test suite
+  grew to 1523 cases and passes 1523/1523.
+
 ## [0.11.0] - 2026-06-29 (Rust) / [1.6.0] - 2026-06-29 (JS)
 
 Structured-IR becomes the default decompilation format, eliminating goto
