@@ -133,6 +133,16 @@ function collectPostTerminatorStarts(instructions, starts) {
   }
 }
 
+// PUSHA's operand is a signed I32 relative to the instruction's *own* offset
+// (the generated opcode table uses `OperandEncoding::I32`), so the absolute
+// method pointer is `offset + delta`. Mirrors Rust's `pusha_absolute_target`.
+function absolutePushaTarget(instruction) {
+  const delta = instruction.operand?.value;
+  if (typeof delta !== "number" && typeof delta !== "bigint") return null;
+  const target = instruction.offset + Number(delta);
+  return Number.isSafeInteger(target) && target >= 0 ? target : null;
+}
+
 export function buildMethodGroups(instructions, manifest, options = {}) {
   // `includePostTerminatorTails` defaults to true (presentation grouping). The
   // analysis path passes false to match the Rust port's `analysis::MethodTable`,
@@ -165,6 +175,24 @@ export function buildMethodGroups(instructions, manifest, options = {}) {
     }
     if (instruction.opcode.mnemonic === "CALL" || instruction.opcode.mnemonic === "CALL_L") {
       const target = jumpTarget(instruction);
+      if (target !== null && knownOffsets.has(target)) {
+        starts.add(target);
+      }
+    }
+    // `PUSHA` pushes a *method* pointer, so its absolute target is a real
+    // method entry even when the pointer reaches its CALLA indirectly (stored
+    // to a local/static first, or picked out of a delegate array).
+    //
+    // The Rust port only records these offsets once it has traced a CALLA back
+    // to the PUSHA (`calla_target_from_pusha`, plus a recursive interprocedural
+    // pass for argument-passed pointers). Porting that trace faithfully means
+    // also porting its array simulation, so the analysis path takes the
+    // simpler view: every PUSHA target is a method entry. The presentation
+    // path keeps the exact CALLA-driven behaviour, because it already reaches
+    // these offsets through post-terminator tail detection and its `&fn_0xNNNN`
+    // labels depend on the offset *not* being a method start.
+    if (instruction.opcode.mnemonic === "PUSHA" && !includePostTerminatorTails) {
+      const target = absolutePushaTarget(instruction);
       if (target !== null && knownOffsets.has(target)) {
         starts.add(target);
       }
