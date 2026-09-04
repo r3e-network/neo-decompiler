@@ -38,9 +38,8 @@ import {
 const result = decompileHighLevelBytes(nefBytes);
 console.log(result.highLevel);
 
-// With manifest for better output
-const manifest = parseManifest(manifestJson);
-const withManifest = decompileHighLevelBytesWithManifest(nefBytes, manifest);
+// With manifest for better output: pass raw JSON, not parseManifest() output.
+const withManifest = decompileHighLevelBytesWithManifest(nefBytes, manifestJson);
 console.log(withManifest.highLevel);
 
 // Full analysis: call graph, method contracts, xrefs, types
@@ -71,9 +70,11 @@ Disassemble a bytecode array into instruction objects.
 
 Parse and disassemble. Returns simple pseudocode listing.
 
-### `decompileBytesWithManifest(bytes, manifest) → { ..., methodGroups, groupedPseudocode }`
+### `decompileBytesWithManifest(bytes, manifestInput) → { ..., methodGroups, groupedPseudocode }`
 
 Parse, disassemble, and group methods using manifest ABI info. Returns grouped pseudocode.
+`manifestInput` is a manifest JSON string or raw JSON object, not the normalized
+object returned by `parseManifest()`.
 
 ### `decompileHighLevelBytes(bytes, options?) → { ..., highLevel, csharp, methodContracts, patterns }`
 
@@ -94,10 +95,10 @@ Full decompilation to structured pseudocode (if/else, loops, etc.).
 - `failOnUnknownOpcodes: true` — error rather than emitting `UNKNOWN_0xNN`
   for opcodes the disassembler does not recognise.
 
-### `decompileHighLevelBytesWithManifest(bytes, manifest, options?) → { ..., highLevel, csharp, methodContracts, patterns }`
+### `decompileHighLevelBytesWithManifest(bytes, manifestInput, options?) → { ..., highLevel, csharp, methodContracts, patterns }`
 
 Same as above but with manifest-driven method signatures. Accepts the
-same `options` object.
+same `options` object and raw manifest JSON input described above.
 
 `csharp` is a readable C#-style view of the lifted body. VM-specific
 expressions remain visible when they do not have a direct C# translation; the
