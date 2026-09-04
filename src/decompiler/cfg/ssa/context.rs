@@ -82,8 +82,12 @@ impl CallContract {
             may_return: true,
             return_shape: None,
             return_facts: None,
-            argument_effects: vec![CollectionArgumentEffect::Unknown; argument_count],
-            argument_field_writes: vec![BTreeMap::new(); argument_count],
+            // Unknown is the default effect and absent field-write entries mean
+            // no proven writes. Keep both representations sparse so an external
+            // call's declared arity does not allocate per-argument metadata at
+            // every call site.
+            argument_effects: Vec::new(),
+            argument_field_writes: Vec::new(),
         }
     }
 
@@ -124,6 +128,26 @@ impl CallContract {
     ) -> Self {
         self.argument_field_writes = argument_field_writes;
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_call_contract_keeps_argument_metadata_sparse() {
+        let contract = CallContract::new(
+            SemanticCallTarget::Unresolved {
+                display_name: "external".to_string(),
+            },
+            2048,
+            true,
+        );
+
+        assert_eq!(contract.argument_count, 2048);
+        assert!(contract.argument_effects.is_empty());
+        assert!(contract.argument_field_writes.is_empty());
     }
 }
 

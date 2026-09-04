@@ -277,3 +277,151 @@ fn csharp_single_entry_typed_trusts_stay_on_one_line() {
         "single-entry trusts should not break into a block: {csharp}"
     );
 }
+
+#[test]
+fn metadata_controls_cannot_create_generated_source_lines() {
+    let compiler = "c\rR\nL\u{0085}N\u{2028}S\u{2029}P\u{001B}E\u{202E}B";
+    let source = "source\nINJECT_SOURCE";
+    let nef_bytes = build_nef_with_header(&[0x40], compiler, source);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds");
+
+    for (name, output) in [
+        (
+            "high-level",
+            decompilation
+                .high_level
+                .as_deref()
+                .expect("high-level output"),
+        ),
+        ("C#", decompilation.csharp.as_deref().expect("C# output")),
+    ] {
+        assert!(
+            output.contains("c\\rR\\nL\\u{0085}N\\u{2028}S\\u{2029}P\\u{001B}E\\u{202E}B"),
+            "{name} should expose every unsafe character as visible text:\n{output}"
+        );
+        assert!(output.contains("source\\nINJECT_SOURCE"));
+        for forbidden in [
+            '\r', '\u{0085}', '\u{2028}', '\u{2029}', '\u{001B}', '\u{202E}',
+        ] {
+            assert!(
+                !output.contains(forbidden),
+                "{name} retained unsafe U+{:04X}",
+                u32::from(forbidden)
+            );
+        }
+        assert!(
+            !output
+                .lines()
+                .any(|line| line.trim_start().starts_with("INJECT_")),
+            "{name} contains an attacker-created physical line:\n{output}"
+        );
+    }
+}
+
+#[test]
+fn method_token_controls_stay_visible_in_comments_and_call_labels() {
+    let method = "m\r\n\u{0085}\u{2028}\u{2029}\u{001B}\u{202E}INJECT";
+    let nef_bytes =
+        build_nef_with_single_token(&[0x37, 0x00, 0x00, 0x40], [0; 20], method, 0, true, 0x0F);
+
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::All)
+        .expect("decompile succeeds");
+    let expected = "m\\r\\n\\u{0085}\\u{2028}\\u{2029}\\u{001B}\\u{202E}INJECT";
+
+    for output in [
+        decompilation
+            .high_level
+            .as_deref()
+            .expect("high-level output"),
+        decompilation.csharp.as_deref().expect("C# output"),
+    ] {
+        assert!(
+            output.contains(expected),
+            "encoded token label missing:\n{output}"
+        );
+        for forbidden in [
+            '\r', '\u{0085}', '\u{2028}', '\u{2029}', '\u{001B}', '\u{202E}',
+        ] {
+            assert!(
+                !output.contains(forbidden),
+                "retained U+{:04X} in:\n{output}",
+                u32::from(forbidden)
+            );
+        }
+        assert!(!output.lines().any(|line| line.trim_start() == "INJECT"));
+    }
+}
+
+#[test]
+fn manifest_display_controls_cannot_create_generated_source_lines() {
+    let payload = "value\r\nINJECT\u{0085}NEL\u{2028}LS\u{2029}PS\u{001B}ESC\u{202E}BIDI";
+    let manifest_json = serde_json::json!({
+        "name": "SafeContract",
+        "supportedstandards": [payload],
+        "features": {"feature": payload},
+        "groups": [{"pubkey": payload, "signature": payload}],
+        "permissions": [{"contract": payload, "methods": [payload]}],
+        "trusts": [payload],
+        "extra": {"Author": payload},
+        "abi": {
+            "methods": [{
+                "name": format!("safe-{payload}"),
+                "parameters": [{"name": "p", "type": format!("Odd{payload}")}],
+                "returntype": format!("Odd{payload}"),
+                "offset": 0
+            }],
+            "events": [{
+                "name": format!("event-{payload}"),
+                "parameters": [{"name": "p", "type": format!("Odd{payload}")}]
+            }]
+        }
+    });
+    let manifest = ContractManifest::from_json_str(&manifest_json.to_string())
+        .expect("tolerant manifest parse succeeds");
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&build_nef(&[0x40]), Some(manifest), OutputFormat::All)
+        .expect("decompile succeeds");
+
+    for output in [
+        decompilation
+            .high_level
+            .as_deref()
+            .expect("high-level output"),
+        decompilation.csharp.as_deref().expect("C# output"),
+    ] {
+        for forbidden in [
+            '\r', '\u{0085}', '\u{2028}', '\u{2029}', '\u{001B}', '\u{202E}',
+        ] {
+            assert!(
+                !output.contains(forbidden),
+                "retained U+{:04X} in:\n{output}",
+                u32::from(forbidden)
+            );
+        }
+        assert!(!output.lines().any(|line| line.trim_start() == "INJECT"));
+    }
+}
+
+fn build_nef_with_header(script: &[u8], compiler: &str, source: &str) -> Vec<u8> {
+    assert!(compiler.len() <= 64);
+    assert!(source.len() <= 256);
+    let mut data = Vec::new();
+    data.extend_from_slice(b"NEF3");
+    let mut compiler_bytes = [0u8; 64];
+    compiler_bytes[..compiler.len()].copy_from_slice(compiler.as_bytes());
+    data.extend_from_slice(&compiler_bytes);
+    write_varint(&mut data, source.len() as u32);
+    data.extend_from_slice(source.as_bytes());
+    data.push(0); // reserved byte
+    data.push(0); // method token count
+    data.extend_from_slice(&0u16.to_le_bytes()); // reserved word
+    write_varint(&mut data, script.len() as u32);
+    data.extend_from_slice(script);
+    let checksum = NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+    data
+}

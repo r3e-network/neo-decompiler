@@ -1,6 +1,6 @@
 {
   "name": "neo-decompiler-web",
-  "version": "0.12.0",
+  "version": "0.14.0",
   "description": "TypeScript wrapper for the Neo decompiler WebAssembly bindings",
   "license": "MIT OR Apache-2.0",
   "repository": {
@@ -35,14 +35,16 @@
   "scripts": {
     "version:check": "node ./scripts/sync-version.mjs --check",
     "version:sync": "node ./scripts/sync-version.mjs --write",
-    "build:wasm": "wasm-pack build .. --mode no-install --target web --out-dir web/dist/pkg --features web --no-default-features && node ./scripts/prepare-wasm-package.mjs",
+    "build:wasm": "wasm-pack build .. --mode no-install --target web --out-dir web/dist/pkg --features web --no-default-features --locked && node ./scripts/prepare-wasm-package.mjs",
     "build:ts": "tsc -p tsconfig.json",
     "build": "npm run build:ts",
     "build:package": "npm run version:check && npm run build:wasm && npm run build:ts",
-    "verify:pack": "node ./scripts/check-pack.mjs",
+    "pack:release": "node ./scripts/create-release-pack.mjs",
+    "test:wasm": "node --test test/wasm-smoke.mjs",
+    "verify:pack": "npm run build:package && npm run pack:release",
     "prepack": "npm run build:package",
     "serve": "python3 -m http.server 4173",
-    "test": "npm run build:ts && node --test test/package.test.mjs"
+    "test": "npm run build:ts && node --test test/*.test.mjs"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

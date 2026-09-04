@@ -140,3 +140,62 @@ fn schema_command_outputs_embedded_schema() {
     );
     assert!(String::from_utf8_lossy(&stdin_validation.stdout).contains("Validation succeeded"));
 }
+
+#[test]
+fn schema_validation_rejects_an_oversized_file_before_reading_it() {
+    const MAX_SCHEMA_INPUT_BYTES: u64 = 128 * 1024 * 1024;
+
+    let dir = tempdir().expect("schema dir");
+    let input = dir.path().join("oversized.json");
+    let file = std::fs::File::create(&input).expect("create oversized input");
+    file.set_len(MAX_SCHEMA_INPUT_BYTES + 1)
+        .expect("make sparse oversized input");
+
+    let output = neo_decompiler_cmd()
+        .arg("schema")
+        .arg("tokens")
+        .arg("--validate")
+        .arg(&input)
+        .arg("--no-print")
+        .output()
+        .expect("schema validation command");
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("schema validation input is 134217729 bytes; maximum is 134217728 bytes"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn schema_validation_caps_the_number_of_rendered_errors() {
+    let dir = tempdir().expect("schema dir");
+    let input = dir.path().join("many-errors.json");
+    let report = serde_json::json!({
+        "file": "sample.nef",
+        "script_hash_le": "0".repeat(40),
+        "script_hash_be": "0".repeat(40),
+        "method_tokens": [],
+        "warnings": vec![0; 125],
+    });
+    std::fs::write(&input, serde_json::to_vec(&report).unwrap()).expect("write invalid report");
+
+    let output = neo_decompiler_cmd()
+        .arg("schema")
+        .arg("tokens")
+        .arg("--validate")
+        .arg(&input)
+        .arg("--no-print")
+        .output()
+        .expect("schema validation command");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("additional validation errors omitted (limit: 100)"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(stderr.len() < 1024 * 1024 + 1024);
+}

@@ -81,6 +81,10 @@ fn sanitize_identifier_handles_edge_cases() {
     );
     assert_eq!(sanitize_identifier("9lives"), "_9lives");
     assert_eq!(sanitize_identifier("!!!"), "param");
+    assert_eq!(
+        sanitize_identifier("__callt_token_0"),
+        "method___callt_token_0"
+    );
 }
 
 #[test]

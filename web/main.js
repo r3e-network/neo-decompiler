@@ -5,6 +5,8 @@ import {
   init,
   initPanicHook,
 } from "./dist/index.js";
+import { fileAdmissionError, readAdmittedFiles } from "./file-admission.js";
+import { stringifyReport } from "./report-format.js";
 
 const controls = document.querySelector("#controls");
 const nefFileInput = document.querySelector("#nef-file");
@@ -54,12 +56,18 @@ controls.addEventListener("submit", async (event) => {
     return;
   }
 
+  const manifestFile = manifestFileInput.files?.[0];
+  const admissionError = fileAdmissionError(nefFile, manifestFile);
+  if (admissionError) {
+    status.textContent = admissionError;
+    return;
+  }
+
   runButton.disabled = true;
   status.textContent = "Loading files and running the Rust decompiler...";
 
   try {
-    const nefBytes = new Uint8Array(await nefFile.arrayBuffer());
-    const manifestJson = await readOptionalText(manifestFileInput.files?.[0]);
+    const { nefBytes, manifestJson } = await readAdmittedFiles(nefFile, manifestFile);
 
     const info = infoReport(nefBytes, {
       manifestJson,
@@ -81,8 +89,8 @@ controls.addEventListener("submit", async (event) => {
     decompileSummary.textContent =
       `${decompile.analysis.call_graph.methods.length} methods • ${decompile.warnings.length} warnings`;
 
-    infoOutput.textContent = JSON.stringify(info, null, 2);
-    disasmOutput.textContent = JSON.stringify(disasm, null, 2);
+    infoOutput.textContent = stringifyReport(info);
+    disasmOutput.textContent = stringifyReport(disasm);
 
     const rendered = [
       decompile.high_level && ["// High-level", decompile.high_level],
@@ -96,7 +104,7 @@ controls.addEventListener("submit", async (event) => {
       .map(([title, body]) => `${title}\n${body}`)
       .join("\n\n");
 
-    decompileOutput.textContent = rendered || JSON.stringify(decompile, null, 2);
+    decompileOutput.textContent = rendered || stringifyReport(decompile);
     status.textContent = "Analysis complete.";
   } catch (error) {
     console.error(error);
@@ -106,10 +114,3 @@ controls.addEventListener("submit", async (event) => {
     runButton.disabled = false;
   }
 });
-
-async function readOptionalText(file) {
-  if (!file) {
-    return undefined;
-  }
-  return await file.text();
-}

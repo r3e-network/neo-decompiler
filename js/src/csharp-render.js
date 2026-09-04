@@ -1,6 +1,7 @@
 import { sanitizeIdentifier } from "./manifest.js";
 import { splitCallArguments } from "./csharp-expression.js";
 import { csharpType } from "./csharp-type-map.js";
+import { escapeCSharpStringContent } from "./visible-text.js";
 export { coerceCSharpReturn, inferDeclarationTypes, renderBodyLine } from "./csharp-body.js";
 import { inferDeclarationTypes, renderBodyLine } from "./csharp-body.js";
 export { csharpIdentifier } from "./csharp-identifiers.js";
@@ -8,30 +9,7 @@ import { csharpIdentifier } from "./csharp-identifiers.js";
 export { csharpType } from "./csharp-type-map.js";
 
 export function escapeCSharpString(value) {
-  let escaped = "";
-  for (const character of String(value)) {
-    switch (character) {
-      case "\0": escaped += "\\0"; break;
-      case "\u0007": escaped += "\\a"; break;
-      case "\u0008": escaped += "\\b"; break;
-      case "\u000C": escaped += "\\f"; break;
-      case "\n": escaped += "\\n"; break;
-      case "\r": escaped += "\\r"; break;
-      case "\t": escaped += "\\t"; break;
-      case "\u000B": escaped += "\\v"; break;
-      case '"': escaped += '\\"'; break;
-      case "\\": escaped += "\\\\"; break;
-      case "\u2028": escaped += "\\u2028"; break;
-      case "\u2029": escaped += "\\u2029"; break;
-      default:
-        if (character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f) {
-          escaped += `\\u${character.charCodeAt(0).toString(16).padStart(4, "0").toUpperCase()}`;
-        } else {
-          escaped += character;
-        }
-    }
-  }
-  return escaped;
+  return escapeCSharpStringContent(value);
 }
 
 export function renderManifestAttributes(manifest) {
@@ -175,7 +153,7 @@ export function renderEventDeclaration(line) {
   const match = line.match(/^(\s*)event\s+([A-Za-z_][A-Za-z0-9_]*)\((.*?)\);(?:\s*\/\/\s*manifest\s+(.+))?$/);
   if (!match) return null;
   const [, indentation, name, parameters, originalName] = match;
-  const types = splitCallArguments(parameters).map((parameter) => {
+  const types = splitCallArguments(parameters, { typeDeclarations: true }).map((parameter) => {
     const separator = parameter.indexOf(":");
     return csharpType(separator < 0 ? "any" : parameter.slice(separator + 1).trim());
   });

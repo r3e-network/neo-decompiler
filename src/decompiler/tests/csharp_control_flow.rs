@@ -161,7 +161,7 @@ fn csharp_view_escapes_all_manifest_attribute_controls() {
             {
                 "name": "Demo",
                 "abi": {"methods": [], "events": []},
-                "extra": {"Note": "line\u0000\u0007\u0008\u000C\n\r\t\u000B\u0001\u2028\u2029"}
+                "extra": {"Note": "line\u0000\u0007\u0008\u000C\n\r\t\u000B\u0001\u0085\u2028\u2029\u061C\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069"}
             }
             "#,
     )
@@ -172,7 +172,7 @@ fn csharp_view_escapes_all_manifest_attribute_controls() {
         .expect("decompile succeeds")
         .csharp
         .expect("csharp output");
-    assert!(csharp.contains(r#"[ManifestExtra("Note", "line\0\a\b\f\n\r\t\v\u0001\u2028\u2029")]"#));
+    assert!(csharp.contains(r#"[ManifestExtra("Note", "line\0\a\b\f\n\r\t\v\u0001\u0085\u2028\u2029\u061C\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069")]"#));
 }
 
 #[test]

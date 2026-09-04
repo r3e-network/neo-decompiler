@@ -215,6 +215,272 @@ fn known_call_contract_preserves_stack_and_uses_source_argument_order() {
 }
 
 #[test]
+fn known_call_underflow_processes_only_available_arguments() {
+    let instructions = vec![
+        instr(0, OpCode::Push1),
+        Instruction::new(1, OpCode::CallT, Some(Operand::U16(0))),
+        instr(4, OpCode::Ret),
+    ];
+    let cfg = CfgBuilder::new(&instructions).build();
+    let mut context = MethodContext::default();
+    context.calls_by_offset.insert(
+        1,
+        CallContract::new(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: "consume".to_string(),
+                hash_le: None,
+                call_flags: Some(0x0F),
+            },
+            2048,
+            false,
+        ),
+    );
+
+    let mut output = SsaBuilder::new(&cfg, &instructions)
+        .with_method_context(&context)
+        .build_with_report();
+    crate::decompiler::cfg::ssa::optimize_ssa(&mut output.ssa);
+    let block = output.ssa.blocks_iter().next().expect("a block exists").1;
+
+    assert!(
+        block.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Expr(SsaExpr::Call { target, args })
+                if target.display_name() == "consume"
+                    && args.as_slice() == [SsaExpr::lit(Literal::Int(1))]
+        )),
+        "the call must contain only the one argument that was actually present: {block:?}"
+    );
+    assert!(output.fidelity.issues.iter().any(|issue| {
+        issue.offset == 1
+            && issue.opcode == OpCode::CallT
+            && issue.kind == LoweringIssueKind::LostStackValue
+            && issue
+                .detail
+                .contains("requires 2048 stack values, but only 1 are available")
+    }));
+}
+
+#[test]
+fn maximal_valid_callt_arity_fits_the_minimum_processing_budget() {
+    const ARGUMENT_COUNT: usize = 2048;
+
+    let call_offset = 0;
+    let instructions = vec![
+        Instruction::new(call_offset, OpCode::CallT, Some(Operand::U16(0))),
+        instr(3, OpCode::Ret),
+    ];
+    let cfg = CfgBuilder::new(&instructions).build();
+    let mut context = MethodContext {
+        argument_names: (0..ARGUMENT_COUNT)
+            .map(|index| format!("arg{index}"))
+            .collect(),
+        arguments_on_entry_stack: true,
+        returns_value: Some(false),
+        ..MethodContext::default()
+    };
+    context.calls_by_offset.insert(
+        call_offset,
+        CallContract::new(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: "maximal_call".to_string(),
+                hash_le: None,
+                call_flags: Some(0x0F),
+            },
+            ARGUMENT_COUNT,
+            false,
+        ),
+    );
+
+    let output = SsaBuilder::new(&cfg, &instructions)
+        .with_method_context(&context)
+        .build_with_report();
+    let rendered_argument_count = output
+        .ssa
+        .blocks_iter()
+        .flat_map(|(_, block)| &block.stmts)
+        .find_map(|statement| match statement {
+            SsaStmt::Expr(SsaExpr::Call { target, args })
+                if target.display_name() == "maximal_call" =>
+            {
+                Some(args.len())
+            }
+            _ => None,
+        })
+        .expect("the maximal CALLT must be present");
+
+    assert_eq!(rendered_argument_count, ARGUMENT_COUNT);
+    assert!(
+        output
+            .fidelity
+            .issues
+            .iter()
+            .all(|issue| issue.kind != LoweringIssueKind::BudgetExceeded),
+        "one VM-valid maximum-arity call must fit the minimum budget: {:#?}",
+        output.fidelity
+    );
+}
+
+#[test]
+fn branch_fanout_caps_cumulative_callt_work_without_recharging_revisited_sites() {
+    const STACK_DEPTH: usize = 16;
+    const CALL_SITES: usize = 200;
+
+    let mut instructions = (0..STACK_DEPTH)
+        .map(|offset| instr(offset, OpCode::Push1))
+        .collect::<Vec<_>>();
+    let mut cfg = Cfg::new();
+    cfg.add_block(BasicBlock::new(
+        BlockId::ENTRY,
+        0,
+        STACK_DEPTH,
+        0..STACK_DEPTH,
+        Terminator::Branch {
+            then_target: BlockId(1),
+            else_target: BlockId(2),
+        },
+    ));
+    let mut context = MethodContext::default();
+
+    for index in 0..CALL_SITES {
+        let instruction_index = instructions.len();
+        let call_offset = STACK_DEPTH + index * 3;
+        instructions.push(Instruction::new(
+            call_offset,
+            OpCode::CallT,
+            Some(Operand::U16(index as u16)),
+        ));
+        let block = BlockId(index + 1);
+        cfg.add_block(BasicBlock::new(
+            block,
+            call_offset,
+            call_offset + 3,
+            instruction_index..instruction_index + 1,
+            Terminator::Return,
+        ));
+        cfg.add_edge(BlockId::ENTRY, block, EdgeKind::ConditionalTrue);
+        context.calls_by_offset.insert(
+            call_offset,
+            CallContract::new(
+                SemanticCallTarget::MethodToken {
+                    index,
+                    name: format!("branch_call_{index}"),
+                    hash_le: None,
+                    call_flags: Some(0x0F),
+                },
+                STACK_DEPTH,
+                false,
+            ),
+        );
+    }
+
+    let expected_budget = instructions
+        .len()
+        .saturating_mul(CALL_ARGUMENT_PROCESSING_BUDGET_PER_INSTRUCTION)
+        .max(MIN_CALL_ARGUMENT_PROCESSING_BUDGET);
+    assert!(expected_budget < STACK_DEPTH * CALL_SITES);
+
+    let output = SsaBuilder::new(&cfg, &instructions)
+        .with_method_context(&context)
+        .build_with_report();
+    let mut calls = output
+        .ssa
+        .blocks_iter()
+        .flat_map(|(_, block)| &block.stmts)
+        .filter_map(|statement| match statement {
+            SsaStmt::Expr(SsaExpr::Call {
+                target: SemanticCallTarget::MethodToken { index, .. },
+                args,
+            }) => Some((*index, args.len())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    calls.sort_unstable_by_key(|(index, _)| *index);
+
+    assert_eq!(calls.len(), CALL_SITES);
+    assert_eq!(
+        calls.iter().map(|(_, count)| count).sum::<usize>(),
+        expected_budget,
+        "the final pass must reuse per-site grants instead of finding the budget already spent"
+    );
+    assert_eq!(
+        output
+            .fidelity
+            .issues
+            .iter()
+            .filter(|issue| issue.kind == LoweringIssueKind::BudgetExceeded)
+            .count(),
+        CALL_SITES - expected_budget / STACK_DEPTH
+    );
+    assert!(output.fidelity.issues.iter().all(|issue| {
+        issue.kind != LoweringIssueKind::LostStackValue
+            || !context.calls_by_offset.contains_key(&issue.offset)
+    }));
+}
+
+#[test]
+fn known_call_underflow_keeps_sparse_argument_metadata_at_original_index() {
+    let instructions = vec![
+        Instruction::new(0, OpCode::Initslot, Some(Operand::Bytes(vec![1, 0]))),
+        instr(3, OpCode::Push1),
+        instr(4, OpCode::Push1),
+        instr(5, OpCode::Packstruct),
+        instr(6, OpCode::Stloc0),
+        instr(7, OpCode::Ldloc0),
+        Instruction::new(8, OpCode::CallT, Some(Operand::U16(0))),
+        instr(11, OpCode::Ldloc0),
+        instr(12, OpCode::Push0),
+        instr(13, OpCode::Pickitem),
+        instr(14, OpCode::Unpack),
+        instr(15, OpCode::Ret),
+    ];
+    let cfg = CfgBuilder::new(&instructions).build();
+    let mut context = MethodContext {
+        returns_value: Some(false),
+        ..MethodContext::default()
+    };
+    context.calls_by_offset.insert(
+        8,
+        CallContract::new(
+            SemanticCallTarget::MethodToken {
+                index: 0,
+                name: "mutate_first".to_string(),
+                hash_le: None,
+                call_flags: Some(0x0F),
+            },
+            2048,
+            false,
+        )
+        .with_argument_effects(vec![CollectionArgumentEffect::PreservesShape])
+        .with_argument_field_writes(vec![BTreeMap::from([(0, CollectionShape::Struct(2))])]),
+    );
+
+    let output = SsaBuilder::new(&cfg, &instructions)
+        .with_method_context(&context)
+        .build_with_report();
+
+    assert!(output.fidelity.issues.iter().any(|issue| {
+        issue.offset == 8
+            && issue.opcode == OpCode::CallT
+            && issue.kind == LoweringIssueKind::LostStackValue
+            && issue
+                .detail
+                .contains("requires 2048 stack values, but only 1 are available")
+    }));
+    assert!(
+        !output.fidelity.issues.iter().any(|issue| {
+            issue.offset == 14
+                && issue.opcode == OpCode::Unpack
+                && issue.kind == LoweringIssueKind::MissingProvenance
+        }),
+        "the sparse effect and field-write entries for argument 0 must stay aligned: {:#?}",
+        output.fidelity
+    );
+}
+
+#[test]
 fn known_tail_jump_returns_resolved_call_with_source_argument_order() {
     let instructions = vec![
         instr(0, OpCode::Push2),

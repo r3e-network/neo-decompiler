@@ -108,10 +108,20 @@ pub(super) fn write_contract_open(
     )
     .unwrap();
     if !nef.header.compiler.is_empty() {
-        writeln!(output, "        // compiler: {}", nef.header.compiler).unwrap();
+        writeln!(
+            output,
+            "        // compiler: {}",
+            util::escape_visible_text(&nef.header.compiler)
+        )
+        .unwrap();
     }
     if !nef.header.source.is_empty() {
-        writeln!(output, "        // source: {}", nef.header.source).unwrap();
+        writeln!(
+            output,
+            "        // source: {}",
+            util::escape_visible_text(&nef.header.source)
+        )
+        .unwrap();
     }
 
     if let Some(manifest) = manifest {
@@ -120,7 +130,13 @@ pub(super) fn write_contract_open(
         if !manifest.features.is_empty() {
             writeln!(output, "        // features:").unwrap();
             for (key, value) in &manifest.features {
-                writeln!(output, "        //   {key} = {value}").unwrap();
+                writeln!(
+                    output,
+                    "        //   {} = {}",
+                    util::escape_visible_text(key),
+                    util::escape_visible_text(&value.to_string())
+                )
+                .unwrap();
             }
         }
         if !manifest.groups.is_empty() {
@@ -134,7 +150,12 @@ pub(super) fn write_contract_open(
             // and adds no human-readable value.
             writeln!(output, "        // groups:").unwrap();
             for group in &manifest.groups {
-                writeln!(output, "        //   pubkey={}", group.pubkey).unwrap();
+                writeln!(
+                    output,
+                    "        //   pubkey={}",
+                    util::escape_visible_text(&group.pubkey)
+                )
+                .unwrap();
             }
         }
         if !manifest.permissions.is_empty() {
@@ -143,7 +164,7 @@ pub(super) fn write_contract_open(
                 writeln!(
                     output,
                     "        //   {}",
-                    format_permission_entry(permission)
+                    util::escape_visible_text(&format_permission_entry(permission))
                 )
                 .unwrap();
             }
@@ -169,7 +190,7 @@ pub(super) fn write_pattern_comments(output: &mut String, info: &PatternInfo) {
         let standards = info
             .standards
             .iter()
-            .map(|value| escape_csharp_string(value))
+            .map(|value| util::escape_visible_text(value))
             .collect::<Vec<_>>()
             .join(", ");
         writeln!(output, "        // inferred standards: {standards}").unwrap();
@@ -179,7 +200,7 @@ pub(super) fn write_pattern_comments(output: &mut String, info: &PatternInfo) {
         let patterns = info
             .patterns
             .iter()
-            .map(|value| escape_csharp_string(value))
+            .map(|value| util::escape_visible_text(value))
             .collect::<Vec<_>>()
             .join(", ");
         writeln!(output, "        // inferred patterns: {patterns}").unwrap();

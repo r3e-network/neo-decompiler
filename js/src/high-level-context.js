@@ -1,6 +1,8 @@
 import { SYSCALLS } from "./generated/syscalls.js";
 import { inferMethodContracts } from "./method-contracts.js";
 import { describeMethodToken } from "./native-contracts.js";
+import { methodTokenFallbackLabel } from "./method-token-label.js";
+import { escapeVisibleText } from "./visible-text.js";
 
 // Build the shared context consumed by high-level control-flow lifting and
 // C# rendering. Keeping this separate from the public API entry points makes
@@ -23,14 +25,18 @@ export function buildHighLevelContext(
         .filter((edge) => edge.opcode === "CALLA" && edge.target.kind === "Internal")
         .map((edge) => [edge.callOffset, edge.target.method.offset]),
     ),
-    // Resolve token-call labels through the native-contract describe table so
-    // known calls render as `GasToken::Transfer(...)` instead of only the
-    // raw method name. Unknown or restricted tokens retain their raw label.
-    calltLabels: nef.methodTokens.map((token) => {
+    // Only exact, unrestricted native targets may occupy an executable label.
+    // Every other CALLT gets an index-derived inert identifier; its untrusted
+    // method text stays metadata and is recovered only as an escaped C# string.
+    // The index also prevents same-named methods on different contracts from
+    // being rebound to whichever token happened to appear last.
+    calltLabels: nef.methodTokens.map((token, index) => {
       const hint = token.callFlags === 0x0F
         ? describeMethodToken(token.hash, token.method)
         : null;
-      return hint ? hint.formattedLabel(token.method) : token.method;
+      return hint?.hasExactMethod()
+        ? escapeVisibleText(hint.formattedLabel(token.method))
+        : methodTokenFallbackLabel(index);
     }),
     calltParamCounts: nef.methodTokens.map((token) => token.parametersCount),
     calltReturnsValue: nef.methodTokens.map((token) => token.hasReturnValue),

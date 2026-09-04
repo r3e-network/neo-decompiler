@@ -3,6 +3,7 @@ use crate::instruction::{Instruction, Operand};
 use super::super::{HighLevelEmitter, LiteralValue};
 
 const MAX_INTERNAL_CALL_ENTRY_DELTA: usize = 16;
+const MAX_RENDERED_CALL_ARGUMENTS: usize = 256;
 
 impl HighLevelEmitter {
     fn normalize_internal_call_target(&self, target: usize) -> usize {
@@ -163,29 +164,43 @@ impl HighLevelEmitter {
                     let returns_value =
                         self.callt_returns_value.get(index).copied().unwrap_or(true);
                     self.push_comment(instruction);
-                    // Always emit the token call — even if the evaluation
-                    // stack doesn't carry enough values (e.g. malformed
-                    // bytecode, or a missed lift earlier in the method).
-                    // Earlier this branch dropped the call entirely on
-                    // underflow and just emitted a structured warning,
-                    // leaving the rendered source missing the CALLT
-                    // entirely; the JS port has always substituted `???`
-                    // for missing args and emitted the call shape so the
-                    // reader can see what was attempted.
-                    if self.stack.len() < arg_count {
-                        self.stack_underflow(instruction, arg_count);
-                    }
                     // Internal calls (and CALLT) use right-to-left push
                     // order (C convention), so popping yields arguments
                     // in correct left-to-right display order — no
-                    // reverse needed before joining.
-                    let mut args = Vec::with_capacity(arg_count);
-                    for _ in 0..arg_count {
+                    // reverse needed before joining. Render only values that
+                    // actually exist, bounded by the display limit. A single
+                    // explicit marker represents every omitted or missing
+                    // argument, avoiding multiplicative placeholder output.
+                    let available_count = arg_count.min(self.stack.len());
+                    let rendered_count = available_count.min(MAX_RENDERED_CALL_ARGUMENTS);
+                    let mut args = Vec::with_capacity(
+                        rendered_count + usize::from(arg_count > rendered_count),
+                    );
+                    for _ in 0..rendered_count {
                         if let Some(value) = self.pop_stack_value() {
                             args.push(value);
-                        } else {
-                            args.push("???".to_string());
                         }
+                    }
+                    let omitted_available_count = available_count - rendered_count;
+                    if omitted_available_count > 0 {
+                        self.stack
+                            .truncate(self.stack.len() - omitted_available_count);
+                    }
+                    let missing_count = arg_count - available_count;
+                    let unrepresented_count = omitted_available_count + missing_count;
+                    if unrepresented_count > 0 {
+                        args.push(format!(
+                            "unknown /* {unrepresented_count} missing/omitted arguments */"
+                        ));
+                        self.warn(
+                            instruction,
+                            &format!(
+                                "CALLT {name} rendered {rendered_count} of {arg_count} arguments; \
+                                 one marker represents {unrepresented_count} missing/omitted \
+                                 arguments ({omitted_available_count} available omitted, \
+                                 {missing_count} missing)"
+                            ),
+                        );
                     }
                     let args = args.join(", ");
                     if returns_value {

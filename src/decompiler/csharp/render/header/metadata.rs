@@ -13,14 +13,20 @@ pub(super) fn write_method_tokens_comment(output: &mut String, nef: &NefFile) {
     writeln!(output, "        // method tokens declared in NEF:").unwrap();
     for token in &nef.method_tokens {
         let hint = native_contracts::describe_method_token(&token.hash, &token.method);
+        let method = util::escape_visible_text(&token.method);
         let contract_note = hint
             .as_ref()
-            .map(|h| format!(" ({})", h.formatted_label(&token.method)))
+            .map(|h| {
+                format!(
+                    " ({})",
+                    util::escape_visible_text(&h.formatted_label(&token.method))
+                )
+            })
             .unwrap_or_default();
         writeln!(
             output,
             "        //   {}{} hash={} params={} returns={} flags=0x{:02X} ({})",
-            token.method,
+            method,
             contract_note,
             util::format_hash(&token.hash),
             token.parameters_count,
@@ -34,7 +40,8 @@ pub(super) fn write_method_tokens_comment(output: &mut String, nef: &NefFile) {
                 writeln!(
                     output,
                     "        //   warning: native contract {} does not expose method {}",
-                    hint.contract, token.method
+                    util::escape_visible_text(hint.contract),
+                    method
                 )
                 .unwrap();
             }
@@ -43,6 +50,7 @@ pub(super) fn write_method_tokens_comment(output: &mut String, nef: &NefFile) {
 }
 
 pub(super) fn write_trusts_comment(output: &mut String, described: &str) {
+    let described = util::escape_visible_text(described);
     let stripped = described
         .strip_prefix('[')
         .and_then(|rest| rest.strip_suffix(']'));

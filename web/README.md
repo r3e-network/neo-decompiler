@@ -13,7 +13,7 @@ npm install
 npm run build:wasm
 ```
 
-That runs `wasm-pack build .. --target web --out-dir web/dist/pkg --features web --no-default-features`
+That runs `wasm-pack build .. --mode no-install --target web --out-dir web/dist/pkg --features web --no-default-features --locked`
 followed by `scripts/prepare-wasm-package.mjs`, generating the wasm glue under
 `web/dist/pkg/`.
 
@@ -27,7 +27,14 @@ For a full package build:
 
 ```bash
 npm run build:package
+npm run test:wasm
 ```
+
+Install `wasm-pack` 0.13.1 and the `wasm-bindgen-cli` version in the root
+`Cargo.lock` before building. The CLI's locked dependencies need Rust 1.88 or
+newer even though the library builds with Rust 1.86. `test:wasm` requires the
+built artifacts and runs all report APIs against the actual WebAssembly module;
+`npm test` only needs the TypeScript compiler and runs the ordinary unit suite.
 
 ## Serve
 
@@ -82,3 +89,12 @@ declarations.
 The wrapper accepts camelCase JS options and translates them into the snake_case
 ABI expected by the wasm bindings. The published npm tarball includes the
 compiled TypeScript wrapper plus the wasm artifacts under `dist/pkg/`.
+
+Report lengths and offsets are JavaScript numbers. Manifest `features` and
+`extra` are ordinary objects, including nested records; metadata keys such as
+`__proto__` remain own data properties without changing object prototypes.
+
+Wide `I64` operand values are returned as JavaScript `bigint`. When displaying a
+report as JSON, convert those values to decimal strings in a replacer; plain
+`JSON.stringify` cannot serialize them. The included browser demo does this
+without losing precision.

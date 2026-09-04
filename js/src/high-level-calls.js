@@ -48,7 +48,7 @@ export function tryIndirectCall(state, instruction) {
     const args = popCallArguments(state, instruction, callee, argCount);
     emitInternalCallResult(state, resolvedTarget, `${callee}(${args.join(", ")})`);
   } else {
-    state.stack.push(`calla(${targetExpr})`);
+    emitCallValue(state, `calla(${targetExpr})`);
   }
   return true;
 }
@@ -65,8 +65,19 @@ function emitInternalCallResult(state, target, expression) {
   } else if (state.context.methodReturnsValueByOffset?.get(target) === false) {
     state.statements.push(`${expression};`);
   } else {
-    state.stack.push(expression);
+    emitCallValue(state, expression);
   }
+}
+
+function emitCallValue(state, expression) {
+  // The VM executes calls when it reaches their opcode, even when a later
+  // stack operation drops/reorders their results. Materialize at that point
+  // so C# argument evaluation cannot reverse two calls or erase a discarded
+  // effect. The adjacent-return/store cleanup still recovers readable forms.
+  const temp = `t${state.nextTempId}`;
+  state.nextTempId += 1;
+  state.statements.push(`let ${temp} = ${expression};`);
+  state.stack.push(temp);
 }
 
 export function tryTokenCall(state, instruction) {
@@ -92,14 +103,38 @@ export function tryTokenCall(state, instruction) {
   }
   const argCount = state.context.calltParamCounts[index] ?? 0;
   const returnsValue = state.context.calltReturnsValue[index] ?? true;
-  const args = popCallArguments(state, instruction, resolved, argCount);
+  const args = popTokenCallArguments(state, instruction, resolved, argCount);
   const expression = `${resolved}(${args.join(", ")})`;
   if (returnsValue) {
-    state.stack.push(expression);
+    emitCallValue(state, expression);
   } else {
     state.statements.push(`${expression};`);
   }
   return true;
+}
+
+function popTokenCallArguments(state, instruction, calleeLabel, argCount) {
+  const availableCount = Math.min(argCount, state.stack.length);
+  const renderedCount = Math.min(availableCount, MAX_RENDERED_CALL_ARGUMENTS);
+  const args = [];
+  for (let index = 0; index < renderedCount; index += 1) {
+    args.push(stripOuterParens(state.stack.pop()));
+  }
+  const omittedAvailableCount = availableCount - renderedCount;
+  state.stack.length -= omittedAvailableCount;
+  const missingCount = argCount - availableCount;
+  const unrepresentedCount = omittedAvailableCount + missingCount;
+  if (unrepresentedCount > 0) {
+    args.push(`unknown /* ${unrepresentedCount} missing/omitted arguments */`);
+    const message = `CALLT ${calleeLabel} rendered ${renderedCount} of ${argCount} arguments; `
+      + `one marker represents ${unrepresentedCount} missing/omitted arguments `
+      + `(${omittedAvailableCount} available omitted, ${missingCount} missing)`;
+    state.statements.push(`// warning: ${message}`);
+    state.warnings.push(
+      `high-level: 0x${instruction.offset.toString(16).padStart(4, "0").toUpperCase()}: ${message}`,
+    );
+  }
+  return args;
 }
 
 // Pop `argCount` values off the stack to use as call arguments. When the
@@ -205,7 +240,7 @@ export function trySyscall(state, instruction) {
   }
 
   if (returnsValue) {
-    state.stack.push(call);
+    emitCallValue(state, call);
   } else {
     state.statements.push(`${call};`);
   }

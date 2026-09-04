@@ -50,6 +50,12 @@ use super::effects;
 use super::form::{SsaBlock, SsaExpr, SsaForm, SsaStmt, UseSite};
 use super::variable::SsaVariable;
 
+// Argument inspection is linear in the number of values consumed. Keep the
+// cumulative work for token calls linear in the method size while still
+// allowing one maximally-sized, VM-valid call to be represented exactly.
+const MIN_CALL_ARGUMENT_PROCESSING_BUDGET: usize = 2048;
+const CALL_ARGUMENT_PROCESSING_BUDGET_PER_INSTRUCTION: usize = 8;
+
 mod collection;
 mod diagnostics;
 mod expr;
@@ -113,6 +119,7 @@ struct BuildPassState<'a> {
     indexed_collection_shapes: &'a mut BTreeMap<SsaVariable, BTreeMap<usize, CollectionShape>>,
     static_collection_writes: &'a mut Vec<StaticCollectionWrite>,
     call_argument_facts: &'a mut BTreeMap<usize, Vec<CollectionShapeFacts>>,
+    call_argument_budget: &'a mut CallArgumentBudget,
 }
 
 struct DefinitionFact {
@@ -127,10 +134,56 @@ struct DefinitionFact {
 
 type DefinitionFacts = BTreeMap<SsaVariable, DefinitionFact>;
 
-#[derive(Default)]
 struct BuildFacts {
     versions: BTreeMap<String, usize>,
     definitions: DefinitionFacts,
+    call_argument_budget: CallArgumentBudget,
+}
+
+impl BuildFacts {
+    fn for_method(instruction_count: usize) -> Self {
+        Self {
+            versions: BTreeMap::new(),
+            definitions: BTreeMap::new(),
+            call_argument_budget: CallArgumentBudget::for_method(instruction_count),
+        }
+    }
+}
+
+/// Cumulative per-method allowance for the expensive per-argument CALLT
+/// analysis. Grants are remembered by bytecode offset, so executing a block
+/// again during SSA fixed-point construction does not charge the same work a
+/// second time. If a later pass discovers a deeper stack at a call site, only
+/// the newly processable suffix consumes additional allowance.
+struct CallArgumentBudget {
+    remaining: usize,
+    granted_by_offset: BTreeMap<usize, usize>,
+}
+
+impl CallArgumentBudget {
+    fn for_method(instruction_count: usize) -> Self {
+        let limit = instruction_count
+            .saturating_mul(CALL_ARGUMENT_PROCESSING_BUDGET_PER_INSTRUCTION)
+            .max(MIN_CALL_ARGUMENT_PROCESSING_BUDGET);
+        Self {
+            remaining: limit,
+            granted_by_offset: BTreeMap::new(),
+        }
+    }
+
+    fn grant(&mut self, offset: usize, requested: usize) -> usize {
+        let previous = self.granted_by_offset.get(&offset).copied().unwrap_or(0);
+        if requested <= previous {
+            return requested;
+        }
+
+        let additional = requested - previous;
+        let granted = additional.min(self.remaining);
+        self.remaining -= granted;
+        let total = previous + granted;
+        self.granted_by_offset.insert(offset, total);
+        total
+    }
 }
 
 #[derive(Clone, Default, PartialEq, Eq)]

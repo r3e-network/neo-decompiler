@@ -15,6 +15,8 @@ import {
   decompileHighLevelBytesWithManifest,
   analyzeBytes,
 } from "../src/index.js";
+import { escapeCSharpString } from "../src/csharp-render.js";
+import { escapeVisibleText, isBidiControl } from "../src/visible-text.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -55,7 +57,148 @@ function buildValidNef(script) {
   return new Uint8Array(data);
 }
 
+function buildMetadataNef({ script, compiler = "", source = "", method = null }) {
+  const encoder = new TextEncoder();
+  const compilerBytes = encoder.encode(compiler);
+  const sourceBytes = encoder.encode(source);
+  assert.ok(compilerBytes.length <= 64);
+  assert.ok(sourceBytes.length <= 256);
+
+  const data = [...Buffer.from("NEF3")];
+  const compilerField = new Uint8Array(64);
+  compilerField.set(compilerBytes);
+  data.push(...compilerField);
+  writeVarint(data, sourceBytes.length);
+  data.push(...sourceBytes);
+  data.push(0); // reserved
+
+  if (method === null) {
+    data.push(0);
+  } else {
+    const methodBytes = encoder.encode(method);
+    assert.ok(methodBytes.length <= 32);
+    data.push(1);
+    data.push(...new Uint8Array(20));
+    writeVarint(data, methodBytes.length);
+    data.push(...methodBytes);
+    data.push(0, 0); // parameter count
+    data.push(1); // has return value
+    data.push(0x0f); // CallFlags.All
+  }
+
+  data.push(0, 0); // reserved word
+  writeVarint(data, script.length);
+  data.push(...script);
+  data.push(...computeChecksum(data));
+  return new Uint8Array(data);
+}
+
 // ─── Security Tests ─────────────────────────────────────────────────────────
+
+test("security: visible metadata encoding covers line, terminal, and bidi controls", () => {
+  const input = "safe\r\n\u0085\u2028\u2029\u001B\u202Etail\t";
+  assert.equal(
+    escapeVisibleText(input),
+    "safe\\r\\n\\u{0085}\\u{2028}\\u{2029}\\u{001B}\\u{202E}tail\\t",
+  );
+  assert.equal(escapeCSharpString("x\u202Ey"), "x\\u202Ey");
+  assert.equal(escapeVisibleText("x\uD800y"), "x\\u{D800}y");
+  assert.equal(escapeCSharpString("x\uD800y"), "x\\uD800y");
+
+  const allUnsafe = String.fromCodePoint(
+    ...Array.from({ length: 0x20 }, (_, codePoint) => codePoint),
+    ...Array.from({ length: 0x21 }, (_, offset) => 0x7f + offset),
+    0x061c, 0x200e, 0x200f, 0x2028, 0x2029,
+    0x202a, 0x202b, 0x202c, 0x202d, 0x202e,
+    0x2066, 0x2067, 0x2068, 0x2069,
+  );
+  assert.ok([...escapeVisibleText(allUnsafe)].every((character) => {
+    const codePoint = character.codePointAt(0);
+    return !(
+      codePoint <= 0x1f ||
+      (codePoint >= 0x7f && codePoint <= 0x9f) ||
+      codePoint === 0x2028 ||
+      codePoint === 0x2029 ||
+      isBidiControl(character)
+    );
+  }));
+});
+
+test("security: NEF metadata controls cannot create high-level or C# lines", () => {
+  const compiler = "c\rR\nL\u0085N\u2028S\u2029P\u001BE\u202EB";
+  const source = "source\nINJECT_SOURCE";
+  const method = "m\r\n\u0085\u2028\u2029\u001B\u202EINJECT";
+  const nef = buildMetadataNef({
+    script: new Uint8Array([0x37, 0x00, 0x00, 0x40]),
+    compiler,
+    source,
+    method,
+  });
+  const result = decompileHighLevelBytes(nef);
+
+  for (const output of [result.highLevel, result.csharp]) {
+    assert.match(output, /c\\rR\\nL\\u\{0085\}N\\u\{2028\}S/u);
+    assert.ok(output.includes("source\\nINJECT_SOURCE"));
+    assert.ok(output.includes("m\\r\\n\\u{0085}\\u{2028}\\u{2029}\\u{001B}\\u{202E}INJECT"));
+    for (const forbidden of ["\r", "\u0085", "\u2028", "\u2029", "\u001B", "\u202E"]) {
+      assert.ok(!output.includes(forbidden), `retained ${JSON.stringify(forbidden)}`);
+    }
+    assert.ok(!output.split("\n").some((line) => line.trimStart().startsWith("INJECT_")));
+  }
+});
+
+test("security: manifest display metadata stays on generated source lines", () => {
+  const separatorPayload = "value\r\nINJECT\u0085NEL\u2028LS\u2029PS\u001BESC\u202EBIDI";
+  const manifest = {
+    name: "SafeContract",
+    supportedstandards: [separatorPayload],
+    features: { [separatorPayload]: separatorPayload },
+    groups: [{ pubkey: separatorPayload, signature: separatorPayload }],
+    permissions: [{ contract: separatorPayload, methods: [separatorPayload] }],
+    trusts: [separatorPayload],
+    extra: { [separatorPayload]: separatorPayload },
+    abi: {
+      methods: [{
+        name: `safe-${separatorPayload}`,
+        parameters: [{ name: "p", type: `Odd${separatorPayload}` }],
+        returntype: `Odd${separatorPayload}`,
+        offset: 0,
+      }],
+      events: [{
+        name: `event-${separatorPayload}`,
+        parameters: [{ name: "p", type: `Odd${separatorPayload}` }],
+      }],
+    },
+  };
+  const nef = buildValidNef(new Uint8Array([0x40]));
+  const result = decompileHighLevelBytesWithManifest(nef, JSON.stringify(manifest));
+
+  for (const output of [result.highLevel, result.csharp]) {
+    for (const forbidden of ["\r", "\u0085", "\u2028", "\u2029", "\u001B", "\u202E"]) {
+      assert.ok(!output.includes(forbidden), `retained ${JSON.stringify(forbidden)}`);
+    }
+    assert.ok(!output.split("\n").some((line) => line.trimStart() === "INJECT"));
+  }
+});
+
+test("security: event DisplayName preserves the original control characters", () => {
+  const eventName = "event\nname\u202E";
+  const manifest = {
+    name: "SafeContract",
+    abi: {
+      methods: [{ name: "main", parameters: [], returntype: "void", offset: 0 }],
+      events: [{ name: eventName, parameters: [] }],
+    },
+  };
+  const result = decompileHighLevelBytesWithManifest(
+    buildValidNef(new Uint8Array([0x40])),
+    JSON.stringify(manifest),
+  );
+
+  assert.ok(result.highLevel.includes('// manifest "event\\nname\\u202E"'));
+  assert.ok(result.csharp.includes('[DisplayName("event\\nname\\u202E")]'));
+  assert.ok(!result.csharp.includes('event\\\\nname'));
+});
 
 test("security: extremely large size fields (DoS prevention)", () => {
   // Try to trigger memory exhaustion with fake large sizes

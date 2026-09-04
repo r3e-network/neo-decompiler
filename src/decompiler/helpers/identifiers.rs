@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+const METHOD_TOKEN_LABEL_PREFIX: &str = "__callt_token_";
+
 /// Sanitize an arbitrary manifest or user-provided identifier into a stable
 /// snake-ish form suitable for high-level output.
 pub(in super::super) fn sanitize_identifier(input: &str) -> String {
@@ -24,6 +26,12 @@ pub(in super::super) fn sanitize_identifier(input: &str) -> String {
         .unwrap_or(false)
     {
         ident.insert(0, '_');
+    }
+    // This prefix is reserved for index-addressed CALLT labels. Keeping
+    // manifest/user identifiers out of the namespace prevents an internal
+    // method call from being mistaken for a token call by downstream renderers.
+    if ident.starts_with(METHOD_TOKEN_LABEL_PREFIX) {
+        ident.insert_str(0, "method_");
     }
     ident
 }

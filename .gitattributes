@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Neo executable fixtures and raw bytecode samples must never be normalized.
+*.nef -text
+*.bin -text

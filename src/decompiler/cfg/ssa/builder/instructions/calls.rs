@@ -72,7 +72,7 @@ impl<'a> SsaBuilder<'a> {
             );
         }
         let pointer_count = usize::from(instruction.opcode == OpCode::CallA);
-        let required = contract.argument_count + pointer_count;
+        let required = contract.argument_count.saturating_add(pointer_count);
         let available = stack.len();
         let underflowed = available < required;
         if underflowed {
@@ -89,12 +89,38 @@ impl<'a> SsaBuilder<'a> {
             }
         }
 
-        let mut args = Vec::with_capacity(contract.argument_count);
-        let mut argument_collection_facts = Vec::with_capacity(contract.argument_count);
-        let mut argument_roots = Vec::with_capacity(contract.argument_count);
-        let mut argument_effects = Vec::with_capacity(contract.argument_count);
+        // CALLT arity comes from attacker-controlled token metadata. Inspect
+        // only values that actually exist and charge that work once per call
+        // site across the whole SSA fixed point. Other resolved calls retain
+        // their established placeholder behavior because it preserves
+        // internal-call signature fidelity in generated C#.
+        let available_argument_count = contract.argument_count.min(stack.len());
+        let processed_argument_count = if instruction.opcode == OpCode::CallT {
+            state
+                .call_argument_budget
+                .grant(instruction.offset, available_argument_count)
+        } else {
+            contract.argument_count
+        };
+        let skipped_available_argument_count =
+            available_argument_count.saturating_sub(processed_argument_count);
+        if skipped_available_argument_count > 0 {
+            record_incomplete_issue(
+                instruction,
+                LoweringIssueKind::BudgetExceeded,
+                format!(
+                    "CALLT argument-processing budget exhausted after processing \
+                     {processed_argument_count} of {available_argument_count} available arguments"
+                ),
+                state.issues,
+            );
+        }
+        let mut args = Vec::with_capacity(processed_argument_count);
+        let mut argument_collection_facts = Vec::with_capacity(processed_argument_count);
+        let mut argument_roots = Vec::with_capacity(processed_argument_count);
+        let mut argument_effects = Vec::with_capacity(processed_argument_count);
         let mut shape_preserving_roots = BTreeSet::new();
-        for argument_index in 0..contract.argument_count {
+        for argument_index in 0..processed_argument_count {
             let argument = stack.pop().unwrap_or_else(unknown_var);
             argument_collection_facts.push(collection_shape_facts_for_variable_from_state(
                 &argument, state,
@@ -140,6 +166,24 @@ impl<'a> SsaBuilder<'a> {
             argument_effects.push(effect);
             argument_roots.push(argument_root);
             args.push(SsaExpr::var(argument));
+        }
+        if skipped_available_argument_count > 0 {
+            // The call still consumes the uninspected values. Drop them in one
+            // bounded operation and invalidate collection provenance globally:
+            // an omitted argument may alias any known collection and its
+            // external effect cannot safely be reconstructed.
+            stack.truncate(stack.len().saturating_sub(skipped_available_argument_count));
+            shape_preserving_roots.clear();
+            invalidate_all_collection_facts(
+                state.definition_facts,
+                state.invalidated_collection_content_roots,
+                state.invalidated_collection_roots,
+            );
+            if let Some(context) = self.method_context {
+                state
+                    .invalidated_static_collection_shapes
+                    .extend(context.static_collection_facts.keys().copied());
+            }
         }
         state
             .call_argument_facts

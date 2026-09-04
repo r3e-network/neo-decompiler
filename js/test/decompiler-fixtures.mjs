@@ -110,6 +110,16 @@ export function buildNefWithSingleToken(
   hasReturnValue,
   callFlags,
 ) {
+  return buildNefWithTokens(scriptBytes, [{
+    hash,
+    method,
+    parametersCount,
+    hasReturnValue,
+    callFlags,
+  }]);
+}
+
+export function buildNefWithTokens(scriptBytes, tokens) {
   const script = Array.from(scriptBytes);
   const data = [];
   data.push(...Buffer.from("NEF3"));
@@ -118,13 +128,18 @@ export function buildNefWithSingleToken(
   data.push(...compiler);
   data.push(0);
   data.push(0);
-  data.push(1);
-  data.push(...hash);
-  writeVarint(data, Buffer.byteLength(method));
-  data.push(...Buffer.from(method));
-  data.push(parametersCount & 0xff, (parametersCount >> 8) & 0xff);
-  data.push(hasReturnValue ? 1 : 0);
-  data.push(callFlags);
+  writeVarint(data, tokens.length);
+  for (const token of tokens) {
+    data.push(...token.hash);
+    writeVarint(data, Buffer.byteLength(token.method));
+    data.push(...Buffer.from(token.method));
+    data.push(
+      token.parametersCount & 0xff,
+      (token.parametersCount >> 8) & 0xff,
+    );
+    data.push(token.hasReturnValue ? 1 : 0);
+    data.push(token.callFlags);
+  }
   data.push(0x00, 0x00);
   writeVarint(data, script.length);
   data.push(...script);

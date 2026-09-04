@@ -1,5 +1,6 @@
 #[cfg(test)]
 use crate::decompiler::analysis::types::ValueType;
+use crate::util;
 
 /// Render an inferred [`ValueType`] as a C# type name.
 ///
@@ -45,7 +46,7 @@ pub(crate) fn format_manifest_type(kind: &str) -> String {
         "map" => "map".into(),
         "interopinterface" => "interop".into(),
         "any" => "any".into(),
-        _ => kind.to_string(),
+        _ => util::escape_visible_text(kind),
     }
 }
 

@@ -964,7 +964,7 @@ test("method-tokens: token with 0 params and no return", () => {
   mustNotCrash(() => decompileHighLevelBytes(nef), "token with 0 params, no return");
 });
 
-test("method-tokens: token with max params (65535)", () => {
+test("method-tokens: u16-max parameter count is rejected before decompilation", () => {
   const token = {
     hash: new Uint8Array(20).fill(0xCC),
     method: "manyArgs",
@@ -974,7 +974,13 @@ test("method-tokens: token with max params (65535)", () => {
   };
   const script = new Uint8Array([0x37, 0x00, 0x00, 0x40]);
   const nef = buildNef({ tokens: [token], script });
-  mustNotCrash(() => decompileHighLevelBytes(nef), "token with 65535 params");
+  assert.throws(() => decompileHighLevelBytes(nef), (error) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.details.code, "MethodTokenParameterCountTooLarge");
+    assert.equal(error.details.count, 65535);
+    assert.equal(error.details.max, 2048);
+    return true;
+  });
 });
 
 test("method-tokens: multiple CALLT references to different tokens", () => {

@@ -10,6 +10,7 @@
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
 
+mod bounded_io;
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod decompiler;

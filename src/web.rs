@@ -200,11 +200,16 @@ pub fn init_panic_hook() {
 /// `i64::MAX` (routine bytecode) or a large integer in a manifest
 /// `extra`/`features` passthrough — which aborts the whole report for
 /// otherwise-valid input. The CLI serializes via serde_json and already handles
-/// the full range; this keeps the web boundary at parity. (`usize`/`i32`
-/// offsets are u32/i32 on wasm32 and continue to serialize as plain numbers.)
+/// the full range; this keeps the web boundary lossless. Serde routes `usize`
+/// through `u64` even on wasm32, so the TypeScript wrapper converts safe-range
+/// BigInts back to numbers. Keep maps as JS Maps here: serde-wasm-bindgen's
+/// object map serializer assigns keys using `object[key] = value`, which would
+/// treat an untrusted `__proto__` key as a prototype mutation. The wrapper uses
+/// `Object.fromEntries` to preserve all map keys as ordinary own properties.
 fn report_to_js<T: serde::Serialize>(value: &T) -> std::result::Result<JsValue, JsValue> {
-    let serializer =
-        serde_wasm_bindgen::Serializer::new().serialize_large_number_types_as_bigints(true);
+    let serializer = serde_wasm_bindgen::Serializer::new()
+        .serialize_maps_as_objects(false)
+        .serialize_large_number_types_as_bigints(true);
     serde::Serialize::serialize(value, &serializer)
         .map_err(|err| JsValue::from_str(&err.to_string()))
 }

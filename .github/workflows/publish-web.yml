@@ -1,4 +1,4 @@
-name: Publish Web Package
+name: Publish npm Packages
 
 on:
   workflow_dispatch:
@@ -6,72 +6,297 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: read
-  id-token: write
+# Do not grant ambient permissions to every job. The package job is deliberately
+# unprivileged; only the small publish job can request an npm OIDC token.
+permissions: {}
+
+concurrency:
+  group: publish-web-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  publish-web:
-    name: Publish npm package
+  package-web:
+    name: Build and verify Web npm package
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Match the crate's declared MSRV and use a wasm-pack release whose
+      # locked dependency graph remains compatible with that toolchain.
+      RUST_TOOLCHAIN: 1.86.0
+      RUSTUP_TOOLCHAIN: 1.86.0
+      # The locked wasm-bindgen CLI has a newer MSRV than the library it
+      # processes. Compile build tools separately; keep the library on 1.86.
+      BUILD_TOOLS_TOOLCHAIN: 1.88.0
+      WASM_PACK_VERSION: 0.13.1
+    outputs:
+      filename: ${{ steps.pack.outputs.filename }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          targets: wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
-
-      - name: Install wasm-bindgen-cli
-        # The CLI version must match the wasm-bindgen crate version in
-        # Cargo.lock, otherwise `wasm-pack --mode no-install` (in the web
-        # build:wasm script) fails with "Not able to find or install a local
-        # wasm-bindgen". Derive it from the lockfile so the two cannot drift
-        # apart when the dependency is bumped (a hardcoded version silently
-        # broke the web publish for several releases).
-        run: |
-          version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)"
-          echo "Installing wasm-bindgen-cli ${version} (matched to Cargo.lock)"
-          cargo install wasm-bindgen-cli --version "${version}" --locked
+          persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install web dependencies
-        working-directory: web
-        run: npm ci
+      - name: Install exact Rust toolchain and target
+        run: |
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal --target wasm32-unknown-unknown
+          rustup toolchain install "${BUILD_TOOLS_TOOLCHAIN}" --profile minimal
+          rustc --version
+          cargo --version
 
-      - name: Verify package version sync
+      - name: Install pinned wasm-pack
+        run: cargo install wasm-pack --version "${WASM_PACK_VERSION}" --locked
+
+      - name: Install wasm-bindgen-cli
+        # The CLI version must match the wasm-bindgen crate version in
+        # Cargo.lock. Deriving the exact version prevents CLI/crate drift.
+        run: |
+          version="$(grep -A1 '^name = "wasm-bindgen"$' Cargo.lock | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)"
+          test -n "${version}"
+          echo "Installing wasm-bindgen-cli ${version} (matched to Cargo.lock)"
+          rustup run "${BUILD_TOOLS_TOOLCHAIN}" cargo install wasm-bindgen-cli --version "${version}" --locked
+
+      - name: Install web dependencies without lifecycle scripts
         working-directory: web
-        run: npm run version:check
+        run: npm ci --ignore-scripts
+
+      - name: Verify package and release-tag versions
+        working-directory: web
+        env:
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+        run: |
+          npm run version:check
+          package_version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          test "${RELEASE_REF_TYPE}" = "tag"
+          test "${RELEASE_REF_NAME}" = "v${package_version}"
 
       - name: Run web package tests
         working-directory: web
         run: npm test
 
-      - name: Verify web package tarball contents
+      - name: Build package once
         working-directory: web
-        run: npm run verify:pack
+        run: npm run build:package
 
-      - name: Publish web package with trusted publishing
-        if: ${{ env.NPM_TOKEN == '' }}
+      - name: Exercise the real WebAssembly bindings
         working-directory: web
-        run: npm publish
+        run: npm run test:wasm
 
-      - name: Publish web package with npm token
-        if: ${{ env.NPM_TOKEN != '' }}
+      - name: Create and verify exact npm archive
+        id: pack
         working-directory: web
+        run: |
+          node ./scripts/create-release-pack.mjs > release-pack.json
+          cat release-pack.json
+          filename="$(node -p "JSON.parse(require('fs').readFileSync('release-pack.json', 'utf8')).filename")"
+          sha256="$(node -p "JSON.parse(require('fs').readFileSync('release-pack.json', 'utf8')).sha256")"
+          test -f "${filename}"
+          echo "filename=${filename}" >> "${GITHUB_OUTPUT}"
+          echo "sha256=${sha256}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload verified archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: neo-decompiler-web-package
+          path: web/${{ steps.pack.outputs.filename }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-web:
+    name: Publish exact Web npm archive
+    needs: package-web
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    steps:
+      - name: Download verified archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: neo-decompiler-web-package
+          path: release
+
+      - name: Set up Node for trusted publishing
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Recheck archive digest
         env:
-          NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
-        run: npm publish --provenance=false
+          PACKAGE_FILE: ${{ needs.package-web.outputs.filename }}
+          EXPECTED_SHA256: ${{ needs.package-web.outputs.sha256 }}
+        run: |
+          actual_sha256="$(sha256sum "release/${PACKAGE_FILE}" | awk '{print $1}')"
+          test "${actual_sha256}" = "${EXPECTED_SHA256}"
+
+      - name: Publish verified archive
+        env:
+          PACKAGE_FILE: ${{ needs.package-web.outputs.filename }}
+          # The legacy token, when configured, is visible only to this final
+          # step. Prefer npm trusted publishing so this secret can be removed.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -n "${NODE_AUTH_TOKEN:-}" ]]; then
+            npm whoami
+            npm publish "release/${PACKAGE_FILE}" --ignore-scripts --provenance=false
+          else
+            unset NODE_AUTH_TOKEN
+            npm publish "release/${PACKAGE_FILE}" --ignore-scripts --provenance
+          fi
+
+  package-js:
+    name: Verify and pack independent JS package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      filename: ${{ steps.pack.outputs.filename }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+
+      - name: Verify release tag and independent JS version mapping
+        env:
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+        run: |
+          node web/scripts/sync-version.mjs --check
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          const web = JSON.parse(readFileSync('web/package.json', 'utf8'));
+          const js = JSON.parse(readFileSync('js/package.json', 'utf8'));
+          assert.equal(process.env.RELEASE_REF_TYPE, 'tag');
+          assert.equal(process.env.RELEASE_REF_NAME, `v${web.version}`);
+          assert.equal(js.name, 'neo-decompiler-js');
+          assert.match(js.version, /^\d+\.\d+\.\d+$/);
+          const mappings = readFileSync('js/README.md', 'utf8').split('\n')
+            .filter(line => line.startsWith('|')).map(line => line.split('|').map(cell => cell.trim()));
+          assert.ok(mappings.some(row => row[1] === js.version && row[2] === web.version),
+            'js/README.md must map the JS version to this Rust/Web release');
+          for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies', 'bundledDependencies']) {
+            assert.equal(Object.keys(js[field] ?? {}).length, 0, `JS package must remain dependency-free: ${field}`);
+          }
+          NODE
+
+      - name: Run standalone JS tests
+        # Rust differential and external Roslyn compiler gates run in the main
+        # CI workflow, which must pass on this commit before the tag is pushed.
+        working-directory: js
+        run: npm test
+
+      - name: Create and verify exact JS npm archive
+        id: pack
+        working-directory: js
+        run: |
+          npm pack --ignore-scripts --json > release-pack.json
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { createHash } from 'node:crypto';
+          import { execFileSync } from 'node:child_process';
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const packs = JSON.parse(readFileSync('release-pack.json', 'utf8'));
+          assert.equal(packs.length, 1);
+          const pack = packs[0];
+          assert.equal(pack.name, pkg.name);
+          assert.equal(pack.version, pkg.version);
+          assert.equal(pack.filename, `neo-decompiler-js-${pkg.version}.tgz`);
+          const paths = pack.files.map(file => file.path).sort();
+          assert.equal(new Set(paths).size, paths.length);
+          for (const path of paths) {
+            assert.ok(['package.json', 'README.md'].includes(path) ||
+              /^src\/(?:[a-zA-Z0-9_-]+\/)*[a-zA-Z0-9_-]+(?:\.d\.ts|\.js)$/.test(path),
+              `unexpected packed file: ${path}`);
+          }
+          for (const path of ['package.json', 'README.md', 'src/index.js', 'src/index.d.ts']) {
+            assert.ok(paths.includes(path), `missing package entry: ${path}`);
+          }
+          const entries = execFileSync('tar', ['-tzf', pack.filename], { encoding: 'utf8' }).trim().split('\n').sort();
+          assert.deepEqual(entries, paths.map(path => `package/${path}`).sort());
+          const listing = execFileSync('tar', ['-tvzf', pack.filename], { encoding: 'utf8' }).trim().split('\n');
+          assert.ok(listing.every(line => line.startsWith('-')), 'archive must contain only regular files');
+          const packed = JSON.parse(execFileSync('tar', ['-xOf', pack.filename, 'package/package.json'], { encoding: 'utf8' }));
+          assert.deepEqual(packed, pkg);
+          const sha256 = createHash('sha256').update(readFileSync(pack.filename)).digest('hex');
+          appendFileSync(process.env.GITHUB_OUTPUT, `filename=${pack.filename}\nsha256=${sha256}\n`);
+          console.log(`${pack.filename}: ${paths.length} files, SHA-256 ${sha256}`);
+          NODE
+
+      - name: Smoke-test the packed public entry point
+        working-directory: js
+        env:
+          PACKAGE_FILE: ${{ steps.pack.outputs.filename }}
+        run: |
+          consumer="$(mktemp -d)"
+          npm install --prefix "${consumer}" --ignore-scripts --no-audit --no-fund "${PWD}/${PACKAGE_FILE}"
+          cd "${consumer}"
+          node --input-type=module -e "import('neo-decompiler-js').then(module => { if (typeof module.decompileBytes !== 'function') throw new Error('Missing public decompileBytes export'); })"
+
+      - name: Upload verified JS archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: neo-decompiler-js-package
+          path: js/${{ steps.pack.outputs.filename }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-js:
+    name: Publish exact independent JS npm archive
+    needs: package-js
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+    steps:
+      - name: Download verified JS archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: neo-decompiler-js-package
+          path: release
+
+      - name: Set up Node for trusted publishing
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Recheck JS archive digest
+        env:
+          PACKAGE_FILE: ${{ needs.package-js.outputs.filename }}
+          EXPECTED_SHA256: ${{ needs.package-js.outputs.sha256 }}
+        run: |
+          actual_sha256="$(sha256sum "release/${PACKAGE_FILE}" | awk '{print $1}')"
+          test "${actual_sha256}" = "${EXPECTED_SHA256}"
+
+      - name: Publish verified JS archive
+        env:
+          PACKAGE_FILE: ${{ needs.package-js.outputs.filename }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -n "${NODE_AUTH_TOKEN:-}" ]]; then
+            npm whoami
+            npm publish "release/${PACKAGE_FILE}" --ignore-scripts --access public --provenance=false
+          else
+            unset NODE_AUTH_TOKEN
+            npm publish "release/${PACKAGE_FILE}" --ignore-scripts --access public --provenance
+          fi

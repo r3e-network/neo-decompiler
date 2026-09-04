@@ -146,6 +146,11 @@ fn compute_immediate_dominators(cfg: &Cfg) -> BTreeMap<BlockId, Option<BlockId>>
     // Iterate until convergence
     // Pre-compute RPO once — the CFG is immutable during the fixpoint loop.
     let rpo = reverse_post_order(cfg);
+    let rpo_positions = rpo
+        .iter()
+        .enumerate()
+        .map(|(position, &block)| (block, position))
+        .collect::<BTreeMap<_, _>>();
     let mut changed = true;
     let mut iteration_count = 0u32;
     while changed {
@@ -164,7 +169,7 @@ fn compute_immediate_dominators(cfg: &Cfg) -> BTreeMap<BlockId, Option<BlockId>>
             }
 
             // Find the new dominator by intersecting predecessors' dominators
-            let new_idom = intersect_dominators(cfg, block_id, &idom);
+            let new_idom = intersect_dominators(cfg, block_id, &idom, &rpo_positions);
 
             let current_value = idom.get(&block_id).and_then(|o| *o);
             if current_value != new_idom {
@@ -187,6 +192,7 @@ fn intersect_dominators(
     cfg: &Cfg,
     block: BlockId,
     idom: &BTreeMap<BlockId, Option<BlockId>>,
+    rpo_positions: &BTreeMap<BlockId, usize>,
 ) -> Option<BlockId> {
     let predecessors = cfg.predecessors(block);
 
@@ -214,7 +220,7 @@ fn intersect_dominators(
                 // Skip predecessors that haven't been processed yet (idom = None)
                 match pred_idom {
                     None => Some(current),
-                    Some(_) => Some(find_common_dominator(cfg, current, *pred, idom)),
+                    Some(_) => find_common_dominator(current, *pred, idom, rpo_positions),
                 }
             }
         };
@@ -228,80 +234,33 @@ fn intersect_dominators(
 /// Uses the "finger" method: move fingers up the dominator chains
 /// until they meet at the common ancestor.
 ///
-/// Returns the common dominator, or falls back to finger1 if the algorithm
-/// fails to converge (e.g., due to malformed CFG from invalid bytecode).
+/// Immediate dominators precede their children in reverse post-order, so move
+/// only the later finger. This avoids rescanning both full ancestor chains to
+/// compute their depths, and handles valid chains of any length.
 fn find_common_dominator(
-    _cfg: &Cfg,
     mut finger1: BlockId,
     mut finger2: BlockId,
     idom: &BTreeMap<BlockId, Option<BlockId>>,
-) -> BlockId {
-    // Move fingers to the same depth in the dominator tree
-    let mut depth1 = depth_in_dominator_tree(finger1, idom);
-    let mut depth2 = depth_in_dominator_tree(finger2, idom);
-
-    let mut iterations = 0;
-    const MAX_ITERATIONS: usize = 1000;
-
-    while depth1 > depth2 {
-        let Some(next) = idom_parent(idom, finger1) else {
-            return finger1; // Graceful fallback
-        };
-        finger1 = next;
-        depth1 -= 1;
-        iterations += 1;
-        if iterations > MAX_ITERATIONS {
-            return finger1; // Graceful fallback on pathological CFG
-        }
-    }
-    while depth2 > depth1 {
-        let Some(next) = idom_parent(idom, finger2) else {
-            return finger1; // Graceful fallback
-        };
-        finger2 = next;
-        depth2 -= 1;
-        iterations += 1;
-        if iterations > MAX_ITERATIONS {
-            return finger1; // Graceful fallback on pathological CFG
-        }
-    }
-
-    // Move both fingers up until they meet
+    rpo_positions: &BTreeMap<BlockId, usize>,
+) -> Option<BlockId> {
     while finger1 != finger2 {
-        let (Some(next1), Some(next2)) = (idom_parent(idom, finger1), idom_parent(idom, finger2))
-        else {
-            return finger1; // Graceful fallback
+        let position1 = *rpo_positions.get(&finger1)?;
+        let position2 = *rpo_positions.get(&finger2)?;
+        let (finger, position) = if position1 > position2 {
+            (&mut finger1, position1)
+        } else {
+            (&mut finger2, position2)
         };
-        finger1 = next1;
-        finger2 = next2;
-        iterations += 1;
-        if iterations > MAX_ITERATIONS {
-            return finger1; // Graceful fallback on pathological CFG
+        let parent = idom_parent(idom, *finger)?;
+        // Reject inconsistent parent links instead of inventing a dominator
+        // or looping. The rank strictly decreases on every successful step.
+        if *rpo_positions.get(&parent)? >= position {
+            return None;
         }
+        *finger = parent;
     }
 
-    finger1
-}
-
-/// Get the depth of a block in the dominator tree.
-///
-/// Uses an iteration counter instead of a `BTreeSet` for cycle detection.
-/// A dominator tree over N blocks has at most N nodes, so exceeding that
-/// depth means we hit a cycle (e.g. entry dominating itself).
-fn depth_in_dominator_tree(block: BlockId, idom: &BTreeMap<BlockId, Option<BlockId>>) -> usize {
-    let max_depth = idom.len();
-    let mut depth = 1; // Count the block itself
-    let mut current = idom_parent(idom, block);
-
-    while let Some(idom_block) = current {
-        if depth >= max_depth {
-            break;
-        }
-        depth += 1;
-        current = idom_parent(idom, idom_block);
-    }
-
-    depth
+    Some(finger1)
 }
 
 /// The parent of `b` in the idom map — i.e. `idom.get(b).flatten()` — except
@@ -318,8 +277,8 @@ fn idom_parent(idom: &BTreeMap<BlockId, Option<BlockId>>, b: BlockId) -> Option<
 
 /// Get blocks in reverse post-order.
 ///
-/// Reverse post-order guarantees that when processing a block,
-/// all its successors have already been processed.
+/// Reverse post-order visits predecessors before successors except for back
+/// edges, making forward propagation converge quickly.
 fn reverse_post_order(cfg: &Cfg) -> Vec<BlockId> {
     let mut visited = BTreeSet::new();
     let mut order = Vec::new();
@@ -418,15 +377,20 @@ fn compute_df(
     // point's immediate dominator, adding the join point to each
     // visited node's DF along the way.
     for block in cfg.blocks() {
+        if idom.get(&block.id).copied().flatten().is_none() {
+            continue;
+        }
         let predecessors = cfg.predecessors(block.id);
 
-        if predecessors.len() < 2 {
+        let block_idom = idom_parent(idom, block.id);
+        if predecessors.len() < 2 && block_idom.is_some() {
             continue; // Only join points contribute to DFs
         }
 
-        let block_idom = idom.get(&block.id).copied().flatten();
-
         for &pred in predecessors {
+            if idom.get(&pred).copied().flatten().is_none() {
+                continue;
+            }
             let mut runner = pred;
             // Walk up until runner IS the immediate dominator of the join block
             while Some(runner) != block_idom {
@@ -485,6 +449,222 @@ mod tests {
 
         // Block 1 strictly dominates 2
         assert!(dominance.strictly_dominates(BlockId(1), BlockId(2)));
+    }
+
+    #[test]
+    fn deep_branch_merge_is_dominated_only_by_the_entry() {
+        // A long left arm and a one-block right arm merge at the exit. The
+        // long arm exceeds the former hard-coded 1000-step ancestor limit.
+        let left_depth = 1_500;
+        let right = BlockId(left_depth + 1);
+        let exit = BlockId(left_depth + 2);
+        let mut cfg = Cfg::new();
+        for index in 0..=left_depth {
+            let terminator = if index == 0 {
+                Terminator::Branch {
+                    then_target: BlockId(1),
+                    else_target: right,
+                }
+            } else {
+                Terminator::Jump {
+                    target: if index == left_depth {
+                        exit
+                    } else {
+                        BlockId(index + 1)
+                    },
+                }
+            };
+            cfg.add_block(BasicBlock::new(
+                BlockId(index),
+                index,
+                index + 1,
+                index..index + 1,
+                terminator,
+            ));
+            if index > 0 {
+                cfg.add_edge(
+                    BlockId(index - 1),
+                    BlockId(index),
+                    crate::decompiler::cfg::EdgeKind::Unconditional,
+                );
+            }
+        }
+        cfg.add_block(BasicBlock::new(
+            right,
+            right.0,
+            right.0 + 1,
+            right.0..right.0 + 1,
+            Terminator::Jump { target: exit },
+        ));
+        cfg.add_block(BasicBlock::new(
+            exit,
+            exit.0,
+            exit.0 + 1,
+            exit.0..exit.0 + 1,
+            Terminator::Return,
+        ));
+        cfg.add_edge(
+            BlockId::ENTRY,
+            right,
+            crate::decompiler::cfg::EdgeKind::ConditionalFalse,
+        );
+        cfg.add_edge(
+            BlockId(left_depth),
+            exit,
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
+        cfg.add_edge(right, exit, crate::decompiler::cfg::EdgeKind::Unconditional);
+
+        let dominance = compute(&cfg);
+        assert_eq!(dominance.idom(exit), Some(BlockId::ENTRY));
+        assert!(!dominance.strictly_dominates(BlockId(1), exit));
+        assert_eq!(dominance.dominance_frontier_vec(BlockId(1)), vec![exit]);
+        assert!(dominance.dominance_frontier_vec(BlockId::ENTRY).is_empty());
+    }
+
+    #[test]
+    fn entry_self_loop_has_itself_in_its_dominance_frontier() {
+        let mut cfg = Cfg::new();
+        cfg.add_block(BasicBlock::new(
+            BlockId::ENTRY,
+            0,
+            1,
+            0..1,
+            Terminator::Jump {
+                target: BlockId::ENTRY,
+            },
+        ));
+        cfg.add_edge(
+            BlockId::ENTRY,
+            BlockId::ENTRY,
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
+
+        let dominance = compute(&cfg);
+        assert_eq!(
+            dominance.dominance_frontier_vec(BlockId::ENTRY),
+            vec![BlockId::ENTRY]
+        );
+    }
+
+    #[test]
+    fn unreachable_predecessor_does_not_contribute_to_dominance_frontiers() {
+        let mut cfg = create_linear_cfg(2);
+        cfg.add_block(BasicBlock::new(
+            BlockId(2),
+            2,
+            3,
+            2..3,
+            Terminator::Jump { target: BlockId(1) },
+        ));
+        cfg.add_edge(
+            BlockId(2),
+            BlockId(1),
+            crate::decompiler::cfg::EdgeKind::Unconditional,
+        );
+
+        let dominance = compute(&cfg);
+        assert_eq!(dominance.idom(BlockId(1)), Some(BlockId::ENTRY));
+        assert_eq!(dominance.idom(BlockId(2)), None);
+        assert!(dominance.dominance_frontier_vec(BlockId(2)).is_empty());
+    }
+
+    #[test]
+    fn cyclic_graphs_match_a_dominator_set_reference() {
+        const BLOCKS: usize = 12;
+        let label = |index| BlockId(if index == 0 { 0 } else { index * 7 % 11 + 1 });
+        for seed in 1_u64..=64 {
+            let mut random = seed;
+            let mut cfg = Cfg::new();
+            for index in 0..BLOCKS {
+                random = random
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1);
+                let next = label((index + 1).min(BLOCKS - 1));
+                let other = label((random >> 32) as usize % BLOCKS);
+                cfg.add_block(BasicBlock::new(
+                    label(index),
+                    index,
+                    index + 1,
+                    index..index + 1,
+                    if index + 1 == BLOCKS {
+                        Terminator::Return
+                    } else {
+                        Terminator::Branch {
+                            then_target: next,
+                            else_target: other,
+                        }
+                    },
+                ));
+                if index + 1 != BLOCKS {
+                    cfg.add_edge(
+                        label(index),
+                        next,
+                        crate::decompiler::cfg::EdgeKind::ConditionalTrue,
+                    );
+                    cfg.add_edge(
+                        label(index),
+                        other,
+                        crate::decompiler::cfg::EdgeKind::ConditionalFalse,
+                    );
+                }
+            }
+
+            // Independent reference: intersect full dominator sets until
+            // stable. Every block is reachable through the mandatory chain.
+            let all = cfg.blocks().map(|block| block.id).collect::<BTreeSet<_>>();
+            let mut sets = all
+                .iter()
+                .map(|&block| (block, all.clone()))
+                .collect::<BTreeMap<_, _>>();
+            sets.insert(BlockId::ENTRY, BTreeSet::from([BlockId::ENTRY]));
+            loop {
+                let mut changed = false;
+                for &block in all.iter().filter(|&&block| block != BlockId::ENTRY) {
+                    let mut next = all.clone();
+                    for pred in cfg.predecessors(block) {
+                        next.retain(|candidate| sets[pred].contains(candidate));
+                    }
+                    next.insert(block);
+                    if sets[&block] != next {
+                        sets.insert(block, next);
+                        changed = true;
+                    }
+                }
+                if !changed {
+                    break;
+                }
+            }
+
+            let actual = compute(&cfg);
+            for &block in &all {
+                let expected_parent = sets[&block]
+                    .iter()
+                    .copied()
+                    .filter(|&candidate| candidate != block)
+                    .max_by_key(|candidate| sets[candidate].len());
+                assert_eq!(
+                    actual.idom(block),
+                    expected_parent,
+                    "seed {seed}, {block:?}"
+                );
+                let expected_frontier = all
+                    .iter()
+                    .copied()
+                    .filter(|&target| {
+                        (target == block || !sets[&target].contains(&block))
+                            && cfg
+                                .predecessors(target)
+                                .iter()
+                                .any(|pred| sets[pred].contains(&block))
+                    })
+                    .collect::<BTreeSet<_>>();
+                assert_eq!(
+                    actual.dominance_frontier[&block], expected_frontier,
+                    "seed {seed}, {block:?}"
+                );
+            }
+        }
     }
 
     #[test]

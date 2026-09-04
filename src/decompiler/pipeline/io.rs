@@ -1,24 +1,12 @@
-use std::fs;
 use std::path::Path;
 
 use crate::disassembler::DisassemblyOutput;
-use crate::error::{NefError, Result};
+use crate::error::Result;
 use crate::manifest::ContractManifest;
+use crate::nef::read_nef_file;
 
-use super::super::{Decompilation, OutputFormat, MAX_NEF_FILE_SIZE};
+use super::super::{Decompilation, OutputFormat};
 use super::Decompiler;
-
-fn read_nef_file(path: &Path) -> Result<Vec<u8>> {
-    let size = fs::metadata(path)?.len();
-    if size > MAX_NEF_FILE_SIZE {
-        return Err(NefError::FileTooLarge {
-            size,
-            max: MAX_NEF_FILE_SIZE,
-        }
-        .into());
-    }
-    Ok(fs::read(path)?)
-}
 
 impl Decompiler {
     pub(super) fn io_decompile_file<P: AsRef<Path>>(&self, path: P) -> Result<Decompilation> {

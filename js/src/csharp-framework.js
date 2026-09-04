@@ -4,9 +4,10 @@ import {
   splitCallArguments,
 } from "./csharp-expression-scanner.js";
 import {
-  describeMethodToken,
-  frameworkNativeMethod,
-} from "./native-contracts.js";
+  METHOD_TOKEN_FALLBACK_CALL_PATTERN,
+  methodTokenFallbackLabel,
+} from "./method-token-label.js";
+import { escapeCSharpStringContent } from "./visible-text.js";
 
 // A few framework APIs have stronger C# parameter types than the VM values
 // they consume. Add explicit boundary conversions only where the recovered
@@ -224,56 +225,44 @@ function isNumericExpression(expression, types) {
   return identifier ? types?.get(identifier) === "BigInteger" : false;
 }
 
-// CALLT labels are intentionally kept as readable bare names in the
-// high-level surface. When a token is available, render that call through the
-// framework's Contract.Call API so the generated C# remains self-contained.
+// Non-native/restricted CALLT labels are inert identifiers derived from the
+// token-table index. Resolve only that identifier here: matching by the raw
+// method name is both ambiguous (different hashes may expose the same name)
+// and unsafe because the method text originates in an untrusted NEF.
 export function rewriteCSharpMethodTokenCalls(line, methodTokens = null) {
   if (!Array.isArray(methodTokens) || methodTokens.length === 0) return line;
-  if (line.trimStart().startsWith("//")) return line;
-  const tokens = new Map(
-    methodTokens
-      .filter((token) => token && typeof token.method === "string")
-      .flatMap((token) => [
-        [token.method, token],
-        [token.method.toLowerCase(), token],
-      ]),
-  );
-  if (tokens.size === 0) return line;
-  const pattern = /\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
-  let output = "";
-  let cursor = 0;
+  const pattern = new RegExp(METHOD_TOKEN_FALLBACK_CALL_PATTERN.source, "g");
+  const edits = [];
   let match;
   while ((match = nextOutsideMatch(line, pattern)) !== null) {
-    const token = tokens.get(match[1]) ?? tokens.get(match[1].toLowerCase());
-    if (!token || isQualifiedCallName(line, match.index)) continue;
-    if (isDirectNativeToken(token)) continue;
+    const index = Number(match[2]);
+    const token = methodTokens[index];
+    if (!token || typeof token.method !== "string"
+        || !Number.isSafeInteger(index)
+        || methodTokenFallbackLabel(index) !== match[1]
+        || isQualifiedCallName(line, match.index)) continue;
     const open = line.indexOf("(", match.index);
     const close = findCallClose(line, open);
     if (close < 0) continue;
-    const args = splitCallArguments(line.slice(open + 1, close));
-    output += line.slice(cursor, match.index);
-    output += renderMethodTokenCall(token, args);
-    cursor = close + 1;
-    pattern.lastIndex = cursor;
+    // Rewrite only the call's delimiters. Keeping the argument text intact
+    // preserves comments and evaluation order, and lets the same scan visit
+    // nested CALLTs without recursive rewrites or rebuilding the token table.
+    edits.push({ start: match.index, end: open + 1, text: renderMethodTokenCallPrefix(token) });
+    edits.push({ start: close, end: close + 1, text: " })" });
   }
-  return cursor === 0 ? line : output + line.slice(cursor);
-}
-
-function isDirectNativeToken(token) {
-  if (token.callFlags !== 0x0F) return false;
-  const hash = token.hash instanceof Uint8Array
-    ? token.hash
-    : Array.isArray(token.hash) ? Uint8Array.from(token.hash) : null;
-  if (hash?.length !== 20) return false;
-  const hint = describeMethodToken(hash, token.method);
-  if (!hint?.hasExactMethod() || !hint.canonicalMethod) return false;
-  // Only skip Contract.Call when the Neo C# framework exposes the method.
-  // Catalog-only protocol methods (Oracle.Finish, Governance.*) still need
-  // the hash-preserving fallback.
-  return frameworkNativeMethod(hint.contract, hint.canonicalMethod) != null;
+  if (edits.length === 0) return line;
+  edits.sort((left, right) => left.start - right.start);
+  let output = "";
+  let cursor = 0;
+  for (const edit of edits) {
+    output += line.slice(cursor, edit.start) + edit.text;
+    cursor = edit.end;
+  }
+  return output + line.slice(cursor);
 }
 
 function isQualifiedCallName(line, index) {
+  if (index > 0 && /[@\p{L}\p{N}\p{M}\p{Pc}\p{Cf}]/u.test(line[index - 1])) return true;
   let previous = index - 1;
   while (previous >= 0 && /\s/.test(line[previous])) previous -= 1;
   // High-level native labels use `Contract::Method`, while C# surface uses
@@ -282,7 +271,7 @@ function isQualifiedCallName(line, index) {
   return previous >= 0 && (line[previous] === "." || line[previous] === ":");
 }
 
-function renderMethodTokenCall(token, args) {
+function renderMethodTokenCallPrefix(token) {
   const bytes = token.hash instanceof Uint8Array
     ? [...token.hash]
     : Array.isArray(token.hash) ? token.hash : [];
@@ -290,11 +279,5 @@ function renderMethodTokenCall(token, args) {
     ? `(UInt160)new byte[] { ${bytes.map((byte) => `0x${Number(byte).toString(16).padStart(2, "0").toUpperCase()}`).join(", ")} }`
     : "default(UInt160)";
   const flags = Number.isInteger(token.callFlags) ? token.callFlags : 0;
-  return `Contract.Call(${address}, "${escapeCSharpTokenString(token.method)}", (CallFlags)(${flags}), new object[] { ${args.join(", ")} })`;
-}
-
-function escapeCSharpTokenString(value) {
-  return String(value)
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"');
+  return `Contract.Call(${address}, "${escapeCSharpStringContent(token.method)}", (CallFlags)(${flags}), new object[] { `;
 }

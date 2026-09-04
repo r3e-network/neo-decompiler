@@ -29,10 +29,20 @@ pub(crate) fn write_contract_header(
     )
     .unwrap();
     if !nef.header.compiler.is_empty() {
-        writeln!(output, "    // compiler: {}", nef.header.compiler).unwrap();
+        writeln!(
+            output,
+            "    // compiler: {}",
+            util::escape_visible_text(&nef.header.compiler)
+        )
+        .unwrap();
     }
     if !nef.header.source.is_empty() {
-        writeln!(output, "    // source: {}", nef.header.source).unwrap();
+        writeln!(
+            output,
+            "    // source: {}",
+            util::escape_visible_text(&nef.header.source)
+        )
+        .unwrap();
     }
 
     if let Some(manifest) = manifest {

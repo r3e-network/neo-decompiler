@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::manifest::ManifestParameter;
+use crate::util;
 
 pub(in crate::decompiler::csharp) use super::super::super::helpers::make_unique_identifier;
 use super::super::super::helpers::sanitize_identifier;
@@ -212,7 +213,7 @@ pub(in crate::decompiler::csharp) fn escape_csharp_string(value: &str) -> String
             '\u{2029}' => escaped.push_str("\\u2029"),
             '"' => escaped.push_str("\\\""),
             '\\' => escaped.push_str("\\\\"),
-            control if control.is_control() => {
+            control if control.is_control() || util::is_bidi_control(control) => {
                 use std::fmt::Write;
                 write!(escaped, "\\u{:04X}", u32::from(control)).unwrap();
             }

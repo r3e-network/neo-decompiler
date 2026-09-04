@@ -25,6 +25,7 @@ const MAX_SCRIPT_LEN = 0x8_0000;
 // Reference: `MethodToken.Deserialize` reads the method name with
 // `reader.ReadVarString(32)`.
 const MAX_METHOD_NAME_LEN = 32;
+const MAX_METHOD_TOKEN_PARAMETERS = 2048;
 const CALL_FLAGS_ALLOWED_MASK = 0x0f;
 
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -215,6 +216,18 @@ function parseMethodTokens(bytes, startOffset) {
     const paramsBytes = slice(bytes, offset, 2);
     const parametersCount = readU16LE(paramsBytes, 0);
     offset += 2;
+    if (parametersCount > MAX_METHOD_TOKEN_PARAMETERS) {
+      throw new NefParseError(
+        `method token parameter count at index ${index} exceeds maximum ` +
+          `(${parametersCount} > ${MAX_METHOD_TOKEN_PARAMETERS})`,
+        {
+          code: "MethodTokenParameterCountTooLarge",
+          index,
+          count: parametersCount,
+          max: MAX_METHOD_TOKEN_PARAMETERS,
+        },
+      );
+    }
 
     const hasReturnValueByte = bytes[offset];
     if (hasReturnValueByte === undefined) {

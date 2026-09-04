@@ -3,8 +3,8 @@ use serde_json::Value;
 use tempfile::tempdir;
 
 use crate::common::{
-    assert_schema, build_sample_nef, neo_decompiler_cmd, write_oversize_nef, SchemaKind,
-    SAMPLE_MANIFEST,
+    assert_schema, build_nef_with_metadata_controls, build_sample_nef, neo_decompiler_cmd,
+    write_oversize_nef, SchemaKind, CONTROL_METHOD, SAMPLE_MANIFEST,
 };
 
 #[test]
@@ -184,4 +184,63 @@ fn info_command_strict_manifest_rejects_invalid_manifest_values() {
         .assert()
         .failure()
         .stderr(contains("manifest validation error"));
+}
+
+#[test]
+fn info_text_escapes_controls_but_json_preserves_raw_metadata() {
+    let dir = tempdir().expect("tempdir");
+    let nef_path = dir.path().join("controls.nef");
+    let manifest_path = dir.path().join("controls.manifest.json");
+    std::fs::write(&nef_path, build_nef_with_metadata_controls()).unwrap();
+    let manifest_value = serde_json::json!({
+        "name": "Contract\nINJECT_NAME\u{202E}",
+        "supportedstandards": ["NEP\u{0085}INJECT_STANDARD"],
+        "features": {"key\u{2028}INJECT_FEATURE": "value\u{2029}INJECT_VALUE"},
+        "abi": {"methods": [], "events": []},
+        "permissions": [],
+        "trusts": "*",
+        "extra": {"Author\u{001B}INJECT_KEY": "value\rINJECT_EXTRA"}
+    });
+    std::fs::write(&manifest_path, serde_json::to_vec(&manifest_value).unwrap()).unwrap();
+
+    let text_output = neo_decompiler_cmd()
+        .arg("info")
+        .arg(&nef_path)
+        .output()
+        .expect("text output");
+    assert!(text_output.status.success());
+    let text = String::from_utf8(text_output.stdout).expect("UTF-8 text");
+    assert!(text.contains("Compiler: c\\rR\\nL\\u{0085}N\\u{2028}S"));
+    assert!(text.contains("Source: source\\nINJECT_SOURCE"));
+    assert!(text.contains("Manifest contract: Contract\\nINJECT_NAME\\u{202E}"));
+    assert!(text.contains("method=m\\r\\n\\u{0085}\\u{2028}\\u{2029}\\u{001B}\\u{202E}INJECT"));
+    for forbidden in [
+        '\r', '\u{0085}', '\u{2028}', '\u{2029}', '\u{001B}', '\u{202E}',
+    ] {
+        assert!(
+            !text.contains(forbidden),
+            "text retained U+{:04X}",
+            u32::from(forbidden)
+        );
+    }
+    assert!(!text
+        .lines()
+        .any(|line| line.trim_start().starts_with("INJECT_")));
+
+    let json_output = neo_decompiler_cmd()
+        .arg("info")
+        .arg("--format")
+        .arg("json")
+        .arg(&nef_path)
+        .output()
+        .expect("JSON output");
+    assert!(json_output.status.success());
+    let json: Value = serde_json::from_slice(&json_output.stdout).expect("valid JSON");
+    assert_eq!(
+        json["compiler"],
+        "c\rR\nL\u{0085}N\u{2028}S\u{2029}P\u{001B}E\u{202E}B"
+    );
+    assert_eq!(json["source"], "source\nINJECT_SOURCE");
+    assert_eq!(json["method_tokens"][0]["method"], CONTROL_METHOD);
+    assert_eq!(json["manifest"]["name"], manifest_value["name"]);
 }

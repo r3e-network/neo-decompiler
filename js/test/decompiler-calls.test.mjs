@@ -10,6 +10,7 @@ import {
 import {
   buildNefFromScript,
   buildNefWithSingleToken,
+  buildNefWithTokens,
 } from "./decompiler-fixtures.mjs";
 
 test("DUP on a call result materialises a temp instead of double-evaluating", () => {
@@ -309,9 +310,75 @@ test("uses method token metadata to lift CALLT arguments and void returns", () =
     0x0f,
   );
   const result = decompileHighLevelBytes(nef);
-  assert.match(result.highLevel, /foo\(1\);/);
-  assert.doesNotMatch(result.highLevel, /let t\d+ = foo/);
+  assert.match(result.highLevel, /__callt_token_0\(1\);/);
+  assert.doesNotMatch(result.highLevel, /let t\d+ = __callt_token_0/);
   assert.match(result.highLevel, /return;/);
+});
+
+test("CALLT arguments retain VM producer order and execute each call once", () => {
+  const tokens = ["first", "second", "consume"].map((method, index) => ({
+    hash: new Uint8Array(20).fill(index + 1),
+    method,
+    parametersCount: index === 2 ? 2 : 0,
+    hasReturnValue: index !== 2,
+    callFlags: 15,
+  }));
+  const nef = buildNefWithTokens(Uint8Array.from([
+    0x37, 0, 0, 0x37, 1, 0, 0x37, 2, 0, 0x40,
+  ]), tokens);
+  for (const options of [{}, { clean: true }]) {
+    const result = decompileHighLevelBytes(nef, options);
+    assert.match(result.highLevel, /let t0 = __callt_token_0\(\);\s*let t1 = __callt_token_1\(\);\s*__callt_token_2\(t1, t0\);/);
+    for (const index of [0, 1, 2]) {
+      assert.equal((result.highLevel.match(new RegExp(`__callt_token_${index}\\(`, "g")) ?? []).length, 1);
+    }
+    assert.ok(result.csharp.indexOf('"first", (CallFlags)') < result.csharp.indexOf('"second", (CallFlags)'));
+    assert.ok(result.csharp.indexOf('"second", (CallFlags)') < result.csharp.indexOf('"consume", (CallFlags)'));
+  }
+});
+
+test("CALLT effects survive stack clearing and ambient values cannot cross another call", () => {
+  const tokens = ["first", "second"].map((method, index) => ({
+    hash: new Uint8Array(20).fill(index + 1), method,
+    parametersCount: 0, hasReturnValue: index === 0, callFlags: 15,
+  }));
+  for (const tail of [[0x40], [0x49, 0x40]]) {
+    const result = decompileHighLevelBytes(buildNefWithTokens(
+      Uint8Array.from([0x37, 0, 0, 0x37, 1, 0, ...tail]), tokens,
+    ));
+    assert.match(result.highLevel, /let t0 = __callt_token_0\(\);\s*__callt_token_1\(\);/);
+    assert.equal((result.highLevel.match(/__callt_token_0\(/g) ?? []).length, 1);
+  }
+});
+
+test("oversized CALLT renders only real arguments and one bounded missing marker", () => {
+  const repeatCount = 32;
+  const script = Uint8Array.from([
+    ...Array.from({ length: repeatCount }, () => [0x37, 0, 0]).flat(), 0x40,
+  ]);
+  const result = decompileHighLevelBytes(buildNefWithSingleToken(
+    script, new Uint8Array(20), "consume", 2048, false, 15,
+  ));
+  assert.equal((result.highLevel.match(/__callt_token_0\(unknown \/\* 2048 missing\/omitted arguments \*\/\)/g) ?? []).length, repeatCount);
+  assert.doesNotMatch(result.highLevel, /\?\?\?/);
+  assert.equal(result.warnings.filter((warning) => warning.includes("CALLT __callt_token_0 rendered")).length, repeatCount);
+  assert.ok(result.highLevel.length < 15000, result.highLevel.length);
+});
+
+test("CALLT render truncation preserves all argument-producing effects", () => {
+  const count = 300;
+  const tokens = [
+    { hash: new Uint8Array(20), method: "produce", parametersCount: 0, hasReturnValue: true, callFlags: 15 },
+    { hash: new Uint8Array(20), method: "consume", parametersCount: count, hasReturnValue: false, callFlags: 15 },
+  ];
+  const script = Uint8Array.from([
+    ...Array.from({ length: count }, () => [0x37, 0, 0]).flat(), 0x37, 1, 0, 0x40,
+  ]);
+  const result = decompileHighLevelBytes(buildNefWithTokens(script, tokens));
+  assert.equal((result.highLevel.match(/__callt_token_0\(\)/g) ?? []).length, count);
+  assert.match(result.highLevel, /__callt_token_1\(t299, t298,/);
+  assert.match(result.highLevel, /t44, unknown \/\* 44 missing\/omitted arguments \*\/\)/);
+  assert.equal(result.warnings.filter((warning) => warning.includes("CALLT __callt_token_1 rendered")).length, 1);
 });
 
 test("preserves a value through a suffix branch chain before CALLT", () => {
@@ -340,12 +407,12 @@ test("preserves a value through a suffix branch chain before CALLT", () => {
     0x0f,
   );
   const result = decompileHighLevelBytes(nef);
-  assert.match(result.highLevel, /foo\(arg0\)/);
+  assert.match(result.highLevel, /__callt_token_0\(arg0\)/);
   assert.doesNotMatch(result.highLevel, /\?\?\?/);
   assert.equal(result.warnings.length, 0);
 });
 
-test("keeps restricted native CALLT labels unqualified", () => {
+test("uses an index label for restricted native CALLT targets", () => {
   const nef = buildNefWithSingleToken(
     new Uint8Array([0x11, 0x37, 0x00, 0x00, 0x40]),
     Uint8Array.from([
@@ -359,7 +426,104 @@ test("keeps restricted native CALLT labels unqualified", () => {
   );
   const result = decompileHighLevelBytes(nef);
   assert.doesNotMatch(result.highLevel, /return StdLib::Serialize/);
-  assert.match(result.highLevel, /Serialize\(1\)/);
+  assert.match(result.highLevel, /__callt_token_0\(1\)/);
+  assert.match(result.csharp, /Contract\.Call\(/);
+  assert.match(result.csharp, /"Serialize", \(CallFlags\)\(1\)/);
+});
+
+test("keeps exact unrestricted native CALLT labels readable", () => {
+  const nef = buildNefWithSingleToken(
+    new Uint8Array([0x11, 0x37, 0x00, 0x00, 0x40]),
+    Uint8Array.from([
+      0xC0, 0xEF, 0x39, 0xCE, 0xE0, 0xE4, 0xE9, 0x25, 0xC6, 0xC2,
+      0xA0, 0x6A, 0x79, 0xE1, 0x44, 0x0D, 0xD8, 0x6F, 0xCE, 0xAC,
+    ]),
+    "Serialize",
+    1,
+    true,
+    0x0F,
+  );
+  const result = decompileHighLevelBytes(nef);
+  assert.match(result.highLevel, /StdLib::Serialize\(1\)/);
+  assert.match(result.csharp, /StdLib\.Serialize\(1\)/);
+  assert.doesNotMatch(result.csharp, /Contract\.Call\(/);
+});
+
+test("keeps hostile method-token text out of executable labels", () => {
+  const method = 'x); Evil(); // "quoted"\n\u202E';
+  const nef = buildNefWithSingleToken(
+    new Uint8Array([0x37, 0x00, 0x00, 0x40]),
+    new Uint8Array(20).fill(0x42),
+    method,
+    0,
+    true,
+    0x0F,
+  );
+  const result = decompileHighLevelBytes(nef);
+
+  assert.match(result.highLevel, /return __callt_token_0\(\);/);
+  assert.doesNotMatch(result.highLevel, /return x\); Evil\(\);/);
+  assert.match(result.csharp, /return Contract\.Call\(/);
+  assert.match(result.csharp, /"x\); Evil\(\); \/\/ \\"quoted\\"\\n\\u202E"/);
+  assert.doesNotMatch(result.csharp, /^\s*Evil\(\);/m);
+});
+
+test("binds same-named and duplicate CALLT entries by token index", () => {
+  const firstHash = new Uint8Array(20).fill(0x11);
+  const secondHash = new Uint8Array(20).fill(0x22);
+  const tokens = [
+    { hash: firstHash, method: "transfer", parametersCount: 1, hasReturnValue: false, callFlags: 0x0F },
+    { hash: secondHash, method: "transfer", parametersCount: 1, hasReturnValue: false, callFlags: 0x0F },
+    { hash: firstHash, method: "transfer", parametersCount: 1, hasReturnValue: false, callFlags: 0x0F },
+  ];
+  const script = new Uint8Array([
+    0x11, 0x37, 0x00, 0x00,
+    0x12, 0x37, 0x01, 0x00,
+    0x13, 0x37, 0x02, 0x00,
+    0x40,
+  ]);
+  const result = decompileHighLevelBytes(buildNefWithTokens(script, tokens));
+
+  assert.match(result.highLevel, /__callt_token_0\(1\);/);
+  assert.match(result.highLevel, /__callt_token_1\(2\);/);
+  assert.match(result.highLevel, /__callt_token_2\(3\);/);
+  const calls = result.csharp.match(/Contract\.Call\([^;]+/g) ?? [];
+  assert.equal(calls.length, 3, result.csharp);
+  assert.match(calls[0], /0x11, 0x11/);
+  assert.match(calls[1], /0x22, 0x22/);
+  assert.match(calls[2], /0x11, 0x11/);
+});
+
+test("keeps manifest methods out of the reserved CALLT label namespace", () => {
+  const nef = buildNefWithSingleToken(
+    new Uint8Array([0x37, 0x00, 0x00, 0x40]),
+    new Uint8Array(20).fill(0x33),
+    "external",
+    0,
+    true,
+    0x0F,
+  );
+  const manifest = JSON.stringify({
+    name: "ReservedLabels",
+    abi: {
+      methods: [{
+        name: "__callt_token_0",
+        parameters: [],
+        returntype: "Any",
+        offset: 0,
+      }],
+      events: [],
+    },
+    permissions: [],
+    trusts: "*",
+  });
+  const result = decompileHighLevelBytesWithManifest(nef, manifest);
+
+  assert.match(result.highLevel, /fn method___callt_token_0\(\) -> any \{/);
+  assert.match(result.highLevel, /return __callt_token_0\(\);/);
+  assert.match(result.csharp, /static object method___callt_token_0\(\)/);
+  assert.match(result.csharp, /return Contract\.Call\(/);
+  assert.doesNotMatch(result.csharp, /static object __callt_token_0\(\)/);
 });
 
 test("uses call-graph-resolved CALLA targets across method arguments", () => {

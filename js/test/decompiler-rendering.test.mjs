@@ -156,6 +156,10 @@ test("sanitizeIdentifier preserves consecutive underscores and collapses whitesp
   // Empty / digit-leading inputs.
   assert.equal(sanitizeIdentifier(""), "param");
   assert.equal(sanitizeIdentifier("9live"), "_9live");
+  assert.equal(
+    sanitizeIdentifier("__callt_token_0"),
+    "method___callt_token_0",
+  );
 });
 
 test("manifest.groups renders as scannable block with pubkey only (signature elided)", async () => {

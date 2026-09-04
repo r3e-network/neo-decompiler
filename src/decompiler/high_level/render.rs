@@ -9,6 +9,7 @@ use crate::instruction::Instruction;
 use crate::manifest::ContractManifest;
 use crate::native_contracts;
 use crate::nef::NefFile;
+use crate::util;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -42,19 +43,25 @@ pub(crate) fn render_high_level(
     let mut warnings = Vec::new();
     let mut used_method_names = HashSet::new();
 
-    // Pre-resolve CALLT method-token labels so the emitter can emit friendly names.
+    // Only exact, unrestricted native targets may occupy an executable label.
+    // Other token method names are untrusted NEF metadata, so use a unique,
+    // index-derived inert label. Downstream C# rendering can then recover the
+    // exact token instead of ambiguously matching by attacker-controlled name.
     let callt_labels: Vec<String> = nef
         .method_tokens
         .iter()
-        .map(|token| {
+        .enumerate()
+        .map(|(index, token)| {
             if token.call_flags == 0x0F {
                 if let Some(hint) =
                     native_contracts::describe_method_token(&token.hash, &token.method)
                 {
-                    return hint.formatted_label(&token.method);
+                    if hint.has_exact_method() {
+                        return util::escape_visible_text(&hint.formatted_label(&token.method));
+                    }
                 }
             }
-            token.method.clone()
+            format!("__callt_token_{index}")
         })
         .collect();
     let callt_param_counts: Vec<usize> = nef

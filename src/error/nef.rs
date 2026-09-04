@@ -105,6 +105,17 @@ pub enum NefError {
         max: usize,
     },
 
+    /// A method token declared more parameters than the Neo VM stack can hold.
+    #[error("method token parameter count at index {index} exceeds maximum ({count} > {max})")]
+    MethodTokenParameterCountTooLarge {
+        /// Index of the method token entry.
+        index: usize,
+        /// Declared parameter count.
+        count: u16,
+        /// Maximum supported parameter count.
+        max: u16,
+    },
+
     /// Script section exceeded the maximum supported size.
     #[error("script exceeds maximum size ({length} > {max})")]
     ScriptTooLarge {

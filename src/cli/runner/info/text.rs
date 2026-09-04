@@ -21,10 +21,18 @@ impl Cli {
         self.write_stdout(|out| {
             writeln!(out, "File: {}", path.display())?;
             if !nef.header.compiler.is_empty() {
-                writeln!(out, "Compiler: {}", nef.header.compiler)?;
+                writeln!(
+                    out,
+                    "Compiler: {}",
+                    util::escape_visible_text(&nef.header.compiler)
+                )?;
             }
             if !nef.header.source.is_empty() {
-                writeln!(out, "Source: {}", nef.header.source)?;
+                writeln!(
+                    out,
+                    "Source: {}",
+                    util::escape_visible_text(&nef.header.source)
+                )?;
             }
             writeln!(out, "Script length: {} bytes", nef.script.len())?;
             let script_hash = nef.script_hash();
@@ -48,24 +56,27 @@ impl Cli {
             writeln!(out, "Checksum: 0x{:08X}", nef.checksum)?;
 
             if let Some(manifest) = manifest {
-                writeln!(out, "Manifest contract: {}", manifest.name)?;
+                writeln!(
+                    out,
+                    "Manifest contract: {}",
+                    util::escape_visible_text(&manifest.name)
+                )?;
                 if !manifest.supported_standards.is_empty() {
-                    writeln!(
-                        out,
-                        "Supported standards: {}",
-                        manifest.supported_standards.join(", ")
-                    )?;
+                    let standards = manifest
+                        .supported_standards
+                        .iter()
+                        .map(|value| util::escape_visible_text(value))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    writeln!(out, "Supported standards: {}", standards)?;
                 }
                 writeln!(out, "ABI methods: {}", manifest.abi.methods.len())?;
                 writeln!(out, "ABI events: {}", manifest.abi.events.len())?;
                 // Neo N3 requires `features` to be empty; only surface it when
                 // a (malformed) manifest actually carries content.
                 if !manifest.features.is_empty() {
-                    writeln!(
-                        out,
-                        "Features: {}",
-                        serde_json::Value::Object(manifest.features.clone())
-                    )?;
+                    let features = serde_json::Value::Object(manifest.features.clone()).to_string();
+                    writeln!(out, "Features: {}", util::escape_visible_text(&features))?;
                 }
                 if !manifest.groups.is_empty() {
                     writeln!(out, "Groups:")?;
@@ -73,7 +84,8 @@ impl Cli {
                         writeln!(
                             out,
                             "    - pubkey={} signature={}",
-                            group.pubkey, group.signature
+                            util::escape_visible_text(&group.pubkey),
+                            util::escape_visible_text(&group.signature)
                         )?;
                     }
                 }
@@ -83,13 +95,17 @@ impl Cli {
                         writeln!(
                             out,
                             "    - contract={} methods={}",
-                            permission.contract.describe(),
-                            permission.methods.describe()
+                            util::escape_visible_text(&permission.contract.describe()),
+                            util::escape_visible_text(&permission.methods.describe())
                         )?;
                     }
                 }
                 if let Some(trusts) = manifest.trusts.as_ref() {
-                    writeln!(out, "Trusts: {}", trusts.describe())?;
+                    writeln!(
+                        out,
+                        "Trusts: {}",
+                        util::escape_visible_text(&trusts.describe())
+                    )?;
                 }
                 if let Some(serde_json::Value::Object(map)) = manifest.extra.as_ref() {
                     // Show only entries we can render without ambiguity —
@@ -109,7 +125,12 @@ impl Cli {
                     if !renderable.is_empty() {
                         writeln!(out, "Extra:")?;
                         for (key, value) in renderable {
-                            writeln!(out, "    - {key}: {value}")?;
+                            writeln!(
+                                out,
+                                "    - {}: {}",
+                                util::escape_visible_text(key),
+                                util::escape_visible_text(&value)
+                            )?;
                         }
                     }
                 }

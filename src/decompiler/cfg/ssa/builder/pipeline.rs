@@ -24,7 +24,7 @@ impl<'a> SsaBuilder<'a> {
         // Per-pass variable-version counter. Reset at the start of every pass so
         // the deterministic (block-id, instruction) def order yields identical
         // names across iterations -> stable exit stacks -> fixpoint convergence.
-        let mut facts = BuildFacts::default();
+        let mut facts = BuildFacts::for_method(self.instructions.len());
 
         // Upper bound on iterations: a couple of passes beyond the block count
         // is plenty for reducible + irreducible graphs given canonical naming.
@@ -98,6 +98,7 @@ impl<'a> SsaBuilder<'a> {
             &exit_stacks,
             &entry_slots,
             &exit_slots,
+            &mut facts,
         );
 
         facts.versions.clear();
@@ -224,6 +225,7 @@ impl<'a> SsaBuilder<'a> {
                 indexed_collection_shapes: &mut collection_invalidations.indexed_shapes,
                 static_collection_writes: &mut static_collection_writes,
                 call_argument_facts: &mut call_argument_facts,
+                call_argument_budget: &mut facts.call_argument_budget,
             };
             let mut idx = block.instruction_range.start;
             while idx < block.instruction_range.end {

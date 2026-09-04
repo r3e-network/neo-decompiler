@@ -274,7 +274,7 @@ export interface WasmBindings {
 }
 
 interface WasmModule extends WasmBindings {
-  default(input?: WasmInitInput): Promise<unknown>;
+  default(input?: { module_or_path: WasmInitInput }): Promise<unknown>;
 }
 
 export interface NeoDecompilerClient {
@@ -292,21 +292,58 @@ export function createNeoDecompilerClient(
 ): NeoDecompilerClient {
   return {
     infoReport(nefBytes, options) {
-      return bindings.infoReport(nefBytes, normalizeInfoOptions(options));
+      return normalizeReportValue(
+        bindings.infoReport(nefBytes, normalizeInfoOptions(options)),
+      );
     },
     disasmReport(nefBytes, options) {
-      return bindings.disasmReport(nefBytes, normalizeDisasmOptions(options));
+      return normalizeReportValue(
+        bindings.disasmReport(nefBytes, normalizeDisasmOptions(options)),
+      );
     },
     decompileReport(nefBytes, options) {
-      return bindings.decompileReport(
-        nefBytes,
-        normalizeDecompileOptions(options),
+      return normalizeReportValue(
+        bindings.decompileReport(nefBytes, normalizeDecompileOptions(options)),
       );
     },
     initPanicHook() {
       bindings.initPanicHook();
     },
   };
+}
+
+function normalizeReportValue<T>(value: T): T {
+  // serde-wasm-bindgen emits *every* i64/u64/usize as bigint with the lossless
+  // serializer enabled, including offsets and lengths. Restore the public
+  // numeric API for exact JS integers while retaining genuinely wide values.
+  if (typeof value === "bigint") {
+    const numeric = Number(value);
+    return (Number.isSafeInteger(numeric) ? numeric : value) as T;
+  }
+  if (value instanceof Map) {
+    // The WASM boundary deliberately retains Maps. Object.fromEntries defines
+    // own properties, including "__proto__", without invoking prototype setters.
+    return Object.fromEntries(
+      Array.from(value, ([key, item]) => [key, normalizeReportValue(item)]),
+    ) as T;
+  }
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const normalized = normalizeReportValue(value[index]);
+      if (normalized !== value[index]) {
+        value[index] = normalized;
+      }
+    }
+  } else if (value !== null && typeof value === "object") {
+    const object = value as Record<string, unknown>;
+    for (const key of Object.keys(object)) {
+      const normalized = normalizeReportValue(object[key]);
+      if (normalized !== object[key]) {
+        object[key] = normalized;
+      }
+    }
+  }
+  return value;
 }
 
 let defaultClient: NeoDecompilerClient | null = null;
@@ -316,7 +353,7 @@ export async function init(
   input?: WasmInitInput,
 ): Promise<NeoDecompilerClient> {
   const wasm = (await import(WASM_MODULE_PATH)) as WasmModule;
-  await wasm.default(input);
+  await wasm.default(input === undefined ? undefined : { module_or_path: input });
   defaultClient = createNeoDecompilerClient({
     infoReport: wasm.infoReport,
     disasmReport: wasm.disasmReport,

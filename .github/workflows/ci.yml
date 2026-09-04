@@ -9,6 +9,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# CI only needs to read repository contents. Jobs that need an additional
+# capability opt in explicitly below.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test
@@ -28,14 +33,14 @@ jobs:
           - beta
           - nightly
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -43,35 +48,35 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --locked --all-features --verbose
       - name: Run tests (no default features)
         if: matrix.rust == 'stable'
-        run: cargo test --no-default-features --verbose
+        run: cargo test --locked --no-default-features --verbose
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Run clippy (no default features)
         if: matrix.rust == 'stable'
-        run: cargo clippy --all-targets --no-default-features -- -D warnings
+        run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Build docs
         if: matrix.rust == 'stable'
         env:
           RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps
+        run: cargo doc --locked --no-deps
 
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
         with:
           toolchain: 1.86.0
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -79,20 +84,20 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-msrv-${{ hashFiles('**/Cargo.lock') }}
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --locked --all-features --verbose
       - name: Run tests (no default features)
-        run: cargo test --no-default-features --verbose
+        run: cargo test --locked --no-default-features --verbose
 
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -100,16 +105,16 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run benchmarks
-        run: cargo bench
+        run: cargo bench --locked
 
   deny:
     name: Cargo deny
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install cargo-deny
-        uses: taiki-e/install-action@cargo-deny
+        uses: taiki-e/install-action@04aca1d9d6d82c63188ba3f33b7f820ea39a9197 # cargo-deny
       - name: Run cargo deny
         run: cargo deny check
 
@@ -117,10 +122,13 @@ jobs:
     name: Security audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Security audit
-        uses: rustsec/audit-check@v1.4.1
+        uses: rustsec/audit-check@dd51754d4e59da7395a4cd9b593f0ff2d61a9b95 # v1.4.1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -129,11 +137,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -148,9 +156,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Check out neo-devpack-dotnet v3.10.0
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: neo-project/neo-devpack-dotnet
           ref: v3.10.0
@@ -173,17 +181,17 @@ jobs:
             --strict \
             --clean
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - name: Install .NET 10
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
           dotnet-version: 10.0.x
       - name: Install Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -205,7 +213,7 @@ jobs:
             echo "NEO_CSHARP_CORPUS_DIR=$GITHUB_WORKSPACE/TestingArtifacts/devpack"
           } >> "$GITHUB_ENV"
       - name: Compile pinned Rust C# corpus with Roslyn
-        run: cargo test --test csharp_compile -- --nocapture
+        run: cargo test --locked --test csharp_compile -- --ignored --nocapture
       - name: Compile pinned JS C# corpus with Roslyn
         working-directory: js
         run: node --test --test-name-pattern "pinned JS-generated C# corpus" test/*.test.mjs
@@ -214,7 +222,7 @@ jobs:
         # target/release/neo-decompiler and skips (vacuous pass) when it is
         # absent. The sweep above only exercises the dev/test profiles, so
         # build the release profile explicitly.
-        run: cargo build --release --features cli --bin neo-decompiler
+        run: cargo build --locked --release --features cli --bin neo-decompiler
       - name: Run Rust/JS differential parity gate
         # Recurses TestingArtifacts/ (103 pinned devpack contracts + the 7
         # committed edgecase fixtures) and asserts disasm, high-level, and the
@@ -230,11 +238,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -242,9 +250,9 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Build
-        run: cargo build --release --verbose
+        run: cargo build --locked --release --verbose
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: neo-decompiler-${{ matrix.os }}
           path: target/release/neo-decompiler*
@@ -254,11 +262,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: |
             ~/.cargo/registry
@@ -269,9 +277,9 @@ jobs:
         # js/test/differential.test.mjs resolves RUST_BIN to
         # target/release/neo-decompiler and skips (vacuous pass) when it is
         # absent. Build it here so the Rust↔JS parity assertions actually run.
-        run: cargo build --release
+        run: cargo build --locked --release
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Run JS package tests
@@ -283,13 +291,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: wasm32-unknown-unknown
       - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
+        run: cargo install wasm-pack --version 0.13.1 --locked
       - name: Install wasm-bindgen-cli
         # Match the wasm-bindgen crate version in Cargo.lock, otherwise
         # `wasm-pack --mode no-install` fails with "Not able to find or install
@@ -299,14 +307,14 @@ jobs:
           echo "Installing wasm-bindgen-cli ${version} (matched to Cargo.lock)"
           cargo install wasm-bindgen-cli --version "${version}" --locked
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install web dependencies
         working-directory: web
-        run: npm ci
+        run: npm ci --ignore-scripts
       - name: Run web package tests
         working-directory: web
         run: npm test
@@ -316,3 +324,6 @@ jobs:
       - name: Verify web package tarball contents
         working-directory: web
         run: npm run verify:pack
+      - name: Exercise the real WebAssembly bindings
+        working-directory: web
+        run: npm run test:wasm

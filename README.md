@@ -779,6 +779,7 @@ cargo fmt
 cargo test
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --no-default-features
+cargo bench --bench decompiler_bench
 ```
 
 To compile representative generated C# through Roslyn, provide the Neo
@@ -788,6 +789,12 @@ framework assembly explicitly and run:
 NEO_SMARTCONTRACT_FRAMEWORK_DLL=/absolute/path/Neo.SmartContract.Framework.dll \
   tools/ci/csharp_compile.sh
 ```
+
+These environment-dependent Rust tests are explicitly ignored by ordinary
+`cargo test` runs. The script opts into them and fails if their dependencies
+are missing. Set `NEO_CSHARP_CORPUS_DIR` to the extracted, pinned devpack
+v3.10.0 corpus to also compile all 103 generated contracts; without it, the
+script compiles the five checked-in representative fixtures.
 
 The compile harness targets `net8.0` by default. Override it with
 `NEO_CSHARP_TARGET_FRAMEWORK` when using a framework assembly built for a
@@ -808,7 +815,9 @@ is updated alongside them (for example, use `net10.0` with package 3.10.0).
 
 If you use [`just`](https://github.com/casey/just), the repository ships with a
 `Justfile` providing shortcuts for the common workflows above.
-Run `just ci` for the full lint/test/doc matrix used in CI.
+Run `just ci` for the full Rust, JavaScript, Web, lint, dependency, and
+documentation matrix used in CI; use `just bench` for the reproducible
+in-memory performance suite.
 
 Issues and pull requests are welcome if they keep the project lean and focused.
 

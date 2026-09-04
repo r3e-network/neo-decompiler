@@ -362,6 +362,46 @@ test("boundary: max-length method name in token (32 bytes per MethodToken.Deseri
   assert.equal(parsed.methodTokens[0].method, maxName);
 });
 
+test("boundary: method-token arity at the VM stack limit is accepted", () => {
+  const nef = buildNef({
+    tokens: [{
+      hash: new Uint8Array(20).fill(0xab),
+      method: "consume",
+      params: 2048,
+      hasReturn: false,
+      callFlags: 0x0f,
+    }],
+    script: new Uint8Array([0x37, 0x00, 0x00, 0x40]),
+  });
+
+  const parsed = parseNef(nef);
+  assert.equal(parsed.methodTokens[0].parametersCount, 2048);
+});
+
+test("boundary: method-token arity above the VM stack limit is rejected", () => {
+  for (const params of [2049, 0xffff]) {
+    const nef = buildNef({
+      tokens: [{
+        hash: new Uint8Array(20).fill(0xab),
+        method: "consume",
+        params,
+        hasReturn: false,
+        callFlags: 0x0f,
+      }],
+      script: new Uint8Array([0x37, 0x00, 0x00, 0x40]),
+    });
+
+    assert.throws(() => parseNef(nef), (error) => {
+      assert.ok(error instanceof NefParseError);
+      assert.equal(error.details.code, "MethodTokenParameterCountTooLarge");
+      assert.equal(error.details.index, 0);
+      assert.equal(error.details.count, params);
+      assert.equal(error.details.max, 2048);
+      return true;
+    });
+  }
+});
+
 test("boundary: method name longer than 32 bytes is rejected", () => {
   const hash = new Uint8Array(20).fill(0xab);
   const nef = buildNef({

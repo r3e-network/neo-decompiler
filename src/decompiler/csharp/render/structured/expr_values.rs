@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::ir::{Expr, Literal};
+use crate::util;
 
 use super::expr::{render_expr_prec, ExprContext};
 
@@ -96,7 +97,7 @@ pub(super) fn escape_csharp_string(value: &str) -> String {
             '\u{2029}' => escaped.push_str("\\u2029"),
             '"' => escaped.push_str("\\\""),
             '\\' => escaped.push_str("\\\\"),
-            control if control.is_control() => {
+            control if control.is_control() || util::is_bidi_control(control) => {
                 use std::fmt::Write;
                 write!(escaped, "\\u{:04X}", u32::from(control)).unwrap();
             }

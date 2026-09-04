@@ -1,8 +1,15 @@
 import { rmSync } from "node:fs";
-import { join } from "node:path";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const pkgDir = new URL("../dist/pkg/", import.meta.url);
+export function prepareWasmPackage(pkgDir = new URL("../dist/pkg/", import.meta.url)) {
+  for (const name of [".gitignore", "package.json", "README.md"]) {
+    // Pass file URLs directly: URL.pathname is percent-encoded and starts with
+    // /C:/ on Windows, neither of which is a native filesystem path.
+    rmSync(new URL(name, pkgDir), { force: true });
+  }
+}
 
-for (const name of [".gitignore", "package.json", "README.md"]) {
-  rmSync(join(pkgDir.pathname, name), { force: true });
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  prepareWasmPackage();
 }

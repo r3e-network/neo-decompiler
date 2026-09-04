@@ -3,6 +3,90 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [0.14.0] - 2026-09-05 (Rust/Web) / [2.1.0] - 2026-09-05 (JS)
+
+This release includes the unreleased registry changes from Rust/Web 0.12.0
+and JS 2.0.0, followed by two systematic correctness and release-hardening
+reviews. See the 0.12.0 / 2.0.0 section below for the JS `callGraph` migration
+from the previously published 1.6.0 package. The historical local v0.13.0 tag
+is not reused because it points to code declaring version 0.12.0.
+
+### Security
+
+- Bound NEF method-token arity to the Neo VM's 2,048-item stack limit in both
+  Rust and JavaScript, keep call-analysis metadata sparse, apply a cumulative
+  per-method SSA work budget, process only available values on malformed
+  underflow paths, and collapse omitted CALLT arguments to one explicit marker.
+- Give unresolved method-token calls deterministic index-derived labels, so
+  hostile token names cannot become generated code and same-named methods from
+  different contracts remain bound to their own hashes.
+- Encode attacker-controlled controls, line separators, and bidirectional
+  formatting characters at generated-source and human-terminal boundaries
+  while preserving structured JSON values unchanged.
+- Bound schema-validation input, diagnostic bytes, and reported error count,
+  and reject oversized browser-selected NEF/manifest files before buffering.
+- Apply the manifest byte limit to standard `FromStr` parsing, and share
+  single-handle, bounded file/stream reads across NEF, manifest, and schema
+  entry points so file growth cannot bypass allocation limits.
+- Split npm package construction from the credential-bearing publish job,
+  bind verification and publication to one SHA-256-checked archive, pin
+  release actions and build tooling, and make local release scripts fail
+  closed on every native-command error.
+- Reject ambiguous tar encodings, layouts, and dangling/stacked extension
+  headers before release-archive extraction.
+
+### Fixed
+
+- Correct immediate dominators for deep branch merges, entry-loop dominance
+  frontiers, and unreachable predecessors; replace repeated depth scans with
+  reverse-post-order ancestor intersection.
+- Preserve JavaScript call execution order and discarded-result side effects
+  across CALL, CALLA, CALLT, SYSCALL, CLEAR, and bounded argument rendering.
+- Lower nested CALLT expressions without rewriting comments, string literals,
+  or unrelated identifiers; distinguish comparison/shift operators from
+  generic types when splitting C# arguments.
+- Align real WebAssembly report shapes with the TypeScript API: safe integers
+  become numbers, wide integers remain bigint, and manifest maps retain their
+  JSON object contents. The demo displays wide integers without precision loss.
+- Make Windows npm archive creation and WASM package cleanup use valid native
+  command/path handling, and compile the pinned wasm-bindgen tool with its
+  required Rust version independently of the library's Rust 1.86 MSRV.
+- Synchronize Web package and lockfile versions without spawning npm, and
+  reject stale root lockfile versions at the release gate.
+- Make corpus replay surface panics with their input labels, and mark external
+  Roslyn gates explicitly ignored until CI or the compile script opts in.
+- Correct the SSA benchmark branch fixture and validate benchmark inputs
+  outside timed sections.
+
+### Added
+
+- A deterministic Criterion benchmark suite for CFG, SSA, disassembly, and
+  end-to-end decompilation that uses in-memory NEF fixtures and runs without
+  the optional artifact corpus.
+- An independent JS npm publication pipeline with version mapping checks,
+  archive verification, a clean-consumer smoke test, and isolated credentials.
+
+### Changed
+
+- The local `just ci` recipe now covers the Web package as well as Rust and
+  the independent JavaScript implementation.
+- CI now has an explicit read-only default permission set, immutable action
+  revisions, locked Cargo invocations, and the same pinned wasm-pack release
+  used by the publication build.
+- Repository text is normalized to LF through `.gitattributes`, with NEF and
+  raw bytecode fixtures explicitly treated as binary.
+- The crates.io package now uses an explicit source allowlist, reducing the
+  verified archive from 725 to 487 files while retaining public tests,
+  deterministic fixtures, examples, benchmarks, embedded schemas, and legal
+  metadata.
+- Dependency-policy checks now complete without stale unused-license warnings.
+- Corpus replay excludes generated mirrors and routes the parser-only corpus
+  to parsing, avoiding duplicate full decompilations.
+- CI and release checks now exercise actual WASM initialization/report calls
+  in addition to TypeScript unit tests.
+
 ## [0.12.0] - 2026-08-31 (Rust) / [2.0.0] - 2026-08-31 (JS)
 
 The structured-IR C# decompiler comes of age: 370 commits completing the

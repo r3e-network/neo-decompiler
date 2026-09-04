@@ -7,6 +7,10 @@ import {
 import { describeCallFlags } from "../nef.js";
 import { describeMethodToken } from "../native-contracts.js";
 import { upperHex } from "../util.js";
+import {
+  escapeCSharpStringContent,
+  escapeVisibleText,
+} from "../visible-text.js";
 export function renderContractHeader(manifest, context = null) {
   const contractName = extractContractName(manifest);
   const lines = [`contract ${contractName} {`];
@@ -23,10 +27,10 @@ export function renderContractHeader(manifest, context = null) {
     lines.push(`    // script hash (big-endian): ${scriptHash}`);
   }
   if (context?.compiler) {
-    lines.push(`    // compiler: ${context.compiler}`);
+    lines.push(`    // compiler: ${escapeVisibleText(context.compiler)}`);
   }
   if (context?.source) {
-    lines.push(`    // source: ${context.source}`);
+    lines.push(`    // source: ${escapeVisibleText(context.source)}`);
   }
   if (!manifest) {
     // Mirror the Rust header writer so the absence of an ABI surface
@@ -40,7 +44,9 @@ export function renderContractHeader(manifest, context = null) {
   }
   if (manifest) {
     if (manifest.supportedStandards?.length) {
-      const formatted = manifest.supportedStandards.map((s) => `"${s}"`).join(", ");
+      const formatted = manifest.supportedStandards
+        .map((s) => JSON.stringify(escapeVisibleText(s)))
+        .join(", ");
       lines.push(`    supported_standards = [${formatted}];`);
     }
     // Valid Neo N3 manifests carry an empty `features` object; only a
@@ -52,7 +58,8 @@ export function renderContractHeader(manifest, context = null) {
       // iterates keys in sorted order. Sort here to match — otherwise the two
       // ports emit the same keys in different order for the same manifest.
       for (const key of Object.keys(manifest.features).sort()) {
-        lines.push(`        ${key} = ${JSON.stringify(manifest.features[key])};`);
+        const renderedValue = escapeVisibleText(JSON.stringify(manifest.features[key]));
+        lines.push(`        ${escapeVisibleText(key)} = ${renderedValue};`);
       }
       lines.push(`    }`);
     }
@@ -64,7 +71,7 @@ export function renderContractHeader(manifest, context = null) {
       lines.push(`    groups {`);
       for (const group of manifest.groups) {
         if (group?.pubkey) {
-          lines.push(`        pubkey=${group.pubkey}`);
+          lines.push(`        pubkey=${escapeVisibleText(group.pubkey)}`);
         }
       }
       lines.push(`    }`);
@@ -96,14 +103,16 @@ export function renderContractHeader(manifest, context = null) {
               : Array.isArray(perm.methods)
                 ? `methods=[${perm.methods.map((m) => `"${m}"`).join(", ")}]`
                 : `methods=${JSON.stringify(perm.methods)}`;
-        lines.push(`        ${contractPart} ${methodsPart}`);
+        lines.push(
+          `        ${escapeVisibleText(contractPart)} ${escapeVisibleText(methodsPart)}`,
+        );
       }
       lines.push(`    }`);
     }
     if (manifest.trusts !== null && manifest.trusts !== undefined) {
       const formatted = formatManifestTrusts(manifest.trusts);
       if (formatted !== null) {
-        lines.push(`    trusts = ${formatted};`);
+        lines.push(`    trusts = ${escapeVisibleText(formatted)};`);
       }
     }
     if (manifest.extra && typeof manifest.extra === "object" && !Array.isArray(manifest.extra)) {
@@ -114,7 +123,7 @@ export function renderContractHeader(manifest, context = null) {
       for (const key of Object.keys(manifest.extra).sort()) {
         const rendered = renderExtraScalar(manifest.extra[key]);
         if (rendered !== null) {
-          lines.push(`    // ${key}: ${rendered}`);
+          lines.push(`    // ${escapeVisibleText(key)}: ${escapeVisibleText(rendered)}`);
         }
       }
     }
@@ -136,7 +145,7 @@ export function renderContractHeader(manifest, context = null) {
         const sanitisedName = sanitizeIdentifier(method.name);
         const meta = [];
         if (sanitisedName !== method.name) {
-          meta.push(`manifest ${JSON.stringify(method.name)}`);
+          meta.push(`manifest ${JSON.stringify(escapeVisibleText(method.name))}`);
         }
         if (method.safe) {
           meta.push("safe");
@@ -159,7 +168,9 @@ export function renderContractHeader(manifest, context = null) {
         // identifier differs from the raw manifest name, append a
         // `// manifest "Original"` annotation so the original
         // identifier is recoverable from the lifted source.
-        const note = sanitised !== event.name ? ` // manifest ${JSON.stringify(event.name)}` : "";
+        const note = sanitised !== event.name
+          ? ` // manifest "${escapeCSharpStringContent(event.name)}"`
+          : "";
         lines.push(`    event ${sanitised}(${params});${note}`);
       }
     }
@@ -171,16 +182,20 @@ export function renderContractHeader(manifest, context = null) {
     lines.push(`    // method tokens declared in NEF`);
     for (const token of methodTokens) {
       const hint = describeMethodToken(token.hash, token.method);
-      const contractNote = hint ? ` (${hint.formattedLabel(token.method)})` : "";
+      const method = escapeVisibleText(token.method);
+      const contractNote = hint
+        ? ` (${escapeVisibleText(hint.formattedLabel(token.method))})`
+        : "";
       const flagsHex = token.callFlags.toString(16).padStart(2, "0").toUpperCase();
       lines.push(
-        `    // ${token.method}${contractNote} hash=${upperHex(token.hash)} ` +
+        `    // ${method}${contractNote} hash=${upperHex(token.hash)} ` +
           `params=${token.parametersCount} returns=${token.hasReturnValue} ` +
           `flags=0x${flagsHex} (${describeCallFlags(token.callFlags)})`,
       );
       if (hint && !hint.hasExactMethod()) {
         lines.push(
-          `    // warning: native contract ${hint.contract} does not expose method ${token.method}`,
+          `    // warning: native contract ${escapeVisibleText(hint.contract)} ` +
+            `does not expose method ${method}`,
         );
       }
     }

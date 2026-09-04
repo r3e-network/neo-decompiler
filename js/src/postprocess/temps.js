@@ -89,9 +89,11 @@ export function collapseTempIntoStore(statements) {
       index = next + 1;
       continue;
     }
-    if (nextText === `return ${temp};` && (tempLineCounts.get(temp) || 0) <= 2) {
+    if ((nextText === `return ${temp};` || nextText === `${temp};`)
+        && (tempLineCounts.get(temp) || 0) <= 2) {
       const indent = leadingWhitespace(statements[next]);
-      statements[next] = `${indent}return ${first.rhs};`;
+      const prefix = nextText.startsWith("return ") ? "return " : "";
+      statements[next] = `${indent}${prefix}${first.rhs};`;
       statements[index] = "";
       index = next + 1;
       continue;

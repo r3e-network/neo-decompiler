@@ -14,8 +14,8 @@ project focused, easy to reason about, and straightforward to run locally.
   - `cargo fmt`
   - `cargo clippy --all-targets --all-features`
   - `cargo test`
-- For release-related changes, also verify the crate packages cleanly with
-  `cargo package --allow-dirty --no-verify`.
+- For release-related changes, also run the package verification rather than
+  bypassing it: `cargo package --allow-dirty --locked`.
 - Include or update tests alongside behaviour changes. For CLI additions, add
   assertions in `tests/cli_smoke.rs` where possible.
 - Maintain the high-level ergonomics of the public library API—avoid leaking

@@ -6,6 +6,8 @@ use crate::disassembler::UnknownHandling;
 use crate::{ContractManifest, NefParser};
 use std::{fs, path::PathBuf};
 
+#[path = "callt_labels.rs"]
+mod callt_labels;
 #[path = "csharp_coverage.rs"]
 mod csharp_coverage;
 

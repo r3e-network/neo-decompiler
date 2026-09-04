@@ -15,4 +15,8 @@ if [[ -n "${NEO_CSHARP_TARGET_FRAMEWORK:-}" ]] &&
     exit 1
 fi
 
-cargo test --locked --test csharp_compile -- --ignored --nocapture
+if [[ -n "${NEO_CSHARP_CORPUS_DIR:-}" ]]; then
+    cargo test --locked --test csharp_compile -- --ignored --nocapture
+else
+    cargo test --locked --test csharp_compile representative_generated_csharp_compiles_with_roslyn -- --ignored --nocapture
+fi

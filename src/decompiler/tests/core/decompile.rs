@@ -135,17 +135,110 @@ fn decompile_uses_method_token_signature_for_callt_arguments_and_returns() {
         .as_deref()
         .expect("high-level output");
     assert!(
-        high_level.contains("foo(t0);"),
+        high_level.contains("__callt_token_0(t0);"),
         "CALLT should consume declared token argument and emit call expression: {high_level}"
     );
     assert!(
-        !high_level.contains("let t1 = foo("),
+        !high_level.contains("let t1 = __callt_token_0("),
         "CALLT token marked non-returning should not push a synthetic return temp: {high_level}"
     );
     assert!(
         high_level.contains("return;"),
         "script entry should end with a bare return after non-returning CALLT: {high_level}"
     );
+}
+
+#[test]
+fn repeated_underflowed_callt_rendering_is_bounded() {
+    const CALL_SITES: usize = 32;
+
+    let mut script = Vec::with_capacity(CALL_SITES * 3 + 1);
+    for _ in 0..CALL_SITES {
+        script.extend_from_slice(&[0x37, 0x00, 0x00]);
+    }
+    script.push(0x40);
+    let nef_bytes = build_nef_with_single_token(&script, [0u8; 20], "consume", 2048, false, 0x0F);
+
+    let decompilation = Decompiler::new()
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::HighLevel)
+        .expect("bounded CALLT decompilation succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+
+    assert_eq!(high_level.matches("__callt_token_0(").count(), CALL_SITES);
+    assert_eq!(
+        high_level
+            .matches("unknown /* 2048 missing/omitted arguments */")
+            .count(),
+        CALL_SITES,
+        "each empty-stack call must use one aggregate placeholder"
+    );
+    assert_eq!(
+        high_level
+            .matches(
+                "CALLT __callt_token_0 rendered 0 of 2048 arguments; one marker represents 2048 \
+                 missing/omitted arguments (0 available omitted, 2048 missing)",
+            )
+            .count(),
+        CALL_SITES,
+        "each call site must emit exactly one aggregate diagnostic"
+    );
+    assert!(!high_level.contains("???"));
+    assert!(
+        high_level.len() < 25_000,
+        "small input must not produce multiplicatively unbounded source: {} bytes",
+        high_level.len()
+    );
+}
+
+#[test]
+fn callt_rendering_keeps_only_available_arguments_up_to_the_display_limit() {
+    const AVAILABLE_ARGUMENTS: usize = 300;
+
+    let mut script = vec![0x11; AVAILABLE_ARGUMENTS];
+    script.extend_from_slice(&[0x37, 0x00, 0x00, 0x40]);
+    let nef_bytes = build_nef_with_single_token(&script, [0u8; 20], "consume", 2048, false, 0x0F);
+
+    let decompilation = Decompiler::new()
+        .with_trace_comments(false)
+        .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::HighLevel)
+        .expect("bounded CALLT decompilation succeeds");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    let call_line = high_level
+        .lines()
+        .find(|line| line.trim_start().starts_with("__callt_token_0("))
+        .expect("resolved CALLT line");
+    let arguments = call_line
+        .trim()
+        .strip_prefix("__callt_token_0(")
+        .and_then(|line| line.strip_suffix(");"))
+        .expect("plain void call syntax")
+        .split(", ")
+        .collect::<Vec<_>>();
+
+    assert_eq!(arguments.len(), 257, "256 real values plus one marker");
+    assert_eq!(arguments[0], "t299");
+    assert_eq!(arguments[255], "t44");
+    assert_eq!(
+        arguments[256],
+        "unknown /* 1792 missing/omitted arguments */"
+    );
+    assert_eq!(
+        high_level
+            .matches(
+                "CALLT __callt_token_0 rendered 256 of 2048 arguments; one marker represents 1792 \
+                 missing/omitted arguments (44 available omitted, 1748 missing)",
+            )
+            .count(),
+        1
+    );
+    assert!(!high_level.contains("???"));
 }
 
 #[test]
@@ -173,7 +266,10 @@ fn restricted_native_callt_does_not_emit_a_qualified_label() {
         !high_level.contains("return StdLib::Serialize"),
         "{high_level}"
     );
-    assert!(high_level.contains("Serialize(t0);"), "{high_level}");
+    assert!(
+        high_level.contains("return __callt_token_0(t0);"),
+        "{high_level}"
+    );
 }
 
 #[test]

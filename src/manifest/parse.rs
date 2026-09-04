@@ -1,4 +1,3 @@
-use std::fs;
 use std::io::Read;
 use std::path::Path;
 
@@ -76,9 +75,9 @@ impl ContractManifest {
     /// Returns an error if reading fails, the payload exceeds the size limit,
     /// the bytes are not valid UTF-8, or the JSON does not match the manifest schema.
     pub fn from_reader<R: Read>(reader: R) -> Result<Self> {
-        let mut buf = Vec::new();
-        let mut limited = reader.take(MAX_MANIFEST_SIZE + 1);
-        limited.read_to_end(&mut buf).map_err(ManifestError::from)?;
+        let buf = crate::bounded_io::read_limited(reader, MAX_MANIFEST_SIZE, |size, max| {
+            ManifestError::FileTooLarge { size, max }
+        })?;
         Self::from_bytes(&buf)
     }
 
@@ -89,10 +88,6 @@ impl ContractManifest {
     /// Returns an error if the payload exceeds the size limit or the JSON does
     /// not match the expected manifest schema.
     pub fn from_json_str(input: &str) -> Result<Self> {
-        // Enforce the same size cap as every other string/byte entry point so
-        // library and wasm callers (which reach the parser through here) cannot
-        // bypass it.
-        ensure_manifest_size(input.len() as u64)?;
         input.parse()
     }
 
@@ -128,9 +123,10 @@ impl ContractManifest {
     /// Returns an error if the file cannot be read, exceeds the size limit,
     /// contains invalid UTF-8, or the JSON does not match the manifest schema.
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let size = fs::metadata(&path)?.len();
-        ensure_manifest_size(size)?;
-        let data = fs::read(path)?;
+        let data =
+            crate::bounded_io::read_file_limited(path.as_ref(), MAX_MANIFEST_SIZE, |size, max| {
+                crate::error::Error::from(ManifestError::FileTooLarge { size, max })
+            })?;
         Self::from_bytes(&data)
     }
 
@@ -141,10 +137,7 @@ impl ContractManifest {
     /// Returns an error if parsing fails or if wildcard-like fields contain
     /// non-canonical values (e.g., `"all"` instead of `"*"`).
     pub fn from_file_strict<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let size = fs::metadata(&path)?.len();
-        ensure_manifest_size(size)?;
-        let data = fs::read(path)?;
-        let manifest = Self::from_bytes(&data)?;
+        let manifest = Self::from_file(path)?;
         validate_manifest_strict(&manifest)?;
         Ok(manifest)
     }
@@ -154,6 +147,8 @@ impl std::str::FromStr for ContractManifest {
     type Err = crate::error::Error;
 
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        // Keep `.parse()` and every explicit string/byte API on the same path.
+        ensure_manifest_size(s.len() as u64)?;
         let manifest: ContractManifest = serde_json::from_str(s).map_err(ManifestError::from)?;
         Ok(manifest)
     }

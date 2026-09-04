@@ -1,6 +1,6 @@
 [package]
 name = "neo-decompiler"
-version = "0.12.0"
+version = "0.14.0"
 edition = "2021"
 authors = ["Jimmy <jimmy@r3e.network>"]
 license = "MIT OR Apache-2.0"
@@ -12,6 +12,18 @@ repository = "https://github.com/r3e-network/neo-decompiler"
 homepage = "https://github.com/r3e-network/neo-decompiler"
 documentation = "https://docs.rs/neo-decompiler"
 rust-version = "1.86"
+include = [
+    "/src/**",
+    "/tests/**",
+    "/benches/**",
+    "/examples/**",
+    "/TestingArtifacts/edgecases/**",
+    "/docs/schema/**",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE-APACHE",
+    "/LICENSE-MIT",
+]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"], optional = true }
@@ -31,6 +43,7 @@ assert_cmd = "2.0"
 predicates = "3.1"
 tempfile = "3.10"
 base64 = "0.21"
+criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 
 [features]
 default = ["cli"]
@@ -50,6 +63,10 @@ required-features = ["cli"]
 name = "neo_decompiler"
 path = "src/lib.rs"
 crate-type = ["rlib", "cdylib"]
+
+[[bench]]
+name = "decompiler_bench"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true

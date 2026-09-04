@@ -110,6 +110,57 @@ fn manifest_from_json_str_rejects_oversized_payloads() {
 }
 
 #[test]
+fn manifest_string_and_stream_entry_points_share_the_byte_limit() {
+    let mut json = sample_manifest_json().to_owned();
+    json.push_str(&" ".repeat(MAX_MANIFEST_SIZE as usize - json.len()));
+    assert_eq!(json.len() as u64, MAX_MANIFEST_SIZE);
+    assert!(json.parse::<ContractManifest>().is_ok());
+    assert!(ContractManifest::from_reader(json.as_bytes()).is_ok());
+
+    json.push(' ');
+    for result in [
+        json.parse::<ContractManifest>(),
+        ContractManifest::from_json_str(&json),
+        ContractManifest::from_json_str_strict(&json),
+        ContractManifest::from_reader(json.as_bytes()),
+    ] {
+        assert!(matches!(
+            result,
+            Err(crate::Error::Manifest(crate::error::ManifestError::FileTooLarge { size, max }))
+                if size == MAX_MANIFEST_SIZE + 1 && max == MAX_MANIFEST_SIZE
+        ));
+    }
+}
+
+#[test]
+fn manifest_file_entry_points_preserve_strict_validation_and_size_errors() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("contract.manifest.json");
+    let invalid_strict = sample_manifest_json().replace("\"trusts\": \"*\"", "\"trusts\": \"all\"");
+    std::fs::write(&path, invalid_strict).unwrap();
+    assert!(ContractManifest::from_file(&path).is_ok());
+    assert!(matches!(
+        ContractManifest::from_file_strict(&path),
+        Err(crate::Error::Manifest(
+            crate::error::ManifestError::Validation { .. }
+        ))
+    ));
+
+    let size = MAX_MANIFEST_SIZE + 100;
+    std::fs::File::create(&path).unwrap().set_len(size).unwrap();
+    for result in [
+        ContractManifest::from_file(&path),
+        ContractManifest::from_file_strict(&path),
+    ] {
+        assert!(matches!(
+            result,
+            Err(crate::Error::Manifest(crate::error::ManifestError::FileTooLarge { size: actual, max }))
+                if actual == size && max == MAX_MANIFEST_SIZE
+        ));
+    }
+}
+
+#[test]
 fn parses_wildcard_permission_variants() {
     let json = r#"
         {

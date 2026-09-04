@@ -30,3 +30,27 @@ fn computes_hash160_little_endian() {
         "big-endian (display) = reversed digest"
     );
 }
+
+#[test]
+fn visible_text_escapes_line_breaks_controls_and_bidi_formatting() {
+    let input = "safe\r\n\u{0085}\u{2028}\u{2029}\u{001B}\u{202E}tail\t";
+    assert_eq!(
+        escape_visible_text(input),
+        "safe\\r\\n\\u{0085}\\u{2028}\\u{2029}\\u{001B}\\u{202E}tail\\t"
+    );
+    assert!(!escape_visible_text(input).chars().any(char::is_control));
+
+    let all_unsafe = (0..=0x1F)
+        .chain(0x7F..=0x9F)
+        .chain([
+            0x061C, 0x200E, 0x200F, 0x2028, 0x2029, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E, 0x2066,
+            0x2067, 0x2068, 0x2069,
+        ])
+        .map(|code_point| char::from_u32(code_point).unwrap())
+        .collect::<String>();
+    assert!(!escape_visible_text(&all_unsafe).chars().any(|character| {
+        character.is_control()
+            || is_bidi_control(character)
+            || matches!(character, '\u{2028}' | '\u{2029}')
+    }));
+}

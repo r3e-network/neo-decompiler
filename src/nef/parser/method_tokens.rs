@@ -61,6 +61,14 @@ impl NefParser {
                 .ok_or(NefError::UnexpectedEof { offset })?;
             let params = read_u16_le(params_bytes);
             offset += 2;
+            if params > super::super::MAX_METHOD_TOKEN_PARAMETERS {
+                return Err(NefError::MethodTokenParameterCountTooLarge {
+                    index,
+                    count: params,
+                    max: super::super::MAX_METHOD_TOKEN_PARAMETERS,
+                }
+                .into());
+            }
 
             let has_return_value = match bytes.get(offset) {
                 Some(0) => {

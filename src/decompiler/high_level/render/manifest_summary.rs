@@ -1,6 +1,7 @@
 use std::fmt::Write;
 
 use crate::manifest::ContractManifest;
+use crate::util;
 
 use crate::decompiler::helpers::{
     format_manifest_type, format_permission_entry, render_extra_scalar, sanitize_identifier,
@@ -11,7 +12,7 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
         let standards = manifest
             .supported_standards
             .iter()
-            .map(|s| format!("\"{s}\""))
+            .map(|s| format!("{:?}", util::escape_visible_text(s)))
             .collect::<Vec<_>>()
             .join(", ");
         writeln!(output, "    supported_standards = [{standards}];").unwrap();
@@ -22,7 +23,13 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
     if !manifest.features.is_empty() {
         writeln!(output, "    features {{").unwrap();
         for (key, value) in &manifest.features {
-            writeln!(output, "        {key} = {value};").unwrap();
+            writeln!(
+                output,
+                "        {} = {};",
+                util::escape_visible_text(key),
+                util::escape_visible_text(&value.to_string())
+            )
+            .unwrap();
         }
         writeln!(output, "    }}").unwrap();
     }
@@ -38,7 +45,12 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
         //   }
         writeln!(output, "    groups {{").unwrap();
         for group in &manifest.groups {
-            writeln!(output, "        pubkey={}", group.pubkey).unwrap();
+            writeln!(
+                output,
+                "        pubkey={}",
+                util::escape_visible_text(&group.pubkey)
+            )
+            .unwrap();
         }
         writeln!(output, "    }}").unwrap();
     }
@@ -46,18 +58,34 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
     if !manifest.permissions.is_empty() {
         writeln!(output, "    permissions {{").unwrap();
         for permission in &manifest.permissions {
-            writeln!(output, "        {}", format_permission_entry(permission)).unwrap();
+            writeln!(
+                output,
+                "        {}",
+                util::escape_visible_text(&format_permission_entry(permission))
+            )
+            .unwrap();
         }
         writeln!(output, "    }}").unwrap();
     }
 
     if let Some(trusts) = manifest.trusts.as_ref() {
-        writeln!(output, "    trusts = {};", trusts.describe()).unwrap();
+        writeln!(
+            output,
+            "    trusts = {};",
+            util::escape_visible_text(&trusts.describe())
+        )
+        .unwrap();
     }
     if let Some(serde_json::Value::Object(map)) = manifest.extra.as_ref() {
         for (key, value) in map {
             if let Some(rendered) = render_extra_scalar(value) {
-                writeln!(output, "    // {key}: {rendered}").unwrap();
+                writeln!(
+                    output,
+                    "    // {}: {}",
+                    util::escape_visible_text(key),
+                    util::escape_visible_text(&rendered)
+                )
+                .unwrap();
             }
         }
     }
@@ -81,7 +109,10 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
             let return_type = format_manifest_type(&method.return_type);
             let mut meta = Vec::new();
             if method_name != method.name {
-                meta.push(format!("manifest {:?}", method.name));
+                meta.push(format!(
+                    "manifest {:?}",
+                    util::escape_visible_text(&method.name)
+                ));
             }
             if method.safe {
                 meta.push("safe".to_string());
@@ -121,7 +152,10 @@ pub(super) fn write_manifest_summary(output: &mut String, manifest: &ContractMan
             let event_name = sanitize_identifier(&event.name);
             let mut meta = Vec::new();
             if event_name != event.name {
-                meta.push(format!("manifest {:?}", event.name));
+                meta.push(format!(
+                    "manifest {:?}",
+                    util::escape_visible_text(&event.name)
+                ));
             }
             let meta_comment = if meta.is_empty() {
                 String::new()

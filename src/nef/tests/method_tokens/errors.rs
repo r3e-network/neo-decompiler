@@ -1,5 +1,61 @@
 use super::super::*;
 
+fn build_single_method_token(parameters_count: u16) -> Vec<u8> {
+    let script = [0x40];
+    let mut data = Vec::new();
+    data.extend_from_slice(&MAGIC);
+    data.extend_from_slice(&[0u8; 64]);
+    data.push(0); // source (empty)
+    data.push(0); // reserved byte
+    data.push(1); // one method token
+    data.extend_from_slice(&[0x22; 20]);
+    write_varint(&mut data, 3);
+    data.extend_from_slice(b"foo");
+    data.extend_from_slice(&parameters_count.to_le_bytes());
+    data.push(0); // no return value
+    data.push(0x0F); // all supported call flags
+    data.extend_from_slice(&0u16.to_le_bytes()); // reserved word
+    write_varint(&mut data, script.len() as u32);
+    data.extend_from_slice(&script);
+    let checksum = NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+    data
+}
+
+#[test]
+fn accepts_method_token_parameter_count_at_vm_stack_limit() {
+    let nef = NefParser::new()
+        .parse(&build_single_method_token(MAX_METHOD_TOKEN_PARAMETERS))
+        .expect("the VM stack limit is a valid method-token arity");
+
+    assert_eq!(
+        nef.method_tokens[0].parameters_count,
+        MAX_METHOD_TOKEN_PARAMETERS
+    );
+}
+
+#[test]
+fn rejects_method_token_parameter_count_above_vm_stack_limit() {
+    for parameters_count in [MAX_METHOD_TOKEN_PARAMETERS + 1, u16::MAX] {
+        let err = NefParser::new()
+            .parse(&build_single_method_token(parameters_count))
+            .expect_err("arity above the VM stack limit must be rejected");
+
+        match err {
+            crate::error::Error::Nef(NefError::MethodTokenParameterCountTooLarge {
+                index,
+                count,
+                max,
+            }) => {
+                assert_eq!(index, 0);
+                assert_eq!(count, parameters_count);
+                assert_eq!(max, MAX_METHOD_TOKEN_PARAMETERS);
+            }
+            other => panic!("expected MethodTokenParameterCountTooLarge, got {other:?}"),
+        }
+    }
+}
+
 #[test]
 fn rejects_overlong_method_token_name() {
     let script = vec![0x40];

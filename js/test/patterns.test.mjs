@@ -826,7 +826,7 @@ test("C# rendering lowers method-token calls through Contract.Call", () => {
   const rendered = renderCSharpContract([
     "contract MethodTokens {",
     "fn invoke() -> any {",
-    "    return testArgs1(4);",
+    "    return __callt_token_0(4);",
     "}",
     "}",
   ].join("\n"), null, {
@@ -840,7 +840,7 @@ test("C# rendering lowers method-token calls through Contract.Call", () => {
   });
   assert.match(rendered, /return Contract\.Call\(\(UInt160\)new byte\[\] \{ 0x01, 0x02, 0x03/);
   assert.match(rendered, /"testArgs1", \(CallFlags\)\(15\), new object\[\] \{ 4 \}\)/);
-  assert.doesNotMatch(rendered, /return testArgs1\(4\);/);
+  assert.doesNotMatch(rendered, /return __callt_token_0\(4\);/);
 });
 
 test("C# method-token rewriting leaves qualified native calls intact", () => {

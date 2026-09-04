@@ -12,11 +12,11 @@ pub(super) fn write_method_tokens(output: &mut String, nef: &NefFile) {
     writeln!(output, "    // method tokens declared in NEF").unwrap();
     for token in &nef.method_tokens {
         let hint = native_contracts::describe_method_token(&token.hash, &token.method);
-        let method_name: String = token.method.escape_default().collect();
+        let method_name = util::escape_visible_text(&token.method);
         let contract_note = hint
             .as_ref()
             .map(|h| {
-                let label: String = h.formatted_label(&token.method).escape_default().collect();
+                let label = util::escape_visible_text(&h.formatted_label(&token.method));
                 format!(" ({label})")
             })
             .unwrap_or_default();
@@ -37,7 +37,8 @@ pub(super) fn write_method_tokens(output: &mut String, nef: &NefFile) {
                 writeln!(
                     output,
                     "    // warning: native contract {} does not expose method {}",
-                    hint.contract, method_name
+                    util::escape_visible_text(hint.contract),
+                    method_name
                 )
                 .unwrap();
             }

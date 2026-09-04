@@ -16,7 +16,7 @@
 #![allow(clippy::unwrap_used)]
 
 use std::fs;
-use std::panic::catch_unwind;
+use std::panic::{catch_unwind, UnwindSafe};
 use std::path::{Path, PathBuf};
 
 use neo_decompiler::{
@@ -30,13 +30,20 @@ fn repo_root() -> PathBuf {
 
 /// Recursively collect files under `dir`.
 fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    collect_files_except(dir, out, None);
+}
+
+fn collect_files_except(dir: &Path, out: &mut Vec<PathBuf>, excluded: Option<&Path>) {
+    if excluded == Some(dir) {
+        return;
+    }
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            collect_files(&path, out);
+            collect_files_except(&path, out, excluded);
         } else {
             out.push(path);
         }
@@ -49,7 +56,11 @@ fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// `fuzz/corpus/` directories are empty. Returns `(nef_files, manifest_files)`.
 fn committed_fixtures(root: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut all = Vec::new();
-    collect_files(&root.join("TestingArtifacts"), &mut all);
+    let artifacts = root.join("TestingArtifacts");
+    // The decompiled directory contains generated copies of the inputs, not
+    // additional authoritative fixtures. Keep their presence from multiplying
+    // replay time or making local and clean-checkout coverage diverge.
+    collect_files_except(&artifacts, &mut all, Some(&artifacts.join("decompiled")));
     let is_nef = |p: &PathBuf| p.extension().and_then(|e| e.to_str()) == Some("nef");
     let is_manifest = |p: &PathBuf| {
         p.file_name()
@@ -80,7 +91,7 @@ fn committed_scripts(nef_files: &[PathBuf]) -> Vec<Vec<u8>> {
 enum Target {
     /// Full NEF-based decompile pipeline.
     NefDecompile,
-    /// Raw bytecode: disassemble → CFG → SSA (no NEF wrapper).
+    /// Raw bytecode: disassemble → CFG (no NEF wrapper).
     RawDecompile,
     /// NEF container parse only.
     NefParse,
@@ -100,11 +111,12 @@ impl Target {
 }
 
 fn run_target(data: &[u8], target: Target) {
-    let _ = catch_unwind(|| match target {
-        Target::NefDecompile | Target::NefParse => {
-            // Both paths start by parsing the NEF container; NefDecompile then
-            // runs the full pipeline. Running the full path covers parse too.
+    match target {
+        Target::NefDecompile => {
             let _ = Decompiler::new().decompile_bytes(data);
+        }
+        Target::NefParse => {
+            let _ = NefParser::new().parse(data);
         }
         Target::RawDecompile => {
             let dis = Disassembler::new();
@@ -124,7 +136,65 @@ fn run_target(data: &[u8], target: Target) {
                 let _ = ContractManifest::from_json_str(text);
             }
         }
-    });
+    }
+}
+
+/// The only panic boundary for replay operations. Preserve the input identity
+/// and original panic message while failing the test outside `catch_unwind`.
+fn run_labeled_target<T>(label: &str, target: &str, run: impl FnOnce() -> T + UnwindSafe) -> T {
+    match catch_unwind(run) {
+        Ok(result) => result,
+        Err(payload) => {
+            let detail = payload
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("non-string panic payload");
+            panic!("corpus replay panic in {target} target at {label}: {detail}");
+        }
+    }
+}
+
+#[test]
+#[should_panic(
+    expected = "corpus replay panic in synthetic target at sentinel input: injected panic"
+)]
+fn replay_harness_propagates_panics_with_input_and_target_labels() {
+    run_labeled_target("sentinel input", "synthetic", || panic!("injected panic"));
+}
+
+#[test]
+fn fixture_discovery_excludes_generated_mirrors_and_preserves_source_subtrees() {
+    let root = tempfile::tempdir().expect("temporary fixture root");
+    let artifacts = root.path().join("TestingArtifacts");
+    for relative in [
+        "original.nef",
+        "original.manifest.json",
+        "edgecases/edge.nef",
+        "devpack/devpack.manifest.json",
+        "decompiled/original.nef",
+        "decompiled/nested/original.manifest.json",
+    ] {
+        let path = artifacts.join(relative);
+        fs::create_dir_all(path.parent().expect("fixture parent")).expect("fixture directory");
+        fs::write(path, b"fixture").expect("fixture file");
+    }
+
+    let (nefs, manifests) = committed_fixtures(root.path());
+    assert_eq!(
+        nefs,
+        vec![
+            artifacts.join("edgecases/edge.nef"),
+            artifacts.join("original.nef")
+        ]
+    );
+    assert_eq!(
+        manifests,
+        vec![
+            artifacts.join("devpack/devpack.manifest.json"),
+            artifacts.join("original.manifest.json")
+        ]
+    );
 }
 
 #[test]
@@ -182,14 +252,9 @@ fn replay_all_fuzz_corpora_without_panics() {
 
         let count = inputs.len();
         for (label, data) in &inputs {
-            // catch_unwind swallows panics; surface them as failures with the
-            // offending input label by re-panicking outside the catch.
-            let panic = catch_unwind(|| {
+            run_labeled_target(label, target.dir(), || {
                 run_target(data, target);
             });
-            if panic.is_err() {
-                panic!("corpus replay panic in {} target at {label}", target.dir());
-            }
         }
 
         // The committed fixtures guarantee non-empty coverage on every checkout,
@@ -206,10 +271,7 @@ fn replay_all_fuzz_corpora_without_panics() {
 #[test]
 fn decompile_all_artifacts_across_formats_without_panics() {
     let root = repo_root();
-    let artifacts_dir = root.join("TestingArtifacts");
-    let mut nef_files = Vec::new();
-    collect_files(&artifacts_dir, &mut nef_files);
-    nef_files.retain(|p| p.extension().and_then(|e| e.to_str()) == Some("nef"));
+    let (nef_files, _) = committed_fixtures(&root);
 
     assert!(!nef_files.is_empty(), "no .nef artifacts discovered");
 
@@ -222,13 +284,12 @@ fn decompile_all_artifacts_across_formats_without_panics() {
             .ok()
             .and_then(|text| ContractManifest::from_json_str(&text).ok());
 
-        let result = catch_unwind(|| {
-            decompiler.decompile_bytes_with_manifest(&data, manifest, OutputFormat::All)
-        });
-        if result.is_err() {
-            panic!("artifact decompile panic on {}", nef_path.display());
-        }
-        if result.unwrap().is_ok() {
+        let result = run_labeled_target(
+            &nef_path.display().to_string(),
+            "artifact all-formats",
+            || decompiler.decompile_bytes_with_manifest(&data, manifest, OutputFormat::All),
+        );
+        if result.is_ok() {
             decompiled += 1;
         }
     }
@@ -247,6 +308,8 @@ fn nef_parser_corpus_smoke() {
             continue;
         }
         let Ok(data) = fs::read(file) else { continue };
-        let _ = catch_unwind(|| parser.parse(&data));
+        run_labeled_target(&file.display().to_string(), Target::NefParse.dir(), || {
+            let _ = parser.parse(&data);
+        });
     }
 }

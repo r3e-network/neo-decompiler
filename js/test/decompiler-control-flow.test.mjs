@@ -338,11 +338,12 @@ test("string and hex literal operands do not get redundant outer parens", () => 
   );
 });
 
-test("function-call operand does not get redundant outer parens", () => {
+test("materialized function-call operand does not get redundant outer parens", () => {
   // Script: PUSH1; CALL +5; ADD; RET; NOP; PUSH3; RET — main calls a
   // helper that pushes 3, then adds 1. Used to render as
   // `return 1 + (sub_0x0006());`. The redundant outer parens on the
-  // self-contained call expression now collapse.
+  // self-contained call expression now collapse. The call is materialized
+  // when executed so later consumers cannot move its effects.
   const script = new Uint8Array([
     0x11,             // PUSH1
     0x34, 0x05,       // CALL +5 -> helper at 0x0006
@@ -355,13 +356,13 @@ test("function-call operand does not get redundant outer parens", () => {
   const result = decompileHighLevelBytes(buildNefFromScript(script));
   assert.match(
     result.highLevel,
-    /return 1 \+ sub_0x0006\(\);/,
-    "self-contained call should not be wrapped in extra parens",
+    /let t0 = sub_0x0006\(\);\s*return 1 \+ t0;/,
+    "call should execute once and the consumer should use its result",
   );
   assert.doesNotMatch(
     result.highLevel,
-    /\(sub_0x0006\(\)\)/,
-    "redundant outer parens around the call should be gone",
+    /\(sub_0x0006\(\)\)|\(t0\)/,
+    "redundant outer parens around the call and result should be gone",
   );
 });
 

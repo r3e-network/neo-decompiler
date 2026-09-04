@@ -91,6 +91,35 @@ pub(crate) fn build_nef_with_unknown_opcode() -> Vec<u8> {
     data
 }
 
+pub(crate) const CONTROL_METHOD: &str = "m\r\n\u{0085}\u{2028}\u{2029}\u{001B}\u{202E}INJECT";
+
+pub(crate) fn build_nef_with_metadata_controls() -> Vec<u8> {
+    let script = [0x37, 0x00, 0x00, 0x40]; // CALLT 0, RET
+    let compiler = "c\rR\nL\u{0085}N\u{2028}S\u{2029}P\u{001B}E\u{202E}B";
+    let source = "source\nINJECT_SOURCE";
+    let mut data = Vec::new();
+    data.extend_from_slice(b"NEF3");
+    let mut compiler_field = [0u8; 64];
+    compiler_field[..compiler.len()].copy_from_slice(compiler.as_bytes());
+    data.extend_from_slice(&compiler_field);
+    write_varint(&mut data, source.len() as u32);
+    data.extend_from_slice(source.as_bytes());
+    data.push(0); // reserved byte
+    data.push(1); // single method token
+    data.extend_from_slice(&GAS_TOKEN_HASH);
+    write_varint(&mut data, CONTROL_METHOD.len() as u32);
+    data.extend_from_slice(CONTROL_METHOD.as_bytes());
+    data.extend_from_slice(&0u16.to_le_bytes());
+    data.push(1);
+    data.push(0x0F);
+    data.extend_from_slice(&0u16.to_le_bytes());
+    write_varint(&mut data, script.len() as u32);
+    data.extend_from_slice(&script);
+    let checksum = neo_decompiler::nef::NefParser::calculate_checksum(&data);
+    data.extend_from_slice(&checksum.to_le_bytes());
+    data
+}
+
 pub(crate) fn write_oversize_nef(path: &Path) {
     let file = File::create(path).expect("create oversize nef");
     file.set_len(neo_decompiler::nef::MAX_NEF_FILE_SIZE + 1)

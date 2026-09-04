@@ -16,6 +16,9 @@ const MAX_SCRIPT_LEN: usize = 0x8_0000; // MaxScriptLength = 512 KiB
 /// Reference: `MethodToken.Deserialize` reads the method name with
 /// `reader.ReadVarString(32)`.
 const MAX_METHOD_NAME_LEN: usize = 32;
+/// Neo VM evaluation-stack limit. A method token cannot consume more
+/// arguments than can exist on the VM stack at one time.
+const MAX_METHOD_TOKEN_PARAMETERS: u16 = 2048;
 const CALL_FLAG_READ_STATES: u8 = 0x01;
 const CALL_FLAG_WRITE_STATES: u8 = 0x02;
 const CALL_FLAG_ALLOW_CALL: u8 = 0x04;
@@ -31,6 +34,12 @@ mod types;
 pub use flags::{call_flag_labels, describe_call_flags};
 pub use parser::NefParser;
 pub use types::{MethodToken, NefFile, NefHeader};
+
+pub(crate) fn read_nef_file(path: &std::path::Path) -> crate::Result<Vec<u8>> {
+    crate::bounded_io::read_file_limited(path, MAX_NEF_FILE_SIZE, |size, max| {
+        crate::error::NefError::FileTooLarge { size, max }.into()
+    })
+}
 
 #[cfg(test)]
 mod tests;

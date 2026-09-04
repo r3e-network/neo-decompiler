@@ -51,10 +51,12 @@ impl<'a> SsaBuilder<'a> {
         exit_stacks: &BTreeMap<BlockId, Vec<SsaVariable>>,
         entry_slots: &BTreeMap<BlockId, SlotState>,
         exit_slots: &BTreeMap<BlockId, SlotState>,
+        facts: &mut BuildFacts,
     ) -> BTreeSet<SsaVariable> {
         let mut phis = Vec::new();
         let no_tainted_variables = BTreeSet::new();
-        let mut facts = BuildFacts::default();
+        facts.versions.clear();
+        facts.definitions.clear();
         self.reserve_argument_versions(&mut facts.versions);
         self.seed_context_collection_facts(&mut facts.definitions);
         for bid in block_ids {
@@ -71,7 +73,7 @@ impl<'a> SsaBuilder<'a> {
                 &slot_entry,
                 &CollectionInvalidations::default(),
                 &no_tainted_variables,
-                &mut facts,
+                facts,
             );
         }
         let mut tainted = BTreeSet::from([unknown_var()]);

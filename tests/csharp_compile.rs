@@ -198,13 +198,8 @@ fn collect_nef_files(path: &Path, files: &mut Vec<PathBuf>) {
 }
 
 #[test]
+#[ignore = "requires dotnet and NEO_SMARTCONTRACT_FRAMEWORK_DLL"]
 fn representative_generated_csharp_compiles_with_roslyn() {
-    if env::var_os("NEO_SMARTCONTRACT_FRAMEWORK_DLL").is_none() {
-        eprintln!(
-            "NEO_SMARTCONTRACT_FRAMEWORK_DLL is unset; skipping representative C# corpus gate"
-        );
-        return;
-    }
     let (framework, target_framework) = framework_config();
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let cases = [
@@ -237,11 +232,12 @@ fn representative_generated_csharp_compiles_with_roslyn() {
 }
 
 #[test]
+#[ignore = "requires dotnet, NEO_SMARTCONTRACT_FRAMEWORK_DLL and NEO_CSHARP_CORPUS_DIR"]
 fn pinned_corpus_generated_csharp_compiles_with_roslyn() {
-    let Some(corpus) = env::var_os("NEO_CSHARP_CORPUS_DIR").map(PathBuf::from) else {
-        eprintln!("NEO_CSHARP_CORPUS_DIR is unset; skipping full C# corpus gate");
-        return;
-    };
+    let corpus = PathBuf::from(
+        env::var_os("NEO_CSHARP_CORPUS_DIR")
+            .expect("NEO_CSHARP_CORPUS_DIR is required for the pinned C# corpus gate"),
+    );
     let (framework, target_framework) = framework_config();
     let provenance_text = fs::read_to_string(corpus.join("provenance.json"))
         .expect("full C# corpus gate requires provenance.json");

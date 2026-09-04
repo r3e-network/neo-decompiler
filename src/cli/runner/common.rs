@@ -1,14 +1,13 @@
 use std::fmt;
-use std::fs;
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::decompiler::MAX_NEF_FILE_SIZE;
 use crate::disassembler::UnknownHandling;
-use crate::error::{NefError, Result};
+use crate::error::Result;
 use crate::manifest::ContractManifest;
+use crate::util;
 
 use super::super::args::{CatalogKind, Cli};
 use super::super::catalog::CatalogReport;
@@ -68,17 +67,9 @@ impl Cli {
         self.print_json(&report)
     }
 
-    /// Read a NEF file after validating its size against [`MAX_NEF_FILE_SIZE`].
+    /// Read a NEF file with the same byte limit as the library entry points.
     pub(super) fn read_nef_bytes(path: &Path) -> Result<Vec<u8>> {
-        let size = fs::metadata(path)?.len();
-        if size > MAX_NEF_FILE_SIZE {
-            return Err(NefError::FileTooLarge {
-                size,
-                max: MAX_NEF_FILE_SIZE,
-            }
-            .into());
-        }
-        Ok(fs::read(path)?)
+        crate::nef::read_nef_file(path)
     }
 
     /// Convert a `--fail-on-unknown-opcodes` flag into [`UnknownHandling`].
@@ -111,7 +102,7 @@ impl Cli {
             writeln!(out)?;
             writeln!(out, "Warnings:")?;
             for warning in warnings {
-                writeln!(out, "- {warning}")?;
+                writeln!(out, "- {}", util::escape_visible_text(&warning.to_string()))?;
             }
         }
         Ok(())

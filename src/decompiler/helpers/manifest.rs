@@ -1,4 +1,5 @@
 use crate::manifest::{ContractManifest, ManifestPermission};
+use crate::util;
 
 /// Extract and sanitize the contract name from a manifest, falling back to
 /// `"NeoContract"` when the manifest is absent or the name is empty.
@@ -27,8 +28,8 @@ pub(in super::super) fn extract_contract_name(
 pub(in super::super) fn format_permission_entry(permission: &ManifestPermission) -> String {
     format!(
         "contract={} methods={}",
-        permission.contract.describe(),
-        permission.methods.describe()
+        util::escape_visible_text(&permission.contract.describe()),
+        util::escape_visible_text(&permission.methods.describe())
     )
 }
 

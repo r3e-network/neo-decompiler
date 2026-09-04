@@ -91,6 +91,46 @@ test("client maps decompile options to the wasm ABI", () => {
   });
 });
 
+test("client normalizes safe wasm integers and retains exact wide operands", () => {
+  const raw = () => ({
+    script_length: 2n,
+    instructions: [{ offset: 0n, operand_value: { type: "I64", value: 9223372036854775807n } }],
+    analysis: { call_graph: { methods: [{ offset: 0n }] } },
+    limits: [9007199254740991n, -9007199254740991n, 9007199254740992n, -9007199254740992n],
+  });
+  const client = createNeoDecompilerClient({
+    infoReport: raw,
+    disasmReport: raw,
+    decompileReport: raw,
+    initPanicHook() {},
+  });
+  for (const method of ["infoReport", "disasmReport", "decompileReport"]) {
+    const report = client[method](new Uint8Array());
+    assert.equal(report.script_length, 2);
+    assert.equal(report.instructions[0].offset, 0);
+    assert.equal(report.analysis.call_graph.methods[0].offset, 0);
+    assert.equal(report.instructions[0].operand_value.value, 9223372036854775807n);
+    assert.deepEqual(report.limits, [9007199254740991, -9007199254740991, 9007199254740992n, -9007199254740992n]);
+  }
+});
+
+test("client preserves nested map data and own __proto__ keys without changing prototypes", () => {
+  const client = createNeoDecompilerClient({
+    infoReport() {
+      return { manifest: { extra: new Map([
+        ["__proto__", new Map([["marker", "metadata"]])],
+        ["nested", new Map([["safe", 7n], ["wide", 9223372036854775807n]])],
+      ]) } };
+    },
+  });
+  const extra = client.infoReport(new Uint8Array()).manifest.extra;
+  assert.equal(Object.getPrototypeOf(extra), Object.prototype);
+  assert.equal(Object.hasOwn(extra, "__proto__"), true);
+  assert.deepEqual(extra.__proto__, { marker: "metadata" });
+  assert.equal(extra.marker, undefined);
+  assert.deepEqual(extra.nested, { safe: 7, wide: 9223372036854775807n });
+});
+
 test("package version stays in sync with Cargo.toml", () => {
   execFileSync("node", ["./scripts/sync-version.mjs", "--check"], {
     cwd: new URL("../", import.meta.url),

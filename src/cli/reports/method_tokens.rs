@@ -9,18 +9,18 @@ pub(in crate::cli) fn format_method_token_line(index: usize, token: &MethodToken
     let contract_label = report
         .native_contract
         .as_ref()
-        .map(|entry| format!(" ({})", entry.label))
+        .map(|entry| format!(" ({})", util::escape_visible_text(&entry.label)))
         .unwrap_or_default();
     let warning = report
         .warning
         .as_ref()
-        .map(|w| format!(" // warning: {w}"))
+        .map(|w| format!(" // warning: {}", util::escape_visible_text(w)))
         .unwrap_or_default();
     format!(
         "#{index}: hash={}{} method={} params={} returns={} flags=0x{:02X} ({}){}",
         util::format_hash(&token.hash),
         contract_label,
-        token.method,
+        util::escape_visible_text(&token.method),
         token.parameters_count,
         token.has_return_value,
         token.call_flags,

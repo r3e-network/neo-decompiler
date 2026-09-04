@@ -19,7 +19,7 @@ clippy-no-default:
 	cargo clippy --all-targets --no-default-features -- -D warnings
 
 package:
-	cargo package --allow-dirty --no-verify
+	cargo package --allow-dirty --locked
 
 deny:
 	cargo deny check
@@ -40,7 +40,10 @@ js-test:
 web-test:
 	cd web && npm test
 
-ci: fmt-check test clippy test-no-default clippy-no-default doc-check deny msrv js-test
+ci: fmt-check test clippy test-no-default clippy-no-default doc-check deny msrv js-test web-test
+
+bench:
+	cargo bench
 
 artifact-sweep:
 	bash tools/ci/artifact_sweep.sh

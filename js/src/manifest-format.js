@@ -1,3 +1,6 @@
+import { escapeVisibleText } from "./visible-text.js";
+import { isReservedMethodTokenLabel } from "./method-token-label.js";
+
 export function sanitizeIdentifier(input) {
   let ident = "";
   for (const character of input) {
@@ -17,6 +20,12 @@ export function sanitizeIdentifier(input) {
   }
   if (/^[0-9]/u.test(ident)) {
     ident = `_${ident}`;
+  }
+  // `__callt_token_<index>` is a renderer-owned namespace used to carry a
+  // CALLT table index safely into C# lowering. User/manifest identifiers must
+  // never occupy it or an internal call could be rebound to an external token.
+  if (isReservedMethodTokenLabel(ident)) {
+    ident = `method_${ident}`;
   }
   return ident;
 }
@@ -82,7 +91,7 @@ export function formatManifestType(kind) {
     case "any":
       return "any";
     default:
-      return String(kind);
+      return escapeVisibleText(kind);
   }
 }
 
