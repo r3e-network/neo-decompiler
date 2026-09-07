@@ -300,3 +300,30 @@ jobs:
             unset NODE_AUTH_TOKEN
             npm publish "release/${PACKAGE_FILE}" --ignore-scripts --access public --provenance
           fi
+
+  github-release:
+    name: Create GitHub release with verified archives
+    needs: [package-web, package-js, publish-web, publish-js]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified web archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: neo-decompiler-web-package
+          path: release
+
+      - name: Download verified JS archive
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: neo-decompiler-js-package
+          path: release
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes release/*
