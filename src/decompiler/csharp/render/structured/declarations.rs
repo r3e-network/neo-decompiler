@@ -107,6 +107,9 @@ pub(in crate::decompiler::csharp::render) struct PlannedDeclaration {
     pub(in crate::decompiler::csharp::render) emitted_name: String,
     pub(in crate::decompiler::csharp::render) csharp_type: String,
     pub(in crate::decompiler::csharp::render) initialize_to_default: bool,
+    /// Emit `T name = value` at the first in-scope assignment instead of a
+    /// bare hoisted `T name;` followed by `name = value`.
+    pub(in crate::decompiler::csharp::render) merge_first_assignment: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -234,6 +237,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
                             emitted_name: sanitize_csharp_identifier(name),
                             csharp_type: csharp_type(symbol.value_type, typed).to_string(),
                             initialize_to_default: true,
+                            merge_first_assignment: false,
                         },
                     );
                 }
@@ -281,6 +285,24 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
                             && *candidate == "object[]"))
             })
             .cloned();
+        // A hoisted multi-definition local can still merge its first in-scope
+        // assignment into the declaration (`T name = value`) when that
+        // definition dominates every use recorded in the same scope.
+        let merge_first_assignment = if inline {
+            false
+        } else {
+            activity
+                .definitions
+                .iter()
+                .filter(|definition| definition.scope == scope)
+                .min_by_key(|definition| definition.order)
+                .is_some_and(|first| {
+                    !activity
+                        .uses
+                        .iter()
+                        .any(|usage| usage.scope == scope && usage.order < first.order)
+                })
+        };
         declarations.insert(
             name.clone(),
             PlannedDeclaration {
@@ -301,6 +323,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
                         .unwrap_or_else(|| csharp_type(symbol.value_type, typed).to_string())
                 },
                 initialize_to_default: !inline && symbol.origin == SymbolOrigin::Phi,
+                merge_first_assignment,
             },
         );
     }

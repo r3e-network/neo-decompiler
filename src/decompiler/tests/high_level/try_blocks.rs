@@ -12,7 +12,7 @@ fn high_level_lifts_try_finally_blocks() {
     // RET
     let script = [0x3B, 0x00, 0x03, 0x11, 0x3D, 0x02, 0x12, 0x3F, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -50,7 +50,7 @@ fn high_level_lifts_try_catch_blocks() {
     // RET
     let script = [0x3B, 0x03, 0x00, 0x11, 0x3D, 0x03, 0x12, 0x3D, 0x00, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -89,7 +89,7 @@ fn high_level_lifts_try_catch_finally_blocks() {
         0x3B, 0x03, 0x06, 0x11, 0x3D, 0x05, 0x12, 0x3D, 0x02, 0x13, 0x3F, 0x40,
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -135,7 +135,7 @@ fn high_level_lifts_try_finally_with_throw_inside() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -175,7 +175,7 @@ fn high_level_lifts_try_catch_with_abort_in_catch() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -217,7 +217,7 @@ fn high_level_models_catch_entry_stack_with_exception_value() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -248,7 +248,7 @@ fn malformed_try_out_of_bounds_handlers_keep_braces_balanced() {
     // stays brace-balanced instead of emitting stray `}`.
     let script = [0x3B, 0x7F, 0x7F, 0x40]; // TRY catch=+127 finally=+127 ; RET
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
     let high_level = decompilation

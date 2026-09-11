@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 mod body;
 mod entry;
 pub(super) mod header;
+mod ir_body;
 mod manifest_summary;
 mod method_tokens;
 mod methods;
@@ -107,6 +108,7 @@ pub(crate) fn render_high_level(
         callt_labels: &callt_labels,
         callt_param_counts: &callt_param_counts,
         callt_returns_value: &callt_returns_value,
+        use_ir_bodies: opts.high_level_from_ir,
     };
     let methods_context = methods::MethodsContext {
         instructions,

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 fn high_level_loopif_recovers_counting_loop() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let nef = fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).expect("LoopIf NEF");
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef)
         .expect("decompile succeeds");
     let high_level = decompilation

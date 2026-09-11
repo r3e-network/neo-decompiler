@@ -1471,8 +1471,8 @@ test("C# rendering lowers unambiguous collection helpers", () => {
     "}",
   ].join("\n"), null, { typedDeclarations: false });
   assert.match(csharp, /new object\[\(int\)\(2\)\]/);
-  assert.match(csharp, /\(\(dynamic\)items\)\.Add\(@value\)/);
-  assert.match(csharp, /\(\(dynamic\)map\)\.HasKey\(key\)/);
+  assert.match(csharp, /\(\(dynamic\)\(items\)\)\.Add\(@value\)/);
+  assert.match(csharp, /\(\(dynamic\)(?:\(map\)|map)\)\.HasKey\(key\)/);
 });
 
 test("C# rendering lowers VM array, type-test, and memory helpers", () => {
@@ -1722,7 +1722,7 @@ test("C# rendering keeps CLEARITEMS compatible with array and map receivers", ()
     "}",
     "}",
   ].join("\n"));
-  assert.match(csharp, /\(\(dynamic\)items\)\.Clear\(\);/);
+  assert.match(csharp, /\(\(dynamic\)\(items\)\)\.Clear\(\);/);
 });
 
 test("C# rendering uses inferred collection types for removal helpers", () => {
@@ -1738,9 +1738,9 @@ test("C# rendering uses inferred collection types for removal helpers", () => {
     "}",
     "}",
   ].join("\n"), null, { typedDeclarations: true });
-  assert.match(csharp, /List<object>\)items\)\.RemoveAt\(\(int\)\(index\)\)/);
+  assert.match(csharp, /\(\(dynamic\)\(items\)\)\.RemoveAt\(\(int\)\(index\)\)/);
   assert.match(csharp, /map\.Remove\(key\)/);
-  assert.match(csharp, /List<object>\)items\)\.Clear\(\)/);
+  assert.match(csharp, /\(\(dynamic\)\(items\)\)\.Clear\(\)/);
   assert.match(csharp, /map\.Clear\(\)/);
 });
 
@@ -1777,10 +1777,10 @@ test("C# rendering preserves typed array element types for mutations", () => {
     "}",
     "}",
   ].join("\n"), null, { typedDeclarations: true });
-  assert.match(csharp, /List<BigInteger>\)items\)\.Add\(@value\)/);
-  assert.match(csharp, /List<BigInteger>\)items\)\.RemoveAt/);
-  assert.match(csharp, /List<BigInteger>\)items\)\.PopItem/);
-  assert.doesNotMatch(csharp, /List<object>\)items\)/);
+  assert.match(csharp, /\(\(dynamic\)\(items\)\)\.Add\(@value\)/);
+  assert.match(csharp, /\(\(dynamic\)\(items\)\)\.RemoveAt/);
+  assert.match(csharp, /\(\(dynamic\)\(items\)\)\.PopItem/);
+  assert.doesNotMatch(csharp, /List<(?:object|BigInteger)>\)items\)/);
 });
 
 test("C# rendering lowers power and inferred list pop helpers", () => {
@@ -1794,7 +1794,7 @@ test("C# rendering lowers power and inferred list pop helpers", () => {
     "}",
   ].join("\n"), null, { typedDeclarations: true });
   assert.match(csharp, /BigInteger\.Pow\(a, \(int\)\(b\)\)/);
-  assert.match(csharp, /List<object>\)items\)\.PopItem\(\)/);
+  assert.match(csharp, /\(\(dynamic\)\(items\)\)\.PopItem\(\)/);
   assert.doesNotMatch(csharp, /\b(?:pow|pop_item)\(/);
 });
 

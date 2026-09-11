@@ -327,8 +327,25 @@ impl<'a> SsaBuilder<'a> {
             // A load whose slot has a reaching version reads that version instead
             // of an opaque ldloc0(); otherwise fall through to the call
             // placeholder (build_expr) so uninitialised reads stay opaque.
-            let reaching =
-                slot_name_for(op, &instr.operand).and_then(|name| slots.get(&name).cloned());
+            let slot_name = slot_name_for(op, &instr.operand);
+            let reaching = slot_name.as_ref().and_then(|name| slots.get(name).cloned());
+
+            // Static field loads without a reaching definition read the
+            // externally-initialized field itself. Push the initial SSA
+            // variable so consumers see `staticN` rather than an opaque
+            // `ldsfld0()` intrinsic (which the C# renderer would lower to
+            // Runtime.LoadScript).
+            if reaching.is_none() {
+                if let Some(name) = slot_name.as_deref() {
+                    if is_static_slot_name(name) {
+                        let initial = SsaVariable::initial(name.to_string());
+                        slots.insert(name.to_string(), initial.clone());
+                        stack.push(initial);
+                        return None;
+                    }
+                }
+            }
+
             if reaching.is_none() && requires_reaching_slot_definition(op) {
                 record_incomplete_issue(
                     instr,
@@ -356,7 +373,7 @@ impl<'a> SsaBuilder<'a> {
             // Slot loads inherit their slot name (loc0/arg1/static2); everything
             // else gets a temp name. The version counter is per-pass-global and
             // deterministic, so names stay stable across fixpoint iterations.
-            let base = slot_name_for(op, &instr.operand).unwrap_or_else(|| "t".to_string());
+            let base = slot_name.unwrap_or_else(|| "t".to_string());
             let target = fresh_var(state.versions, &base);
             stmts.push(SsaStmt::assign(target.clone(), expr));
             if establishes_snapshot && base != "t" {

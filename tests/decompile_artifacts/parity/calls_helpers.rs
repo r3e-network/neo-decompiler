@@ -28,7 +28,7 @@ fn delegate_manifest_methods_do_not_swallow_private_initslot_bodies() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -146,7 +146,7 @@ fn inline_not_inline_case_does_not_require_spurious_call_argument() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -196,7 +196,7 @@ fn write_in_try_internal_calls_prefer_symbolic_targets_over_raw_offsets() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -253,7 +253,7 @@ fn initializer_anonymous_object_logs_use_emitted_getter_helpers_without_warnings
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 

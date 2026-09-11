@@ -5,7 +5,7 @@ fn decompile_syscall_includes_human_name() {
     // Script: SYSCALL(System.Runtime.Platform) ; RET
     let script = [0x41, 0xB2, 0x79, 0xFC, 0xF6, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -27,7 +27,7 @@ fn void_syscall_does_not_push_stack_value() {
     // System.Runtime.Notify takes 2 args (event_name, state)
     let script = [0x10, 0x10, 0x41, 0x95, 0x01, 0x6F, 0x61, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -56,7 +56,7 @@ fn unknown_syscall_is_assumed_to_return_value() {
     // Script: SYSCALL(unknown) ; RET
     let script = [0x41, 0xEF, 0xBE, 0xAD, 0xDE, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -95,7 +95,7 @@ fn syscall_arguments_render_in_declaration_order() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -117,7 +117,7 @@ fn storage_put_arguments_render_in_pop_order() {
     // old code reversed it to 1, 2, 3.
     let script = [0x11, 0x12, 0x13, 0x41, 0xE6, 0x3F, 0x18, 0x84, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -138,7 +138,7 @@ fn void_storage_syscall_is_emitted_as_statement() {
     // System.Storage.Put takes 3 args (context, key, value)
     let script = [0x10, 0x10, 0x10, 0x41, 0xE6, 0x3F, 0x18, 0x84, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -162,7 +162,7 @@ fn void_storage_local_syscall_is_emitted_as_statement() {
     // System.Storage.Local.Put takes 2 args (key, value)
     let script = [0x10, 0x10, 0x41, 0x39, 0x0C, 0xE3, 0x0A, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -186,7 +186,7 @@ fn syscall_contract_call_returns_value() {
     // System.Contract.Call takes 4 args (contract_hash, method, call_flags, args)
     let script = [0x10, 0x10, 0x10, 0x10, 0x41, 0x62, 0x7D, 0x5B, 0x52, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -210,7 +210,7 @@ fn syscall_runtime_log_is_void() {
     // System.Runtime.Log takes 1 arg (message)
     let script = [0x10, 0x41, 0xCF, 0xE7, 0x47, 0x96, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -234,7 +234,7 @@ fn syscall_runtime_log_missing_argument_emits_warning() {
     // No message is pushed, so the decompiler must surface a warning.
     let script = [0x41, 0xCF, 0xE7, 0x47, 0x96, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -282,7 +282,7 @@ fn syscall_runtime_log_after_packed_store_reports_consumed_slot_context() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -313,7 +313,7 @@ fn syscall_check_witness_returns_value() {
     // System.Runtime.CheckWitness takes 1 arg (hash_or_pubkey)
     let script = [0x10, 0x41, 0xF8, 0x27, 0xEC, 0x8C, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 

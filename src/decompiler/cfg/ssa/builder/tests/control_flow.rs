@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::decompiler::cfg::CfgBuilder;
+
 #[test]
 fn entry_loop_keeps_manifest_arguments_as_incoming_slots() {
     let instructions = vec![instr(0, OpCode::Ldarg0), instr(1, OpCode::Drop)];
@@ -752,4 +754,41 @@ fn entry_loop_slot_without_virtual_initial_value_is_incomplete() {
         .phi_nodes
         .iter()
         .any(|phi| { phi.target.base == "loc0" && phi.operands.values().any(is_unknown) }));
+}
+
+#[test]
+fn first_static_load_pushes_the_initial_field_without_opaque_opcode_call() {
+    let instructions = vec![instr(0, OpCode::Ldsfld0), instr(1, OpCode::Ret)];
+    let (instructions, cfg) = linear(instructions);
+    let context = MethodContext {
+        returns_value: Some(true),
+        ..MethodContext::default()
+    };
+
+    let ssa = SsaBuilder::new(&cfg, &instructions)
+        .with_method_context(&context)
+        .build();
+    let entry = ssa.block(BlockId(0)).expect("entry block");
+
+    assert!(
+        !entry.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Assign {
+                value: SsaExpr::Call {
+                    target: SemanticCallTarget::Intrinsic(Intrinsic::Opcode(OpCode::Ldsfld0)),
+                    ..
+                },
+                ..
+            }
+        )),
+        "LDSFLD0 must not lower to an opaque ldsfld0() intrinsic: {entry:?}"
+    );
+    assert!(
+        entry.stmts.iter().any(|stmt| matches!(
+            stmt,
+            SsaStmt::Return(Some(SsaExpr::Variable(value)))
+                if value == &SsaVariable::initial("static0".to_string())
+        )),
+        "LDSFLD0; RET should return the initial static0 field: {entry:?}"
+    );
 }

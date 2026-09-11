@@ -28,7 +28,7 @@ fn foreach_contract_methods_use_structured_loops_without_unlifted_cfg_warnings()
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
@@ -98,7 +98,7 @@ fn foreach_pack_helpers_do_not_emit_literal_pack_underflow_warnings() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
@@ -156,7 +156,7 @@ fn foreach_tuple_helper_underflow_stays_explicit_and_compile_safe() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
@@ -221,7 +221,7 @@ fn trycatch_handlers_do_not_underflow_on_catch_exception_slot_store() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -266,7 +266,7 @@ fn trycatch_contract_has_no_stack_underflow_warnings_after_catch_stack_modeling(
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -306,7 +306,7 @@ fn nep11_balance_of_istype_and_unpack_stack_modeling_avoids_underflow_warnings()
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -359,7 +359,7 @@ fn reentrancy_unknown_unpack_preserves_stack_for_reverse3_swap_helpers() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -419,7 +419,7 @@ fn tuple_unknown_unpack_preserves_stack_for_drop_stloc_drop_sequence() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 

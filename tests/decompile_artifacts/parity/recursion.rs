@@ -28,7 +28,7 @@ fn recursion_internal_calls_preserve_argument_expressions() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -107,7 +107,7 @@ fn recursion_even_odd_uses_branch_local_value_in_recursive_call() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -178,7 +178,7 @@ fn lambda_static_delegate_recursion_resolves_to_internal_calls() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 

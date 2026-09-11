@@ -9,7 +9,7 @@ use super::super::plan::{csharp_type, DeclarationKind, ScopeId};
 use super::{line, typed_array_csharp_type, StatementRenderer};
 
 impl StatementRenderer<'_> {
-    pub(super) fn render_for_initializer(&self, statement: &Stmt) -> String {
+    pub(super) fn render_for_initializer(&mut self, statement: &Stmt) -> String {
         match statement {
             Stmt::Assign { target, value } => self.render_assignment(target, value, false),
             Stmt::ExprStmt(expression) => render_expr(expression, &self.expressions),
@@ -107,7 +107,12 @@ impl StatementRenderer<'_> {
         format!("return {rendered};")
     }
 
-    pub(super) fn render_assignment(&self, target: &str, value: &Expr, semicolon: bool) -> String {
+    pub(super) fn render_assignment(
+        &mut self,
+        target: &str,
+        value: &Expr,
+        semicolon: bool,
+    ) -> String {
         let target_type = if self.plan.typed && self.plan.index_defined_symbols.contains(target) {
             "dynamic"
         } else {
@@ -130,6 +135,17 @@ impl StatementRenderer<'_> {
                 "{} {} = {value}",
                 declaration.csharp_type, declaration.emitted_name
             ),
+            Some(declaration)
+                if declaration.kind == DeclarationKind::HoistedAssignment
+                    && declaration.merge_first_assignment
+                    && !self.merged_hoisted.contains(target) =>
+            {
+                self.merged_hoisted.insert(target.to_string());
+                format!(
+                    "{} {} = {value}",
+                    declaration.csharp_type, declaration.emitted_name
+                )
+            }
             Some(declaration) => format!("{} = {value}", declaration.emitted_name),
             None => format!("{target} = {value}"),
         };
@@ -137,6 +153,20 @@ impl StatementRenderer<'_> {
             format!("{body};")
         } else {
             body
+        }
+    }
+
+    /// Mark a merge-first hoisted declaration as consumed so later assignments
+    /// fall back to plain `name = value`.
+    #[allow(dead_code)]
+    pub(super) fn note_merged_hoisted(&mut self, target: &str) {
+        if self
+            .plan
+            .declarations
+            .get(target)
+            .is_some_and(|declaration| declaration.merge_first_assignment)
+        {
+            self.merged_hoisted.insert(target.to_string());
         }
     }
 
@@ -243,6 +273,9 @@ impl StatementRenderer<'_> {
                 declaration.scope == scope
                     && declaration.kind == DeclarationKind::HoistedAssignment
                     && !self.plan.unused_copy_symbols.contains(name.as_str())
+                    // Mergeable first assignments emit `T name = value` at the
+                    // assignment site instead of a bare hoisted `T name;`.
+                    && (!declaration.merge_first_assignment || declaration.initialize_to_default)
             })
             .map(|(_, declaration)| {
                 let initializer = if declaration.initialize_to_default {

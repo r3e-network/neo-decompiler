@@ -2,7 +2,7 @@
 
 use crate::decompiler::analysis::types::ValueType;
 use crate::decompiler::csharp::helpers::sanitize_csharp_identifier;
-use crate::decompiler::ir::{BinOp, Block, ControlFlow, Expr, Stmt};
+use crate::decompiler::ir::{Block, ControlFlow, Expr, Stmt};
 
 use super::super::expr::{render_expr, render_vm_condition};
 use super::super::plan::ScopeId;
@@ -177,13 +177,13 @@ impl StatementRenderer<'_> {
                             format!("case {}: {{", render_expr(case, &self.expressions))
                         }
                         _ => {
+                            // Pattern predicates must use C# `==` so Integer/ByteString
+                            // switches stay readable. Routing through `Expr::binary(Eq, …)`
+                            // treats the fresh `__switchValueN` as Unknown and lowers to
+                            // Runtime.LoadScript, which is neither a type test nor `==`.
                             let candidate = self.fresh_switch_value();
-                            let predicate =
-                                Expr::binary(BinOp::Eq, Expr::var(candidate.clone()), case.clone());
-                            format!(
-                                "case var {candidate} when {}: {{",
-                                render_expr(&predicate, &self.expressions)
-                            )
+                            let case_text = render_expr(case, &self.expressions);
+                            format!("case var {candidate} when {candidate} == {case_text}: {{")
                         }
                     };
                     lines.push(line(indent + 1, case_label));

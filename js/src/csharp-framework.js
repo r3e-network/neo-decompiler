@@ -38,8 +38,14 @@ export function rewriteFrameworkCallArguments(line, types = null) {
         continue;
       }
     } else if (name === "Contract.Call") {
+      // Mirror Rust render_exact_or_cast: skip the hop when the hash is already
+      // an exact UInt160 or an explicit cast, and prefer a plain `(UInt160)`
+      // conversion over `(UInt160)(dynamic)` so Roslyn sees one boundary.
       if (args[0] && isByteStringExpression(args[0], types)) {
-        args[0] = `(UInt160)(dynamic)(${args[0]})`;
+        if (!hasExactFrameworkType(args[0], "UInt160", types)
+            && !/^\(\s*UInt160\s*\)/.test(args[0].trim())) {
+          args[0] = `(UInt160)(${args[0]})`;
+        }
       }
       if (args[2] && !/^\s*\(\s*CallFlags\s*\)/.test(args[2])) {
         args[2] = renderFrameworkEnumArgument(args[2], "CallFlags", types);

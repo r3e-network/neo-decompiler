@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn disassemble_bytes_returns_instruction_stream_without_rendering() {
     let nef_bytes = sample_nef();
-    let output = Decompiler::new()
+    let output = legacy_high_level_decompiler()
         .disassemble_bytes(&nef_bytes)
         .expect("disassembly succeeds");
 
@@ -16,7 +16,7 @@ fn disassemble_bytes_returns_instruction_stream_without_rendering() {
 #[test]
 fn decompile_end_to_end() {
     let nef_bytes = sample_nef();
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -42,7 +42,7 @@ fn decompile_end_to_end() {
 fn decompile_with_manifest_produces_contract_name() {
     let nef_bytes = sample_nef();
     let manifest = sample_manifest();
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds with manifest");
 
@@ -68,7 +68,7 @@ fn cfg_to_dot_includes_contract_name_and_script_hash_in_label() {
     let manifest = sample_manifest();
 
     // With manifest: name + hash + count.
-    let with = Decompiler::new()
+    let with = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::Pseudocode)
         .expect("decompile with manifest");
     let dot_with = with.cfg_to_dot();
@@ -78,7 +78,7 @@ fn cfg_to_dot_includes_contract_name_and_script_hash_in_label() {
     assert!(dot_with.contains("labelloc=\"t\";"), "{dot_with}");
 
     // Without manifest: hash + count only (no contract name).
-    let without = Decompiler::new()
+    let without = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile without manifest");
     let dot_without = without.cfg_to_dot();
@@ -91,7 +91,7 @@ fn cfg_to_dot_includes_contract_name_and_script_hash_in_label() {
 fn decompile_lifts_indirect_calls_without_not_yet_translated_warning() {
     // Script: CALLA (no operand), CALLT 0x0001, RET
     let nef_bytes = build_nef(&[0x36, 0x37, 0x01, 0x00, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -126,7 +126,7 @@ fn decompile_uses_method_token_signature_for_callt_arguments_and_returns() {
         false,
         0x0F,
     );
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -159,7 +159,7 @@ fn repeated_underflowed_callt_rendering_is_bounded() {
     script.push(0x40);
     let nef_bytes = build_nef_with_single_token(&script, [0u8; 20], "consume", 2048, false, 0x0F);
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::HighLevel)
         .expect("bounded CALLT decompilation succeeds");
@@ -202,7 +202,7 @@ fn callt_rendering_keeps_only_available_arguments_up_to_the_display_limit() {
     script.extend_from_slice(&[0x37, 0x00, 0x00, 0x40]);
     let nef_bytes = build_nef_with_single_token(&script, [0u8; 20], "consume", 2048, false, 0x0F);
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef_bytes, None, OutputFormat::HighLevel)
         .expect("bounded CALLT decompilation succeeds");
@@ -255,7 +255,7 @@ fn restricted_native_callt_does_not_emit_a_qualified_label() {
         true,
         0x01,
     );
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
     let high_level = decompilation
@@ -276,7 +276,7 @@ fn restricted_native_callt_does_not_emit_a_qualified_label() {
 fn decompile_lifts_relative_calls_without_control_flow_warning() {
     // Script: CALL +2, CALL_L +5, RET
     let nef_bytes = build_nef(&[0x34, 0x02, 0x35, 0x05, 0x00, 0x00, 0x00, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -314,7 +314,7 @@ fn decompile_resolves_relative_call_target_to_inferred_method_name() {
         0x57, 0x00, 0x00, // INITSLOT 0,0
         0x40, // RET
     ]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -348,7 +348,7 @@ fn decompile_relative_call_passes_known_method_arguments() {
         0x78, // LDARG0
         0x40, // RET
     ]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -381,7 +381,7 @@ fn decompile_infers_entry_stack_argument_for_syscall_only_helper() {
         0x41, 0xCF, 0xE7, 0x47, 0x96, // SYSCALL System.Runtime.Log
         0x40, // RET
     ]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -412,7 +412,7 @@ fn decompile_infers_entry_stack_argument_for_syscall_only_helper() {
 fn decompile_lifts_unconditional_jumps_without_control_flow_warning() {
     // Script: JMP +2 (to JMP_L), JMP_L +5 (to RET), RET
     let nef_bytes = build_nef(&[0x22, 0x02, 0x23, 0x05, 0x00, 0x00, 0x00, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -450,7 +450,7 @@ fn decompile_manifestless_entry_surfaces_initslot_args() {
     // remains visible.
     let script = [0x57, 0x02, 0x01, 0x78, 0x70, 0x68, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
     let high_level = decompilation
@@ -476,7 +476,7 @@ fn decompile_known_syscall_drops_redundant_hash_comment_in_clean_mode() {
     let script = [0x41, 0xB7, 0xC3, 0x88, 0x03, 0x75, 0x40];
     let nef_bytes = build_nef(&script);
 
-    let trace = Decompiler::new()
+    let trace = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds (trace)");
     let trace_high = trace
@@ -488,7 +488,7 @@ fn decompile_known_syscall_drops_redundant_hash_comment_in_clean_mode() {
         "trace mode should keep the syscall hash comment: {trace_high}"
     );
 
-    let clean = Decompiler::new()
+    let clean = legacy_high_level_decompiler()
         .with_trace_comments(false)
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds (clean)");
@@ -517,7 +517,7 @@ fn decompile_unknown_syscall_keeps_unknown_annotation() {
     let nef_bytes = build_nef(&script);
 
     for emit_trace in [true, false] {
-        let decompilation = Decompiler::new()
+        let decompilation = legacy_high_level_decompiler()
             .with_trace_comments(emit_trace)
             .decompile_bytes(&nef_bytes)
             .expect("decompile succeeds");
@@ -552,7 +552,7 @@ fn decompile_unknown_syscall_keeps_unknown_annotation() {
 fn decompile_lifts_endtry_transfers_without_control_flow_warning() {
     // Script: ENDTRY +2 (to ENDTRY_L), ENDTRY_L +5 (to RET), RET
     let nef_bytes = build_nef(&[0x3D, 0x02, 0x3E, 0x05, 0x00, 0x00, 0x00, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -593,7 +593,7 @@ fn decompile_lifts_endtry_transfers_without_control_flow_warning() {
 fn decompile_uses_label_style_for_unresolved_jump_targets() {
     // Script: JMP +5 (to 0x0005, no decoded instruction there), RET
     let nef_bytes = build_nef(&[0x22, 0x05, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -616,7 +616,7 @@ fn decompile_uses_label_style_for_unresolved_jump_targets() {
 fn decompile_uses_label_style_for_unresolved_endtry_targets() {
     // Script: ENDTRY +5 (to 0x0005, no decoded instruction there), RET
     let nef_bytes = build_nef(&[0x3D, 0x05, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -640,7 +640,7 @@ fn decompile_calla_with_stack_setup() {
     // Script: PUSH1 (push a value), PUSH0 (push pointer placeholder), CALLA, RET
     // Tests that CALLA consumes a pointer from the stack and emits an indirect call.
     let nef_bytes = build_nef(&[0x11, 0x10, 0x36, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -672,7 +672,7 @@ fn decompile_resolves_pusha_calla_to_internal_call_placeholder() {
         0x40, // RET
     ]);
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -710,7 +710,7 @@ fn decompile_resolves_local_pointer_flow_into_calla() {
         0x40, // RET
     ]);
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -748,7 +748,7 @@ fn decompile_resolves_static_pointer_flow_into_calla() {
         0x40, // RET
     ]);
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -771,7 +771,7 @@ fn decompile_multiple_sequential_calls() {
     // Script: CALL +2, CALL +0, RET, RET
     // Two sequential CALL instructions targeting different offsets.
     let nef_bytes = build_nef(&[0x34, 0x02, 0x34, 0x00, 0x40, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -804,7 +804,7 @@ fn decompile_nested_loop_in_if() {
         0x22, 0xFC, // JMP -4
         0x40, // RET
     ]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -850,7 +850,7 @@ fn decompile_try_in_loop() {
         0x22, 0xF5, // JMP -11
         0x40, // RET
     ]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -892,7 +892,7 @@ fn decompile_nested_if_else() {
         0x21, // NOP
         0x40, // RET
     ]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -945,7 +945,7 @@ fn decompile_all_comparison_jumps() {
         0x10, 0x11, 0x32, 0x01, 0x21, // PUSH0, PUSH1, JMPLE +1, NOP
         0x40, // RET
     ]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -973,7 +973,7 @@ fn packmap_pops_key_value_pairs_and_renders_entries() {
     // key=3, value=4. The old code popped only n items, dropping half the
     // map and leaving stale entries on the simulated stack.
     let nef_bytes = build_nef(&[0x14, 0x13, 0x12, 0x11, 0x12, 0xBE, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -998,7 +998,7 @@ fn huge_pack_count_terminates_quickly() {
     script.extend_from_slice(&i64::MAX.to_le_bytes());
     script.extend_from_slice(&[0xC0, 0x40]); // PACK ; RET
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds despite the pathological count");
     assert!(decompilation.high_level.is_some());
@@ -1010,7 +1010,7 @@ fn huge_packmap_count_terminates_quickly() {
     script.extend_from_slice(&i64::MAX.to_le_bytes());
     script.extend_from_slice(&[0xBE, 0x40]); // PACKMAP ; RET
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds despite the pathological count");
     assert!(decompilation.high_level.is_some());
@@ -1023,7 +1023,7 @@ fn invalid_type_bytes_render_as_raw_hex() {
     // byte (uppercase hex) instead of dropping it or emitting an
     // unquoted `unknown` placeholder.
     let nef_bytes = build_nef(&[0x11, 0xC4, 0x99, 0x45, 0x11, 0xD9, 0x99, 0x40]);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -1054,7 +1054,7 @@ fn oversized_method_hits_high_level_lifting_cap() {
     }
     script.push(0x40); // RET
     let nef_bytes = build_nef(&script);
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
     let high_level = result.high_level.as_deref().expect("high-level output");

@@ -9,7 +9,7 @@ fn high_level_emits_break_and_continue() {
         0x9E, 0x70, 0x22, 0xE5, 0x40,
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 

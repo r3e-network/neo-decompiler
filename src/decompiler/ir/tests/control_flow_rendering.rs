@@ -39,6 +39,23 @@ fn test_while_loop_rendering() {
 }
 
 #[test]
+fn test_nested_control_flow_closing_braces_align() {
+    let nested = ControlFlow::if_then(
+        Expr::var("outer"),
+        Block::with_stmts(vec![Stmt::ControlFlow(Box::new(ControlFlow::if_then(
+            Expr::var("inner"),
+            Block::with_stmts(vec![Stmt::ret_void()]),
+        )))]),
+    );
+    let rendered = render_stmt(&Stmt::ControlFlow(Box::new(nested)), 0);
+    assert!(rendered.contains("        return;\n    }\n}"), "{rendered}");
+    assert!(
+        !rendered.contains("        return;\n        }"),
+        "{rendered}"
+    );
+}
+
+#[test]
 fn test_try_catch_rendering() {
     let try_catch = ControlFlow::try_catch(
         Block::with_stmts(vec![Stmt::expr(Expr::unresolved_call("risky", vec![]))]),

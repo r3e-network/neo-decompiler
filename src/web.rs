@@ -41,6 +41,10 @@ pub struct WebDecompileOptions {
     /// for readable contract output; set to `false` for compatibility with
     /// the legacy dynamic/var rendering.
     pub typed_declarations: bool,
+    /// Drive high-level method bodies through the structured IR spine.
+    /// Defaults to `true` to match the library/CLI default; set to `false`
+    /// for the legacy stack-emitter path (required for trace comments).
+    pub high_level_from_ir: bool,
     /// Select which rendered outputs should be generated.
     pub output_format: OutputFormat,
 }
@@ -54,6 +58,7 @@ impl Default for WebDecompileOptions {
             inline_single_use_temps: true,
             emit_trace_comments: false,
             typed_declarations: true,
+            high_level_from_ir: true,
             // The browser-facing decompile API produces the generated C#
             // contract by default. Analysis views remain available through
             // an explicit `output_format` selection.
@@ -107,7 +112,8 @@ pub fn decompile_report(
     let decompiler = Decompiler::with_unknown_handling(handling)
         .with_inline_single_use_temps(options.inline_single_use_temps)
         .with_trace_comments(options.emit_trace_comments)
-        .with_typed_declarations(options.typed_declarations);
+        .with_typed_declarations(options.typed_declarations)
+        .with_high_level_from_ir(options.high_level_from_ir);
     let result =
         decompiler.decompile_bytes_with_manifest(nef_bytes, manifest, options.output_format)?;
     Ok(report::build_decompile_report(result))

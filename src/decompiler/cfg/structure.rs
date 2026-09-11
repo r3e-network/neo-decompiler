@@ -56,8 +56,23 @@ pub(crate) fn structure_with_source_names(
     ssa: &SsaForm,
     source_names: &BTreeMap<String, String>,
 ) -> IrBlock {
+    // Dense/pathological CFGs can create thousands of live stack φ nodes and
+    // make recursive region recovery super-linear. Fail closed to goto/label
+    // emission *before* paying for postdominator analysis, which initializes
+    // every non-exit block with a clone of the full reaches-exit set (O(n²)
+    // memory) and is never consulted on the irreducible path.
+    const MAX_STRUCTURED_PHIS: usize = 256;
+    const MAX_STRUCTURED_BLOCKS: usize = 96;
+    let phi_count: usize = ssa.blocks.values().map(|block| block.phi_nodes.len()).sum();
+    let block_count = ssa.cfg.blocks().count();
+    let force_irreducible = phi_count > MAX_STRUCTURED_PHIS || block_count > MAX_STRUCTURED_BLOCKS;
+
     let loop_headers = compute_loop_headers(&ssa.cfg, &ssa.dominance);
-    let postdominators = compute_postdominators(&ssa.cfg);
+    let postdominators = if force_irreducible {
+        BTreeMap::new()
+    } else {
+        compute_postdominators(&ssa.cfg)
+    };
     let structural_uses = collect_structural_uses(ssa);
     let leave_targets = collect_leave_targets(&ssa.cfg);
     let phi_lowering = PhiLowering::new(ssa, source_names);
@@ -76,21 +91,13 @@ pub(crate) fn structure_with_source_names(
     match entry {
         Some(e) => {
             let mut out = IrBlock::with_stmts(ctx.phi_lowering.entry_statements(e));
-            // Dense/pathological CFGs can create thousands of live stack φ nodes
-            // and make recursive region recovery super-linear. Fall back to the
-            // irreducible (goto/label) emitter for the whole reachable graph so
-            // decompilation stays bounded.
-            // Keep structured recovery for normal Neo methods; fail closed to
-            // goto/label emission when CFG density or φ volume would make the
-            // recursive region walker super-linear (observed multi-second hangs
-            // on fuzz JMPIF nets well below Neo's 2048 stack limit).
-            const MAX_STRUCTURED_PHIS: usize = 256;
-            const MAX_STRUCTURED_BLOCKS: usize = 96;
-            let phi_count: usize = ssa.blocks.values().map(|block| block.phi_nodes.len()).sum();
-            let block_count = ssa.cfg.blocks().count();
-            let force_irreducible =
-                phi_count > MAX_STRUCTURED_PHIS || block_count > MAX_STRUCTURED_BLOCKS;
             if force_irreducible {
+                // Surface the quality cliff so readers of the IR/C# output can
+                // tell structured recovery was abandoned for density, not
+                // because the method is inherently irreducible.
+                out.push(Stmt::comment(format!(
+                    "structured recovery skipped: {block_count} CFG blocks / {phi_count} stack φ nodes exceed the recovery budget"
+                )));
                 let region: BTreeSet<_> = ssa.cfg.blocks().map(|block| block.id).collect();
                 out.stmts
                     .extend(ctx.structure_irreducible(e, &region).stmts);

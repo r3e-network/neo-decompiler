@@ -20,6 +20,7 @@ pub struct Decompiler {
     inline_single_use_temps: bool,
     emit_trace_comments: bool,
     typed_declarations: bool,
+    high_level_from_ir: bool,
 }
 
 impl Decompiler {
@@ -61,6 +62,10 @@ impl Decompiler {
             // `var loc0 = ...;`). Defaults to false to preserve historical
             // output; enable for richer, more strongly-typed skeletons.
             typed_declarations: false,
+            // High-level method bodies use the structured IR spine by
+            // default. Opt out via `with_high_level_from_ir(false)` /
+            // CLI `--no-high-level-from-ir` for the legacy stack-emitter path.
+            high_level_from_ir: true,
         }
     }
 
@@ -96,6 +101,18 @@ impl Decompiler {
     #[must_use]
     pub fn with_typed_declarations(mut self, enabled: bool) -> Self {
         self.typed_declarations = enabled;
+        self
+    }
+
+    /// Drive high-level method bodies through the structured IR spine.
+    ///
+    /// When enabled, `--format high-level` / JSON `high_level` method bodies
+    /// are lifted via `lower_method_body` and rendered with the high-level
+    /// IR dialect instead of the stack emitter plus string-pattern
+    /// postprocess. Oversized methods still fall back to the stack path.
+    #[must_use]
+    pub fn with_high_level_from_ir(mut self, enabled: bool) -> Self {
+        self.high_level_from_ir = enabled;
         self
     }
 
@@ -164,6 +181,7 @@ impl Decompiler {
             inline_single_use_temps: self.inline_single_use_temps,
             emit_trace_comments: self.emit_trace_comments,
             typed_declarations: self.typed_declarations,
+            high_level_from_ir: self.high_level_from_ir,
         };
 
         let pseudocode = output_format

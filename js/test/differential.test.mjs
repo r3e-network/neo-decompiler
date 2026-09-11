@@ -98,6 +98,45 @@ function countFunctionBodies(text) {
 }
 
 /**
+ * Reduce both method-contract wire shapes to the comparable common subset.
+ * JS currently emits camelCase { argumentCount, returnBehavior } while Rust
+ * emits the fuller snake_case analysis payload.
+ *
+ * `conservativeUnknownOffsets` is the set of method offsets where JS reported
+ * `unknown`. Those offsets are compared without return_behavior on both sides:
+ * JS high-level inference is intentionally more conservative on incomplete
+ * helpers, so a definite Rust value is not a silent wrong-value drift.
+ * Definite-but-different return behaviors still hard-fail.
+ */
+function normalizeMethodContracts(contracts, conservativeUnknownOffsets = new Set()) {
+  const methods = (contracts?.methods ?? []).map((entry) => {
+    const offset = entry.method?.offset ?? null;
+    const normalized = {
+      name: entry.method?.name ?? null,
+      offset,
+      argument_count: entry.argument_count ?? entry.argumentCount ?? null,
+    };
+    if (!conservativeUnknownOffsets.has(offset)) {
+      normalized.return_behavior = entry.return_behavior ?? entry.returnBehavior ?? null;
+    }
+    return normalized;
+  });
+  methods.sort((left, right) => (left.offset ?? 0) - (right.offset ?? 0));
+  return { methods };
+}
+
+function methodContractConservativeUnknownOffsets(jsContracts) {
+  const offsets = new Set();
+  for (const entry of jsContracts?.methods ?? []) {
+    const behavior = entry.return_behavior ?? entry.returnBehavior;
+    if (behavior === "unknown") {
+      offsets.add(entry.method?.offset ?? null);
+    }
+  }
+  return offsets;
+}
+
+/**
  * Find the manifest file path that matches a .nef file (same stem + .manifest.json).
  */
 function findManifestForNef(nefPath) {
@@ -407,5 +446,105 @@ for (const nefPath of nefFiles) {
       stableJson(rust.analysis.patterns),
       `patterns differs for ${label}`,
     );
+    // A missing field is itself a parity bug: only skip the whole block when
+    // the Rust analysis surface is absent, not when one side silently omits
+    // methodContracts. Compare a normalized common subset because the JS twin
+    // currently emits a smaller camelCase shape than the Rust wire format.
+    assert.ok(
+      rust.analysis.method_contracts !== undefined,
+      `Rust analysis is missing methodContracts for ${label}`,
+    );
+    assert.ok(
+      js.methodContracts !== undefined,
+      `JS analysis is missing methodContracts for ${label}`,
+    );
+    const conservativeUnknown = methodContractConservativeUnknownOffsets(js.methodContracts);
+    assert.equal(
+      stableJson(normalizeMethodContracts(js.methodContracts, conservativeUnknown)),
+      stableJson(normalizeMethodContracts(rust.analysis.method_contracts, conservativeUnknown)),
+      `methodContracts differs for ${label}`,
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// C# structural comparison
+//
+// The JS text→C# twin still rewrites high-level text while production Rust C#
+// lowers structured IR. Full text equality is not yet a hard gate; this suite
+// pins the structural invariants that must not silently drift: contract class
+// name, and every Rust public ABI method name appearing on the JS side.
+// ---------------------------------------------------------------------------
+
+function extractCSharpClass(source) {
+  return source.match(/public\s+class\s+(\w+)/)?.[1] ?? null;
+}
+
+function extractPublicMethodNames(source) {
+  const names = new Set();
+  const pattern = /public\s+static\s+(?:[\w.<>\[\],\s]+?\s+)(\w+)\s*\(/g;
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    // Skip property-like or constructor forms; keep ordinary method names.
+    if (match[1] !== "class") names.add(match[1]);
+  }
+  return names;
+}
+
+function isSyntheticCSharpMethodName(name) {
+  return name === "ScriptEntry" || name.startsWith("__NeoDecompiler");
+}
+
+for (const nefPath of nefFiles) {
+  const label = relative(ROOT, nefPath);
+
+  test(`differential csharp structure: ${label}`, () => {
+    const bytes = readFileSync(nefPath);
+    const manifestPath = findManifestForNef(nefPath);
+
+    const rustRaw = runRust("decompile", nefPath, ["--format", "csharp"]);
+    if (typeof rustRaw === "object" && rustRaw.error) {
+      return;
+    }
+    assert.equal(typeof rustRaw, "string", `Rust csharp output is not a string for ${label}`);
+
+    let jsResult;
+    try {
+      if (manifestPath) {
+        const manifestJson = readFileSync(manifestPath, "utf-8");
+        jsResult = decompileHighLevelBytesWithManifest(bytes, manifestJson, { clean: true });
+      } else {
+        jsResult = decompileHighLevelBytes(bytes, { clean: true });
+      }
+    } catch (err) {
+      assert.fail(`JS C# render threw but Rust succeeded for ${label}: ${err.message}`);
+    }
+    assert.equal(typeof jsResult.csharp, "string", `JS csharp output is missing for ${label}`);
+
+    const rustClass = extractCSharpClass(rustRaw);
+    const jsClass = extractCSharpClass(jsResult.csharp);
+    if (rustClass && jsClass) {
+      assert.equal(jsClass, rustClass, `C# class name differs for ${label}`);
+    }
+
+    const rustPublic = extractPublicMethodNames(rustRaw);
+    const jsPublic = extractPublicMethodNames(jsResult.csharp);
+    // Every Rust public method must appear on the JS twin. Extra JS methods
+    // are logged only: the text→C# rewriter can invent helpers the IR path
+    // folds away.
+    const missing = [...rustPublic]
+      .filter((name) => !isSyntheticCSharpMethodName(name) && !jsPublic.has(name))
+      .sort();
+    if (missing.length > 0) {
+      assert.fail(
+        `JS C# is missing Rust public method(s) for ${label}: ${missing.join(", ")}`,
+      );
+    }
+    const extra = [...jsPublic]
+      .filter((name) => !isSyntheticCSharpMethodName(name) && !rustPublic.has(name))
+      .sort();
+    if (extra.length > 0) {
+      console.log(`  INFO: JS C# has extra public method(s) for ${label}: ${extra.join(", ")}`);
+    }
   });
 }

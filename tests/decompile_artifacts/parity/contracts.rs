@@ -24,7 +24,7 @@ fn edgecase_csharp_output_stays_high_level() {
             &fs::read_to_string(&manifest_path).expect("read edgecase manifest"),
         )
         .expect("parse edgecase manifest");
-        let result = Decompiler::new()
+        let result = legacy_high_level_decompiler()
             .with_inline_single_use_temps(true)
             .with_trace_comments(false)
             .decompile_bytes_with_manifest(&nef, Some(manifest), OutputFormat::CSharp)
@@ -137,7 +137,7 @@ fn all_supported_artifacts_decompile_to_high_level_csharp_contracts() {
         )
         .unwrap_or_else(|e| panic!("parse {}: {e}", manifest_path.display()));
 
-        let result = Decompiler::new()
+        let result = legacy_high_level_decompiler()
             .with_inline_single_use_temps(true)
             .with_trace_comments(false)
             .decompile_bytes_with_manifest(&nef, Some(manifest), OutputFormat::All)

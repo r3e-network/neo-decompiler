@@ -5,7 +5,7 @@ fn high_level_lifts_do_while_loop() {
     // Script: body; PUSH1; JMPIF -3; RET
     let script = [0x11, 0x21, 0x11, 0x24, 0xFD, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 

@@ -74,10 +74,15 @@ pub(super) fn render_byte_slice(
     }
 
     let source = render_expr_prec(source, 0, context, expanding);
-    let source = if source_type == ValueType::ByteString {
-        format!("(byte[])(ByteString)({source})")
-    } else {
-        format!("(byte[])({source})")
+    let source = match source_type {
+        ValueType::ByteString
+            if context.is_statically_exact_csharp_type(&args[0], "ByteString") =>
+        {
+            format!("(byte[])({source})")
+        }
+        ValueType::ByteString => format!("(byte[])(ByteString)({source})"),
+        ValueType::Buffer if context.is_statically_exact_csharp_type(&args[0], "byte[]") => source,
+        _ => format!("(byte[])({source})"),
     };
     let index = args
         .get(1)

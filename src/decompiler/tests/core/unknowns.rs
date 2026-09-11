@@ -15,6 +15,7 @@ fn untranslated_opcode_inline_comment_survives_clean_mode() {
     let nef_bytes = build_nef(&script);
     let decompilation = Decompiler::with_unknown_handling(UnknownHandling::Permit)
         .with_trace_comments(false)
+        .with_high_level_from_ir(false)
         .decompile_bytes(&nef_bytes)
         .expect("decompile in clean mode");
 
@@ -43,6 +44,7 @@ fn tolerant_mode_emits_unknown_opcode() {
     let script = [0xFFu8, 0x40]; // UNKNOWN, RET
     let nef_bytes = build_nef(&script);
     let decompilation = Decompiler::with_unknown_handling(UnknownHandling::Permit)
+        .with_high_level_from_ir(false)
         .decompile_bytes(&nef_bytes)
         .expect("decompile in tolerant mode");
 

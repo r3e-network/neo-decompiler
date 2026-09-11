@@ -25,6 +25,16 @@ fn write_varint(buf: &mut Vec<u8>, value: u32) {
     }
 }
 
+/// Decompile with the legacy stack-emitter high-level path.
+///
+/// High-level unit tests pin emitter surface details (trace comments, `t0`
+/// temps, string postprocess). The production default is the IR spine.
+fn legacy_high_level_decompiler() -> Decompiler {
+    Decompiler::new()
+        .with_high_level_from_ir(false)
+        .with_trace_comments(true)
+}
+
 fn build_nef(script: &[u8]) -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(b"NEF3");

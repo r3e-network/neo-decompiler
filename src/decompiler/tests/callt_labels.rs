@@ -62,7 +62,7 @@ fn callt_arguments_keep_producer_side_effects_in_vm_order() {
     let nef = build_nef_with_tokens(&script, &tokens);
 
     for trace in [true, false] {
-        let output = Decompiler::new()
+        let output = legacy_high_level_decompiler()
             .with_trace_comments(trace)
             .decompile_bytes_with_manifest(&nef, None, OutputFormat::HighLevel)
             .expect("ordered CALLT rendering succeeds");
@@ -95,7 +95,7 @@ fn callt_does_not_delay_an_ambient_value_producer_until_after_a_void_call() {
         },
     ];
     let nef = build_nef_with_tokens(&[0x37, 0, 0, 0x37, 1, 0, 0x40], &tokens);
-    let output = Decompiler::new()
+    let output = legacy_high_level_decompiler()
         .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef, None, OutputFormat::HighLevel)
         .expect("ambient CALLT rendering succeeds");
@@ -128,7 +128,7 @@ fn callt_display_limit_preserves_all_omitted_argument_producer_effects() {
     ];
     let mut script = [0x37, 0, 0].repeat(PRODUCERS);
     script.extend_from_slice(&[0x37, 1, 0, 0x40]);
-    let output = Decompiler::new()
+    let output = legacy_high_level_decompiler()
         .with_trace_comments(false)
         .decompile_bytes_with_manifest(
             &build_nef_with_tokens(&script, &tokens),
@@ -190,7 +190,7 @@ fn untrusted_callt_names_use_unique_index_labels_and_safe_csharp_strings() {
         0x37, 0x03, 0x00, // CALLT 3
         0x40, // RET
     ];
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&build_nef_with_tokens(&script, &tokens))
         .expect("decompile succeeds");
     let high_level = decompilation
@@ -247,7 +247,7 @@ fn exact_unrestricted_native_callt_keeps_qualified_label() {
         true,
         0x0F,
     );
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef)
         .expect("decompile succeeds");
     let high_level = decompilation
@@ -288,7 +288,7 @@ fn manifest_method_cannot_collide_with_reserved_callt_label() {
         }"#,
     )
     .expect("manifest parsed");
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
     let high_level = decompilation

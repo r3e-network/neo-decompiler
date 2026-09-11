@@ -24,6 +24,7 @@ fn render_csharp_with_coverage(
             inline_single_use_temps,
             emit_trace_comments,
             typed_declarations,
+            ..Default::default()
         },
     )
 }

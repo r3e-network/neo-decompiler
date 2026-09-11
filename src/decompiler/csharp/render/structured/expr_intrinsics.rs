@@ -247,10 +247,16 @@ pub(super) fn render_intrinsic(
                 let value = args.get(2).map_or_else(
                     || "default".to_string(),
                     |value| {
-                        format!(
-                            "(byte)(dynamic)({})",
-                            render_expr_prec(value, 0, context, expanding)
-                        )
+                        let rendered = render_expr_prec(value, 0, context, expanding);
+                        // BigInteger exposes an explicit byte conversion, so a
+                        // statically exact BigInteger needs no dynamic hop.
+                        // Anything else (object[] elements, unknown receivers)
+                        // keeps the fail-closed dynamic boundary.
+                        if context.is_statically_exact_csharp_type(value, "BigInteger") {
+                            format!("(byte)({rendered})")
+                        } else {
+                            format!("(byte)(dynamic)({rendered})")
+                        }
                     },
                 );
                 RenderedExpr::new(format!("{buffer}[{index}] = {value}"), PREC_ASSIGNMENT)
@@ -304,9 +310,12 @@ pub(super) fn render_intrinsic(
             ) {
                 return render_low_level_opcode(opcode, args, context, expanding);
             }
+            // Array/Struct receivers are declared `object[]`, which is not
+            // convertible to `List<object>`. Keep a dynamic hop so the generated
+            // C# compiles for both arrays and untyped receivers.
             RenderedExpr::new(
                 format!(
-                    "((Neo.SmartContract.Framework.List<object>){}).Add({})",
+                    "((dynamic)({})).Add({})",
                     arg(0, expanding),
                     arg(1, expanding)
                 ),
@@ -328,10 +337,7 @@ pub(super) fn render_intrinsic(
                     .map(|value| int_cast(value, context, expanding))
                     .unwrap_or_else(|| "default".to_string());
                 RenderedExpr::new(
-                    format!(
-                        "((Neo.SmartContract.Framework.List<object>){}).RemoveAt({index})",
-                        arg(0, expanding)
-                    ),
+                    format!("((dynamic)({})).RemoveAt({index})", arg(0, expanding)),
                     PREC_PRIMARY,
                 )
             } else {
@@ -344,10 +350,7 @@ pub(super) fn render_intrinsic(
                 .map_or(ValueType::Unknown, |value| context.value_type(value));
             if matches!(receiver_type, ValueType::Array | ValueType::Struct) {
                 RenderedExpr::new(
-                    format!(
-                        "((Neo.SmartContract.Framework.List<object>){}).Clear()",
-                        arg(0, expanding)
-                    ),
+                    format!("((dynamic)({})).Clear()", arg(0, expanding)),
                     PREC_PRIMARY,
                 )
             } else if receiver_type == ValueType::Map {
@@ -392,14 +395,32 @@ pub(super) fn render_intrinsic(
                 return render_low_level_opcode(opcode, args, context, expanding);
             }
             RenderedExpr::new(
-                format!(
-                    "((Neo.SmartContract.Framework.List<object>){}).PopItem()",
-                    arg(0, expanding)
-                ),
+                format!("((dynamic)({})).PopItem()", arg(0, expanding)),
                 PREC_PRIMARY,
             )
         }
         OpCode::Memcpy => render_memcpy(args, context, expanding),
+        // LDSFLD0-6 should normally be lowered as a slot read before the C#
+        // renderer sees them. If a residual opaque intrinsic remains, emit
+        // the field name rather than a Runtime.LoadScript opcode emulation.
+        OpCode::Ldsfld0
+        | OpCode::Ldsfld1
+        | OpCode::Ldsfld2
+        | OpCode::Ldsfld3
+        | OpCode::Ldsfld4
+        | OpCode::Ldsfld5
+        | OpCode::Ldsfld6 => {
+            let index = match opcode {
+                OpCode::Ldsfld0 => 0,
+                OpCode::Ldsfld1 => 1,
+                OpCode::Ldsfld2 => 2,
+                OpCode::Ldsfld3 => 3,
+                OpCode::Ldsfld4 => 4,
+                OpCode::Ldsfld5 => 5,
+                _ => 6,
+            };
+            RenderedExpr::new(format!("static{index}"), PREC_PRIMARY)
+        }
         OpCode::Convert => {
             RenderedExpr::new(format!("(object)({})", arg(0, expanding)), PREC_UNARY)
         }

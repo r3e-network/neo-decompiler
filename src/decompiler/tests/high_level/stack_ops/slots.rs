@@ -5,7 +5,7 @@ fn high_level_lifts_local_slots() {
     // Script: INITSLOT 1,0; PUSH1; STLOC0; LDLOC0; RET
     let script = [0x57, 0x01, 0x00, 0x11, 0x70, 0x68, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -43,7 +43,7 @@ fn high_level_lifts_all_local_slot_variants() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -83,7 +83,7 @@ fn high_level_lifts_all_argument_slot_variants() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -115,7 +115,7 @@ fn high_level_lifts_indexed_local_slot() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -141,7 +141,7 @@ fn high_level_lifts_indexed_argument_slot() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 

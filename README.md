@@ -146,16 +146,17 @@ intermediate views remain available when needed for analysis.
 | Real Stack-Effect SSA          | ✅     | Full `(pop,push)` model, symbolic stack, def/use chains, φ placement at joins, origin-based naming (`loc0`/`arg0`/`t0`) |
 | SSA Optimizations             | ✅     | Constant folding/propagation, copy propagation, trivial-φ elimination, dead-code elimination to a fixed point |
 | SSA Rendering                  | ✅     | `Decompilation::compute_ssa` / `optimize_ssa` / `render_optimized_ssa` and `decompile --format ssa` |
-| IR Spine: CFG Structural Recovery | ✅  | `cfg::structure` recovers `if`/`if-else`/`while`/`do-while`/`try-catch` from the CFG into `ir::ControlFlow` (`decompile --format ir`) |
+| IR Spine: CFG Structural Recovery | ✅  | `cfg::structure` recovers `if`/`if-else`/`while`/`do-while`/`switch`/`for`/`try-catch` from the CFG into `ir::ControlFlow` (`decompile --format ir`); production C# method bodies render from this IR only |
 | Type-Inferred C# Declarations | ✅     | Conservative inferred types annotate C# body locals by default; use `--no-typed-declarations` for compatibility output |
 | Full-Corpus Panic Regression  | ✅     | `tests/corpus_replay.rs` replays every fuzz corpus + artifact through the pipeline |
+| Switch / For Recovery (IR)    | ✅     | CFG structurer recovers `switch`/`for` on the IR spine; structured C# emits both forms |
+| High-Level IR Spine (default)  | ✅     | High-level method bodies render from the structured IR dialect; opt out via `--no-high-level-from-ir` / `with_high_level_from_ir(false)` for the legacy stack emitter |
 
 ### Planned Features (Future Work)
 
 | Feature               | Priority | Description                                           |
 | --------------------- | -------- | ----------------------------------------------------- |
-| IR-Spine Default Path | Medium   | Promote the `--format ir` path to the default behind `--ir` at parity, then retire the string-pattern postprocess |
-| Switch / For Recovery (IR) | Low | Cosmetic `switch`/`for` forms on the IR path (currently `if-else`/`while`; the legacy path already emits these) |
+| High-Level IR cleanup | Medium   | Retire the stack-emitter string-pattern postprocess once remaining emitter-only surfaces (trace comments, `--no-inline-temps`) migrate; align the JS text→C# twin |
 | Struct/Class Recovery | Low      | Infer composite types from field access patterns      |
 | Deobfuscation Passes  | Low      | Detect and simplify common obfuscation patterns       |
 | Interactive Mode      | Low      | REPL for exploratory analysis                         |
@@ -212,9 +213,10 @@ intermediate views remain available when needed for analysis.
     propagation, copy propagation, trivial-φ elimination, dead-code elimination
   - SSA form rendering (`render_optimized_ssa`, `decompile --format ssa`)
 - CFG structural recovery into a typed IR (`Decompilation::render_structured_ir`,
-  `decompile --format ir`): recovers `if`/`if-else`/`while`/`do-while`/`try-catch`
-  from the CFG into `ir::ControlFlow` — an additive view alongside the legacy
-  high-level/C# renderers
+  `decompile --format ir`): recovers `if`/`if-else`/`while`/`do-while`/`switch`/`for`/`try-catch`
+  from the CFG into `ir::ControlFlow`. Production C# method bodies render from
+  this IR only; the high-level text view remains a separate analysis surface
+  built from the stack emitter plus string-pattern postprocess
 - Best-effort analysis output in both the library and JSON decompile report:
   call graph (`CALL*`, `CALLT`, `SYSCALL`), slot cross-references, and inferred primitive/collection types
 - Syscall lifting that resolves human-readable names and suppresses phantom
@@ -647,15 +649,18 @@ into structured statements (`// XXXX: <MNEMONIC> (not yet translated)`).
   and `do { } while` loops (including `break`/`continue` branches). Full
   source-level reconstruction is intentionally out of scope; CFG and type
   inference are best-effort analysis outputs and may be incomplete.
-- Generated source is intentionally limited to Neo C#. Pseudocode, high-level,
-  structured IR, and SSA are analysis views rather than alternate source
-  backends. The pinned neo-devpack-dotnet v3.10.0 corpus has one known
-  incomplete method: `Contract_Foreach@0x0458` calls a compiler-generated
-  helper with four required stack values while the caller provides none. The
-  C# renderer preserves that underflow warning, makes the first missing
-  argument an explicit throwing compatibility expression, and keeps any
-  remaining unknown values as `dynamic` nulls instead of inventing tuple
-  values.
+- Generated source is intentionally limited to Neo C#. Production C# method
+  bodies are lowered through the structured IR pipeline only; pseudocode,
+  high-level text, structured IR listings, and SSA remain analysis views.
+  The high-level product surface still uses the stack emitter plus
+  string-pattern postprocess — that (and the independent JS text→C# twin)
+  is the remaining dual-surface debt, not a second Rust C# body path.
+  The pinned neo-devpack-dotnet v3.10.0 corpus has one known incomplete
+  method: `Contract_Foreach@0x0458` calls a compiler-generated helper with
+  four required stack values while the caller provides none. The C# renderer
+  preserves that underflow warning, makes the first missing argument an
+  explicit throwing compatibility expression, and keeps any remaining unknown
+  values as `dynamic` nulls instead of inventing tuple values.
 
 ## Troubleshooting
 

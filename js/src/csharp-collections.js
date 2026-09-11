@@ -52,7 +52,7 @@ export function createCSharpCollectionHelpers(rewriteExpression) {
         ? `${args[0]}.Clear()`
         : kind === "list"
           ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).Clear()`
-          : `((dynamic)${args[0]}).Clear()`;
+          : `((dynamic)(${args[0]})).Clear()`;
     }],
     ["keys", (args, types) => args.length === 1
       ? collectionKind(args[0], types) === "map" ? `${args[0]}.Keys` : `((dynamic)${args[0]}).Keys`
@@ -67,13 +67,15 @@ export function createCSharpCollectionHelpers(rewriteExpression) {
         ? `${args[0]}.Remove(${args[1]})`
         : kind === "list"
           ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).RemoveAt((int)(${args[1]}))`
-          : `((dynamic)${args[0]}).Remove(${args[1]})`;
+          : kind === "array"
+            ? `((dynamic)(${args[0]})).RemoveAt((int)(${args[1]}))`
+            : `((dynamic)${args[0]}).Remove(${args[1]})`;
     }],
     ["append", (args, types) => {
       if (args.length !== 2) return null;
       return collectionKind(args[0], types) === "list"
         ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).Add(${args[1]})`
-        : `((dynamic)${args[0]}).Add(${args[1]})`;
+        : `((dynamic)(${args[0]})).Add(${args[1]})`;
     }],
     ["has_key", (args, types) => args.length === 2
       ? collectionKind(args[0], types) === "map"
@@ -127,7 +129,7 @@ export function createCSharpCollectionHelpers(rewriteExpression) {
       if (args.length !== 1) return null;
       return collectionKind(args[0], types) === "list"
         ? `((Neo.SmartContract.Framework.List<${listElementType(args[0], types)}>)${args[0]}).PopItem()`
-        : `((dynamic)${args[0]}).PopItem()`;
+        : `((dynamic)(${args[0]})).PopItem()`;
     }],
     ["reverse_items", (args) => args.length === 1
       ? `Helper.Reverse(${args[0]})`
@@ -140,7 +142,11 @@ function collectionKind(expression, types) {
   const name = expression.trim().replace(/^@/, "");
   const type = types.get(name) ?? types.get(expression.trim()) ?? "";
   if (/^Map<|\bMap\b/.test(type)) return "map";
-  if (/\[\]$/.test(type) || /\bList</.test(type)) return "list";
+  // Only true `List<T>` receivers may use the framework List cast. Array
+  // spellings (`object[]`, `BigInteger[]`, …) are not convertible to List<T>
+  // in C# and must hop through dynamic.
+  if (/\bList</.test(type)) return "list";
+  if (/\[\]$/.test(type)) return "array";
   return "unknown";
 }
 

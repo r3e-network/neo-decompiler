@@ -7,7 +7,7 @@ fn high_level_lifts_rot_operation() {
     // (the original `a`, i.e. PUSH1's value `1`).
     let script = [0x11, 0x12, 0x13, 0x51, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -32,7 +32,7 @@ fn high_level_lifts_tuck_operation() {
     // original PUSH2 temp or the materialised copy.
     let script = [0x11, 0x12, 0x4E, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 

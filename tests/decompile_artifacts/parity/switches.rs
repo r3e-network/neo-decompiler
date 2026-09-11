@@ -28,7 +28,7 @@ fn switch_jmpif_chains_use_guarded_gotos_instead_of_invalid_nested_ifs() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -79,7 +79,7 @@ fn switch_inline_chain_is_rewritten_to_switch_cases() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -132,7 +132,7 @@ fn switch_long_guarded_goto_chain_is_rewritten_to_switch_cases() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -193,7 +193,7 @@ fn switch6_guarded_chain_is_rewritten_to_switch_cases() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -250,7 +250,7 @@ fn switch_long_long_rewrite_keeps_case_and_default_blocks_well_formed() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 

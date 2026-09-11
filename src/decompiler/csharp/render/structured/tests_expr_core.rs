@@ -229,7 +229,7 @@ fn renders_all_expression_variants() {
         (
             OpCode::Append,
             2,
-            "((Neo.SmartContract.Framework.List<object>)a).Add(b)",
+            "((dynamic)(a)).Add(b)",
         ),
         (
             OpCode::Remove,
@@ -245,7 +245,7 @@ fn renders_all_expression_variants() {
         (
             OpCode::Popitem,
             1,
-            "((Neo.SmartContract.Framework.List<object>)a).PopItem()",
+            "((dynamic)(a)).PopItem()",
         ),
         (
             OpCode::Memcpy,
@@ -547,7 +547,7 @@ fn renders_all_expression_variants() {
     );
     assert_eq!(
         render_expr(&vm_append_call, &context),
-        "((Neo.SmartContract.Framework.List<object>)items).Add(value)"
+        "((dynamic)(items)).Add(value)"
     );
     assert_eq!(
         render_expr(

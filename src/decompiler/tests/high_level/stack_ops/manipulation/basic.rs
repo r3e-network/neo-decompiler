@@ -5,7 +5,7 @@ fn high_level_lifts_boolean_ops() {
     // Script: PUSH1, PUSH1, BOOLAND, RET
     let script = [0x11, 0x11, 0xAB, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -21,7 +21,7 @@ fn high_level_handles_stack_manipulation_and_unary_ops() {
     // Script: PUSH1, DUP, ADD, INC, RET
     let script = [0x11, 0x4A, 0x9E, 0x9C, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 

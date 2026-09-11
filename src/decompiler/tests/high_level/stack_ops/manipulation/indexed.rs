@@ -9,7 +9,7 @@ fn high_level_pick_of_literal_skips_temp() {
     // `materialiseStackTopForDup`).
     let script = [0x11, 0x12, 0x11, 0x4D, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -43,7 +43,7 @@ fn high_level_pick_of_side_effecting_value_materializes_temp() {
         0x40, // RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -69,7 +69,7 @@ fn high_level_lifts_xdrop_with_literal_index() {
     // now drops it for parity with the JS port.
     let script = [0x11, 0x12, 0x13, 0x11, 0x48, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -100,7 +100,7 @@ fn high_level_pick_preserves_packed_shape_for_unpack_reverse4() {
         0x40, // PUSH3; LDLOC0; PUSH0; PICK; UNPACK; DROP; REVERSE4; RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 

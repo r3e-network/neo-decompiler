@@ -16,7 +16,7 @@ mod statement;
 
 pub use control_flow::ControlFlow;
 pub use expression::{BinOp, Expr, Literal, UnaryOp};
-pub use render::{render_block, render_expr, render_stmt};
+pub use render::{render_block, render_expr, render_high_level_block, render_stmt};
 pub use semantic::{Intrinsic, SemanticCallTarget};
 pub use statement::{Block, BlockLabel, Stmt};
 

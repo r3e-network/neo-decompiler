@@ -4,6 +4,7 @@ use std::fmt::Write;
 use crate::instruction::Instruction;
 
 use super::super::emitter::HighLevelEmitter;
+use super::ir_body::write_method_body_from_ir;
 
 pub(super) struct MethodBodyContext<'a> {
     pub(super) method_labels_by_offset: &'a BTreeMap<usize, String>,
@@ -17,6 +18,8 @@ pub(super) struct MethodBodyContext<'a> {
     pub(super) callt_labels: &'a [String],
     pub(super) callt_param_counts: &'a [usize],
     pub(super) callt_returns_value: &'a [bool],
+    /// Drive method bodies through the structured IR spine.
+    pub(super) use_ir_bodies: bool,
 }
 
 pub(super) fn write_method_body(
@@ -27,6 +30,18 @@ pub(super) fn write_method_body(
     context: &MethodBodyContext<'_>,
     returns_void: bool,
 ) {
+    if context.use_ir_bodies
+        && write_method_body_from_ir(
+            output,
+            instructions,
+            argument_labels,
+            warnings,
+            context,
+            returns_void,
+        )
+    {
+        return;
+    }
     if instructions.len() > super::super::emitter::MAX_HIGH_LEVEL_METHOD_INSTRUCTIONS {
         let offset = instructions.first().map(|i| i.offset).unwrap_or(0);
         writeln!(

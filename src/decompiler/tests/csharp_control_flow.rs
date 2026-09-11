@@ -53,14 +53,12 @@ fn csharp_translates_switch_to_idiomatic_c_sharp() {
         "switch scrutinee should be parenthesised: {csharp}"
     );
     assert!(
-        csharp.contains("case var __switchValue0 when ")
-            && csharp.contains("new object[] { __switchValue0, 0 }): {"),
-        "first case should use guarded VM equality: {csharp}"
+        csharp.contains("case var __switchValue0 when __switchValue0 == 0: {"),
+        "first case should use C# equality in the when guard: {csharp}"
     );
     assert!(
-        csharp.contains("case var __switchValue1 when ")
-            && csharp.contains("new object[] { __switchValue1, 1 }): {"),
-        "second case should use guarded VM equality: {csharp}"
+        csharp.contains("case var __switchValue1 when __switchValue1 == 1: {"),
+        "second case should use C# equality in the when guard: {csharp}"
     );
     assert!(
         csharp.contains("default: {"),

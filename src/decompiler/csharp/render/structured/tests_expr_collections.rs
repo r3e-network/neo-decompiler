@@ -29,11 +29,11 @@ fn collection_intrinsics_use_the_receiver_container_type() {
         ),
         (
             intrinsic(OpCode::Append, vec![Expr::var("items"), Expr::var("value")]),
-            "((Neo.SmartContract.Framework.List<object>)items).Add(value)",
+            "((dynamic)(items)).Add(value)",
         ),
         (
             intrinsic(OpCode::Remove, vec![Expr::var("items"), Expr::var("index")]),
-            "((Neo.SmartContract.Framework.List<object>)items).RemoveAt((int)(index))",
+            "((dynamic)(items)).RemoveAt((int)(index))",
         ),
         (
             intrinsic(OpCode::Remove, vec![Expr::var("map"), Expr::var("key")]),
@@ -41,7 +41,7 @@ fn collection_intrinsics_use_the_receiver_container_type() {
         ),
         (
             intrinsic(OpCode::Clearitems, vec![Expr::var("items")]),
-            "((Neo.SmartContract.Framework.List<object>)items).Clear()",
+            "((dynamic)(items)).Clear()",
         ),
         (
             intrinsic(OpCode::Clearitems, vec![Expr::var("map")]),
@@ -107,6 +107,36 @@ fn collection_intrinsics_use_the_receiver_container_type() {
             &exact_context,
         ),
         "number != 0"
+    );
+    // Exact BigInteger values can use BigInteger's explicit byte conversion
+    // instead of a dynamic hop. Non-exact values keep the fail-closed cast.
+    assert_eq!(
+        render_expr(
+            &intrinsic(
+                OpCode::Setitem,
+                vec![
+                    Expr::var("buffer"),
+                    Expr::var("number"),
+                    Expr::var("number")
+                ],
+            ),
+            &exact_context,
+        ),
+        "buffer[(int)(number)] = (byte)(number)"
+    );
+    assert_eq!(
+        render_expr(
+            &intrinsic(
+                OpCode::Setitem,
+                vec![Expr::var("buffer"), Expr::var("number"), Expr::var("value")],
+            ),
+            &expr_context_with_types(&[
+                ("buffer", ValueType::Buffer),
+                ("number", ValueType::Integer),
+                ("value", ValueType::Integer),
+            ]),
+        ),
+        "buffer[(int)(number)] = (byte)(dynamic)(value)"
     );
 }
 

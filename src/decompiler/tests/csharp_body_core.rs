@@ -705,3 +705,35 @@ fn csharp_trace_assert_prefers_emitted_parameter_name_over_raw_slot_syntax() {
         rendered.source
     );
 }
+
+#[test]
+fn csharp_static_field_load_renders_the_field_not_runtime_load_script() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let nef = fs::read(root.join("TestingArtifacts/devpack/Contract_Array.nef"))
+        .expect("Contract_Array NEF");
+    let manifest =
+        fs::read_to_string(root.join("TestingArtifacts/devpack/Contract_Array.manifest.json"))
+            .expect("Contract_Array manifest");
+    let manifest = ContractManifest::from_json_str(&manifest).expect("manifest parsed");
+
+    let rendered = render_csharp_with_coverage(&nef, Some(manifest), true, false, true);
+
+    let method = rendered
+        .source
+        .split("public static ByteString getTreeByteLengthPrefix()")
+        .nth(1)
+        .and_then(|rest| rest.split("\n        }").next())
+        .expect("getTreeByteLengthPrefix body");
+    assert!(
+        method.contains("return"),
+        "static getter must return a value: {method}"
+    );
+    assert!(
+        !method.contains("Runtime.LoadScript"),
+        "LDSFLD0 must not lower to Runtime.LoadScript: {method}"
+    );
+    assert!(
+        !method.contains("static0 = static0"),
+        "static getter must not self-assign the field: {method}"
+    );
+}

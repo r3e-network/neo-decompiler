@@ -136,6 +136,9 @@ pub(crate) fn render_method_body(
         instructions: &view.instructions,
         context,
         symbol_types: MethodSymbolTypes::default(),
+        // Analysis view keeps the faithful IR (every copy and temporary)
+        // so dataflow detectors observe the full lowering. Readability
+        // reductions stay on the production C# path.
         reduce_temps: false,
     });
     append_fidelity_warnings(warnings, method_name, view.method.offset, &lowered.fidelity);

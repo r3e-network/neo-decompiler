@@ -6,7 +6,7 @@ fn high_level_lifts_reverse3_operation() {
     // top of stack is PUSH1's value (the stack flips end-for-end).
     let script = [0x11, 0x12, 0x13, 0x53, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -26,7 +26,7 @@ fn high_level_lifts_reverse4_operation() {
     // REVERSE4 the top of stack is PUSH1's value.
     let script = [0x11, 0x12, 0x13, 0x14, 0x54, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -47,7 +47,7 @@ fn high_level_lifts_reversen_operation() {
     // PUSH1's value.
     let script = [0x11, 0x12, 0x13, 0x13, 0x55, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -73,7 +73,7 @@ fn high_level_unpack_of_stored_packed_value_keeps_reverse3_stack_shape() {
         0x13, 0x68, 0xC1, 0x45, 0x53, 0x40, // PUSH3; LDLOC0; UNPACK; DROP; REVERSE3; RET
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 

@@ -72,7 +72,7 @@ fn renders_all_control_flow_variants() {
 
     assert_eq!(
         render_block(&body, &plan, &symbols, ReturnBehavior::Value, false),
-        "BigInteger loc0;\nloc0 = 1;\n// trace\nif (condition) {\n    return 1;\n} else {\n    return 2;\n}\nwhile (condition) {\n    loc0 = 2;\n}\ndo {\n    loc0 = 3;\n} while (condition);\nfor (BigInteger index = 0; index < 3; index++) {\n    // loop\n}\nswitch (loc0) {\n    case var __switchValue0 when (bool)Runtime.LoadScript((ByteString)new byte[] { 0x97 }, CallFlags.All, new object[] { __switchValue0, 0 }): {\n        return 4;\n    }\n    case var __switchValue1 when (bool)Runtime.LoadScript((ByteString)new byte[] { 0x97 }, CallFlags.All, new object[] { __switchValue1, 1 }): {\n        loc0 = 5;\n        break;\n    }\n    default: {\n        return 6;\n    }\n}\ntry {\n    return 7;\n} catch (Exception __caughtException0) {\n    dynamic error = __caughtException0 is __NeoDecompilerVmException __vmException1 ? __vmException1.Payload : __caughtException0.Message;\n    return 8;\n} finally {\n    // finally\n}"
+        "BigInteger loc0 = 1;\n// trace\nif (condition) {\n    return 1;\n} else {\n    return 2;\n}\nwhile (condition) {\n    loc0 = 2;\n}\ndo {\n    loc0 = 3;\n} while (condition);\nfor (BigInteger index = 0; index < 3; index++) {\n    // loop\n}\nswitch (loc0) {\n    case var __switchValue0 when __switchValue0 == 0: {\n        return 4;\n    }\n    case var __switchValue1 when __switchValue1 == 1: {\n        loc0 = 5;\n        break;\n    }\n    default: {\n        return 6;\n    }\n}\ntry {\n    return 7;\n} catch (Exception __caughtException0) {\n    dynamic error = __caughtException0 is __NeoDecompilerVmException __vmException1 ? __vmException1.Payload : __caughtException0.Message;\n    return 8;\n} finally {\n    // finally\n}"
     );
 }
 
@@ -241,6 +241,55 @@ fn typed_expression_statements_are_compile_valid_and_effect_preserving() {
 
     assert_eq!(
         render_block(&body, &plan, &symbols, ReturnBehavior::Void, false),
-        "_ = 1;\n_ = Runtime.Time;\nRuntime.Log((string)(\"hello\"));\n_ = items.Length;\n((Neo.SmartContract.Framework.List<object>)items).Add(2);\n_ = (dynamic)Contract.Call((UInt160)new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11, 0x22, 0x33 }, \"notify\", (CallFlags)0x0F, new object[] { items });\n__NeoDecompilerUnresolvedCall(\"observe\", new object[] {  });"
+        "_ = 1;\n_ = Runtime.Time;\nRuntime.Log((string)(\"hello\"));\n_ = items.Length;\n((dynamic)(items)).Add(2);\n_ = (dynamic)Contract.Call((UInt160)new byte[] { 0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11, 0x22, 0x33 }, \"notify\", (CallFlags)0x0F, new object[] { items });\n__NeoDecompilerUnresolvedCall(\"observe\", new object[] {  });"
+    );
+}
+
+#[test]
+fn hoisted_multi_definition_merges_first_in_scope_assignment() {
+    // `t` is redefined inside a nested if, so it cannot be fully inlined.
+    // The first in-scope assignment still merges into the declaration.
+    let body = Block::with_stmts(vec![
+        Stmt::assign(
+            "t",
+            Expr::binary(BinOp::Add, Expr::var("loc0"), Expr::int(1)),
+        ),
+        Stmt::ControlFlow(Box::new(ControlFlow::If {
+            condition: Expr::binary(BinOp::Gt, Expr::var("t"), Expr::int(100)),
+            then_branch: Block::with_stmts(vec![Stmt::assign("t", Expr::int(0))]),
+            else_branch: None,
+        })),
+        Stmt::assign("loc0", Expr::var("t")),
+    ]);
+    let symbols = BTreeMap::from([
+        (
+            "loc0".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Local(0),
+                value_type: ValueType::Integer,
+            },
+        ),
+        (
+            "t".to_string(),
+            SymbolInfo {
+                origin: SymbolOrigin::Temporary,
+                value_type: ValueType::Integer,
+            },
+        ),
+    ]);
+    let plan = plan_declarations(&body, &symbols, true);
+    let rendered = render_block(&body, &plan, &symbols, ReturnBehavior::Void, false);
+
+    assert!(
+        rendered.contains("BigInteger t = loc0 + 1;"),
+        "first assignment must merge into the declaration: {rendered}"
+    );
+    assert!(
+        !rendered.contains("BigInteger t;\n"),
+        "bare hoisted declaration must be omitted when mergeable: {rendered}"
+    );
+    assert!(
+        rendered.contains("t = 0;"),
+        "subsequent assignments stay plain: {rendered}"
     );
 }

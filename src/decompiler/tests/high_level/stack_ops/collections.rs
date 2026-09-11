@@ -6,7 +6,7 @@ fn high_level_packs_literal_arrays() {
     // PACK uses the literal count (2) to build an array from stack values.
     let script = [0x11, 0x12, 0x12, 0xC0, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -29,7 +29,7 @@ fn high_level_rewrites_pickitem_as_indexing() {
     // Script: NEWARRAY0, PUSH0, PICKITEM, RET
     let script = [0xC2, 0x10, 0xCE, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -52,7 +52,7 @@ fn high_level_rewrites_setitem_as_index_assignment() {
     // Script: NEWMAP, PUSH0, PUSH1, SETITEM, RET
     let script = [0xC8, 0x10, 0x11, 0xD0, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -79,7 +79,7 @@ fn high_level_rewrites_haskey_as_function_call() {
     // the output: it inlines the map temp into the RET, yielding
     // `return t0 has_key 0`, which the infix->call rewrite then mangled into
     // `has_key(return t0, 0)`.
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
@@ -119,7 +119,7 @@ fn high_level_pickitem_inside_call_keeps_brackets_balanced() {
     // emitting bracket form at the source keeps it `len(arr[0])`.
     let script = [0x11, 0x11, 0xC0, 0x10, 0xCE, 0xCA, 0x40];
     let nef_bytes = build_nef(&script);
-    let high_level = Decompiler::new()
+    let high_level = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds")
@@ -140,7 +140,7 @@ fn high_level_istype_respects_operand_tag() {
     // Script: PUSH1, ISTYPE array (0x40), RET
     let script = [0x11, 0xD9, 0x40, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -166,7 +166,7 @@ fn pack_literal_underflow_renders_elision_marker_not_synthetic_temps() {
     // Script: PUSH1 PUSH1 PUSH1 PUSH5 PACK RET (3 values, PACK asks for 5).
     let script = [0x11, 0x11, 0x11, 0x15, 0xC0, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
     let high_level = decompilation

@@ -284,7 +284,10 @@ fn typed_array_index_loops_keep_for_when_bound_is_not_collection_size() {
 
     let rendered = render_block(&body, &plan, &symbols, ReturnBehavior::Void, false);
 
-    assert!(rendered.contains("for (index = 0;"), "{rendered}");
+    assert!(
+        rendered.contains("for (BigInteger index = 0;"),
+        "{rendered}"
+    );
     assert!(!rendered.contains("foreach ("), "{rendered}");
 }
 
@@ -452,7 +455,10 @@ fn typed_array_index_loops_keep_for_when_the_counter_escapes() {
 
     let rendered = render_block(&body, &plan, &symbols, ReturnBehavior::Void, false);
 
-    assert!(rendered.contains("for (index = 0;"), "{rendered}");
+    assert!(
+        rendered.contains("for (BigInteger index = 0;"),
+        "{rendered}"
+    );
     assert!(!rendered.contains("foreach ("), "{rendered}");
 }
 
@@ -494,6 +500,9 @@ fn typed_array_index_loops_keep_for_across_opaque_body_calls() {
 
     let rendered = render_block(&body, &plan, &symbols, ReturnBehavior::Void, false);
 
-    assert!(rendered.contains("for (index = 0;"), "{rendered}");
+    assert!(
+        rendered.contains("for (BigInteger index = 0;"),
+        "{rendered}"
+    );
     assert!(!rendered.contains("foreach ("), "{rendered}");
 }

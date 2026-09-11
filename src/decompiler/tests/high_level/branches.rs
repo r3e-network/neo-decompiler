@@ -5,7 +5,7 @@ fn high_level_lifts_simple_if_block() {
     // Script: PUSH1, JMPIFNOT +5, PUSH2, RET, PUSH3, RET
     let script = [0x11, 0x26, 0x05, 0x12, 0x40, 0x13, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -23,7 +23,7 @@ fn high_level_closes_if_at_end() {
     // Script: PUSH1, JMPIFNOT +4, PUSH2, RET
     let script = [0x11, 0x26, 0x04, 0x12, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -40,7 +40,7 @@ fn high_level_lifts_if_else_block() {
     // Script: PUSH1, JMPIFNOT +5, PUSH2, JMP +4, PUSH3, RET, RET
     let script = [0x11, 0x26, 0x05, 0x12, 0x22, 0x04, 0x13, 0x40, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -65,7 +65,7 @@ fn high_level_lifts_jmpeq_forward_branch() {
     // Script: PUSH1, PUSH1, JMPEQ +4 (to RET), PUSH2, RET
     let script = [0x11, 0x11, 0x28, 0x04, 0x12, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -88,7 +88,7 @@ fn high_level_lifts_jmpif_forward_branch() {
     // Script: PUSH1, JMPIF +4 (to RET), PUSH2, RET
     let script = [0x11, 0x24, 0x04, 0x12, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -111,7 +111,7 @@ fn high_level_lifts_jmpif_l_forward_branch() {
     // Script: PUSH1, JMPIF_L +6 (to RET), PUSH2, RET
     let script = [0x11, 0x25, 0x06, 0x00, 0x00, 0x00, 0x12, 0x40];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -139,7 +139,7 @@ fn high_level_else_branch_restores_pre_branch_stack_snapshot() {
         0x11, 0x12, 0x13, 0x11, 0x26, 0x06, 0x45, 0x45, 0x22, 0x03, 0x53, 0x40,
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
 
@@ -167,7 +167,7 @@ fn crossing_comparison_branch_does_not_emit_malformed_double_else() {
         0x11, 0x12, 0x30, 0x08, 0x13, 0x14, 0x30, 0x06, 0x15, 0x40, 0x16, 0x40, 0x17, 0x40,
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
     let high_level = decompilation
@@ -206,7 +206,7 @@ fn crossing_unary_branch_does_not_emit_malformed_double_else() {
         0x11, 0x24, 0x09, 0x12, 0x24, 0x04, 0x17, 0x40, 0x18, 0x40, 0x19, 0x40,
     ];
     let nef_bytes = build_nef(&script);
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes(&nef_bytes)
         .expect("decompile succeeds");
     let high_level = decompilation

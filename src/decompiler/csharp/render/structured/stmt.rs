@@ -166,6 +166,7 @@ pub(in crate::decompiler::csharp::render) fn render_block_with_trace_and_underfl
         source_map,
         instructions,
         next_statement_id: 0,
+        merged_hoisted: BTreeSet::new(),
     };
     let root = plan.scopes.root();
     renderer.render_block_at(block, root, 0, true).join("\n")
@@ -232,6 +233,7 @@ struct StatementRenderer<'a> {
     source_map: Option<&'a SourceMap>,
     instructions: &'a [crate::instruction::Instruction],
     next_statement_id: u32,
+    merged_hoisted: BTreeSet<String>,
 }
 
 impl StatementRenderer<'_> {

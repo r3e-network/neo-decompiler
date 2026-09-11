@@ -27,7 +27,7 @@ fn renames_script_entry_using_manifest_signature() {
             "#,
     )
     .expect("manifest parsed");
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds with manifest signature");
 
@@ -68,7 +68,7 @@ fn mismatch_offset_emits_synthetic_entry_and_keeps_manifest_method() {
     )
     .expect("manifest parsed");
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -124,7 +124,7 @@ fn missing_manifest_offset_uses_first_method_as_entry_signature() {
     )
     .expect("manifest parsed");
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 

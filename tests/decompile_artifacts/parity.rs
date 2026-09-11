@@ -3,6 +3,11 @@ use std::path::Path;
 
 use neo_decompiler::{ContractManifest, Decompiler, OutputFormat};
 
+/// Decompile with the legacy stack-emitter high-level path.
+fn legacy_high_level_decompiler() -> Decompiler {
+    Decompiler::new().with_high_level_from_ir(false)
+}
+
 fn method_block<'a>(text: &'a str, start_marker: &str, next_marker: &str) -> &'a str {
     let start = text
         .find(start_marker)

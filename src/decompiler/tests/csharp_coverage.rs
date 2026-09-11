@@ -193,6 +193,7 @@ fn csharp_corpus_has_zero_structured_fallback() {
                 inline_single_use_temps: true,
                 emit_trace_comments: false,
                 typed_declarations: true,
+                ..Default::default()
             },
         );
         decompiled += 1;

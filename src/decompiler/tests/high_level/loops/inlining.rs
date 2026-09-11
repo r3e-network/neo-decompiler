@@ -25,7 +25,7 @@ fn loop_condition_temp_is_inlined() {
     )
     .expect("manifest parsed");
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 

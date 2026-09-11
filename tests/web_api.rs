@@ -270,6 +270,8 @@ fn web_decompile_report_emit_trace_comments_re_enables_per_instruction_comments(
         neo_decompiler::web::WebDecompileOptions {
             manifest_json: Some(SAMPLE_MANIFEST.to_string()),
             emit_trace_comments: true,
+            // Trace comments are a stack-emitter feature.
+            high_level_from_ir: false,
             output_format: OutputFormat::All,
             typed_declarations: true,
             ..Default::default()

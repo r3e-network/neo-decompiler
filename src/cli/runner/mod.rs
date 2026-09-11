@@ -41,6 +41,8 @@ impl Cli {
                 no_inline_temps,
                 typed_declarations,
                 no_typed_declarations,
+                high_level_from_ir,
+                no_high_level_from_ir,
                 inline_single_use_temps: _legacy_inline,
                 no_trace_comments: _legacy_no_trace,
                 clean: _legacy_clean,
@@ -49,7 +51,8 @@ impl Cli {
                 let decompiler = crate::decompiler::Decompiler::with_unknown_handling(handling)
                     .with_inline_single_use_temps(!*no_inline_temps)
                     .with_trace_comments(*trace_comments)
-                    .with_typed_declarations(*typed_declarations || !*no_typed_declarations);
+                    .with_typed_declarations(*typed_declarations || !*no_typed_declarations)
+                    .with_high_level_from_ir(*high_level_from_ir || !*no_high_level_from_ir);
                 self.run_decompile(path, *format, *output_format, decompiler)
             }
             Command::Tokens { path, format } => self.run_tokens(path, *format),

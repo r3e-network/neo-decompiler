@@ -92,6 +92,18 @@ pub(in crate::cli) enum Command {
         #[arg(long)]
         no_typed_declarations: bool,
 
+        /// Drive high-level method bodies through the structured IR spine
+        /// instead of the stack emitter plus string-pattern postprocess.
+        /// Enabled by default; pass `--no-high-level-from-ir` for the
+        /// legacy stack-emitter path.
+        #[arg(long, hide = true)]
+        high_level_from_ir: bool,
+
+        /// Keep the legacy stack-emitter high-level method bodies instead
+        /// of the structured IR spine.
+        #[arg(long)]
+        no_high_level_from_ir: bool,
+
         // The flags below pre-date the default flip described above
         // and are kept as hidden no-op aliases so existing scripts
         // and CI configurations continue to work. They were the

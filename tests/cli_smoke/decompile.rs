@@ -108,11 +108,14 @@ fn decompile_no_inline_temps_keeps_let_t_lines_visible() {
     let nef_path = dir.path().join("contract.nef");
     std::fs::write(&nef_path, build_sample_nef()).unwrap();
 
+    // `--no-inline-temps` is a stack-emitter option; exercise the legacy
+    // high-level path so the flag's surface stays covered.
     neo_decompiler_cmd()
         .arg("decompile")
         .arg("--format")
         .arg("high-level")
         .arg("--no-inline-temps")
+        .arg("--no-high-level-from-ir")
         .arg(&nef_path)
         .assert()
         .success()

@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 
 use neo_decompiler::{ContractManifest, Decompiler, OutputFormat};
 
+fn legacy_high_level_decompiler() -> Decompiler {
+    Decompiler::new().with_high_level_from_ir(false)
+}
+
 fn private_method_block<'a>(text: &'a str, name: &str, next_name: &str) -> &'a str {
     let start = [
         "bool",
@@ -56,7 +60,7 @@ fn decompile_csharp(root: &Path, contract: &str) -> Option<String> {
     let manifest = ContractManifest::from_json_str(&manifest_text)
         .unwrap_or_else(|error| panic!("invalid manifest {}: {error}", manifest_path.display()));
     Some(
-        Decompiler::new()
+        legacy_high_level_decompiler()
             .with_trace_comments(false)
             .with_typed_declarations(true)
             .decompile_bytes_with_manifest(&nef, Some(manifest), OutputFormat::CSharp)

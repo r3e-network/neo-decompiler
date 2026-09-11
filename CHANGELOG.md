@@ -4,6 +4,67 @@ All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+### Added
+
+- Opt-in high-level IR spine: `Decompiler::with_high_level_from_ir(true)` /
+  CLI `decompile --high-level-from-ir` drives high-level method bodies
+  through `lower_method_body` + the high-level IR dialect (`let`
+  declarations, compact conditions, `+=` for-updates) instead of the stack
+  emitter plus string-pattern postprocess. Oversized methods still fall back
+  to the stack path. Default high-level output is unchanged.
+- High-level IR dialect collapses `x = x++` / `x = x--` stores to `x++` /
+  `x--` statements and falls back to the stack emitter when structured IR
+  is comments-only (trampoline/JMP-out methods).
+
+### Changed
+
+- **High-level method bodies now default to the structured IR spine.**
+  Use `Decompiler::with_high_level_from_ir(false)` /
+  CLI `--no-high-level-from-ir` / Web `high_level_from_ir: false` for the
+  legacy stack-emitter path (required for `--trace-comments` and
+  `--no-inline-temps` emitter surface).
+- Structured C# hoisted locals whose first in-scope assignment dominates all
+  uses now emit `T name = value` instead of a bare `T name;` followed by a
+  separate assignment. Phi defaults that need `= default` are unchanged.
+
+### Fixed
+
+- First `LDSFLD*` of a static field no longer lowers to an opaque
+  `ldsfld0()` intrinsic. SSA now pushes the initial `staticN` variable, so
+  C# emits `return (ByteString)(static0)` instead of a bogus
+  `Runtime.LoadScript((ByteString)new byte[] { 0x58 }, ...)`.
+- Structured IR control-flow rendering no longer emits a stray blank line
+  inside empty `if`/`for`/`while`/`try` bodies.
+- Integer/ByteString switch cases on the structured C# path now emit
+  `case var __switchValueN when __switchValueN == <literal>` instead of routing
+  through `Runtime.LoadScript` Equal replay.
+- `SUBSTR`/`LEFT`/`RIGHT` skip the redundant `(ByteString)` hop when the source
+  is already a statically exact `ByteString`, and skip the `(byte[])` hop when
+  the source is already a statically exact `byte[]`.
+- Array/Struct collection mutations (`APPEND`/`REMOVE`/`CLEARITEMS`/`POPITEM`)
+  hop through `dynamic` instead of casting `object[]` to `List<object>`, which
+  is not a valid C# conversion. The JS C# twin matches.
+- JS `Contract.Call` skips the `UInt160` cast when the hash is already an exact
+  `UInt160` or an explicit cast, and no longer inserts a `dynamic` hop.
+
+### Performance
+
+- CFG structural recovery skips postdominator analysis on the irreducible
+  (goto/label) fallback path. That path never consults postdominators, and the
+  analysis is O(n^2) memory on dense methods.
+
+### Added
+
+- The JS differential suite hard-requires `methodContracts` on both sides and
+  compares a normalized common subset (JS `unknown` return behavior may stand
+  in for a definite Rust value on incomplete helpers; definite mismatches still
+  fail).
+- A C# structural differential gate compares contract class names and public
+  ABI method names between the Rust IR path and the JS text-to-C# twin on the
+  full artifact corpus.
+- When the structured-recovery budget is exceeded, the IR emits a comment
+  naming the block/phi counts so readers can tell density caused the goto/label
+  fallback.
 
 ## [0.14.0] - 2026-09-05 (Rust/Web) / [2.1.0] - 2026-09-05 (JS)
 

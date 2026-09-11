@@ -23,7 +23,7 @@ fn high_level_limits_instructions_to_entry_range() {
     )
     .expect("manifest parsed");
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -64,7 +64,7 @@ fn high_level_trims_initslot_boundaries() {
         return;
     };
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -109,7 +109,7 @@ fn high_level_private_void_call_preserves_ambient_return_value() {
     )
     .expect("manifest parsed");
 
-    let decompilation = Decompiler::new()
+    let decompilation = legacy_high_level_decompiler()
         .with_inline_single_use_temps(true)
         .with_trace_comments(false)
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)

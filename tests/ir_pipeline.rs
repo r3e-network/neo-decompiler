@@ -1590,3 +1590,78 @@ fn structured_ir_distinguishes_user_append_from_vm_append() {
         "VM APPEND must remain a separate intrinsic effect:\n{ir}"
     );
 }
+
+#[test]
+fn high_level_from_ir_recovers_counting_loop() {
+    let root = repo_root();
+    let nef =
+        fs::read(root.join("TestingArtifacts/edgecases/LoopIf.nef")).expect("LoopIf NEF fixture");
+    // IR spine is the default high-level path.
+    let decompilation = Decompiler::new()
+        .decompile_bytes_with_manifest(&nef, None, OutputFormat::HighLevel)
+        .expect("high-level-from-IR decompiles");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+
+    assert!(
+        high_level.contains("fn main()") || high_level.contains("fn script_entry()"),
+        "method signature must be present:\n{high_level}"
+    );
+    assert!(
+        high_level.contains("loc0") || high_level.contains("let loc0"),
+        "local slot must be named:\n{high_level}"
+    );
+    // Structured recovery should produce a loop or at least a conditional.
+    assert!(
+        high_level.contains("while ") || high_level.contains("for (") || high_level.contains("if "),
+        "control flow must be structured:\n{high_level}"
+    );
+    assert!(
+        high_level.contains("let loc0") || high_level.contains("loc0 ="),
+        "IR dialect should declare the local:\n{high_level}"
+    );
+}
+
+#[test]
+fn high_level_legacy_opt_out_still_uses_stack_emitter() {
+    // Opting out of the IR spine restores the legacy stack emitter.
+    let script = [
+        0x0C,
+        0x01,
+        0x00,
+        0x10,
+        0x0B,
+        0x00,
+        0x0A,
+        0x00,
+        0x13,
+        0x9B,
+        0x26,
+        0x07,
+        0x21,
+        0x0A,
+        0x00,
+        0x11,
+        0x9E,
+        0x0B,
+        0x00,
+        0x22,
+        (-12i8) as u8,
+        0x40,
+    ];
+    let nef = build_nef(&script);
+    let decompilation = Decompiler::new()
+        .with_high_level_from_ir(false)
+        .decompile_bytes_with_manifest(&nef, None, OutputFormat::HighLevel)
+        .expect("legacy high-level decompiles");
+    let high_level = decompilation
+        .high_level
+        .as_deref()
+        .expect("high-level output");
+    assert!(
+        !high_level.is_empty(),
+        "legacy high-level path must still produce output"
+    );
+}

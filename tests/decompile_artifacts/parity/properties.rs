@@ -28,7 +28,7 @@ fn property_setters_without_initslot_keep_method_boundaries_and_stack_entry_args
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -115,7 +115,7 @@ fn null_contract_else_paths_keep_stack_shape_for_reverse4_sequences() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -163,7 +163,7 @@ fn nullconditional_post_ret_helpers_split_and_avoid_stack_underflow() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 
@@ -283,7 +283,7 @@ fn property_inferred_helpers_without_initslot_receive_entry_stack_arguments() {
     let manifest = ContractManifest::from_json_str(&manifest_json)
         .unwrap_or_else(|err| panic!("invalid manifest {}: {err}", manifest_path.display()));
 
-    let result = Decompiler::new()
+    let result = legacy_high_level_decompiler()
         .decompile_bytes_with_manifest(&nef_bytes, Some(manifest), OutputFormat::All)
         .expect("decompile succeeds");
 

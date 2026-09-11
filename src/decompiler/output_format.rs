@@ -60,4 +60,7 @@ pub(crate) struct RenderOptions {
     /// Annotate body-local declarations with inferred types (C# view:
     /// `BigInteger loc0 = ...;` instead of `var loc0 = ...;`).
     pub typed_declarations: bool,
+    /// Drive high-level method bodies through the structured IR spine
+    /// instead of the stack emitter plus string-pattern postprocess.
+    pub high_level_from_ir: bool,
 }
