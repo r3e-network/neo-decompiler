@@ -55,6 +55,11 @@ __pycache__/
 *.bak
 *.orig
 
+# Rust compiler artifacts (never commit)
+*.rlib
+*.rmeta
+*.pdb
+
 # Editor files
 *.sublime-*
 *.code-workspace
