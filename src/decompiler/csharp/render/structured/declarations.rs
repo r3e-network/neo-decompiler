@@ -50,6 +50,26 @@ impl ScopeTree {
         self.parent(scope)
     }
 
+    /// True when `ancestor` is `scope` itself or one of its enclosing scopes.
+    ///
+    /// A declaration emitted in `ancestor` is visible from `scope` exactly when
+    /// this holds, which is what gates moving a hoisted declaration down to its
+    /// first assignment site.
+    pub(in crate::decompiler::csharp::render) fn encloses(
+        &self,
+        ancestor: ScopeId,
+        scope: ScopeId,
+    ) -> bool {
+        let mut current = Some(scope);
+        while let Some(candidate) = current {
+            if candidate == ancestor {
+                return true;
+            }
+            current = self.parent(candidate);
+        }
+        false
+    }
+
     pub(in crate::decompiler::csharp::render) fn add_child(&mut self, parent: ScopeId) -> ScopeId {
         let id = ScopeId(
             u32::try_from(self.scopes.len()).expect("structured scope count must fit in u32"),
@@ -285,22 +305,39 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
                             && *candidate == "object[]"))
             })
             .cloned();
-        // A hoisted multi-definition local can still merge its first in-scope
-        // assignment into the declaration (`T name = value`) when that
-        // definition dominates every use recorded in the same scope.
-        let merge_first_assignment = if inline {
+        let initialize_to_default = !inline && symbol.origin == SymbolOrigin::Phi;
+        // A hoisted local may merge its first assignment into the declaration
+        // (`T name = value`) only when the merge cannot change C# visibility
+        // or duplicate the name:
+        //
+        // * every definition and use must live in the very same scope —
+        //   otherwise the declaration would move into an inner block and
+        //   leave outer/sibling references unresolved (CS0103), as happened
+        //   when a `for` initializer adopted `loc3` that the loop body's
+        //   successor still read;
+        // * the first definition must precede every use in that scope;
+        // * the declaration must not already be emitted as `T name = default`
+        //   (phi locals), which would declare the name twice (CS0128).
+        let merge_first_assignment = if inline || initialize_to_default {
             false
         } else {
             activity
                 .definitions
                 .iter()
-                .filter(|definition| definition.scope == scope)
                 .min_by_key(|definition| definition.order)
                 .is_some_and(|first| {
-                    !activity
+                    // The declaration lands in `first.scope`, so every other
+                    // occurrence must sit inside that block (or a nested one)
+                    // to stay visible, and every read must follow it. A `for`
+                    // initializer that owns the first store would otherwise
+                    // hide the name from statements after the loop (CS0103).
+                    let visible_from = |scope| collector.scopes.encloses(first.scope, scope);
+                    activity.definitions.iter().all(|definition| {
+                        definition.order == first.order || visible_from(definition.scope)
+                    }) && activity
                         .uses
                         .iter()
-                        .any(|usage| usage.scope == scope && usage.order < first.order)
+                        .all(|usage| usage.order > first.order && visible_from(usage.scope))
                 })
         };
         declarations.insert(
@@ -322,7 +359,7 @@ pub(in crate::decompiler::csharp::render) fn plan_declarations_with_known_types_
                     concrete_type
                         .unwrap_or_else(|| csharp_type(symbol.value_type, typed).to_string())
                 },
-                initialize_to_default: !inline && symbol.origin == SymbolOrigin::Phi,
+                initialize_to_default,
                 merge_first_assignment,
             },
         );

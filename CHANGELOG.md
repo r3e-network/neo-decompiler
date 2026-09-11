@@ -13,6 +13,16 @@ project adheres to [Semantic Versioning](https://semver.org/).
 - `write_method_body_from_ir`: deduplicated identical CALL/CALLA call-contract
   building branches; both arms were copy-pasted byte-for-byte — collapsed into
   a single `.or_else()` lookup.
+- Structured C# hoisted declarations: merging the first assignment into the
+  declaration (`T name = value`) no longer changes C# visibility. The merge was
+  applied whenever the first in-scope store preceded every read in that scope,
+  which let a `for` initializer adopt the declaration and hide the name from
+  statements after the loop (`CS0103`, 15 diagnostics across 4 pinned
+  contracts), and let it re-declare a phi local that `hoisted_declarations`
+  had already emitted as `T name = default` (`CS0128`, 62 diagnostics across 7
+  contracts). The merge now requires that every definition and read of the
+  name sits inside the block that receives the declaration, and never applies
+  to phi locals that need a `= default` initializer.
 
 ### Added
 
