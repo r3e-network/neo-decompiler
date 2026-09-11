@@ -3,7 +3,35 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.14.1] — 2026-09-11
+
+### Fixed
+
+- `render_high_level_block`: named catch-variable arm (`catch_var: Some(name)`)
+  was missing the closing `}` for the catch block, producing brace-imbalanced
+  output for any `try`/`catch` that stored the exception object into a local.
+- `write_method_body_from_ir`: deduplicated identical CALL/CALLA call-contract
+  building branches; both arms were copy-pasted byte-for-byte — collapsed into
+  a single `.or_else()` lookup.
+
+### Added
+
+- 11 new deterministic property tests for `render_high_level_block` covering
+  all previously untested `ControlFlow` variants: `Switch` (empty, 1 case,
+  N cases + default, empty bodies), `TryCatch` (all 8 combinations of
+  catch/catch_var/finally), `DoWhile` (no trailing newline), deeply-nested `If`
+  (depth 5), `For` (declaration scoping in loop body).
+- `fuzz/fuzz_targets/fuzz_ir_render.rs`: new libfuzzer target that constructs
+  typed IR trees (`Block`/`Stmt`/`ControlFlow`/`Expr`) directly and asserts
+  brace-balance on both the high-level and analysis-dialect renderers.
+- `fuzz_grammar.rs` extended with exception-handling opcodes: `TRY` (0x3B),
+  `ENDTRY` (0x3D), `ENDFINALLY` (0x3F), `THROW` (0x3A), `ABORT` (0x38).
+  New emitters: `emit_try_catch`, `emit_try_finally`, `emit_throw`,
+  `emit_abort`, `emit_malformed_try` (random handler offsets, exercises
+  out-of-bounds recovery path).
+
 ## [Unreleased]
+
 ### Added
 
 - Opt-in high-level IR spine: `Decompiler::with_high_level_from_ir(true)` /
