@@ -80,6 +80,13 @@ const XOR: u8 = 0x93;
 // Type / null checks (unary: pop 1, push 1)
 const ISNULL: u8 = 0xD8;
 
+// Exception handling
+const THROW: u8 = 0x3A; // pops 1, no push, terminates normally
+const ABORT: u8 = 0x38; // no operand, no stack effect, terminates
+const TRY: u8 = 0x3B; // Bytes(2): [catch_offset, finally_offset]
+const ENDTRY: u8 = 0x3D; // Bytes(1): [resume_offset]
+const ENDFINALLY: u8 = 0x3F; // no operand
+
 // Collection opcodes
 const NEWARRAY0: u8 = 0xC2; // push 1
 const NEWSTRUCT0: u8 = 0xC5; // push 1
@@ -392,6 +399,129 @@ impl ProgramBuilder {
         self.bytecode.push(RET);
     }
 
+    /// Emit THROW (pops 1, terminates the current execution path).
+    fn emit_throw(&mut self) {
+        if self.stack_depth < 1 {
+            self.emit_push_null();
+        }
+        self.bytecode.push(THROW);
+        self.stack_depth -= 1;
+    }
+
+    /// Emit ABORT (no stack effect, terminates).
+    fn emit_abort(&mut self) {
+        self.bytecode.push(ABORT);
+    }
+
+    /// Emit a structurally valid try-catch block.
+    ///
+    /// Layout:
+    ///   TRY catch=+C finally=0
+    ///   <try body: 1-2 pushes>
+    ///   ENDTRY +E   (skip catch)
+    ///   <catch body: 1-2 pushes>
+    ///   ENDTRY 0    (self-targeting resume)
+    ///
+    /// All offsets are relative to the TRY opcode's own position and are
+    /// computed precisely from the sizes of the emitted bodies.
+    fn emit_try_catch(&mut self, r: &mut DecisionReader) {
+        let try_push = (r.next() % 2) + 1; // 1 or 2 pushes in try body
+        let catch_push = (r.next() % 2) + 1; // 1 or 2 pushes in catch body
+
+        // TRY: opcode(1) + catch_offset(1) + finally_offset(1) = 3 bytes
+        // try body: try_push bytes (each PUSH0..PUSH16 is 1 byte)
+        // ENDTRY: 2 bytes (opcode + offset)
+        // catch body: catch_push bytes
+        // ENDTRY: 2 bytes
+
+        // catch_offset = distance from TRY opcode to start of catch body
+        //              = 3 (TRY header) + try_push + 2 (ENDTRY)
+        let catch_offset = (3 + try_push + 2) as u8;
+
+        // endtry_skip = distance from first ENDTRY opcode to past-catch-ENDTRY
+        //             = 2 (first ENDTRY) + catch_push + 2 (second ENDTRY)
+        let endtry_skip = (2 + catch_push + 2) as u8;
+
+        self.bytecode.push(TRY);
+        self.bytecode.push(catch_offset);
+        self.bytecode.push(0); // finally_offset = 0 (no finally)
+
+        // try body
+        let depth_before = self.stack_depth;
+        for _ in 0..try_push {
+            let push_val = PUSH0 + (r.next() % 17);
+            self.bytecode.push(push_val);
+        }
+        self.bytecode.push(ENDTRY);
+        self.bytecode.push(endtry_skip);
+
+        // catch body (stack depth resets: NeoVM pushes the exception)
+        self.stack_depth = depth_before + 1; // exception on stack
+        for _ in 0..catch_push {
+            let push_val = PUSH0 + (r.next() % 17);
+            self.bytecode.push(push_val);
+        }
+        self.bytecode.push(ENDTRY);
+        self.bytecode.push(0); // resume offset 0 = fall through to next instruction
+
+        // After the try-catch, stack depth is uncertain; reset conservatively.
+        self.stack_depth = depth_before;
+    }
+
+    /// Emit a structurally valid try-finally block.
+    ///
+    /// Layout:
+    ///   TRY catch=0 finally=+F
+    ///   <try body>
+    ///   ENDTRY +E
+    ///   <finally body>
+    ///   ENDFINALLY
+    fn emit_try_finally(&mut self, r: &mut DecisionReader) {
+        let try_push = (r.next() % 2) + 1;
+        let finally_push = (r.next() % 2) + 1;
+
+        // finally_offset = 3 + try_push + 2
+        let finally_offset = (3 + try_push + 2) as u8;
+        // endtry_skip = 2 + finally_push + 1 (ENDFINALLY)
+        let endtry_skip = (2 + finally_push + 1) as u8;
+
+        self.bytecode.push(TRY);
+        self.bytecode.push(0); // catch_offset = 0
+        self.bytecode.push(finally_offset);
+
+        let depth_before = self.stack_depth;
+        for _ in 0..try_push {
+            let push_val = PUSH0 + (r.next() % 17);
+            self.bytecode.push(push_val);
+        }
+        self.bytecode.push(ENDTRY);
+        self.bytecode.push(endtry_skip);
+
+        // finally body
+        for _ in 0..finally_push {
+            let push_val = PUSH0 + (r.next() % 17);
+            self.bytecode.push(push_val);
+        }
+        self.bytecode.push(ENDFINALLY);
+
+        self.stack_depth = depth_before;
+    }
+
+    /// Emit a TRY with random (potentially out-of-bounds) handler offsets.
+    /// Exercises the malformed-input path; the decompiler must not panic and
+    /// its output must stay brace-balanced.
+    fn emit_malformed_try(&mut self, r: &mut DecisionReader) {
+        self.bytecode.push(TRY);
+        self.bytecode.push(r.next()); // arbitrary catch offset
+        self.bytecode.push(r.next()); // arbitrary finally offset
+        // Emit a couple of instructions so the try body is non-empty.
+        self.bytecode.push(NOP);
+        self.bytecode.push(NOP);
+        // ENDTRY with offset 0 to try to terminate gracefully.
+        self.bytecode.push(ENDTRY);
+        self.bytecode.push(0);
+    }
+
     /// Wrap the bytecode in a valid NEF3 container with correct checksum.
     fn build_nef(&self) -> Vec<u8> {
         let mut nef = Vec::new();
@@ -489,6 +619,17 @@ fuzz_target!(|data: &[u8]| {
                     0 => builder.emit_depth(),
                     1 => builder.emit_push_null(),
                     _ => builder.emit_new_collection(&mut r),
+                }
+            }
+            // Exception handling (TRY/CATCH/FINALLY/THROW/ABORT)
+            19 => {
+                let sub = r.next() % 5;
+                match sub {
+                    0 => builder.emit_try_catch(&mut r),
+                    1 => builder.emit_try_finally(&mut r),
+                    2 => builder.emit_throw(),
+                    3 => builder.emit_abort(),
+                    _ => builder.emit_malformed_try(&mut r),
                 }
             }
             // NOP (exercises NOP handling)

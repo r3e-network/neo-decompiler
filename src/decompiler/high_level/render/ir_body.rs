@@ -50,7 +50,11 @@ pub(super) fn write_method_body_from_ir(
             instruction.opcode,
             OpCode::Call | OpCode::Call_L | OpCode::CallA | OpCode::CallT
         ) {
-            if let Some(&target) = context.call_targets_by_offset.get(&instruction.offset) {
+            let resolved = context
+                .call_targets_by_offset
+                .get(&instruction.offset)
+                .or_else(|| context.calla_targets_by_offset.get(&instruction.offset));
+            if let Some(&target) = resolved {
                 let label = context
                     .method_labels_by_offset
                     .get(&target)
@@ -78,33 +82,6 @@ pub(super) fn write_method_body_from_ir(
                     contract.may_return = false;
                 }
                 calls_by_offset.insert(instruction.offset, contract);
-            } else if let Some(&target) = context.calla_targets_by_offset.get(&instruction.offset) {
-                let label = context
-                    .method_labels_by_offset
-                    .get(&target)
-                    .cloned()
-                    .unwrap_or_else(|| format!("fn_0x{target:04X}"));
-                let argument_count = context
-                    .method_arg_counts_by_offset
-                    .get(&target)
-                    .copied()
-                    .unwrap_or(0);
-                let returns_value = context
-                    .method_returns_value_by_offset
-                    .get(&target)
-                    .copied()
-                    .unwrap_or(true);
-                calls_by_offset.insert(
-                    instruction.offset,
-                    CallContract::new(
-                        SemanticCallTarget::Internal {
-                            offset: target,
-                            name: label,
-                        },
-                        argument_count,
-                        returns_value,
-                    ),
-                );
             }
         }
     }

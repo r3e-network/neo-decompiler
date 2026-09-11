@@ -235,6 +235,7 @@ fn render_control_flow_into(
                         render_block_into(catch_body, indent + 1, declared, out);
                         out.push('\n');
                         out.push_str(&prefix);
+                        out.push('}');
                     }
                     None => {
                         let _ = write!(out, " catch {{");
@@ -476,6 +477,196 @@ mod tests {
         let rendered = render_high_level_block(&block, 0);
         assert_eq!(rendered.matches('{').count(), rendered.matches('}').count());
         assert!(rendered.contains("} else {"), "{rendered}");
+    }
+
+    #[test]
+    fn named_catch_variable_closes_its_brace() {
+        use crate::decompiler::ir::ControlFlow as IrCf;
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::TryCatch {
+            try_body: IrBlock::with_stmts(vec![IrStmt::ret_void()]),
+            catch_var: Some("e".to_string()),
+            catch_body: Some(IrBlock::with_stmts(vec![IrStmt::ret_void()])),
+            finally_body: None,
+        }))]);
+        let rendered = render_high_level_block(&block, 0);
+        assert_eq!(
+            rendered.matches('{').count(),
+            rendered.matches('}').count(),
+            "named catch block is not brace-balanced:\n{rendered}"
+        );
+        assert!(rendered.contains("let e = exception;"), "{rendered}");
+        assert!(rendered.contains("} catch {"), "{rendered}");
+    }
+
+    // ---- property tests: all ControlFlow arms ----
+
+    fn brace_balanced(s: &str) -> bool {
+        s.matches('{').count() == s.matches('}').count()
+    }
+
+    #[test]
+    fn switch_empty_no_cases_brace_balance() {
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::Switch {
+            expr: IrExpr::var("x"),
+            cases: vec![],
+            default: None,
+        }))]);
+        let rendered = render_high_level_block(&block, 0);
+        assert!(brace_balanced(&rendered), "switch(empty): {rendered}");
+    }
+
+    #[test]
+    fn switch_single_case_brace_balance() {
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::Switch {
+            expr: IrExpr::var("x"),
+            cases: vec![(IrExpr::int(1), IrBlock::with_stmts(vec![IrStmt::Break]))],
+            default: None,
+        }))]);
+        let rendered = render_high_level_block(&block, 0);
+        assert!(brace_balanced(&rendered), "switch(1 case): {rendered}");
+    }
+
+    #[test]
+    fn switch_multi_case_with_default_brace_balance() {
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::Switch {
+            expr: IrExpr::var("v"),
+            cases: vec![
+                (IrExpr::int(0), IrBlock::with_stmts(vec![IrStmt::ret_void()])),
+                (IrExpr::int(1), IrBlock::with_stmts(vec![IrStmt::Break])),
+                (
+                    IrExpr::int(2),
+                    IrBlock::with_stmts(vec![IrStmt::assign("v", IrExpr::int(99))]),
+                ),
+            ],
+            default: Some(IrBlock::with_stmts(vec![IrStmt::ret_void()])),
+        }))]);
+        let rendered = render_high_level_block(&block, 0);
+        assert!(
+            brace_balanced(&rendered),
+            "switch(3 cases + default): {rendered}"
+        );
+    }
+
+    #[test]
+    fn switch_empty_case_bodies_brace_balance() {
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::Switch {
+            expr: IrExpr::var("x"),
+            cases: vec![
+                (IrExpr::int(0), IrBlock::new()),
+                (IrExpr::int(1), IrBlock::new()),
+            ],
+            default: Some(IrBlock::new()),
+        }))]);
+        let rendered = render_high_level_block(&block, 0);
+        assert!(
+            brace_balanced(&rendered),
+            "switch(empty bodies): {rendered}"
+        );
+    }
+
+    // All 8 combinations of: catch_body present × catch_var present × finally_body present.
+    fn try_combo(
+        catch_body: Option<IrBlock>,
+        catch_var: Option<&str>,
+        finally_body: Option<IrBlock>,
+    ) -> String {
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::TryCatch {
+            try_body: IrBlock::with_stmts(vec![IrStmt::ret_void()]),
+            catch_var: catch_var.map(str::to_string),
+            catch_body,
+            finally_body,
+        }))]);
+        render_high_level_block(&block, 0)
+    }
+
+    #[test]
+    fn try_catch_finally_all_8_combinations_brace_balanced() {
+        let body = || IrBlock::with_stmts(vec![IrStmt::ret_void()]);
+        for (has_catch, has_var, has_finally) in
+            (0u8..8).map(|n| (n & 4 != 0, n & 2 != 0, n & 1 != 0))
+        {
+            let catch_body = has_catch.then(body);
+            let catch_var = (has_catch && has_var).then_some("e");
+            let finally_body = has_finally.then(body);
+            let rendered = try_combo(catch_body, catch_var, finally_body);
+            assert!(
+                brace_balanced(&rendered),
+                "TryCatch combo catch={has_catch} var={has_var} finally={has_finally}:\n{rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn deeply_nested_if_brace_balance() {
+        let inner = IrBlock::with_stmts(vec![IrStmt::ret_void()]);
+        let depth4 = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::if_then(
+            IrExpr::var("d"),
+            inner,
+        )))]);
+        let depth3 = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::if_then(
+            IrExpr::var("c"),
+            depth4,
+        )))]);
+        let depth2 = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::if_then(
+            IrExpr::var("b"),
+            depth3,
+        )))]);
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::if_then(
+            IrExpr::var("a"),
+            depth2,
+        )))]);
+        let rendered = render_high_level_block(&block, 0);
+        assert!(
+            brace_balanced(&rendered),
+            "deeply nested if: {rendered}"
+        );
+    }
+
+    #[test]
+    fn do_while_no_trailing_newline() {
+        let block =
+            IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::DoWhile {
+                body: IrBlock::with_stmts(vec![IrStmt::ret_void()]),
+                condition: IrExpr::var("cond"),
+            }))]);
+        let rendered = render_high_level_block(&block, 0);
+        assert!(!rendered.ends_with('\n'), "do-while trailing newline: {rendered:?}");
+        assert!(brace_balanced(&rendered), "do-while brace balance: {rendered}");
+    }
+
+    #[test]
+    fn for_loop_declaration_scoping_no_double_let() {
+        // Variable declared in for-init must not get a second `let` in the body.
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::for_loop(
+            Some(IrStmt::assign("i", IrExpr::int(0))),
+            Some(IrExpr::binary(BinOp::Lt, IrExpr::var("i"), IrExpr::int(10))),
+            Some(IrExpr::unary(UnaryOp::Inc, IrExpr::var("i"))),
+            IrBlock::with_stmts(vec![IrStmt::assign(
+                "i",
+                IrExpr::binary(BinOp::Add, IrExpr::var("i"), IrExpr::int(1)),
+            )]),
+        )))]);
+        let rendered = render_high_level_block(&block, 0);
+        // Body re-assignment to `i` should be compound `i += 1`, not `let i = ...`.
+        assert!(
+            !rendered.contains("let i = i"),
+            "for-body should not re-declare i: {rendered}"
+        );
+        assert!(brace_balanced(&rendered), "{rendered}");
+    }
+
+    #[test]
+    fn while_loop_brace_balance() {
+        let block =
+            IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::While {
+                condition: IrExpr::binary(BinOp::Lt, IrExpr::var("n"), IrExpr::int(10)),
+                body: IrBlock::with_stmts(vec![IrStmt::assign(
+                    "n",
+                    IrExpr::binary(BinOp::Add, IrExpr::var("n"), IrExpr::int(1)),
+                )]),
+            }))]);
+        let rendered = render_high_level_block(&block, 0);
+        assert!(brace_balanced(&rendered), "{rendered}");
     }
 
     #[test]
