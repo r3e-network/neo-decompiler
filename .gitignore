@@ -90,3 +90,4 @@ neo_csharp/**/obj/
 # Agent workspace data
 .workbuddy/
 /.codegraph/
+.mimosa/
