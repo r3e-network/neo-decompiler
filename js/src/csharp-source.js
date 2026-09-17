@@ -1,5 +1,12 @@
 export function sourceBraceDelta(line) {
   let delta = 0;
+  for (const brace of sourceBraces(line)) {
+    delta += brace === "{" ? 1 : -1;
+  }
+  return delta;
+}
+
+export function* sourceBraces(line) {
   let quote = null;
   for (let index = 0; index < line.length; index += 1) {
     const character = line[index];
@@ -10,10 +17,8 @@ export function sourceBraceDelta(line) {
     }
     if (character === "/" && line[index + 1] === "/") break;
     if (character === '"' || character === "'") quote = character;
-    else if (character === "{") delta += 1;
-    else if (character === "}") delta -= 1;
+    else if (character === "{" || character === "}") yield character;
   }
-  return delta;
 }
 
 export function isContractHeaderLine(line) {

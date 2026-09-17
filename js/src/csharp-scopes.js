@@ -1,5 +1,6 @@
 import { inferDeclarationTypes } from "./csharp-types.js";
 import { findUnusedCopyLines } from "./csharp-copies.js";
+import { sourceBraces } from "./csharp-source.js";
 
 // C# does not permit a local in a nested block to reuse a name from an
 // enclosing block, while VM slot names can be reused after control-flow joins.
@@ -148,7 +149,9 @@ function computeBraceCloseLines(lines, start, end) {
   const openLines = [];
   const closeLines = new Map();
   for (let line = start; line <= end; line += 1) {
-    for (const character of lines[line]) {
+    // Match the depth computation's view of the line: braces inside string
+    // literals and `//` comments must not pair with structural braces.
+    for (const character of sourceBraces(lines[line])) {
       if (character === "{") {
         openLines.push(line);
       } else if (character === "}") {
