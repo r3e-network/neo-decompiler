@@ -531,7 +531,10 @@ mod tests {
         let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::Switch {
             expr: IrExpr::var("v"),
             cases: vec![
-                (IrExpr::int(0), IrBlock::with_stmts(vec![IrStmt::ret_void()])),
+                (
+                    IrExpr::int(0),
+                    IrBlock::with_stmts(vec![IrStmt::ret_void()]),
+                ),
                 (IrExpr::int(1), IrBlock::with_stmts(vec![IrStmt::Break])),
                 (
                     IrExpr::int(2),
@@ -616,22 +619,24 @@ mod tests {
             depth2,
         )))]);
         let rendered = render_high_level_block(&block, 0);
-        assert!(
-            brace_balanced(&rendered),
-            "deeply nested if: {rendered}"
-        );
+        assert!(brace_balanced(&rendered), "deeply nested if: {rendered}");
     }
 
     #[test]
     fn do_while_no_trailing_newline() {
-        let block =
-            IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::DoWhile {
-                body: IrBlock::with_stmts(vec![IrStmt::ret_void()]),
-                condition: IrExpr::var("cond"),
-            }))]);
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::DoWhile {
+            body: IrBlock::with_stmts(vec![IrStmt::ret_void()]),
+            condition: IrExpr::var("cond"),
+        }))]);
         let rendered = render_high_level_block(&block, 0);
-        assert!(!rendered.ends_with('\n'), "do-while trailing newline: {rendered:?}");
-        assert!(brace_balanced(&rendered), "do-while brace balance: {rendered}");
+        assert!(
+            !rendered.ends_with('\n'),
+            "do-while trailing newline: {rendered:?}"
+        );
+        assert!(
+            brace_balanced(&rendered),
+            "do-while brace balance: {rendered}"
+        );
     }
 
     #[test]
@@ -657,14 +662,13 @@ mod tests {
 
     #[test]
     fn while_loop_brace_balance() {
-        let block =
-            IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::While {
-                condition: IrExpr::binary(BinOp::Lt, IrExpr::var("n"), IrExpr::int(10)),
-                body: IrBlock::with_stmts(vec![IrStmt::assign(
-                    "n",
-                    IrExpr::binary(BinOp::Add, IrExpr::var("n"), IrExpr::int(1)),
-                )]),
-            }))]);
+        let block = IrBlock::with_stmts(vec![IrStmt::ControlFlow(Box::new(IrCf::While {
+            condition: IrExpr::binary(BinOp::Lt, IrExpr::var("n"), IrExpr::int(10)),
+            body: IrBlock::with_stmts(vec![IrStmt::assign(
+                "n",
+                IrExpr::binary(BinOp::Add, IrExpr::var("n"), IrExpr::int(1)),
+            )]),
+        }))]);
         let rendered = render_high_level_block(&block, 0);
         assert!(brace_balanced(&rendered), "{rendered}");
     }
