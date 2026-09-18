@@ -144,8 +144,25 @@ fn split_args(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut depth = 0usize;
     let mut current = String::new();
+    let mut in_string = false;
+    let mut escaped = false;
     for ch in text.chars() {
+        if in_string {
+            current.push(ch);
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
         match ch {
+            '"' => {
+                in_string = true;
+                current.push(ch);
+            }
             '(' | '[' | '{' => {
                 depth += 1;
                 current.push(ch);
@@ -189,5 +206,27 @@ mod tests {
         let mut statements = vec!["let t0 = loc0 get t1;".to_string()];
         HighLevelEmitter::rewrite_indexing_syntax(&mut statements);
         assert_eq!(statements[0], "let t0 = loc0[t1];");
+    }
+
+    #[test]
+    fn split_args_ignores_braces_inside_string_literals() {
+        for call in [
+            r#"set_item(loc0, "a{", loc1);"#,
+            r#"set_item(loc0, "a}", loc1);"#,
+            r#"set_item(loc0, "a", "b{");"#,
+            r#"set_item("a(", loc0, loc1);"#,
+        ] {
+            let args = super::split_args(&call["set_item(".len()..call.len() - ");".len()]);
+            assert_eq!(args.len(), 3, "call {call}: got {args:?}");
+        }
+    }
+
+    #[test]
+    fn rewrite_set_item_rewrites_string_key_with_brace() {
+        // Regression: a string-literal key containing `{` or `}` must not shift
+        // split_args' depth so the set_item→index rewrite is skipped.
+        let mut statements = vec![r#"set_item(loc0, "a{", loc1);"#.to_string()];
+        HighLevelEmitter::rewrite_indexing_syntax(&mut statements);
+        assert_eq!(statements[0], r#"loc0["a{"] = loc1;"#);
     }
 }
