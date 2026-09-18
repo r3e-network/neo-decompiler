@@ -222,3 +222,51 @@ pub(in crate::decompiler::csharp) fn escape_csharp_string(value: &str) -> String
     }
     escaped
 }
+
+#[cfg(test)]
+mod tests {
+    use super::escape_csharp_string;
+
+    #[test]
+    fn escapes_quotes_and_backslashes() {
+        assert_eq!(escape_csharp_string("a\"b\\c"), "a\\\"b\\\\c");
+    }
+
+    #[test]
+    fn emits_standard_escape_sequences_for_control_characters() {
+        assert_eq!(escape_csharp_string("\0"), "\\0");
+        assert_eq!(escape_csharp_string("\u{0007}"), "\\a");
+        assert_eq!(escape_csharp_string("\u{0008}"), "\\b");
+        assert_eq!(escape_csharp_string("\u{000C}"), "\\f");
+        assert_eq!(escape_csharp_string("\n"), "\\n");
+        assert_eq!(escape_csharp_string("\r"), "\\r");
+        assert_eq!(escape_csharp_string("\t"), "\\t");
+        assert_eq!(escape_csharp_string("\u{000B}"), "\\v");
+    }
+
+    #[test]
+    fn escapes_line_separators_and_bidi_controls() {
+        // Mirror the JS security test: these must never survive as raw text,
+        // so generated C# stays single-line and directionally inert.
+        assert_eq!(escape_csharp_string("x\u{2028}y"), "x\\u2028y");
+        assert_eq!(escape_csharp_string("x\u{2029}y"), "x\\u2029y");
+        assert_eq!(escape_csharp_string("x\u{202E}y"), "x\\u202Ey");
+        assert_eq!(escape_csharp_string("x\u{200F}y"), "x\\u200Fy");
+        assert_eq!(escape_csharp_string("x\u{061C}y"), "x\\u061Cy");
+    }
+
+    #[test]
+    fn escapes_other_control_characters_as_unicode_escapes() {
+        // Printable characters pass through unchanged; lone controls are emitted
+        // as `\uXXXX`, matching the JS port.
+        assert_eq!(escape_csharp_string("abc"), "abc");
+        assert_eq!(escape_csharp_string("a\u{0003}b"), "a\\u0003b");
+        assert_eq!(escape_csharp_string("a\u{0080}b"), "a\\u0080b");
+        assert_eq!(escape_csharp_string("a\u{001F}b"), "a\\u001Fb");
+    }
+
+    #[test]
+    fn preserves_unicode_and_high_non_controls() {
+        assert_eq!(escape_csharp_string("你好 \u{1F600}"), "你好 \u{1F600}");
+    }
+}
