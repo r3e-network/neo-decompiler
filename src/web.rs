@@ -173,6 +173,7 @@ struct JsDecompileOptions {
     inline_single_use_temps: bool,
     emit_trace_comments: bool,
     typed_declarations: bool,
+    high_level_from_ir: bool,
     output_format: Option<String>,
 }
 
@@ -187,6 +188,7 @@ impl Default for JsDecompileOptions {
             inline_single_use_temps: defaults.inline_single_use_temps,
             emit_trace_comments: defaults.emit_trace_comments,
             typed_declarations: defaults.typed_declarations,
+            high_level_from_ir: defaults.high_level_from_ir,
             output_format: None,
         }
     }
@@ -271,6 +273,7 @@ pub fn decompile_report_wasm(
             inline_single_use_temps: options.inline_single_use_temps,
             emit_trace_comments: options.emit_trace_comments,
             typed_declarations: options.typed_declarations,
+            high_level_from_ir: options.high_level_from_ir,
             output_format,
         },
     )
