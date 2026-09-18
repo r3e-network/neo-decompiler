@@ -91,8 +91,10 @@ mod tests {
         for (idx, line) in stmts.iter().enumerate() {
             // Only single-`{`, zero-`}` openers are queried by the for-loop
             // pass (the `while … {` / `for (…) {` headers); the precompute is
-            // contracted to match `find_block_end` exactly for those.
-            if line.matches('{').count() == 1 && !line.contains('}') {
+            // contracted to match `find_block_end` exactly for those. Judge
+            // by brace_delta (not raw shape) so comment lines like `// {` are
+            // not mistaken for structural openers.
+            if HighLevelEmitter::brace_delta(line) == 1 {
                 assert_eq!(
                     ends[idx],
                     HighLevelEmitter::find_block_end(&stmts, idx),
@@ -155,6 +157,19 @@ mod tests {
         assert_matches_find_block_end(&[
             "while (t0 < 10) {",
             "    if t0 { goto label_3; }",
+            "    t0 = t0 + 1;",
+            "}",
+        ]);
+    }
+
+    #[test]
+    fn precompute_block_ends_matches_find_block_end_comment_braces() {
+        // Braces inside comments and string literals are ignored by
+        // `brace_delta`, so they must not break the header↔closer contract.
+        assert_matches_find_block_end(&[
+            "while (t0 < 10) {",
+            "    // {",
+            "    log(\"}\");",
             "    t0 = t0 + 1;",
             "}",
         ]);
