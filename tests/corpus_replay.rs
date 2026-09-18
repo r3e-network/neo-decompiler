@@ -297,6 +297,111 @@ fn decompile_all_artifacts_across_formats_without_panics() {
 }
 
 /// Smoke-test the parser directly on the nef corpus (mirrors fuzz_nef_parse).
+/// Deterministic byte generator (LCG) so the batch is reproducible in CI.
+struct Lcg(u64);
+
+impl Lcg {
+    fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0 >> 33
+    }
+
+    fn byte(&mut self) -> u8 {
+        self.next() as u8
+    }
+
+    fn index(&mut self, len: usize) -> usize {
+        if len == 0 {
+            0
+        } else {
+            (self.next() as usize) % len
+        }
+    }
+}
+
+/// Deterministically mutate committed raw scripts into malformed bytecode that
+/// exercises operand truncation, unknown opcodes, and pathological control
+/// flow through the disassemble + CFG fence (and the full decompile path).
+fn malformed_script_variants(script: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let mut variants: Vec<(String, Vec<u8>)> = Vec::new();
+    if script.is_empty() {
+        return variants;
+    }
+
+    // Truncated operands: every strict prefix of the script ends one instruction
+    // short of its operand, exercising UnexpectedEof paths in decode.
+    for len in (1..script.len()).step_by((script.len() / 64).max(1)) {
+        variants.push((format!("truncate@{len}"), script[..len].to_vec()));
+    }
+
+    let mut rng = Lcg(0x9E37_79B9_7F4A_7C15);
+    // Random byte flips in an otherwise valid script.
+    for i in 0..96 {
+        let mut mutated = script.to_vec();
+        let flips = 1 + (rng.next() as usize % 8);
+        for _ in 0..flips {
+            let pos = rng.index(mutated.len());
+            mutated[pos] ^= rng.byte();
+        }
+        variants.push((format!("flip#{i}"), mutated));
+    }
+    // Append a random tail (open jumps / operands past the intended end).
+    for i in 0..32 {
+        let mut mutated = script.to_vec();
+        let tail_len = 1 + (rng.next() as usize % 48);
+        for _ in 0..tail_len {
+            mutated.push(rng.byte());
+        }
+        variants.push((format!("tail#{i}"), mutated));
+    }
+    // Insert random bytes in the middle (splits instructions, alters offsets).
+    for i in 0..48 {
+        let mut mutated = script.to_vec();
+        let pos = rng.index(mutated.len());
+        let insert_len = 1 + (rng.next() as usize % 8);
+        let mut tail = Vec::with_capacity(insert_len);
+        for _ in 0..insert_len {
+            tail.push(rng.byte());
+        }
+        mutated.splice(pos..pos, tail);
+        variants.push((format!("insert#{i}"), mutated));
+    }
+    variants
+}
+
+#[test]
+fn programmatic_malformed_scripts_without_panics() {
+    let root = repo_root();
+    let (nef_files, _) = committed_fixtures(&root);
+    let seeds = committed_scripts(&nef_files);
+    assert!(
+        !seeds.is_empty(),
+        "no committed raw scripts to seed malformed batch"
+    );
+
+    let mut variants: Vec<(String, Vec<u8>)> = Vec::new();
+    for (i, script) in seeds.iter().enumerate() {
+        for (label, data) in malformed_script_variants(script) {
+            variants.push((format!("script#{i}:{label}"), data));
+        }
+    }
+
+    for (label, data) in &variants {
+        // Raw script fence: disassemble + CFG when disassembly succeeds.
+        run_labeled_target(label, "programmatic-malformed/raw", || {
+            run_target(data, Target::RawDecompile);
+        });
+        // Full NEF decompile on the raw bytes as a container (most fail parse,
+        // which is itself the parse-boundary coverage).
+        run_labeled_target(label, "programmatic-malformed/nef", || {
+            run_target(data, Target::NefDecompile);
+        });
+    }
+}
+
 #[test]
 fn nef_parser_corpus_smoke() {
     let root = repo_root();
