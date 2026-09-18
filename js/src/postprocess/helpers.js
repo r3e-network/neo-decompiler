@@ -36,6 +36,8 @@ export function braceDelta(line) {
       } else if (ch === quote) {
         inString = false;
       }
+    } else if (ch === "/" && line[i + 1] === "/") {
+      break;
     } else if (ch === '"' || ch === "'") {
       inString = true;
       quote = ch;
