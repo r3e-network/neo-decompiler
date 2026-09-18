@@ -39,3 +39,26 @@ fn extracts_if_condition() {
     assert_eq!(extract_if_condition("if foo && bar {"), Some("foo && bar"));
     assert_eq!(extract_if_condition("while x {"), None);
 }
+
+#[test]
+fn comment_brace_does_not_break_else_if_matching() {
+    // A comment line ending in `{` must not shift the matching-close search
+    // (mirrors the comment guard in overflow_collapse::find_matching_brace).
+    let mut statements = vec![
+        "if x > 0 {".to_string(),
+        "foo()".to_string(),
+        "}".to_string(),
+        "else {".to_string(),
+        "if x < 0 {".to_string(),
+        "    // note {".to_string(),
+        "bar()".to_string(),
+        "}".to_string(),
+        "}".to_string(),
+    ];
+    HighLevelEmitter::rewrite_else_if_chains(&mut statements);
+    let balance = statements
+        .iter()
+        .fold(0, |acc, s| acc + HighLevelEmitter::brace_delta(s));
+    assert_eq!(balance, 0, "unbalanced else-if rewrite: {statements:?}");
+    assert!(statements.iter().any(|s| s.contains("else if x < 0")));
+}

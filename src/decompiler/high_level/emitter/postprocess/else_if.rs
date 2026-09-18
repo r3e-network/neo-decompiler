@@ -43,6 +43,11 @@ impl HighLevelEmitter {
         let mut depth = 1;
         for (i, stmt) in statements.iter().enumerate().skip(start + 1) {
             let trimmed = stmt.trim();
+            // Skip comment lines so a `// {` note cannot shift the block found
+            // (mirrors overflow_collapse::find_matching_brace).
+            if trimmed.is_empty() || trimmed.starts_with("//") {
+                continue;
+            }
             // Close before open so a combined `} else {` line first closes the
             // current block (see overflow_collapse::find_matching_brace). For
             // open-only or close-only lines the order is irrelevant.
