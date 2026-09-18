@@ -3,6 +3,36 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.14.2] — 2026-09-18
+
+### Fixed
+
+- JS `computeBraceCloseLines`: counted bare braces while the matching depth
+  came from the quote/comment-aware `sourceBraceDelta`; a lone `{` inside a
+  string literal (e.g. `emit("{")`) collapsed a `for` initializer's scope and
+  left the loop variable undeclared (`CS0103`). The shared scan is now a single
+  `sourceBraces` generator used by both views.
+- JS `braceDelta` and Rust `brace_delta`: counted braces after a `//` comment
+  (JS) or inside string literals and comments (Rust), so `findBlockEnd` /
+  `find_block_end` could resolve a block to `-1` or the wrong closer.
+- Rust else-if matching: `find_matching_close` treated a `// note {` line as an
+  open brace, so `rewrite_else_if_chains` could delete the wrong closer and
+  leave unbalanced braces.
+- Rust `split_args`: counted `{`/`}` as structural depth without skipping
+  string literals, so a `set_item` argument like `"a{"` produced one merged
+  arg and silently skipped the container-index rewrite.
+
+### Added
+
+- Rust unit tests for `escape_csharp_string` mirroring the JS security suite
+  (quotes, control escapes, line separators and bidi controls, `\uXXXX`, and
+  printable Unicode preservation).
+- `programmatic_malformed_scripts_without_panics` corpus-replay gate:
+  deterministically mutated raw scripts (operand truncation, byte flips,
+  appended/inserted bytes) are pushed through disassemble + CFG and the full
+  decompile path under `catch_unwind`, without requiring `cargo-fuzz`.
+- `docs/audits/2026-09-18-verifiable-completion.md` acceptance record.
+
 ## [0.14.1] — 2026-09-11
 
 ### Fixed
