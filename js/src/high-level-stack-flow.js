@@ -87,10 +87,19 @@ export function restoreStackAtLabel(state, offset) {
     const shorter = state.stack.length < snapshot.length ? state.stack : snapshot;
     const longer = state.stack.length < snapshot.length ? snapshot : state.stack;
     if (isStackPrefix(shorter, longer) && longer.every(isSafeMergeValue)) {
-      if (state.stack.length < snapshot.length) {
-        state.stack.push(...snapshot.slice(state.stack.length));
+      // Validate this is actually a legitimate compiler-generated value selection
+      // pattern, not incompatible control flow with mismatched stack depths.
+      // Check: the depth difference should be exactly 1 (one selected value),
+      // and the extra value should be at the top of the stack.
+      const depthDiff = longer.length - shorter.length;
+      if (depthDiff === 1) {
+        // Single extra value: likely a valid value-selection pattern
+        if (state.stack.length < snapshot.length) {
+          state.stack.push(...snapshot.slice(state.stack.length));
+        }
+        return;
       }
-      return;
+      // Depth difference > 1: suspicious, fail closed to prevent misalignment
     }
     state.stack.length = 0;
     return;

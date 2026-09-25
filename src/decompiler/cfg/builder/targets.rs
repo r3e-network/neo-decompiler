@@ -63,6 +63,14 @@ impl<'a> CfgBuilder<'a> {
                     .map(|target| target as usize)
                     .filter(|target| self.offset_to_index.contains_key(target));
 
+                // Validate catch-before-finally ordering per Neo N3 VM spec
+                if let (Some(catch), Some(finally)) = (catch_target, finally_target) {
+                    if catch >= finally {
+                        // Invalid: catch handler must precede finally handler
+                        return None;
+                    }
+                }
+
                 Some((catch_target, finally_target))
             }
             OpCode::TryL => {
@@ -82,6 +90,14 @@ impl<'a> CfgBuilder<'a> {
                     .filter(|target| *target >= 0)
                     .map(|target| target as usize)
                     .filter(|target| self.offset_to_index.contains_key(target));
+
+                // Validate catch-before-finally ordering per Neo N3 VM spec
+                if let (Some(catch), Some(finally)) = (catch_target, finally_target) {
+                    if catch >= finally {
+                        // Invalid: catch handler must precede finally handler
+                        return None;
+                    }
+                }
 
                 Some((catch_target, finally_target))
             }

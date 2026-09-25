@@ -119,12 +119,16 @@ impl<'a> SsaBuilder<'a> {
             } else if matches!(op, OpCode::Convert | OpCode::Istype)
                 && target == Some(ValueType::Any)
             {
+                // StackItemType::Any is invalid for CONVERT and ISTYPE per Neo N3 VM spec.
+                // Don't create an IR node for this invalid operation.
                 record_incomplete_issue(
                     instr,
                     LoweringIssueKind::MissingOperandMetadata,
                     "StackItemType Any is invalid for CONVERT and ISTYPE",
                     state.issues,
                 );
+                // Early return to prevent invalid IR node creation
+                return None;
             }
         }
 
