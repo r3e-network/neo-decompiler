@@ -120,6 +120,7 @@ impl<'a> CfgBuilder<'a> {
             if let Some(block) = blocks.iter_mut().find(|block| block.id == endfinally_block) {
                 block.terminator = Terminator::EndFinally {
                     normal_continuations,
+                    exceptional_exit: None, // TODO: resolve exceptional exit path
                 };
             }
         }

@@ -46,6 +46,7 @@ impl<'a> CfgBuilder<'a> {
                 }
                 Terminator::EndFinally {
                     normal_continuations,
+                    ..
                 } => {
                     for continuation in normal_continuations {
                         cfg.add_edge(block.id, *continuation, EdgeKind::FinallyContinuation);

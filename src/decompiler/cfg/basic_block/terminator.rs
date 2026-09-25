@@ -54,10 +54,19 @@ pub enum Terminator {
         nonlocal: bool,
     },
     /// ENDFINALLY dispatches to the continuation saved by the entering ENDTRY.
-    /// An exceptional entry rethrows instead of taking any normal successor.
+    ///
+    /// Neo N3 VM ENDFINALLY has dual behavior:
+    /// - Normal entry: dispatch to saved continuation address
+    /// - Exceptional entry: rethrow the pending exception
+    ///
+    /// `normal_continuations` lists reachable blocks for normal dispatch.
+    /// `exceptional_exit` represents the implicit rethrow edge when entered with
+    /// a pending exception (typically the next outer handler or method exit).
     EndFinally {
         /// All normal continuations associated with this physical finally body.
         normal_continuations: Vec<BlockId>,
+        /// Optional exceptional exit (rethrow path). None means unresolved.
+        exceptional_exit: Option<BlockId>,
     },
     /// Unknown or unanalyzed terminator.
     Unknown,
@@ -96,7 +105,14 @@ impl Terminator {
             Terminator::EndTryFinally { finally_target, .. } => vec![*finally_target],
             Terminator::EndFinally {
                 normal_continuations,
-            } => normal_continuations.clone(),
+                exceptional_exit,
+            } => {
+                let mut successors = normal_continuations.clone();
+                if let Some(exit) = exceptional_exit {
+                    successors.push(*exit);
+                }
+                successors
+            }
             Terminator::Unknown => vec![],
         }
     }

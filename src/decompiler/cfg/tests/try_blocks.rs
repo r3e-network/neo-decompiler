@@ -74,6 +74,7 @@ fn endtry_routes_through_finally_to_the_natural_continuation() {
         endfinally.terminator,
         Terminator::EndFinally {
             ref normal_continuations,
+            ..
         } if normal_continuations == &[continuation]
     ));
     assert_eq!(cfg.successors(endtry.id), &[finally_target]);
@@ -108,6 +109,7 @@ fn nonlocal_finally_continuation_routes_to_its_explicit_target() {
         endfinally.terminator,
         Terminator::EndFinally {
             ref normal_continuations,
+            ..
         } if normal_continuations == &[BlockId::new(4)]
     ));
     assert_eq!(cfg.successors(endfinally.id), &[BlockId::new(4)]);
@@ -149,6 +151,7 @@ fn nested_endtry_at_inner_resume_boundary_routes_through_outer_finally() {
         inner_endfinally.terminator,
         Terminator::EndFinally {
             ref normal_continuations,
+            ..
         } if normal_continuations == &[outer_endtry.id]
     ));
     assert!(matches!(
@@ -163,6 +166,7 @@ fn nested_endtry_at_inner_resume_boundary_routes_through_outer_finally() {
         outer_endfinally.terminator,
         Terminator::EndFinally {
             ref normal_continuations,
+            ..
         } if normal_continuations == &[continuation]
     ));
     assert_eq!(cfg.successors(outer_endtry.id), &[outer_finally]);
@@ -365,6 +369,7 @@ fn shared_finally_dispatches_to_each_saved_normal_continuation() {
         endfinally.terminator,
         Terminator::EndFinally {
             ref normal_continuations,
+            ..
         } if normal_continuations == &[natural, nonlocal]
     ));
     assert_eq!(cfg.successors(endfinally.id), &[natural, nonlocal]);

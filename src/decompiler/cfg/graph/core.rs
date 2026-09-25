@@ -48,6 +48,7 @@ impl Cfg {
             &block.terminator,
             Terminator::EndFinally {
                 normal_continuations,
+                ..
             } if normal_continuations.is_empty()
         );
         if is_exit {
