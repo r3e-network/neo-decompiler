@@ -20,7 +20,7 @@ Comprehensive multi-agent review completed with 163 agents analyzing 83,380 line
 
 ## Applied Fixes
 
-### 1. TRY Opcode Validation (Medium → Fixed)
+### 1. TRY Opcode Validation (Medium → ✅ Fixed)
 **File:** `src/decompiler/cfg/builder/targets.rs:66, 91`
 
 **Issue:** TRY/TRYL opcodes didn't validate that catch handlers precede finally handlers per Neo N3 VM spec. Invalid structures were silently skipped.
@@ -40,7 +40,7 @@ if let (Some(catch), Some(finally)) = (catch_target, finally_target) {
 
 ---
 
-### 2. Stack Merge Validation (High → Fixed)
+### 2. Stack Merge Validation (High → ✅ Fixed)
 **File:** `js/src/high-level-stack-flow.js:89`
 
 **Issue:** `restoreStackAtLabel` allowed stack depth mismatches when shorter stack was a prefix of longer stack, accepting semantically invalid bytecode where paths with fundamentally different depths merge.
@@ -64,7 +64,7 @@ if (depthDiff === 1) {
 
 ---
 
-### 3. CONVERT/ISTYPE Invalid Type Handling (Medium → Fixed)
+### 3. CONVERT/ISTYPE Invalid Type Handling (Medium → ✅ Fixed)
 **File:** `src/decompiler/cfg/ssa/builder/instructions.rs:119`
 
 **Issue:** Code flagged `StackItemType::Any` as invalid for CONVERT/ISTYPE but still created IR nodes, leading to invalid IR in the pipeline.
@@ -90,7 +90,7 @@ if (depthDiff === 1) {
 
 ---
 
-### 4. Dependency Update (Low → Fixed)
+### 4. Dependency Update (Low → ✅ Fixed)
 **File:** `Cargo.lock`
 
 **Issue:** anyhow 1.0.102 had unsoundness advisory (RUSTSEC-2026-0190) for `Error::downcast_mut()`.
@@ -108,18 +108,23 @@ cargo update anyhow
 
 ### High Priority
 
-**5. SSA Optimizer Complexity (296-line function)**
+**5. SSA Optimizer Complexity (296-line function) → ✅ COMPLETED**
 - File: `src/decompiler/cfg/ssa/optimize.rs:45`
-- Impact: Maintenance blocker in critical decompilation path
-- Recommendation: Extract 5 separate optimization passes (constant folding, copy propagation, phi elimination, DCE, substitution)
-- Effort: 2-3 days
+- Status: **REFACTORED** (commit e412ae59)
+- Result: Decomposed into 7 focused passes in `optimize/passes.rs`
+- Tests: All 19 SSA optimizer tests passing ✓
+- Benefit: Each pass 50-80 lines with clear pre/postconditions
+- Effort: Completed
 
 ### Medium Priority
 
-**6. ENDFINALLY Exception Path Modeling**
+**6. ENDFINALLY Exception Path Modeling → ✅ COMPLETED**
 - File: `src/decompiler/cfg/basic_block/terminator.rs:65`
-- Impact: Dataflow analysis may miss exception propagation
-- Recommendation: Add `exceptional_exit: Option<BlockId>` field to model rethrow path
+- Status: **IMPLEMENTED** (commit f59b8c09)
+- Result: Added `exceptional_exit: Option<BlockId>` field
+- Tests: All 10 try_block tests passing ✓
+- Benefit: Dataflow analysis can now model exception propagation
+- Future work: Populate exceptional_exit during CFG construction
 
 **7. HighLevelEmitter God Object (37 fields)**
 - File: `src/decompiler/high_level/emitter/mod.rs:38`
