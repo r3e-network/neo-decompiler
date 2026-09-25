@@ -444,3 +444,147 @@ fn catch_endtry_defines_natural_continuation_when_try_body_throws() {
         } if target == continuation
     ));
 }
+
+#[test]
+fn try_rejects_catch_equal_to_finally() {
+    // TRY with catch=6, finally=6 (invalid: catch >= finally)
+    // The validation should reject this by returning None from try_targets,
+    // which results in a TryEntry with no catch/finally handlers
+    let instructions = vec![
+        make_instr(0, OpCode::Try, Some(Operand::Bytes(vec![6, 6]))),
+        make_instr(3, OpCode::Push1, None),
+        make_instr(4, OpCode::Ret, None),
+        make_instr(6, OpCode::Push2, None),
+        make_instr(7, OpCode::Ret, None),
+    ];
+
+    let cfg = CfgBuilder::new(&instructions).build();
+    let entry = cfg.entry_block().unwrap();
+
+    // When validation rejects catch >= finally, try_targets returns None,
+    // which becomes (None, None) in the terminator
+    match &entry.terminator {
+        Terminator::TryEntry {
+            catch_target,
+            finally_target,
+            ..
+        } => {
+            assert!(
+                catch_target.is_none() && finally_target.is_none(),
+                "Expected both catch and finally to be None for invalid TRY, got catch={:?}, finally={:?}",
+                catch_target,
+                finally_target
+            );
+        }
+        other => panic!("Expected TryEntry, got {:?}", other),
+    }
+}
+
+#[test]
+fn try_rejects_catch_greater_than_finally() {
+    // TRY with catch=10, finally=6 (invalid: catch > finally)
+    let instructions = vec![
+        make_instr(0, OpCode::Try, Some(Operand::Bytes(vec![10, 6]))),
+        make_instr(3, OpCode::Push1, None),
+        make_instr(4, OpCode::Ret, None),
+        make_instr(6, OpCode::Push2, None),
+        make_instr(7, OpCode::Ret, None),
+        make_instr(10, OpCode::Push3, None),
+        make_instr(11, OpCode::Ret, None),
+    ];
+
+    let cfg = CfgBuilder::new(&instructions).build();
+    let entry = cfg.entry_block().unwrap();
+
+    match &entry.terminator {
+        Terminator::TryEntry {
+            catch_target,
+            finally_target,
+            ..
+        } => {
+            assert!(
+                catch_target.is_none() && finally_target.is_none(),
+                "Expected both catch and finally to be None for invalid TRY, got catch={:?}, finally={:?}",
+                catch_target,
+                finally_target
+            );
+        }
+        other => panic!("Expected TryEntry, got {:?}", other),
+    }
+}
+
+#[test]
+fn tryl_rejects_catch_equal_to_finally() {
+    // TRYL with catch=11, finally=11 (invalid: catch >= finally)
+    let catch_bytes = 11i32.to_le_bytes();
+    let finally_bytes = 11i32.to_le_bytes();
+    let mut operand_bytes = Vec::new();
+    operand_bytes.extend_from_slice(&catch_bytes);
+    operand_bytes.extend_from_slice(&finally_bytes);
+
+    let instructions = vec![
+        make_instr(0, OpCode::TryL, Some(Operand::Bytes(operand_bytes))),
+        make_instr(5, OpCode::Push1, None),
+        make_instr(6, OpCode::Ret, None),
+        make_instr(11, OpCode::Push2, None),
+        make_instr(12, OpCode::Ret, None),
+    ];
+
+    let cfg = CfgBuilder::new(&instructions).build();
+    let entry = cfg.entry_block().unwrap();
+
+    match &entry.terminator {
+        Terminator::TryEntry {
+            catch_target,
+            finally_target,
+            ..
+        } => {
+            assert!(
+                catch_target.is_none() && finally_target.is_none(),
+                "Expected both catch and finally to be None for invalid TRYL, got catch={:?}, finally={:?}",
+                catch_target,
+                finally_target
+            );
+        }
+        other => panic!("Expected TryEntry, got {:?}", other),
+    }
+}
+
+#[test]
+fn tryl_rejects_catch_greater_than_finally() {
+    // TRYL with catch=15, finally=10 (invalid: catch > finally)
+    let catch_bytes = 15i32.to_le_bytes();
+    let finally_bytes = 10i32.to_le_bytes();
+    let mut operand_bytes = Vec::new();
+    operand_bytes.extend_from_slice(&catch_bytes);
+    operand_bytes.extend_from_slice(&finally_bytes);
+
+    let instructions = vec![
+        make_instr(0, OpCode::TryL, Some(Operand::Bytes(operand_bytes))),
+        make_instr(5, OpCode::Push1, None),
+        make_instr(6, OpCode::Ret, None),
+        make_instr(10, OpCode::Push2, None),
+        make_instr(11, OpCode::Ret, None),
+        make_instr(15, OpCode::Push3, None),
+        make_instr(16, OpCode::Ret, None),
+    ];
+
+    let cfg = CfgBuilder::new(&instructions).build();
+    let entry = cfg.entry_block().unwrap();
+
+    match &entry.terminator {
+        Terminator::TryEntry {
+            catch_target,
+            finally_target,
+            ..
+        } => {
+            assert!(
+                catch_target.is_none() && finally_target.is_none(),
+                "Expected both catch and finally to be None for invalid TRYL, got catch={:?}, finally={:?}",
+                catch_target,
+                finally_target
+            );
+        }
+        other => panic!("Expected TryEntry, got {:?}", other),
+    }
+}

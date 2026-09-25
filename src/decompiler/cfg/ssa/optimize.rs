@@ -16,10 +16,10 @@
 use std::collections::BTreeSet;
 
 #[cfg(test)]
-use std::collections::BTreeMap;
-#[cfg(test)]
 use crate::decompiler::cfg::BlockId;
 use crate::decompiler::ir::{BinOp, Literal, UnaryOp};
+#[cfg(test)]
+use std::collections::BTreeMap;
 
 use super::form::{SsaExpr, SsaForm, SsaStmt, UseSite};
 use super::variable::SsaVariable;

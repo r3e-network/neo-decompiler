@@ -3,6 +3,50 @@
 All notable changes to this project will be documented in this file. This
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.14.3] — 2026-09-25
+
+### Fixed
+
+- **TRY/TRYL opcode validation**: Added catch-before-finally ordering validation
+  per Neo N3 VM spec. Invalid try-catch-finally structures (where catch handler
+  offset >= finally handler offset) are now properly rejected instead of being
+  silently skipped, preventing malformed exception handling from entering the CFG.
+- **JS stack merge validation**: Restricted prefix-based stack merges to depth
+  difference of exactly 1, preventing value misalignment from incompatible control
+  flow paths. Compiler-generated value-selection patterns are preserved while
+  suspicious merges (depth difference > 1) fail closed.
+- **CONVERT/ISTYPE invalid type handling**: Added early return when
+  `StackItemType::Any` (0x00) is detected as the target type. This prevents
+  invalid IR nodes from entering the pipeline, as `Any` is not a valid target
+  type for these opcodes per Neo N3 VM specification.
+
+### Changed
+
+- **SSA optimizer refactoring**: Decomposed monolithic 296-line `one_round()`
+  function into 7 focused optimization passes with clear preconditions and
+  postconditions: dead phi elimination, substitution map building, trivial phi
+  elimination, substitution normalization, removable phi removal, substitution
+  application, and dead code elimination. Improves maintainability while
+  preserving functional equivalence (all 19 optimizer tests pass).
+- **ENDFINALLY exception path modeling**: Added `exceptional_exit: Option<BlockId>`
+  field to `Terminator::EndFinally` to explicitly model the rethrow path when
+  ENDFINALLY is entered with a pending exception. The CFG now accurately represents
+  both normal continuation dispatch and exceptional propagation paths, enabling
+  more accurate dataflow analysis through finally blocks.
+
+### Dependencies
+
+- Updated `anyhow` from 1.0.102 to 1.0.104 to address RUSTSEC-2026-0190
+  unsoundness advisory in `Error::downcast_mut()`.
+
+### Documentation
+
+- Added comprehensive review findings report (`REVIEW_FIXES.md`) documenting
+  163-agent multi-dimensional code review with adversarial verification.
+- Added session summary (`SESSION_SUMMARY.md`) with detailed metrics and validation
+  results.
+- Updated architecture documentation for SSA optimizer pass structure.
+
 ## [0.14.2] — 2026-09-18
 
 ### Fixed
