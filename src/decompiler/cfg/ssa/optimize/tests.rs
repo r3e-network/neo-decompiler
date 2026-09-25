@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use super::*;
 use crate::decompiler::cfg::ssa::{DominanceInfo, SsaBlock, SsaExpr, SsaStmt, SsaVariable};
 use crate::decompiler::cfg::{BlockId, Cfg};
