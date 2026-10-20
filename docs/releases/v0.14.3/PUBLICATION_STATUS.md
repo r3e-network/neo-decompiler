@@ -1,6 +1,20 @@
 # Release v0.14.3 - Publication Status
 
-## ✅ COMPLETED
+> **Historical note.** This document is the snapshot taken while the release
+> was still in progress. The manual steps listed below were completed later
+> the same day, and the release machinery defects that made them necessary
+> were fixed afterwards. The final state of every artifact:
+>
+> | Artifact | State |
+> |---|---|
+> | crates.io `neo-decompiler 0.14.3` | ✅ published |
+> | npm `neo-decompiler-web 0.14.3` | ✅ published |
+> | npm `neo-decompiler-js 2.1.3` | ✅ published |
+> | GitHub Release `v0.14.3` | ✅ published |
+>
+> See `docs/releases/v0.14.4/PUBLICATION_STATUS.md` for the current release.
+
+## ✅ COMPLETED (as recorded at the time of writing)
 
 ### Git Repository
 - [x] **Commits pushed to GitHub** - 9 commits pushed successfully

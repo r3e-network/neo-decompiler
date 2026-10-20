@@ -79,6 +79,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Documentation
 
+- Added the v0.14.4 publication record
+  (`docs/releases/v0.14.4/PUBLICATION_STATUS.md`) with the verification
+  matrix, the end-to-end check of the published WebAssembly package, and the
+  defects found and fixed during the release.
+- Marked the v0.14.3 publication status as a historical snapshot: the manual
+  steps it listed were completed later that day.
 - Moved the v0.14.3 release notes from the repository root into
   `docs/releases/v0.14.3/`, and the output-quality comparison script into
   `tools/`. The script now resolves the repository root from its own
