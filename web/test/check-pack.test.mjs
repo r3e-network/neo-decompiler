@@ -148,7 +148,14 @@ function buildFixture({ extraFile = false } = {}) {
   }
 
   const archive = join(root, "neo-decompiler-web-1.2.3.tgz");
-  execFileSync("tar", ["--format=ustar", "-czf", archive, "-C", join(root, "staging"), "package"]);
+  // The archive and the staging directory are passed as relative paths with
+  // the working directory set to the fixture root. GNU tar reads a colon
+  // inside a path as the `host:path` separator of the remote-archive syntax,
+  // so a Windows drive letter ("C:\...") would make it try to reach a remote
+  // host and fail.
+  execFileSync("tar", ["--format=ustar", "-czf", "neo-decompiler-web-1.2.3.tgz", "-C", "staging", "package"], {
+    cwd: root,
+  });
   return { archive, root };
 }
 

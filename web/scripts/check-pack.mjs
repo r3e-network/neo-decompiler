@@ -438,7 +438,15 @@ export function verifyPackedTarball(inputPath) {
   try {
     // Extract the exact bytes that passed preflight, avoiding a path-swap race
     // between validation and the external tar invocation.
-    execFileSync("tar", ["-xzf", "-", "-C", temporaryRoot], {
+    //
+    // The destination is passed as the working directory rather than a `-C`
+    // argument. GNU tar reads a colon inside a path as the `host:path`
+    // separator of the remote-archive syntax, so a Windows drive letter
+    // ("C:\...") makes it try to reach a remote host and fail with
+    // "Cannot connect to C: resolve failed". The working directory is never
+    // interpreted by tar, so it works on every platform.
+    execFileSync("tar", ["-xzf", "-"], {
+      cwd: temporaryRoot,
       input: archiveBytes,
       stdio: "pipe",
       maxBuffer: 1024 * 1024,
