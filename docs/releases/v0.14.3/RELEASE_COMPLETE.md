@@ -116,8 +116,8 @@ npm publish
 - ✅ `CHANGELOG.md` - Updated with v0.14.3 section
 - ✅ `REVIEW_FIXES.md` - Comprehensive review findings (211 lines)
 - ✅ `SESSION_SUMMARY.md` - Detailed session report (253 lines)
-- ✅ `RELEASE_NOTES_v0.14.3.md` - User-facing release notes (180 lines)
-- ✅ `RELEASE_CHECKLIST_v0.14.3.md` - Publication checklist (93 lines)
+- ✅ `RELEASE_NOTES.md` - User-facing release notes (180 lines)
+- ✅ `RELEASE_CHECKLIST.md` - Publication checklist (93 lines)
 
 ---
 
@@ -149,7 +149,7 @@ npm publish
 
 **Title:** `v0.14.3 - Correctness & Maintainability Improvements`
 
-**Description:** Copy from `RELEASE_NOTES_v0.14.3.md`
+**Description:** Copy from `RELEASE_NOTES.md`
 
 **Highlights:**
 - 🐛 Fixed 3 correctness bugs (TRY validation, stack merge, CONVERT/ISTYPE)
@@ -197,7 +197,7 @@ The Neo N3 Decompiler v0.14.3 is **ready for publication**.
 All code changes are validated, documented, and tested. Simply push the commits and tags, then publish to package registries.
 
 **Next Steps:**
-1. Review `RELEASE_CHECKLIST_v0.14.3.md` for manual steps
+1. Review `RELEASE_CHECKLIST.md` for manual steps
 2. Push to GitHub: `git push origin master && git push origin v0.14.3`
 3. Create GitHub release from tag
 4. Publish to crates.io: `cargo publish`

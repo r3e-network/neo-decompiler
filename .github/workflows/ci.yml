@@ -15,6 +15,30 @@ permissions:
   contents: read
 
 jobs:
+  release-metadata:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # This gate is deliberately its own job and deliberately cheap. It needs
+    # no toolchain, no build and no network, so it reaches a verdict in
+    # seconds. When it lived inside the web-package job it sat behind slow
+    # steps, and a failure upstream skipped it entirely: the v0.14.3 tag was
+    # cut with a Web package version that no longer matched the crate, and
+    # the mismatch was never reported because the check that would have
+    # caught it never ran.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+      - name: Verify release metadata consistency
+        # The crate version is the authoritative release identity; the Web
+        # package version is derived from it and the JS package must record
+        # its Rust counterpart. Drift here publishes a release whose parts
+        # disagree, so this fails closed.
+        run: node tools/ci/check-release-metadata.mjs
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -315,12 +339,15 @@ jobs:
       - name: Install web dependencies
         working-directory: web
         run: npm ci --ignore-scripts
+      - name: Verify web package version sync
+        # Runs before the slow test and build steps. When it ran last, a
+        # failing test marked the job red and skipped this check, hiding the
+        # very mismatch that must block a release.
+        working-directory: web
+        run: npm run version:check
       - name: Run web package tests
         working-directory: web
         run: npm test
-      - name: Verify web package version sync
-        working-directory: web
-        run: npm run version:check
       - name: Verify web package tarball contents
         working-directory: web
         run: npm run verify:pack

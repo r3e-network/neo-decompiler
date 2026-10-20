@@ -1,12 +1,29 @@
 #!/bin/bash
-# Compare decompiled output quality with and without optimization
+# Compare decompiled output quality with and without optimization.
+#
+# This script must run from the repository root: it reads the release binary
+# and the pinned devpack corpus by repository-relative path. Resolve the
+# repository root from this script's own location so the script works from
+# any working directory.
+
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
 
 echo "======================================================================"
 echo "Output Quality Comparison: Before vs After Refactoring"
 echo "======================================================================"
 echo ""
 
-DECOMPILER="./target/release/neo-decompiler.exe"
+DECOMPILER="./target/release/neo-decompiler"
+if [[ ! -x "${DECOMPILER}" ]]; then
+    DECOMPILER="./target/release/neo-decompiler.exe"
+fi
+if [[ ! -x "${DECOMPILER}" ]]; then
+    echo "Release binary not found. Run 'cargo build --locked --release' first." >&2
+    exit 1
+fi
 
 echo "Testing multiple contracts to show optimization impact..."
 echo ""
@@ -74,12 +91,22 @@ echo ""
 echo "Running all SSA optimization unit tests one more time..."
 TEST_OUTPUT=$(cargo test --release --lib cfg::ssa::optimize 2>&1)
 
-if echo "$TEST_OUTPUT" | grep -q "test result: ok. 19 passed"; then
-    echo "✓ All 19 unit tests PASSED"
+# Match on the suite outcome rather than a hard-coded test count: the count
+# grows as the optimizer gains passes, and a stale number here would report
+# a failure that does not exist.
+if echo "$TEST_OUTPUT" | grep -q "test result: ok"; then
+    PASSED_COUNT=$(echo "$TEST_OUTPUT" | grep -o "test result: ok\. [0-9]* passed" | grep -o "[0-9]*" | head -1)
+    echo "✓ All ${PASSED_COUNT} optimizer unit tests PASSED"
     echo ""
     echo "Specific tests that verify correctness:"
     echo "$TEST_OUTPUT" | grep "test decompiler::cfg::ssa::optimize::tests::" | head -10 | sed 's/test /  ✓ /'
-    echo "  ... and 9 more tests"
+    if [[ "${PASSED_COUNT:-0}" -gt 10 ]]; then
+        echo "  ... and $((PASSED_COUNT - 10)) more tests"
+    fi
+else
+    echo "✗ The optimizer unit tests did not report success" >&2
+    echo "$TEST_OUTPUT" | grep -E "test result:|error\[|panicked" | head -10 >&2
+    exit 1
 fi
 
 echo ""
@@ -111,7 +138,7 @@ echo "   - Real contracts decompile successfully"
 echo "   - Output quality is high"
 echo ""
 echo "Evidence:"
-echo "  • 19/19 unit tests pass"
+echo "  • Every optimizer unit test passes"
 echo "  • Real contracts decompile with optimized SSA"
 echo "  • C# output is clean and readable"
 echo "  • Refactoring maintained correctness"

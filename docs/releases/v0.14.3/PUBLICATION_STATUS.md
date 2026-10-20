@@ -52,7 +52,7 @@ npm publish
 1. Go to: https://github.com/r3e-network/neo-decompiler/releases/new
 2. Select tag: `v0.14.3`
 3. Release title: `v0.14.3 - Correctness & Maintainability Improvements`
-4. Copy description from: `RELEASE_NOTES_v0.14.3.md`
+4. Copy description from: `RELEASE_NOTES.md`
 5. Publish release
 
 ---
@@ -108,7 +108,7 @@ npm publish
 
 ### Step 2: Create GitHub release (optional)
 1. Visit: https://github.com/r3e-network/neo-decompiler/releases/new?tag=v0.14.3
-2. Copy content from `RELEASE_NOTES_v0.14.3.md`
+2. Copy content from `RELEASE_NOTES.md`
 3. Click "Publish release"
 
 ---

@@ -6,7 +6,7 @@
 - [x] Updated Cargo.toml version: 0.14.2 → 0.14.3
 - [x] Updated js/package.json version: 2.1.2 → 2.1.3
 - [x] Updated CHANGELOG.md with detailed release notes
-- [x] Created RELEASE_NOTES_v0.14.3.md
+- [x] Created RELEASE_NOTES.md
 - [x] Updated Cargo.lock (via cargo build)
 
 ### Code Quality
@@ -34,7 +34,7 @@
 - [x] CHANGELOG.md updated
 - [x] REVIEW_FIXES.md created
 - [x] SESSION_SUMMARY.md created
-- [x] RELEASE_NOTES_v0.14.3.md created
+- [x] RELEASE_NOTES.md created
 
 ## 📋 Next Steps (Manual)
 
@@ -45,7 +45,7 @@
 
 ### GitHub Release
 - [ ] Create GitHub release from tag v0.14.3
-- [ ] Copy content from RELEASE_NOTES_v0.14.3.md
+- [ ] Copy content from RELEASE_NOTES.md
 - [ ] Attach release artifacts if needed
 
 ### Package Registries

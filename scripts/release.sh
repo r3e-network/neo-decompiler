@@ -41,24 +41,31 @@ fi
 echo "Step 1: Checking formatting..."
 cargo fmt --all -- --check
 
-echo "Step 2: Running clippy..."
+echo "Step 2: Verifying release metadata consistency..."
+# The crate version is the authoritative release identity. Publishing with a
+# Web package version or a JS version mapping that disagrees with it ships a
+# release whose parts contradict each other, and neither crates.io nor npm
+# can be corrected afterwards.
+node tools/ci/check-release-metadata.mjs
+
+echo "Step 3: Running clippy..."
 cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo clippy --locked --all-targets --no-default-features -- -D warnings
 
-echo "Step 3: Running tests..."
+echo "Step 4: Running tests..."
 cargo test --locked --all-features
 cargo test --locked --no-default-features
 
-echo "Step 4: Running benchmarks..."
+echo "Step 5: Running benchmarks..."
 cargo bench --locked
 
-echo "Step 5: Building release..."
+echo "Step 6: Building release..."
 cargo build --locked --release
 
-echo "Step 6: Generating docs..."
+echo "Step 7: Generating docs..."
 RUSTDOCFLAGS="${RUSTDOCFLAGS:-} -D warnings" cargo doc --locked --no-deps
 
-echo "Step 7: Checking the JavaScript packages..."
+echo "Step 8: Checking the JavaScript packages..."
 npm --prefix js test
 npm --prefix web ci --ignore-scripts
 npm --prefix web run version:check
@@ -66,7 +73,7 @@ npm --prefix web test
 npm --prefix web run verify:pack
 npm --prefix web run test:wasm
 
-echo "Step 8: Checking the crates.io package..."
+echo "Step 9: Checking the crates.io package..."
 cargo package --locked
 cargo publish --locked --dry-run
 

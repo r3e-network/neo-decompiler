@@ -41,10 +41,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Documentation
 
-- Added comprehensive review findings report (`REVIEW_FIXES.md`) documenting
-  163-agent multi-dimensional code review with adversarial verification.
-- Added session summary (`SESSION_SUMMARY.md`) with detailed metrics and validation
-  results.
+- Added comprehensive review findings report (`docs/releases/v0.14.3/REVIEW_FIXES.md`)
+  documenting 163-agent multi-dimensional code review with adversarial verification.
+- Added session summary (`docs/releases/v0.14.3/SESSION_SUMMARY.md`) with detailed
+  metrics and validation results.
 - Updated architecture documentation for SSA optimizer pass structure.
 
 ## [0.14.2] — 2026-09-18

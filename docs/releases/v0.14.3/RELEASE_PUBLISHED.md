@@ -108,10 +108,10 @@ All documentation is available in the repository:
 - **CHANGELOG.md** - Version history and changes
 - **REVIEW_FIXES.md** - Detailed review findings (211 lines)
 - **SESSION_SUMMARY.md** - Complete session report (253 lines)
-- **RELEASE_NOTES_v0.14.3.md** - User-facing release notes (180 lines)
-- **RELEASE_CHECKLIST_v0.14.3.md** - Publication checklist (93 lines)
-- **PUBLICATION_STATUS_v0.14.3.md** - Publication progress (140 lines)
-- **RELEASE_COMPLETE_v0.14.3.md** - Completion summary (210 lines)
+- **RELEASE_NOTES.md** - User-facing release notes (180 lines)
+- **RELEASE_CHECKLIST.md** - Publication checklist (93 lines)
+- **PUBLICATION_STATUS.md** - Publication progress (140 lines)
+- **RELEASE_COMPLETE.md** - Completion summary (210 lines)
 
 ---
 
@@ -137,7 +137,7 @@ All documentation is available in the repository:
 **GitHub Release Page** (Recommended for visibility):
 1. Visit: https://github.com/r3e-network/neo-decompiler/releases/new?tag=v0.14.3
 2. Title: `v0.14.3 - Correctness & Maintainability Improvements`
-3. Copy content from: `RELEASE_NOTES_v0.14.3.md`
+3. Copy content from: `RELEASE_NOTES.md`
 4. Publish release
 
 This creates a user-friendly release page with formatted notes.

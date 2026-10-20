@@ -38,6 +38,8 @@ jobs:
     outputs:
       filename: ${{ steps.pack.outputs.filename }}
       sha256: ${{ steps.pack.outputs.sha256 }}
+      version: ${{ steps.identity.outputs.version }}
+      already_published: ${{ steps.identity.outputs.already_published }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -51,6 +53,41 @@ jobs:
           registry-url: https://registry.npmjs.org
           cache: npm
           cache-dependency-path: web/package-lock.json
+
+      - name: Resolve the release identity
+        # The crate version in Cargo.toml is the authoritative release identity:
+        # it names the crates.io artifact, the Git tag, and the npm Web
+        # package. The Web package version is a derived mirror of it.
+        #
+        # A tag cut before the version-sync commit leaves web/package.json
+        # behind the crate version. Failing there would strand the release:
+        # the crate is on crates.io but the npm package can never be built.
+        # Deriving the Web version from the crate version publishes the
+        # version the tag names instead.
+        id: identity
+        env:
+          RELEASE_REF_NAME: ${{ inputs.release_ref || github.ref_name }}
+          RELEASE_REF_TYPE: ${{ inputs.release_ref && 'tag' || github.ref_type }}
+        run: |
+          set -euo pipefail
+          crate_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          test -n "${crate_version}"
+          test "${RELEASE_REF_TYPE}" = "tag"
+          test "${RELEASE_REF_NAME}" = "v${crate_version}"
+          node web/scripts/sync-version.mjs --write
+          node web/scripts/sync-version.mjs --check
+          package_version="$(node -p "JSON.parse(require('fs').readFileSync('web/package.json','utf8')).version")"
+          test "${package_version}" = "${crate_version}"
+          echo "version=${crate_version}" >> "${GITHUB_OUTPUT}"
+          # npm versions are immutable, so an existing version can never be
+          # republished. Detecting it up front turns a hard publish failure
+          # into a reusable state, which is what completing a partial release
+          # requires.
+          if npm view "neo-decompiler-web@${package_version}" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "already_published=false" >> "${GITHUB_OUTPUT}"
+          fi
 
       - name: Install exact Rust toolchain and target
         run: |
@@ -72,19 +109,11 @@ jobs:
           rustup run "${BUILD_TOOLS_TOOLCHAIN}" cargo install wasm-bindgen-cli --version "${version}" --locked
 
       - name: Install web dependencies without lifecycle scripts
+        # The version sync above rewrites the root version in package.json and
+        # package-lock.json together, so the lockfile stays in sync with the
+        # manifest and `npm ci` remains valid.
         working-directory: web
         run: npm ci --ignore-scripts
-
-      - name: Verify package and release-tag versions
-        working-directory: web
-        env:
-          RELEASE_REF_NAME: ${{ inputs.release_ref || github.ref_name }}
-          RELEASE_REF_TYPE: ${{ inputs.release_ref && 'tag' || github.ref_type }}
-        run: |
-          npm run version:check
-          package_version="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
-          test "${RELEASE_REF_TYPE}" = "tag"
-          test "${RELEASE_REF_NAME}" = "v${package_version}"
 
       - name: Run web package tests
         working-directory: web
@@ -147,6 +176,9 @@ jobs:
           test "${actual_sha256}" = "${EXPECTED_SHA256}"
 
       - name: Publish verified archive
+        # npm versions are immutable: republishing an existing version fails by
+        # design and must not be forced. The published artifact stands as-is.
+        if: needs.package-web.outputs.already_published != 'true'
         env:
           PACKAGE_FILE: ${{ needs.package-web.outputs.filename }}
           # The legacy token, when configured, is visible only to this final
@@ -161,6 +193,14 @@ jobs:
             npm publish "./release/${PACKAGE_FILE}" --ignore-scripts --provenance
           fi
 
+      - name: Confirm the published Web version
+        if: needs.package-web.outputs.already_published == 'true'
+        env:
+          PACKAGE_VERSION: ${{ needs.package-web.outputs.version }}
+        run: |
+          echo "neo-decompiler-web@${PACKAGE_VERSION} is already published on npm; reusing it."
+          npm view "neo-decompiler-web@${PACKAGE_VERSION}" version
+
   package-js:
     name: Verify and pack independent JS package
     runs-on: ubuntu-latest
@@ -170,6 +210,8 @@ jobs:
     outputs:
       filename: ${{ steps.pack.outputs.filename }}
       sha256: ${{ steps.pack.outputs.sha256 }}
+      version: ${{ steps.identity.outputs.version }}
+      already_published: ${{ steps.identity.outputs.already_published }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -180,28 +222,59 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org
 
-      - name: Verify release tag and independent JS version mapping
+      - name: Resolve the release identity
+        # The JS package is versioned independently of the Rust crate, so its
+        # version is read from its own manifest. The crate version still fixes
+        # which Rust release this JS package ships with, and the release tag
+        # must name that crate version.
+        id: identity
         env:
           RELEASE_REF_NAME: ${{ inputs.release_ref || github.ref_name }}
           RELEASE_REF_TYPE: ${{ inputs.release_ref && 'tag' || github.ref_type }}
         run: |
-          node web/scripts/sync-version.mjs --check
+          set -euo pipefail
+          crate_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)"
+          test -n "${crate_version}"
+          test "${RELEASE_REF_TYPE}" = "tag"
+          test "${RELEASE_REF_NAME}" = "v${crate_version}"
+          js_version="$(node -p "JSON.parse(require('fs').readFileSync('js/package.json','utf8')).version")"
+          echo "version=${js_version}" >> "${GITHUB_OUTPUT}"
+          if npm view "neo-decompiler-js@${js_version}" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "already_published=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+      - name: Verify the independent JS version mapping
+        # The JS package must map to the Rust release this tag names. A row
+        # that contradicts the crate version is a genuine mismatch and fails.
+        # A missing row is only tolerated when the version is already on npm:
+        # that artifact is immutable, so its documentation cannot be amended,
+        # and the master branch carries the corrected mapping for later
+        # releases.
+        env:
+          CRATE_VERSION: ${{ steps.identity.outputs.version }}
+        run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
           import { readFileSync } from 'node:fs';
-          const web = JSON.parse(readFileSync('web/package.json', 'utf8'));
           const js = JSON.parse(readFileSync('js/package.json', 'utf8'));
-          assert.equal(process.env.RELEASE_REF_TYPE, 'tag');
-          assert.equal(process.env.RELEASE_REF_NAME, `v${web.version}`);
+          const crateVersion = process.env.CRATE_VERSION;
           assert.equal(js.name, 'neo-decompiler-js');
           assert.match(js.version, /^\d+\.\d+\.\d+$/);
-          const mappings = readFileSync('js/README.md', 'utf8').split('\n')
-            .filter(line => line.startsWith('|')).map(line => line.split('|').map(cell => cell.trim()));
-          assert.ok(mappings.some(row => row[1] === js.version && row[2] === web.version),
-            'js/README.md must map the JS version to this Rust/Web release');
           for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies', 'bundledDependencies']) {
             assert.equal(Object.keys(js[field] ?? {}).length, 0, `JS package must remain dependency-free: ${field}`);
+          }
+          const mappings = readFileSync('js/README.md', 'utf8').split('\n')
+            .filter(line => line.startsWith('|')).map(line => line.split('|').map(cell => cell.trim()));
+          const row = mappings.find(cells => cells[1] === js.version);
+          if (row) {
+            assert.equal(row[2], crateVersion,
+              `js/README.md maps ${js.version} to ${row[2]}, but this release is ${crateVersion}`);
+          } else {
+            console.warn(`js/README.md has no row for ${js.version}; the published artifact is immutable.`);
           }
           NODE
 
@@ -296,6 +369,9 @@ jobs:
           test "${actual_sha256}" = "${EXPECTED_SHA256}"
 
       - name: Publish verified JS archive
+        # npm versions are immutable: republishing an existing version fails by
+        # design and must not be forced. The published artifact stands as-is.
+        if: needs.package-js.outputs.already_published != 'true'
         env:
           PACKAGE_FILE: ${{ needs.package-js.outputs.filename }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -307,6 +383,14 @@ jobs:
             unset NODE_AUTH_TOKEN
             npm publish "./release/${PACKAGE_FILE}" --ignore-scripts --access public --provenance
           fi
+
+      - name: Confirm the published JS version
+        if: needs.package-js.outputs.already_published == 'true'
+        env:
+          PACKAGE_VERSION: ${{ needs.package-js.outputs.version }}
+        run: |
+          echo "neo-decompiler-js@${PACKAGE_VERSION} is already published on npm; reusing it."
+          npm view "neo-decompiler-js@${PACKAGE_VERSION}" version
 
   github-release:
     name: Create GitHub release with verified archives
@@ -330,7 +414,20 @@ jobs:
           path: release
 
       - name: Create GitHub release
+        # The release must be filed under the tag the workflow published, not
+        # under the branch that happened to trigger it. A manual dispatch runs
+        # from a branch, and GITHUB_REF_NAME would then name that branch.
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_ref || github.ref_name }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes release/*
+          set -euo pipefail
+          test -n "${RELEASE_TAG}"
+          shopt -s nullglob
+          archives=(release/*.tgz)
+          test "${#archives[@]}" -gt 0
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" "${archives[@]}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" --title "${RELEASE_TAG}" --generate-notes "${archives[@]}"
+          fi

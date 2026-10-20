@@ -75,21 +75,28 @@ try {
     Write-Host "Step 1: Checking formatting..." -ForegroundColor Yellow
     Invoke-Native "cargo fmt" { cargo fmt --all -- --check }
 
-    Write-Host "Step 2: Running clippy..." -ForegroundColor Yellow
+    Write-Host "Step 2: Verifying release metadata consistency..." -ForegroundColor Yellow
+    # The crate version is the authoritative release identity. Publishing with
+    # a Web package version or a JS version mapping that disagrees with it
+    # ships a release whose parts contradict each other, and neither
+    # crates.io nor npm can be corrected afterwards.
+    Invoke-Native "release metadata check" { node tools/ci/check-release-metadata.mjs }
+
+    Write-Host "Step 3: Running clippy..." -ForegroundColor Yellow
     Invoke-Native "cargo clippy" { cargo clippy --locked --all-targets --all-features -- -D warnings }
     Invoke-Native "cargo clippy --no-default-features" { cargo clippy --locked --all-targets --no-default-features -- -D warnings }
 
-    Write-Host "Step 3: Running tests..." -ForegroundColor Yellow
+    Write-Host "Step 4: Running tests..." -ForegroundColor Yellow
     Invoke-Native "cargo test" { cargo test --locked --all-features }
     Invoke-Native "cargo test --no-default-features" { cargo test --locked --no-default-features }
 
-    Write-Host "Step 4: Running benchmarks..." -ForegroundColor Yellow
+    Write-Host "Step 5: Running benchmarks..." -ForegroundColor Yellow
     Invoke-Native "cargo bench" { cargo bench --locked }
 
-    Write-Host "Step 5: Building release..." -ForegroundColor Yellow
+    Write-Host "Step 6: Building release..." -ForegroundColor Yellow
     Invoke-Native "cargo build --release" { cargo build --locked --release }
 
-    Write-Host "Step 6: Generating docs..." -ForegroundColor Yellow
+    Write-Host "Step 7: Generating docs..." -ForegroundColor Yellow
     $previousRustdocFlags = $env:RUSTDOCFLAGS
     try {
         $env:RUSTDOCFLAGS = "$previousRustdocFlags -D warnings".Trim()
@@ -98,7 +105,7 @@ try {
         $env:RUSTDOCFLAGS = $previousRustdocFlags
     }
 
-    Write-Host "Step 7: Checking the JavaScript packages..." -ForegroundColor Yellow
+    Write-Host "Step 8: Checking the JavaScript packages..." -ForegroundColor Yellow
     Invoke-Native "standalone JavaScript package tests" { npm --prefix js test }
     Invoke-Native "npm ci" { npm --prefix web ci --ignore-scripts }
     Invoke-Native "web package version check" { npm --prefix web run version:check }
@@ -106,7 +113,7 @@ try {
     Invoke-Native "build and verify web archive" { npm --prefix web run verify:pack }
     Invoke-Native "real WebAssembly report APIs" { npm --prefix web run test:wasm }
 
-    Write-Host "Step 8: Checking the crates.io package..." -ForegroundColor Yellow
+    Write-Host "Step 9: Checking the crates.io package..." -ForegroundColor Yellow
     Invoke-Native "cargo package" { cargo package --locked }
     Invoke-Native "cargo publish --dry-run" { cargo publish --locked --dry-run }
 
