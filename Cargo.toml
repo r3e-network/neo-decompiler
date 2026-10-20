@@ -82,3 +82,13 @@ wasm-opt = false
 
 [profile.bench]
 inherits = "release"
+# The release profile aborts on panic, but the benchmark profile must not.
+# Cargo builds the benchmark harness itself with the unwinding strategy
+# while it builds the harness dependencies with the profile's own panic
+# setting, so inheriting "abort" mixes the two strategies and the link
+# fails with "crate X requires panic strategy `abort` which is incompatible
+# with this crate's strategy of `unwind`". Cargo used to force every
+# dependency to unwind while building a benchmark, which hid the conflict;
+# that no longer holds on current toolchains, so the setting is stated
+# explicitly here. Keep the release optimizations, but unwind.
+panic = "unwind"
