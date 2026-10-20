@@ -19,14 +19,20 @@ impl StatementRenderer<'_> {
 
     pub(super) fn render_for_update(&self, expression: &Expr) -> String {
         match expression {
+            // A postfix increment needs an assignable target; a literal has
+            // none, so it falls back to the arithmetic spelling.
             Expr::Unary {
                 op: UnaryOp::Inc,
                 operand,
-            } => format!("{}++", render_expr(operand, &self.expressions)),
+            } if is_assignable_operand(operand) => {
+                format!("{}++", render_expr(operand, &self.expressions))
+            }
             Expr::Unary {
                 op: UnaryOp::Dec,
                 operand,
-            } => format!("{}--", render_expr(operand, &self.expressions)),
+            } if is_assignable_operand(operand) => {
+                format!("{}--", render_expr(operand, &self.expressions))
+            }
             _ => self
                 .render_expression_statement(expression)
                 .trim_end_matches(';')
@@ -293,4 +299,13 @@ impl StatementRenderer<'_> {
             })
             .collect()
     }
+}
+
+/// Whether the expression names a storage location a postfix increment can
+/// be applied to. A literal has none, so `3++` is never emitted.
+fn is_assignable_operand(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Variable(_) | Expr::Member { .. } | Expr::Index { .. }
+    )
 }

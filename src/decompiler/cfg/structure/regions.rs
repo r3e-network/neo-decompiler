@@ -117,6 +117,19 @@ impl<'a> StructCtx<'a> {
                 break;
             }
 
+            // A header that branches back to itself (`BB -> BB`) carries both
+            // the loop body and the bottom test in one block. The generic
+            // `while` path would lift the header's statements out of the
+            // loop and freeze the condition at its first value, so the
+            // self-loop is recovered as a do-while first.
+            if self.loop_headers.contains(&bid) {
+                if let Some(exit) = self.structure_self_loop_dowhile(&mut out, bid) {
+                    visited.insert(bid);
+                    cur = Some(exit);
+                    continue;
+                }
+            }
+
             // do-while: a loop header whose own terminator is NOT a Branch (the
             // test sits at the bottom, on the latch). Detect it at the header so
             // the whole body is collected before the test, then resume at the

@@ -455,6 +455,15 @@ impl<'a> StructCtx<'a> {
                     continue;
                 }
             }
+            if self.loop_headers.contains(&bid) {
+                // A `BB -> BB` header carries both the loop body and the
+                // bottom test in one block; recovering it as a do-while keeps
+                // the update inside the loop.
+                if let Some(exit) = self.structure_self_loop_dowhile(&mut out, bid) {
+                    cur = Some(exit);
+                    continue;
+                }
+            }
             if matches!(self.terminator(bid), Terminator::Branch { .. }) {
                 self.emit_body_except_condition(&mut out, bid);
             } else {

@@ -46,6 +46,28 @@ fn test_unary_expression_rendering() {
     assert_eq!(render_expr(&abs), "abs(n)");
 }
 
+/// A postfix increment needs an assignable target. Applying one to a literal
+/// is not a valid expression, so the increment is spelled arithmetically.
+#[test]
+fn test_increment_rendering_spells_literals_arithmetically() {
+    assert_eq!(
+        render_expr(&Expr::unary(UnaryOp::Inc, Expr::var("x"))),
+        "x++"
+    );
+    assert_eq!(
+        render_expr(&Expr::unary(UnaryOp::Dec, Expr::var("x"))),
+        "x--"
+    );
+    assert_eq!(
+        render_expr(&Expr::unary(UnaryOp::Inc, Expr::int(3))),
+        "(3 + 1)"
+    );
+    assert_eq!(
+        render_expr(&Expr::unary(UnaryOp::Dec, Expr::int(3))),
+        "(3 - 1)"
+    );
+}
+
 #[test]
 fn test_call_expression_rendering() {
     let call = Expr::unresolved_call("foo", vec![Expr::int(1), Expr::int(2)]);

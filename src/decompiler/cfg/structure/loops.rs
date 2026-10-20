@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 
+use crate::decompiler::cfg::ssa::ssa_var_name;
 use crate::decompiler::cfg::{BlockId, Terminator};
 use crate::decompiler::ir::{Block as IrBlock, ControlFlow, Expr, Stmt};
 
@@ -67,6 +68,90 @@ impl<'a> StructCtx<'a> {
                             if target == header
                     )
             })
+    }
+
+    /// Detect a loop header that branches back to itself: the loop body and
+    /// the bottom test share a single block (`BB -> BB`). Returns the exit
+    /// target of that block.
+    ///
+    /// A self-edge never satisfies `strictly_dominates(header, header)`, so
+    /// the two-block latch search cannot see it; the shape needs its own
+    /// recognition.
+    pub(super) fn self_loop_exit(&self, header: BlockId) -> Option<BlockId> {
+        let Terminator::Branch {
+            then_target,
+            else_target,
+        } = self.terminator(header)
+        else {
+            return None;
+        };
+        match (then_target == header, else_target == header) {
+            (true, false) => Some(else_target),
+            (false, true) => Some(then_target),
+            _ => None,
+        }
+    }
+
+    /// Structure a single-block self-loop (`BB -> BB`) as a do-while.
+    ///
+    /// The header block holds both the loop body and the bottom test, so the
+    /// generic `while` path would hoist the header's own statements out of
+    /// the loop: the condition would keep its first value and the loop would
+    /// spin forever without ever updating its state. Emitting the header's
+    /// statements as the loop body keeps the update inside the loop, and the
+    /// back-edge φ copy materialises the loop-carried value for the next
+    /// iteration at the tail of the body.
+    pub(super) fn structure_self_loop_dowhile(
+        &self,
+        out: &mut IrBlock,
+        header: BlockId,
+    ) -> Option<BlockId> {
+        let exit = self.self_loop_exit(header)?;
+        let backedge_copies = self.phi_lowering.edge_statements(header, header);
+        let backedge_targets: BTreeSet<String> = backedge_copies
+            .iter()
+            .filter_map(|statement| match statement {
+                Stmt::Assign { target, .. } => Some(target.clone()),
+                _ => None,
+            })
+            .collect();
+
+        // The bottom test is computed by the header's own statements, so it
+        // has to run inside the body. Inlining the comparison into the
+        // `while` clause is only safe while the back-edge copy cannot change
+        // a value the test reads; otherwise the test keeps its own variable,
+        // which is evaluated before the copy runs.
+        let inlined = self.comparison_condition_for_block(header);
+        let inline_is_safe = inlined
+            .as_ref()
+            .is_some_and(|condition| !expr_reads_any(condition, &backedge_targets));
+        let (mut body, condition) = if inline_is_safe {
+            let mut body = IrBlock::new();
+            self.emit_body_except_condition(&mut body, header);
+            (
+                body,
+                inlined.expect("inline_is_safe implies an inlined condition"),
+            )
+        } else {
+            let mut body = IrBlock::new();
+            self.emit_body(&mut body, header);
+            let condition = self
+                .condition_variable_for_block(header)
+                .map(|variable| Expr::Variable(ssa_var_name(variable, self.source_names)))
+                .unwrap_or_else(|| Expr::Variable(format!("cond_{}", header.0)));
+            (body, condition)
+        };
+
+        // The back-edge φ copy runs at the tail of the body, right after the
+        // update that produced its source value.
+        body.stmts.extend(backedge_copies);
+
+        out.push(Stmt::ControlFlow(Box::new(ControlFlow::do_while(
+            body, condition,
+        ))));
+        out.stmts
+            .extend(self.phi_lowering.edge_statements(header, exit));
+        Some(exit)
     }
 
     /// Render a branch-headed natural loop as unconditional when both header
@@ -154,5 +239,38 @@ impl<'a> StructCtx<'a> {
             body,
         ))));
         true
+    }
+}
+
+/// Whether the expression reads any of the named variables.
+fn expr_reads_any(expr: &Expr, names: &BTreeSet<String>) -> bool {
+    match expr {
+        Expr::Variable(name) => names.contains(name),
+        Expr::Binary { left, right, .. } => {
+            expr_reads_any(left, names) || expr_reads_any(right, names)
+        }
+        Expr::Unary { operand, .. }
+        | Expr::Cast { expr: operand, .. }
+        | Expr::Convert { value: operand, .. }
+        | Expr::IsType { value: operand, .. } => expr_reads_any(operand, names),
+        Expr::Call { args, .. } | Expr::Array(args) | Expr::Struct(args) => {
+            args.iter().any(|argument| expr_reads_any(argument, names))
+        }
+        Expr::Index { base, index } => expr_reads_any(base, names) || expr_reads_any(index, names),
+        Expr::Member { base, .. } => expr_reads_any(base, names),
+        Expr::NewArray { length, .. } => expr_reads_any(length, names),
+        Expr::Map(entries) => entries
+            .iter()
+            .any(|(key, value)| expr_reads_any(key, names) || expr_reads_any(value, names)),
+        Expr::Ternary {
+            condition,
+            then_expr,
+            else_expr,
+        } => {
+            expr_reads_any(condition, names)
+                || expr_reads_any(then_expr, names)
+                || expr_reads_any(else_expr, names)
+        }
+        Expr::Unknown | Expr::Literal(_) | Expr::StackTemp(_) => false,
     }
 }

@@ -216,6 +216,160 @@ fn do_while_phi_backedge_copy_stays_in_body() {
     assert!(!block_contains_call(&structured, "phi"));
 }
 
+/// A single-block self-loop: BB1 holds the loop body *and* the bottom test
+/// and branches back to itself (`BB1 -> BB1`). The header's own statements
+/// must stay inside the loop — the generic `while` path would hoist them out
+/// and freeze the condition at its first value, so the loop could never make
+/// progress.
+#[test]
+fn structures_a_single_block_self_loop_into_do_while() {
+    let entry = BlockId(0);
+    let header = BlockId(1);
+    let exit = BlockId(2);
+
+    let mut cfg = Cfg::new();
+    cfg.add_block(BasicBlock::new(
+        entry,
+        0,
+        1,
+        0..1,
+        Terminator::Fallthrough { target: header },
+    ));
+    cfg.add_block(BasicBlock::new(
+        header,
+        1,
+        2,
+        1..2,
+        Terminator::Branch {
+            then_target: header,
+            else_target: exit,
+        },
+    ));
+    cfg.add_block(BasicBlock::new(exit, 2, 3, 2..3, Terminator::Return));
+    cfg.add_edge(entry, header, EdgeKind::Unconditional);
+    cfg.add_edge(header, header, EdgeKind::ConditionalTrue);
+    cfg.add_edge(header, exit, EdgeKind::ConditionalFalse);
+
+    let state = v("state", 0);
+    let initial = v("initial", 0);
+    let next = v("next", 0);
+    let condition = v("condition", 0);
+
+    // BB0 seeds the loop-carried value.
+    let entry_block = block_with(vec![SsaStmt::assign(
+        initial.clone(),
+        SsaExpr::lit(Literal::Int(0)),
+    )]);
+    // BB1 updates the loop-carried value and then tests it.
+    let mut header_block = block_with(vec![
+        SsaStmt::assign(
+            next.clone(),
+            SsaExpr::binary(
+                BinOp::Add,
+                SsaExpr::var(state.clone()),
+                SsaExpr::lit(Literal::Int(1)),
+            ),
+        ),
+        SsaStmt::assign(
+            condition.clone(),
+            SsaExpr::binary(
+                BinOp::Lt,
+                SsaExpr::var(next.clone()),
+                SsaExpr::lit(Literal::Int(3)),
+            ),
+        ),
+    ]);
+    header_block.add_phi(phi(
+        state.clone(),
+        &[(entry, initial.clone()), (header, next.clone())],
+    ));
+    let exit_block = block_with(vec![SsaStmt::ret(None)]);
+
+    let ssa = SsaForm {
+        dominance: crate::decompiler::cfg::ssa::compute(&cfg),
+        cfg,
+        blocks: BTreeMap::from([
+            (entry, entry_block),
+            (header, header_block),
+            (exit, exit_block),
+        ]),
+        definitions: BTreeMap::new(),
+        uses: BTreeMap::from([
+            (state, BTreeSet::from([UseSite::new(header, 0)])),
+            (next, BTreeSet::from([UseSite::new(header, 1)])),
+            (condition, BTreeSet::from([UseSite::terminator(header)])),
+        ]),
+    };
+
+    let structured = structure(&ssa);
+    let loop_index = structured
+        .stmts
+        .iter()
+        .position(|stmt| {
+            matches!(stmt, Stmt::ControlFlow(control_flow) if matches!(control_flow.as_ref(), ControlFlow::DoWhile { .. }))
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "a single-block self-loop should structure as DoWhile; got {:?}",
+                structured.stmts
+            )
+        });
+    let Stmt::ControlFlow(control_flow) = &structured.stmts[loop_index] else {
+        unreachable!();
+    };
+    let ControlFlow::DoWhile { body, condition } = control_flow.as_ref() else {
+        unreachable!();
+    };
+
+    // The loop-carried value is seeded before the loop.
+    assert!(
+        structured.stmts.iter().any(|stmt| matches!(
+            stmt,
+            Stmt::Assign {
+                target,
+                value: Expr::Variable(source),
+            } if target == "state_0" && source == "initial_0"
+        )),
+        "the entry phi copy must precede the loop: {:?}",
+        structured.stmts
+    );
+    // The update stays inside the loop body.
+    assert!(
+        body.stmts.iter().any(|stmt| matches!(
+            stmt,
+            Stmt::Assign {
+                target,
+                value: Expr::Binary { op: BinOp::Add, .. },
+            } if target == "next_0"
+        )),
+        "the header's update must stay inside the do-while body: {body:?}"
+    );
+    // The back-edge phi copy runs at the tail of the body.
+    assert!(
+        body.stmts.last().is_some_and(|stmt| matches!(
+            stmt,
+            Stmt::Assign {
+                target,
+                value: Expr::Variable(source),
+            } if target == "state_0" && source == "next_0"
+        )),
+        "the back-edge copy must close the do-while body: {body:?}"
+    );
+    // The bottom test is the header's own comparison.
+    assert!(
+        matches!(
+            condition,
+            Expr::Binary {
+                op: BinOp::Lt,
+                left,
+                right,
+            } if matches!(left.as_ref(), Expr::Variable(name) if name == "next_0")
+                && matches!(right.as_ref(), Expr::Literal(Literal::Int(3)))
+        ),
+        "the do-while must test the header's comparison: {condition:?}"
+    );
+}
+
 /// A switch: an equality cascade on one scrutinee. B0 compares `loc0 == 0`
 /// → case0 body, else B1; B1 compares `loc0 == 1` → case1 body, else B2
 /// (default); all bodies join at the merge B5.

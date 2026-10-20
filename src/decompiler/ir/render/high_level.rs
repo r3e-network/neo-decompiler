@@ -10,7 +10,7 @@ use std::fmt::Write;
 use super::super::control_flow::ControlFlow;
 use super::super::expression::{BinOp, Expr, UnaryOp};
 use super::super::statement::{Block, Stmt};
-use super::expr::render_expr;
+use super::expr::{is_assignable, render_expr, render_increment};
 
 const INDENT: &str = "    ";
 
@@ -383,16 +383,20 @@ fn push_hl_body(
 }
 
 /// `x++` in a for-update becomes high-level `x += 1`.
+///
+/// A compound assignment needs an assignable target, so a non-reference
+/// operand keeps the arithmetic spelling (`3 += 1` is not a valid
+/// statement).
 fn hl_for_update(expr: &Expr) -> String {
     match expr {
         Expr::Unary {
             op: UnaryOp::Inc,
             operand,
-        } => format!("{} += 1", hl_expr(operand)),
+        } if is_assignable(operand) => format!("{} += 1", hl_expr(operand)),
         Expr::Unary {
             op: UnaryOp::Dec,
             operand,
-        } => format!("{} -= 1", hl_expr(operand)),
+        } if is_assignable(operand) => format!("{} -= 1", hl_expr(operand)),
         other => hl_update(other),
     }
 }
@@ -403,11 +407,11 @@ fn hl_update(expr: &Expr) -> String {
         Expr::Unary {
             op: UnaryOp::Inc,
             operand,
-        } => format!("{}++", hl_expr(operand)),
+        } => render_increment(UnaryOp::Inc, operand),
         Expr::Unary {
             op: UnaryOp::Dec,
             operand,
-        } => format!("{}--", hl_expr(operand)),
+        } => render_increment(UnaryOp::Dec, operand),
         other => hl_expr(other),
     }
 }
@@ -681,5 +685,25 @@ mod tests {
         )))]);
         let rendered = render_high_level_block(&block, 1);
         assert_eq!(rendered, "    if (flag) {\n    }");
+    }
+
+    /// `3++` is not a valid expression: a postfix increment needs an
+    /// assignable target, so a literal keeps the arithmetic spelling.
+    #[test]
+    fn literal_increment_is_not_emitted_as_postfix() {
+        let block = IrBlock::with_stmts(vec![IrStmt::assign(
+            "t_9",
+            IrExpr::binary(
+                BinOp::And,
+                IrExpr::unary(UnaryOp::Inc, IrExpr::int(3)),
+                IrExpr::int(4294967295),
+            ),
+        )]);
+        let rendered = render_high_level_block(&block, 0);
+        assert!(
+            !rendered.contains("3++"),
+            "a literal must not take a postfix increment: {rendered}"
+        );
+        assert!(rendered.contains("(3 + 1)"), "{rendered}");
     }
 }

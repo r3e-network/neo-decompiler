@@ -10,7 +10,7 @@ pub fn render_expr(expr: &Expr) -> String {
         }
         Expr::Unary { op, operand } => match op {
             UnaryOp::Abs | UnaryOp::Sign => format!("{}({})", op, render_expr(operand)),
-            UnaryOp::Inc | UnaryOp::Dec => format!("{}{}", render_expr(operand), op),
+            UnaryOp::Inc | UnaryOp::Dec => render_increment(*op, operand),
             _ => format!("{}{}", op, render_expr(operand)),
         },
         Expr::Call { target, args } => {
@@ -75,4 +75,28 @@ pub fn render_expr(expr: &Expr) -> String {
 
 fn render_literal(lit: &Literal) -> String {
     lit.to_string()
+}
+
+/// Render `x++` / `x--`.
+///
+/// A postfix increment needs an assignable target. A literal (or any other
+/// non-reference expression) has none, so the increment is spelled as
+/// arithmetic instead: `3++` is not a valid expression in any emitted
+/// language, while `(3 + 1)` states the same value.
+pub(super) fn render_increment(op: UnaryOp, operand: &Expr) -> String {
+    let source = render_expr(operand);
+    if is_assignable(operand) {
+        return format!("{source}{op}");
+    }
+    let sign = if op == UnaryOp::Inc { "+" } else { "-" };
+    format!("({source} {sign} 1)")
+}
+
+/// Whether the expression names a storage location a postfix increment can
+/// be applied to.
+pub(super) fn is_assignable(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Variable(_) | Expr::Member { .. } | Expr::Index { .. }
+    )
 }
