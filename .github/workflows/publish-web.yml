@@ -241,6 +241,11 @@ jobs:
           test "${RELEASE_REF_NAME}" = "v${crate_version}"
           js_version="$(node -p "JSON.parse(require('fs').readFileSync('js/package.json','utf8')).version")"
           echo "version=${js_version}" >> "${GITHUB_OUTPUT}"
+          # The crate version is exported separately. The mapping check below
+          # compares the JS version against the crate version, and reading the
+          # crate version from the `version` output would compare the JS
+          # version with itself.
+          echo "crate_version=${crate_version}" >> "${GITHUB_OUTPUT}"
           if npm view "neo-decompiler-js@${js_version}" version >/dev/null 2>&1; then
             echo "already_published=true" >> "${GITHUB_OUTPUT}"
           else
@@ -255,7 +260,7 @@ jobs:
         # and the master branch carries the corrected mapping for later
         # releases.
         env:
-          CRATE_VERSION: ${{ steps.identity.outputs.version }}
+          CRATE_VERSION: ${{ steps.identity.outputs.crate_version }}
         run: |
           node --input-type=module <<'NODE'
           import assert from 'node:assert/strict';
