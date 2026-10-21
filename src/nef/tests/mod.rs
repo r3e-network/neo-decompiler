@@ -43,3 +43,4 @@ mod flags;
 mod limits;
 mod method_tokens;
 mod parse;
+mod serializer;

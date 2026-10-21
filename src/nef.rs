@@ -29,6 +29,7 @@ const CALL_FLAGS_ALLOWED_MASK: u8 =
 mod encoding;
 mod flags;
 mod parser;
+mod serializer;
 mod types;
 
 pub use flags::{call_flag_labels, describe_call_flags};
