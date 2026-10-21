@@ -323,3 +323,51 @@ fn pathological_dense_jmpif_cfg_structures_promptly() {
         assert!(!structured.stmts.is_empty());
     }
 }
+
+#[test]
+fn pathological_self_loop_cycle_structures_promptly() {
+    // Fuzz-found input where every CFG block branches to itself and to the
+    // next block, so the blocks form a cycle through their own loop exits.
+    //
+    // The self-loop recovery resumes the walk at the loop's exit, which
+    // leads straight back into the cycle. The walk has to notice that a
+    // block was already emitted; when it did not, the recovery appended a
+    // do-while per cycle iteration and never terminated, so the emitted
+    // block grew until the process ran out of memory.
+    let data = include_bytes!("testdata/pathological_self_loop_cycle.bin").as_slice();
+    let instructions = crate::Disassembler::new()
+        .disassemble(data)
+        .expect("disassemble");
+    let cfg = crate::CfgBuilder::new(&instructions).build();
+    let mut ssa = crate::SsaBuilder::new(&cfg, &instructions).build();
+    crate::optimize_ssa(&mut ssa);
+
+    let start = std::time::Instant::now();
+    let structured = super::structure(&ssa);
+    assert!(
+        start.elapsed() < std::time::Duration::from_millis(500),
+        "structure took {:?}",
+        start.elapsed()
+    );
+
+    // The recovery must produce a bounded result: one loop per CFG block,
+    // not one per cycle iteration.
+    let loops = structured
+        .stmts
+        .iter()
+        .filter(|stmt| {
+            matches!(
+                stmt,
+                Stmt::ControlFlow(control_flow)
+                    if matches!(
+                        control_flow.as_ref(),
+                        ControlFlow::DoWhile { .. } | ControlFlow::While { .. }
+                    )
+            )
+        })
+        .count();
+    assert!(
+        loops <= 4,
+        "the recovery emitted {loops} loops for a two-block CFG, so the walk revisited the cycle"
+    );
+}

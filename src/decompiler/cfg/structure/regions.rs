@@ -117,6 +117,19 @@ impl<'a> StructCtx<'a> {
                 break;
             }
 
+            // A block that was already emitted must not be emitted again.
+            //
+            // This check has to come before the self-loop recovery below.
+            // That path resumes the walk at the loop's exit, and the exit
+            // may lead back to a block the walk has already structured.
+            // Without the check, a CFG whose blocks form a cycle through
+            // their own exits -- each block branching to itself and to the
+            // next -- makes the walk revisit the cycle forever, growing the
+            // emitted block without bound.
+            if visited.contains(&bid) {
+                break;
+            }
+
             // A header that branches back to itself (`BB -> BB`) carries both
             // the loop body and the bottom test in one block. The generic
             // `while` path would lift the header's statements out of the
@@ -196,9 +209,11 @@ impl<'a> StructCtx<'a> {
                 }
             }
 
-            if !visited.insert(bid) {
-                break;
-            }
+            // Mark the block as emitted. The do-while path above recurses
+            // into this block with an empty `visited` entry, so the mark is
+            // made only once the block has actually been walked.
+            visited.insert(bid);
+
             if self.leave_targets.contains(&bid) {
                 out.push(Stmt::Label(crate::decompiler::ir::BlockLabel(bid.0)));
             }
