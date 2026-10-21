@@ -10,10 +10,16 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+# The web report surface is checked through its serialized form, because
+# that is the payload the browser receives.
+serde_json = "1.0"
 
 [dependencies.neo-decompiler]
 path = ".."
 default-features = false
+# The web report surface is a public entry point of the crate, so the fuzz
+# targets that exercise it need the feature that compiles it.
+features = ["web"]
 
 [[bin]]
 name = "fuzz_nef_parse"
@@ -60,6 +66,34 @@ bench = false
 [[bin]]
 name = "fuzz_ir_render"
 path = "fuzz_targets/fuzz_ir_render.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_opcode_coverage"
+path = "fuzz_targets/fuzz_opcode_coverage.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_web_api"
+path = "fuzz_targets/fuzz_web_api.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_config_matrix"
+path = "fuzz_targets/fuzz_config_matrix.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_corpus_mutation"
+path = "fuzz_targets/fuzz_corpus_mutation.rs"
 test = false
 doc = false
 bench = false

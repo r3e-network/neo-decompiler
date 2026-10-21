@@ -76,10 +76,13 @@ neo_csharp/**/bin/
 neo_csharp/**/obj/
 
 # Fuzz workspace artifacts
-/fuzz/Cargo.lock
+# The fuzz crate's lockfile is tracked, so the sanitizer toolchain and the
+# fuzz targets resolve to the same versions everywhere.
+# /fuzz/Cargo.lock
 /fuzz/target/
 /fuzz/corpus/
 /fuzz/artifacts/
+/fuzz/logs/
 .omx/
 
 # Local devpack corpus scaffolding (CI regenerates these at the pinned revision)

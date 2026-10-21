@@ -11,8 +11,8 @@
 
 use libfuzzer_sys::fuzz_target;
 use neo_decompiler::decompiler::ir::{
-    BinOp, Block, ControlFlow, Expr, Literal, Stmt, UnaryOp,
-    render_block, render_high_level_block,
+    brace_balanced, render_block, render_high_level_block, BinOp, Block, ControlFlow, Expr,
+    Literal, Stmt, UnaryOp,
 };
 
 /// Wraps a fuzzer byte slice and reads decisions from it, cycling when exhausted.
@@ -49,8 +49,14 @@ fn build_expr(r: &mut R, depth: u8) -> Expr {
         // Binary
         4 => {
             const OPS: [BinOp; 8] = [
-                BinOp::Add, BinOp::Sub, BinOp::Mul, BinOp::Div,
-                BinOp::Eq, BinOp::Ne, BinOp::Lt, BinOp::LogicalAnd,
+                BinOp::Add,
+                BinOp::Sub,
+                BinOp::Mul,
+                BinOp::Div,
+                BinOp::Eq,
+                BinOp::Ne,
+                BinOp::Lt,
+                BinOp::LogicalAnd,
             ];
             let op = OPS[(r.byte() as usize) % OPS.len()];
             Expr::Binary {
@@ -63,7 +69,10 @@ fn build_expr(r: &mut R, depth: u8) -> Expr {
         5 => {
             const OPS: [UnaryOp; 4] = [UnaryOp::Neg, UnaryOp::Not, UnaryOp::Inc, UnaryOp::Dec];
             let op = OPS[(r.byte() as usize) % OPS.len()];
-            Expr::Unary { op, operand: Box::new(build_expr(r, depth - 1)) }
+            Expr::Unary {
+                op,
+                operand: Box::new(build_expr(r, depth - 1)),
+            }
         }
         // Ternary
         6 => Expr::Ternary {
@@ -144,7 +153,10 @@ fn build_loop(r: &mut R, depth: u8) -> ControlFlow {
                 left: Box::new(Expr::var("i")),
                 right: Box::new(Expr::int((r.byte() % 8) as i64)),
             }),
-            Some(Expr::Unary { op: UnaryOp::Inc, operand: Box::new(Expr::var("i")) }),
+            Some(Expr::Unary {
+                op: UnaryOp::Inc,
+                operand: Box::new(Expr::var("i")),
+            }),
             build_block(r, depth),
         ),
     }
@@ -180,12 +192,6 @@ fn build_try_or_switch(r: &mut R, depth: u8) -> ControlFlow {
     }
 }
 
-// ---- Invariant checks ------------------------------------------------------
-
-fn brace_balanced(s: &str) -> bool {
-    s.matches('{').count() == s.matches('}').count()
-}
-
 // ---- Fuzz target -----------------------------------------------------------
 
 fuzz_target!(|data: &[u8]| {
@@ -202,5 +208,8 @@ fuzz_target!(|data: &[u8]| {
 
     // Analysis dialect
     let analysis = render_block(&block, 0);
-    assert!(brace_balanced(&analysis), "analysis brace imbalance:\n{analysis}");
+    assert!(
+        brace_balanced(&analysis),
+        "analysis brace imbalance:\n{analysis}"
+    );
 });

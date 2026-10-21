@@ -112,7 +112,6 @@ impl<'a> DecisionReader<'a> {
         self.pos += 1;
         v
     }
-
 }
 
 /// Builds structurally valid NeoVM bytecode programs and wraps them in NEF.
@@ -183,8 +182,8 @@ impl ProgramBuilder {
             return;
         }
         const BINARY_OPS: [u8; 21] = [
-            ADD, SUB, MUL, DIV, MOD, SHL, SHR, AND, OR, XOR, EQUAL, NOTEQUAL, LT, LE, GT, GE,
-            MIN, MAX, NUMEQUAL, BOOLAND, BOOLOR,
+            ADD, SUB, MUL, DIV, MOD, SHL, SHR, AND, OR, XOR, EQUAL, NOTEQUAL, LT, LE, GT, GE, MIN,
+            MAX, NUMEQUAL, BOOLAND, BOOLOR,
         ];
         let idx = (r.next() as usize) % BINARY_OPS.len();
         self.bytecode.push(BINARY_OPS[idx]);
@@ -436,11 +435,11 @@ impl ProgramBuilder {
 
         // catch_offset = distance from TRY opcode to start of catch body
         //              = 3 (TRY header) + try_push + 2 (ENDTRY)
-        let catch_offset = (3 + try_push + 2) as u8;
+        let catch_offset = 3 + try_push + 2;
 
         // endtry_skip = distance from first ENDTRY opcode to past-catch-ENDTRY
         //             = 2 (first ENDTRY) + catch_push + 2 (second ENDTRY)
-        let endtry_skip = (2 + catch_push + 2) as u8;
+        let endtry_skip = 2 + catch_push + 2;
 
         self.bytecode.push(TRY);
         self.bytecode.push(catch_offset);
@@ -481,9 +480,9 @@ impl ProgramBuilder {
         let finally_push = (r.next() % 2) + 1;
 
         // finally_offset = 3 + try_push + 2
-        let finally_offset = (3 + try_push + 2) as u8;
+        let finally_offset = 3 + try_push + 2;
         // endtry_skip = 2 + finally_push + 1 (ENDFINALLY)
-        let endtry_skip = (2 + finally_push + 1) as u8;
+        let endtry_skip = 2 + finally_push + 1;
 
         self.bytecode.push(TRY);
         self.bytecode.push(0); // catch_offset = 0
@@ -514,6 +513,7 @@ impl ProgramBuilder {
         self.bytecode.push(TRY);
         self.bytecode.push(r.next()); // arbitrary catch offset
         self.bytecode.push(r.next()); // arbitrary finally offset
+
         // Emit a couple of instructions so the try body is non-empty.
         self.bytecode.push(NOP);
         self.bytecode.push(NOP);
@@ -583,7 +583,7 @@ fuzz_target!(|data: &[u8]| {
     let mut builder = ProgramBuilder::new();
 
     // Decide whether to emit INITSLOT (for local variable coverage).
-    let use_locals = r.next() % 3 == 0;
+    let use_locals = r.next().is_multiple_of(3);
     if use_locals {
         let num_locals = (r.next() % 3) + 1; // 1-3 locals
         builder.emit_initslot(num_locals, 0);

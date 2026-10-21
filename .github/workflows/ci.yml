@@ -83,6 +83,11 @@ jobs:
         run: cargo clippy --locked --all-targets --no-default-features -- -D warnings
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Check formatting (fuzz crate)
+        # The fuzz crate is a separate workspace, so the root `cargo fmt`
+        # does not reach it. Without this step its formatting can drift
+        # unnoticed.
+        run: cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check
       - name: Build docs
         if: matrix.rust == 'stable'
         env:
@@ -154,6 +159,172 @@ jobs:
         uses: taiki-e/install-action@04aca1d9d6d82c63188ba3f33b7f820ea39a9197 # cargo-deny
       - name: Run cargo deny
         run: cargo deny check
+
+  fuzz-corpus:
+    name: Fuzz contract corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The mutation-based fuzz target needs real contracts to mutate. The
+    # pinned devpack set is the widest corpus available, and it is
+    # extracted here so the fuzz job does not have to install the .NET
+    # toolchain that the devpack sweep needs.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Check out neo-devpack-dotnet v3.10.0
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: neo-project/neo-devpack-dotnet
+          ref: v3.10.0
+          path: neo-devpack-dotnet
+      - name: Verify pinned devpack revision
+        run: |
+          expected_sha="5b0b63880b6201ae3f974cc845e93a90462d8043"
+          actual_sha="$(git -C neo-devpack-dotnet rev-parse HEAD)"
+          actual_tag="$(git -C neo-devpack-dotnet describe --tags --exact-match HEAD)"
+          test "$actual_sha" = "$expected_sha"
+          test "$actual_tag" = "v3.10.0"
+      - name: Extract pinned corpus
+        run: |
+          python3 tools/extract_devpack_artifacts.py \
+            --devpack-root neo-devpack-dotnet \
+            --output-dir TestingArtifacts/devpack \
+            --expected-count 103 \
+            --strict \
+            --clean
+      - name: Upload the contract corpus
+        # Only the containers and their manifests are uploaded. The
+        # extracted C# sources are not needed by the fuzz targets, and they
+        # are the bulk of the directory.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-contract-corpus
+          path: |
+            TestingArtifacts/devpack/*.nef
+            TestingArtifacts/devpack/*.manifest.json
+          if-no-files-found: error
+
+  fuzz-check:
+    name: Check the fuzz crate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The fuzz crate is a separate workspace, so the root lint and format
+    # checks do not reach it. Without this job a defect in a fuzz target
+    # sits unnoticed until a campaign trips over it.
+    #
+    # The job is separate from the fuzz campaign on purpose: a lint failure
+    # should not cancel a campaign that is already finding coverage, and the
+    # two run in parallel anyway.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0 # master
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Cache dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-fuzz-check-${{ hashFiles('fuzz/Cargo.lock', 'Cargo.lock') }}
+      - name: Check the formatting
+        run: cargo fmt --all --manifest-path fuzz/Cargo.toml -- --check
+      - name: Run clippy
+        run: cargo clippy --locked --manifest-path fuzz/Cargo.toml --all-targets -- -D warnings
+
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # The mutation-based target mutates real contracts, so the corpus has
+    # to be in place before the campaign starts.
+    needs: fuzz-corpus
+    strategy:
+      # Every target runs even when one fails, so a single crash does not hide
+      # the state of the others.
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_nef_parse
+          - fuzz_disassemble
+          - fuzz_manifest
+          - fuzz_decompile
+          - fuzz_decompile_raw
+          - fuzz_grammar
+          - fuzz_ir_render
+          - fuzz_opcode_coverage
+          - fuzz_web_api
+          - fuzz_config_matrix
+          - fuzz_corpus_mutation
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Download the contract corpus
+        # The corpus is loaded at runtime rather than embedded at compile
+        # time, so a checkout without the contracts still builds; the
+        # mutation target simply has nothing to mutate.
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: fuzz-contract-corpus
+          path: TestingArtifacts/devpack
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # nightly
+        with:
+          toolchain: nightly
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@04aca1d9d6d82c63188ba3f33b7f820ea39a9197 # cargo-fuzz
+      - name: Cache fuzz dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            fuzz/target
+          key: ${{ runner.os }}-cargo-fuzz-${{ hashFiles('fuzz/Cargo.lock', 'fuzz/Cargo.toml') }}
+      - name: Cache the fuzz corpus
+        # The corpus is the accumulated coverage, and it is the input that
+        # makes the next run stronger than the last. It is cached rather
+        # than committed because it is generated data that grows with every
+        # campaign. The key carries the run id so each run writes a fresh
+        # entry, and the restore prefix picks up the most recent one.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-${{ matrix.target }}-
+      - name: Run the fuzz target
+        # Each target gets a short, fixed budget. A long campaign belongs on
+        # a dedicated fuzzing machine; CI runs a smoke campaign that catches
+        # a regression which panics on the first few thousand inputs.
+        #
+        # The artifacts directory receives any crash so it can be uploaded.
+        run: |
+          mkdir -p "fuzz/corpus/${{ matrix.target }}" "fuzz/artifacts/${{ matrix.target }}"
+          cd fuzz
+          cargo fuzz run "${{ matrix.target }}" \
+            "corpus/${{ matrix.target }}" \
+            "artifacts/${{ matrix.target }}" \
+            -- -max_total_time=60 -print_final_stats=1
+      - name: Upload crash artifacts
+        # A crash is worthless without the input that produced it, so the
+        # artifact directory is uploaded whenever the run failed.
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}/
+          if-no-files-found: ignore
+      - name: Upload the corpus
+        # The corpus is the accumulated coverage. Keeping it lets the next
+        # run start where this one stopped instead of rediscovering it.
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: fuzz/corpus/${{ matrix.target }}/
+          if-no-files-found: ignore
 
   security:
     name: Security audit
