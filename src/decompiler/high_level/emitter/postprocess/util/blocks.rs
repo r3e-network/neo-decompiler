@@ -15,32 +15,9 @@ impl HighLevelEmitter {
     }
 
     pub(in super::super) fn brace_delta(line: &str) -> isize {
-        let mut delta = 0;
-        let mut quote = None;
-        let mut escaped = false;
-        let mut chars = line.chars().peekable();
-        while let Some(ch) = chars.next() {
-            if let Some(expected) = quote {
-                if escaped {
-                    escaped = false;
-                } else if ch == '\\' {
-                    escaped = true;
-                } else if ch == expected {
-                    quote = None;
-                }
-                continue;
-            }
-            if ch == '/' && chars.peek() == Some(&'/') {
-                break;
-            }
-            match ch {
-                '"' | '\'' => quote = Some(ch),
-                '{' => delta += 1,
-                '}' => delta -= 1,
-                _ => {}
-            }
-        }
-        delta
+        // The scan itself lives next to the renderers so the fuzz targets
+        // and the post-processing passes count exactly the same braces.
+        crate::decompiler::ir::brace_delta(line)
     }
 }
 
