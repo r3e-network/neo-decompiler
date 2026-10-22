@@ -131,26 +131,6 @@ impl CallContract {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn default_call_contract_keeps_argument_metadata_sparse() {
-        let contract = CallContract::new(
-            SemanticCallTarget::Unresolved {
-                display_name: "external".to_string(),
-            },
-            2048,
-            true,
-        );
-
-        assert_eq!(contract.argument_count, 2048);
-        assert!(contract.argument_effects.is_empty());
-        assert!(contract.argument_field_writes.is_empty());
-    }
-}
-
 /// Source and call metadata for one method SSA build.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MethodContext {
@@ -173,5 +153,25 @@ impl MethodContext {
             .enumerate()
             .map(|(index, name)| (format!("arg{index}"), name.clone()))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_call_contract_keeps_argument_metadata_sparse() {
+        let contract = CallContract::new(
+            SemanticCallTarget::Unresolved {
+                display_name: "external".to_string(),
+            },
+            2048,
+            true,
+        );
+
+        assert_eq!(contract.argument_count, 2048);
+        assert!(contract.argument_effects.is_empty());
+        assert!(contract.argument_field_writes.is_empty());
     }
 }

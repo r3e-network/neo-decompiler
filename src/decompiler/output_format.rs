@@ -36,16 +36,6 @@ impl OutputFormat {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::OutputFormat;
-
-    #[test]
-    fn defaults_to_the_csharp_contract_view() {
-        assert_eq!(OutputFormat::default(), OutputFormat::CSharp);
-    }
-}
-
 /// Knobs shared by the high-level and C# renderers.
 ///
 /// Bundling these keeps the renderer entry-point signatures under clippy's
@@ -63,4 +53,14 @@ pub(crate) struct RenderOptions {
     /// Drive high-level method bodies through the structured IR spine
     /// instead of the stack emitter plus string-pattern postprocess.
     pub high_level_from_ir: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OutputFormat;
+
+    #[test]
+    fn defaults_to_the_csharp_contract_view() {
+        assert_eq!(OutputFormat::default(), OutputFormat::CSharp);
+    }
 }
