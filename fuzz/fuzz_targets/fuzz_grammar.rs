@@ -1,7 +1,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use neo_decompiler::{Decompiler, NefParser};
+use neo_decompiler::nef::{NefFile, NefParser};
+use neo_decompiler::{Decompiler, Disassembler};
 
 // --- Opcode constants (from src/opcodes_generated.rs) ---
 
@@ -523,54 +524,16 @@ impl ProgramBuilder {
     }
 
     /// Wrap the bytecode in a valid NEF3 container with correct checksum.
+    ///
+    /// The container is built with the crate's own serializer rather than
+    /// by hand. A separate implementation of the container format drifts
+    /// from the parser, and a drifted layout turns this target into a
+    /// no-op that produces a container the parser rejects -- so the
+    /// campaign would test nothing at all.
     fn build_nef(&self) -> Vec<u8> {
-        let mut nef = Vec::new();
-
-        // Magic: "NEF3"
-        nef.extend_from_slice(b"NEF3");
-
-        // Compiler: 64-byte fixed field (null-padded)
-        let mut compiler = [0u8; 64];
-        let name = b"fuzz-grammar";
-        compiler[..name.len()].copy_from_slice(name);
-        nef.extend_from_slice(&compiler);
-
-        // Source: empty varstring (varint 0)
-        nef.push(0);
-
-        // Reserved byte (must be 0)
-        nef.push(0);
-
-        // Method tokens: empty set (varint 0)
-        nef.push(0);
-
-        // Reserved word (must be 0)
-        nef.extend_from_slice(&0u16.to_le_bytes());
-
-        // Script as varbytes
-        let script_len = self.bytecode.len() as u32;
-        write_varint(&mut nef, script_len);
-        nef.extend_from_slice(&self.bytecode);
-
-        // Checksum: double-SHA256, first 4 bytes as LE u32
-        let checksum = NefParser::calculate_checksum(&nef);
-        nef.extend_from_slice(&checksum.to_le_bytes());
-
-        nef
-    }
-}
-
-fn write_varint(buf: &mut Vec<u8>, value: u32) {
-    match value {
-        0x00..=0xFC => buf.push(value as u8),
-        0xFD..=0xFFFF => {
-            buf.push(0xFD);
-            buf.extend_from_slice(&(value as u16).to_le_bytes());
-        }
-        _ => {
-            buf.push(0xFE);
-            buf.extend_from_slice(&value.to_le_bytes());
-        }
+        NefFile::new(self.bytecode.clone())
+            .with_compiler("fuzz-grammar")
+            .to_bytes()
     }
 }
 
@@ -642,6 +605,34 @@ fuzz_target!(|data: &[u8]| {
 
     // Wrap in NEF and run the full decompilation pipeline.
     let nef = builder.build_nef();
+
+    // The container has to be accepted by the parser. The builder writes
+    // it with the crate's own serializer, so a rejection means the
+    // serializer and the parser disagree -- and then the rest of this
+    // target would be testing nothing.
+    let parsed = NefParser::new()
+        .parse(&nef)
+        .expect("the generated container must parse");
+    assert_eq!(
+        parsed.script, builder.bytecode,
+        "the container carries a different script than the one that was built"
+    );
+
+    // The script has to disassemble back into instructions that all sit
+    // inside it. A generated program whose operands point past the end
+    // would make the control-flow builder walk off the script.
+    let instructions = Disassembler::new()
+        .disassemble(&parsed.script)
+        .expect("the generated script must disassemble");
+    for instruction in &instructions {
+        assert!(
+            instruction.offset < parsed.script.len(),
+            "the generated script has an instruction at offset {} in a {} byte script",
+            instruction.offset,
+            parsed.script.len()
+        );
+    }
+
     let decompiler = Decompiler::new();
     let _ = decompiler.decompile_bytes(&nef);
 });
