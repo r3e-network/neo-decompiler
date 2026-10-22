@@ -198,3 +198,70 @@ fn truncates_a_compiler_field_that_is_too_long() {
     let parsed = NefParser::new().parse(&bytes).expect("parse succeeds");
     assert_eq!(parsed.header.compiler, "c".repeat(64));
 }
+
+#[test]
+fn refuses_a_container_the_parser_would_reject() {
+    // The parser enforces limits on the script length, the source length,
+    // and the total file size. A container that breaks one of them cannot
+    // be read back, so writing it produces bytes that look like a
+    // container and are not one.
+    let oversized_script = NefFile::new(vec![0x40; super::super::MAX_SCRIPT_LEN + 1]);
+    assert!(
+        oversized_script.try_to_bytes().is_err(),
+        "a container with an oversized script must be refused"
+    );
+
+    let oversized_source =
+        NefFile::new(vec![0x40]).with_source("s".repeat(super::super::MAX_SOURCE_LEN + 1));
+    assert!(
+        oversized_source.try_to_bytes().is_err(),
+        "a container with an oversized source must be refused"
+    );
+}
+
+#[test]
+fn accepts_a_container_at_the_limit() {
+    // The limit itself is allowed. Only what is past it is refused.
+    let at_limit = NefFile::new(vec![0x40; super::super::MAX_SCRIPT_LEN]);
+    let bytes = at_limit
+        .try_to_bytes()
+        .expect("a container at the limit must be accepted");
+    assert!(bytes.len() as u64 <= super::super::MAX_NEF_FILE_SIZE);
+}
+
+#[test]
+fn the_file_limit_cannot_be_reached_by_a_valid_container() {
+    // The parser enforces three limits: the script length, the source
+    // length, and the total file size. The file limit is the one that
+    // cannot be reached, because the other two are lower.
+    //
+    // The largest script the parser accepts is 512 KiB, the largest
+    // method token table is 128 entries, and the source is at most 256
+    // bytes. Together they come to roughly 517 KiB, well under the 1 MiB
+    // file limit. So a container that breaks the file limit has already
+    // broken one of the others.
+    //
+    // The check is kept because the limits are independent constants and
+    // one of them could be raised later. This test records why it is
+    // unreachable today, so a change that makes it reachable is visible.
+    let mut file = NefFile::new(vec![0x40; super::super::MAX_SCRIPT_LEN]);
+    file.method_tokens = (0..super::super::MAX_METHOD_TOKENS)
+        .map(|index| MethodToken {
+            hash: [0xAB; 20],
+            method: format!("m{index}"),
+            parameters_count: 1,
+            has_return_value: false,
+            call_flags: 0x04,
+        })
+        .collect();
+
+    let bytes = file
+        .try_to_bytes()
+        .expect("a container at every other limit must be accepted");
+    let size = bytes.len() as u64;
+    assert!(
+        size < super::super::MAX_NEF_FILE_SIZE,
+        "a container at the other limits reached {size} bytes, which is past the {}-byte file limit",
+        super::super::MAX_NEF_FILE_SIZE
+    );
+}
