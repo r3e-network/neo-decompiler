@@ -156,7 +156,9 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install cargo-deny
-        uses: taiki-e/install-action@04aca1d9d6d82c63188ba3f33b7f820ea39a9197 # cargo-deny
+        uses: taiki-e/install-action@04aca1d9d6d82c63188ba3f33b7f820ea39a9197 # v2
+        with:
+          tool: cargo-deny
       - name: Run cargo deny
         run: cargo deny check
 
@@ -268,12 +270,26 @@ jobs:
         with:
           name: fuzz-contract-corpus
           path: TestingArtifacts/devpack
+      - name: Install Rust stable
+        # The tool that drives the campaign is built with stable. Only the
+        # fuzz targets themselves need the sanitizer runtime, and those are
+        # built with nightly in the next step.
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+      - name: Install cargo-fuzz
+        # cargo-fuzz is not in the install-action tool list, so the action
+        # would fall back to an unpinned install. It is installed directly
+        # instead, with the version pinned so the campaign runs against a
+        # known tool.
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
       - name: Install Rust nightly
+        # The nightly toolchain is installed last so it becomes the default
+        # for the campaign: the targets are built with the sanitizer, which
+        # needs the nightly toolchain.
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # nightly
         with:
           toolchain: nightly
-      - name: Install cargo-fuzz
-        uses: taiki-e/install-action@04aca1d9d6d82c63188ba3f33b7f820ea39a9197 # cargo-fuzz
       - name: Cache fuzz dependencies
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -299,14 +315,18 @@ jobs:
         # a dedicated fuzzing machine; CI runs a smoke campaign that catches
         # a regression which panics on the first few thousand inputs.
         #
-        # The artifacts directory receives any crash so it can be uploaded.
+        # The artifact prefix is set explicitly rather than passed as a
+        # second corpus directory. cargo-fuzz turns the last corpus
+        # directory into the artifact prefix, and a directory that holds
+        # crash files would then be read back as seed inputs -- so a crash
+        # that has already been fixed keeps being replayed forever.
         run: |
           mkdir -p "fuzz/corpus/${{ matrix.target }}" "fuzz/artifacts/${{ matrix.target }}"
           cd fuzz
           cargo fuzz run "${{ matrix.target }}" \
             "corpus/${{ matrix.target }}" \
-            "artifacts/${{ matrix.target }}" \
-            -- -max_total_time=60 -print_final_stats=1
+            -- -max_total_time=60 -print_final_stats=1 \
+            -artifact_prefix="$GITHUB_WORKSPACE/fuzz/artifacts/${{ matrix.target }}/"
       - name: Upload crash artifacts
         # A crash is worthless without the input that produced it, so the
         # artifact directory is uploaded whenever the run failed.

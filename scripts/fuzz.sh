@@ -57,12 +57,19 @@ for target in "${targets[@]}"; do
     start=$(date +%s)
     # `-max_total_time` makes the run bounded; the timeout is a backstop for
     # a target that hangs before the fuzzer takes over.
+    #
+    # The artifact prefix is set explicitly rather than passing the
+    # artifacts directory as a second corpus directory. cargo-fuzz turns
+    # the last corpus directory into the artifact prefix, and a directory
+    # that holds crash files would then be read back as seed inputs -- so
+    # a crash that has already been fixed keeps being replayed forever.
     (
         cd "${fuzz_dir}" &&
             RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-nightly}" \
             CARGO_TARGET_DIR="${target_dir}" \
-            cargo fuzz run "${target}" "${corpus}" "${artifacts}" -- \
-                -max_total_time="${seconds}" -print_final_stats=1
+            cargo fuzz run "${target}" "${corpus}" -- \
+                -max_total_time="${seconds}" -print_final_stats=1 \
+                -artifact_prefix="${artifacts}/"
     ) >"${log_dir}/${target}.log" 2>&1
     status=$?
     elapsed=$(( $(date +%s) - start ))
