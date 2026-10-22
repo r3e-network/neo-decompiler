@@ -156,3 +156,45 @@ fn normalizes_a_non_canonical_varint() {
     assert_eq!(reparsed.header.source, "src:5");
     assert_eq!(reparsed.script, script);
 }
+
+#[test]
+fn builds_a_container_from_its_parts() {
+    // The struct is `#[non_exhaustive]`, so a caller outside the crate
+    // cannot write the literal. The constructor is the way to build one,
+    // and the container it produces has to be accepted by the parser.
+    let file = NefFile::new(vec![0x10, 0x11, 0x40])
+        .with_compiler("neo-test")
+        .with_source("src:test");
+
+    let bytes = file.to_bytes();
+    let parsed = NefParser::new().parse(&bytes).expect("parse succeeds");
+
+    assert_eq!(parsed.script, vec![0x10, 0x11, 0x40]);
+    assert_eq!(parsed.header.compiler, "neo-test");
+    assert_eq!(parsed.header.source, "src:test");
+    assert_eq!(parsed.header.magic, *b"NEF3");
+}
+
+#[test]
+fn rejects_a_container_without_a_script() {
+    // An empty script is not a legal container. The parser rejects it,
+    // so the constructor still produces a container the parser refuses
+    // rather than one that is silently accepted.
+    let file = NefFile::new(Vec::new());
+    let bytes = file.to_bytes();
+    assert!(
+        NefParser::new().parse(&bytes).is_err(),
+        "a container without a script must not be accepted"
+    );
+}
+
+#[test]
+fn truncates_a_compiler_field_that_is_too_long() {
+    // The compiler field is a fixed 64-byte slot, so a longer value is
+    // truncated rather than changing the layout of the container.
+    let long = "c".repeat(200);
+    let file = NefFile::new(vec![0x40]).with_compiler(long);
+    let bytes = file.to_bytes();
+    let parsed = NefParser::new().parse(&bytes).expect("parse succeeds");
+    assert_eq!(parsed.header.compiler, "c".repeat(64));
+}

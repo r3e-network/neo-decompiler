@@ -45,6 +45,46 @@ pub struct NefFile {
 }
 
 impl NefFile {
+    /// Build a container from its parts.
+    ///
+    /// The struct is `#[non_exhaustive]`, so a caller outside the crate
+    /// cannot write the struct literal. This is the way to build one: the
+    /// parts are named, and the checksum is left to the serializer, which
+    /// computes it over the payload.
+    ///
+    /// The magic defaults to the NEF3 marker, because that is the only
+    /// container the parser accepts.
+    #[must_use]
+    pub fn new(script: Vec<u8>) -> Self {
+        Self {
+            header: NefHeader {
+                magic: *b"NEF3",
+                compiler: String::new(),
+                source: String::new(),
+            },
+            method_tokens: Vec::new(),
+            script,
+            checksum: 0,
+        }
+    }
+
+    /// Set the compiler identifier of the container.
+    ///
+    /// The field is a fixed 64-byte slot in the container, so a longer
+    /// value is truncated when the container is written.
+    #[must_use]
+    pub fn with_compiler(mut self, compiler: impl Into<String>) -> Self {
+        self.header.compiler = compiler.into();
+        self
+    }
+
+    /// Set the source string of the container.
+    #[must_use]
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.header.source = source.into();
+        self
+    }
+
     /// Length of the payload included in the checksum calculation.
     #[must_use]
     pub fn payload_len(&self) -> usize {
